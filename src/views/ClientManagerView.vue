@@ -222,10 +222,25 @@
               <a-tag :color="statusColor[currentCompany.status || '活跃']">{{ currentCompany.status }}</a-tag>
             </div>
           </div>
-          <div style="margin-left:auto;display:flex;gap:4px">
-            <a-button size="small" @click="openAssignManager(currentCompany)">
-              <UserOutlined /> {{ currentCompany.business_owner_name || '分配商务' }}
-            </a-button>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+            <div class="assign-btn-wrapper" @click="openAssignManager(currentCompany)">
+              <div v-if="currentCompany.business_owner_name" class="assign-btn assigned">
+                <div class="assign-btn-icon"><UserOutlined /></div>
+                <div class="assign-btn-body">
+                  <div class="assign-btn-label">负责商务</div>
+                  <div class="assign-btn-name">{{ currentCompany.business_owner_name }}</div>
+                </div>
+                <EditOutlined class="assign-btn-edit" />
+              </div>
+              <div v-else class="assign-btn unassigned">
+                <div class="assign-btn-icon"><UserOutlined /></div>
+                <div class="assign-btn-body">
+                  <div class="assign-btn-label">暂未分配</div>
+                  <div class="assign-btn-name">点击分配商务经理</div>
+                </div>
+                <PlusOutlined class="assign-btn-edit" />
+              </div>
+            </div>
             <a-button type="link" size="small" @click="openEditModal(currentCompany)">编辑</a-button>
           </div>
         </div>
@@ -824,6 +839,38 @@ onMounted(() => {
 .stat-num.teal { color: #0891b2; }
 .stat-lbl { font-size: 11px; color: #9ca3af; margin-top: 2px; }
 .stat-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 8px; flex-shrink: 0; }
+
+/* 详情抽屉内分配商务按钮 */
+.assign-btn-wrapper { cursor: pointer; }
+.assign-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 8px;
+  transition: all 0.2s; min-width: 148px;
+}
+.assign-btn.assigned {
+  background: #f0fdf4; border: 1.5px solid #86efac;
+}
+.assign-btn.assigned:hover { background: #dcfce7; border-color: #4ade80; }
+.assign-btn.unassigned {
+  background: #fafafa; border: 1.5px dashed #d1d5db;
+}
+.assign-btn.unassigned:hover { background: #eff6ff; border-color: #3b82f6; border-style: solid; }
+.assign-btn-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+}
+.assigned .assign-btn-icon { background: #16a34a; color: #fff; }
+.unassigned .assign-btn-icon { background: #e5e7eb; color: #6b7280; }
+.assign-btn-body { flex: 1; min-width: 0; }
+.assign-btn-label { font-size: 10px; color: #9ca3af; line-height: 1.2; }
+.assigned .assign-btn-label { color: #86efac; }
+.assign-btn-name { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.assigned .assign-btn-name { color: #15803d; }
+.unassigned .assign-btn-name { color: #9ca3af; }
+.assign-btn-edit { font-size: 11px; flex-shrink: 0; }
+.assigned .assign-btn-edit { color: #4ade80; }
+.unassigned .assign-btn-edit { color: #d1d5db; }
 
 /* 负责商务 */
 .card-manager { min-width: 110px; flex-shrink: 0; }
