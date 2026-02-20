@@ -8,7 +8,15 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import AppSidebar from './components/AppSidebar.vue'
+import { useCurrentUser } from './composables/useCurrentUser'
+
+const { loadFromStorage } = useCurrentUser()
+
+onMounted(() => {
+  loadFromStorage()
+})
 </script>
 
 <style scoped>

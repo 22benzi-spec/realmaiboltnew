@@ -13,13 +13,23 @@
       </button>
     </div>
 
+    <div v-if="!collapsed && currentUser" class="user-info">
+      <div class="user-avatar" :style="{ background: avatarColor }">
+        {{ currentUser.name.slice(0, 1) }}
+      </div>
+      <div class="user-meta">
+        <div class="user-name">{{ currentUser.name }}</div>
+        <div class="user-role-badge" :class="`role-${currentUser.role}`">{{ currentUser.role }}</div>
+      </div>
+    </div>
+
     <div class="sidebar-nav">
       <div class="nav-item home-item" :class="{ active: currentRoute === 'home' }" @click="navigate('home')">
         <HomeOutlined class="nav-icon" />
         <span v-if="!collapsed" class="nav-label">工作台首页</span>
       </div>
 
-      <div v-for="group in navGroups" :key="group.id" class="nav-group">
+      <div v-for="group in visibleNavGroups" :key="group.id" class="nav-group">
         <div class="nav-group-header" @click="toggleGroup(group.id)">
           <div class="nav-group-left">
             <component :is="group.icon" class="nav-icon" />
@@ -69,75 +79,32 @@
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  HomeOutlined, InboxOutlined, UnorderedListOutlined, CheckSquareOutlined,
-  TeamOutlined, UserAddOutlined, DesktopOutlined, ThunderboltOutlined,
-  UserOutlined, StopOutlined, ApartmentOutlined, MessageOutlined,
-  CreditCardOutlined, DollarOutlined, SendOutlined, MenuFoldOutlined,
-  MenuUnfoldOutlined, DownOutlined, BankOutlined, AppstoreOutlined,
-  ShopOutlined
+  HomeOutlined, UserOutlined, MenuFoldOutlined,
+  MenuUnfoldOutlined, DownOutlined,
 } from '@ant-design/icons-vue'
+import { useCurrentUser } from '../composables/useCurrentUser'
+import { getNavGroupsForRole } from '../composables/useNavGroups'
 
 const router = useRouter()
 const route = useRoute()
+const { currentUser } = useCurrentUser()
 
 const collapsed = ref(false)
 
 const currentRoute = computed(() => route.name as string)
 
-const navGroups = [
-  {
-    id: 'order-center',
-    label: '订单中心',
-    icon: ShopOutlined,
-    items: [
-      { id: 'fba-orders', label: '创建订单', icon: InboxOutlined },
-      { id: 'my-orders', label: '订单列表', icon: UnorderedListOutlined },
-    ],
-  },
-  {
-    id: 'task-center',
-    label: '任务中心',
-    icon: CheckSquareOutlined,
-    items: [
-      { id: 'task-management', label: '任务管理', icon: AppstoreOutlined },
-      { id: 'assignment', label: '分配管理', icon: UserAddOutlined },
-      { id: 'staff-workbench', label: '业务员工作台', icon: DesktopOutlined },
-      { id: 'grab-hall', label: '抢单大厅', icon: ThunderboltOutlined },
-    ],
-  },
-  {
-    id: 'people',
-    label: '人员管理',
-    icon: TeamOutlined,
-    items: [
-      { id: 'staff', label: '业务员管理', icon: UserOutlined },
-      { id: 'buyers', label: '买手库', icon: TeamOutlined },
-      { id: 'blacklist', label: '买手黑名单', icon: StopOutlined },
-    ],
-  },
-  {
-    id: 'finance',
-    label: '财务管理',
-    icon: DollarOutlined,
-    items: [
-      { id: 'gift-cards', label: '礼品卡管理', icon: CreditCardOutlined },
-      { id: 'paypal', label: 'PayPal / 美金库', icon: BankOutlined },
-      { id: 'refund-queue', label: '退款审批', icon: SendOutlined },
-    ],
-  },
-  {
-    id: 'crm',
-    label: '客户管理',
-    icon: ApartmentOutlined,
-    items: [
-      { id: 'clients', label: '客户库', icon: ApartmentOutlined },
-      { id: 'business', label: '商务管理', icon: MessageOutlined },
-    ],
-  },
-]
+const visibleNavGroups = computed(() =>
+  getNavGroupsForRole(currentUser.value?.role ?? null)
+)
+
+const avatarColor = computed(() => {
+  const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed']
+  const name = currentUser.value?.name ?? ''
+  return colors[name.charCodeAt(0) % colors.length] ?? '#2563eb'
+})
 
 const findGroupForRoute = (routeName: string) =>
-  navGroups.find(g => g.items.some(i => i.id === routeName))?.id
+  visibleNavGroups.value.find(g => g.items.some(i => i.id === routeName))?.id
 
 const expandedGroups = ref<Set<string>>(new Set([
   findGroupForRoute(currentRoute.value) ?? 'order-center'
@@ -220,6 +187,53 @@ function navigate(page: string) {
 .collapse-btn:hover {
   color: #fff;
 }
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+.user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-role-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+  display: inline-block;
+  width: fit-content;
+}
+.role-业务员 { background: rgba(5,150,105,0.25); color: #34d399; }
+.role-商务 { background: rgba(37,99,235,0.25); color: #60a5fa; }
+.role-财务 { background: rgba(217,119,6,0.25); color: #fbbf24; }
+.role-管理员 { background: rgba(220,38,38,0.25); color: #f87171; }
 
 .sidebar-nav {
   flex: 1;

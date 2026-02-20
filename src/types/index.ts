@@ -150,12 +150,14 @@ export const BUYER_TAG_PRESETS = [
   '指定变体', '复购买手',
 ] as const
 
+export type StaffRole = '业务员' | '商务' | '财务' | '管理员'
+
 export interface Staff {
   id?: string
   name: string
   phone?: string
   email?: string
-  role?: string
+  role?: StaffRole
   status?: '在职' | '离职' | '休假'
   department?: string
   wechat_id?: string
