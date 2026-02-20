@@ -449,7 +449,59 @@
           </div>
         </template>
 
-        <div v-else class="empty-state">
+        <!-- 待接收的互转请求 -->
+        <div v-if="selectedStaffId && incomingRequests.length > 0" class="incoming-transfer-panel">
+          <div class="incoming-header">
+            <SwapOutlined style="color:#f59e0b" />
+            <span class="incoming-title">待接收的互转请求</span>
+            <a-badge :count="incomingRequests.length" :overflow-count="99" style="margin-left:4px" />
+          </div>
+          <div class="incoming-list">
+            <div v-for="req in incomingRequests" :key="req.id" class="incoming-item">
+              <div class="incoming-item-left">
+                <div class="incoming-from">
+                  <ArrowRightOutlined style="color:#f59e0b;font-size:11px" />
+                  <span class="incoming-from-name">{{ req.from_staff_name }}</span>
+                  <span class="incoming-from-label">发起转单</span>
+                </div>
+                <div class="incoming-sub-info">
+                  <span class="incoming-sub-no">{{ req.sub_order_number }}</span>
+                  <span v-if="req._sub?.asin" class="incoming-asin">{{ req._sub?.asin }}</span>
+                  <span v-if="req._sub?.product_name" class="incoming-pname">{{ req._sub?.product_name }}</span>
+                  <span v-if="req._sub?.scheduled_date" class="incoming-date">截止 {{ req._sub?.scheduled_date }}</span>
+                </div>
+                <div v-if="req.reason" class="incoming-reason">原因：{{ req.reason }}</div>
+              </div>
+              <div class="incoming-item-right">
+                <span class="incoming-time">{{ fmtTime(req.created_at) }}</span>
+                <div class="incoming-actions">
+                  <a-button type="primary" size="small" :loading="req._accepting" @click="acceptTransfer(req)" style="background:#059669;border-color:#059669">接受</a-button>
+                  <a-button size="small" danger ghost :loading="req._rejecting" @click="openRejectModal(req)">拒绝</a-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 我发出的待确认互转 -->
+        <div v-if="selectedStaffId && outgoingRequests.length > 0" class="outgoing-transfer-panel">
+          <div class="outgoing-header">
+            <ClockCircleOutlined style="color:#6b7280" />
+            <span class="outgoing-title">我发出的互转请求（等待对方确认）</span>
+          </div>
+          <div class="outgoing-list">
+            <div v-for="req in outgoingRequests" :key="req.id" class="outgoing-item">
+              <span class="outgoing-sub-no">{{ req.sub_order_number }}</span>
+              <ArrowRightOutlined style="color:#9ca3af;font-size:10px;margin:0 4px" />
+              <span class="outgoing-to">{{ req.to_staff_name }}</span>
+              <span v-if="req.reason" class="outgoing-reason">· {{ req.reason }}</span>
+              <span class="outgoing-time">{{ fmtTime(req.created_at) }}</span>
+              <a-button type="link" size="small" danger @click="cancelTransferRequest(req)">撤销</a-button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="!selectedStaffId" class="empty-state">
           <TeamOutlined style="font-size:48px; color:#d1d5db" />
           <p>请从左侧选择业务员</p>
         </div>
@@ -471,19 +523,49 @@
       </a-form>
     </a-modal>
 
-    <!-- 转单弹窗 -->
-    <a-modal v-model:open="transferModalOpen" title="转给其他业务员" @ok="submitTransfer" :confirm-loading="transferSaving">
+    <!-- 互转请求弹窗 -->
+    <a-modal
+      v-model:open="transferModalOpen"
+      title="发起互转请求"
+      @ok="submitTransfer"
+      :confirm-loading="transferSaving"
+      ok-text="发送请求"
+    >
+      <div v-if="transferTarget" class="transfer-req-modal-body">
+        <div class="transfer-req-info">
+          <span>子订单号：<strong>{{ transferTarget.sub_order_number }}</strong></span>
+          <span v-if="transferTarget.asin">ASIN：<strong>{{ transferTarget.asin }}</strong></span>
+          <span v-if="transferTarget.scheduled_date">截止：<strong>{{ transferTarget.scheduled_date }}</strong></span>
+        </div>
+        <a-alert message="发送后对方业务员需要主动接受，接受后订单才会转移。" type="info" show-icon style="margin-bottom:16px" />
+        <a-form layout="vertical">
+          <a-form-item label="目标业务员">
+            <a-select v-model:value="transferForm.staffId" style="width:100%" show-search option-filter-prop="label" placeholder="选择业务员">
+              <a-select-option
+                v-for="s in staffList.filter(s => s.id !== selectedStaffId)"
+                :key="s.id" :value="s.id" :label="s.name"
+              >{{ s.name }}</a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item label="转单原因（可选）">
+            <a-input v-model:value="transferForm.reason" placeholder="如：客户指定、负载均衡、专业匹配等" />
+          </a-form-item>
+        </a-form>
+      </div>
+    </a-modal>
+
+    <!-- 拒绝互转弹窗 -->
+    <a-modal
+      v-model:open="rejectModalOpen"
+      title="拒绝转单请求"
+      @ok="submitReject"
+      :confirm-loading="rejectSaving"
+      ok-text="确认拒绝"
+      ok-type="danger"
+    >
       <a-form layout="vertical">
-        <a-form-item label="目标业务员">
-          <a-select v-model:value="transferForm.staffId" style="width:100%" show-search option-filter-prop="label" placeholder="选择业务员">
-            <a-select-option
-              v-for="s in staffList.filter(s => s.id !== selectedStaffId)"
-              :key="s.id" :value="s.id" :label="s.name"
-            >{{ s.name }}</a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="备注">
-          <a-input v-model:value="transferForm.reason" placeholder="转单原因（可选）" />
+        <a-form-item label="拒绝原因（可选）">
+          <a-textarea v-model:value="rejectForm.reason" :rows="3" placeholder="请填写拒绝原因" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -530,7 +612,8 @@ import { message } from 'ant-design-vue'
 import {
   TeamOutlined, UserOutlined, CheckCircleFilled,
   CloseCircleOutlined, SwapOutlined, ExportOutlined,
-  LoadingOutlined, ExclamationCircleOutlined, RollbackOutlined
+  LoadingOutlined, ExclamationCircleOutlined, RollbackOutlined,
+  ArrowRightOutlined, ClockCircleOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -564,6 +647,14 @@ const returnModalOpen = ref(false)
 const returnSaving = ref(false)
 const returnForm = ref<any>({ reason: '', clearBuyer: true })
 const returnTarget = ref<any>(null)
+
+const incomingRequests = ref<any[]>([])
+const outgoingRequests = ref<any[]>([])
+
+const rejectModalOpen = ref(false)
+const rejectSaving = ref(false)
+const rejectForm = ref<any>({ reason: '' })
+const rejectTarget = ref<any>(null)
 
 const workflowSteps = [0, 1, 2, 3, 4, 5]
 
@@ -729,7 +820,38 @@ async function selectStaff(id: string) {
   filterToday.value = false
   filterSoon.value = false
   taskSearch.value = ''
-  await loadTasks()
+  await Promise.all([loadTasks(), loadTransferRequests()])
+}
+
+async function loadTransferRequests() {
+  if (!selectedStaffId.value) return
+  const { data: incoming } = await supabase
+    .from('transfer_requests')
+    .select('*')
+    .eq('to_staff_id', selectedStaffId.value)
+    .eq('status', '待接受')
+    .order('created_at', { ascending: false })
+
+  const { data: outgoing } = await supabase
+    .from('transfer_requests')
+    .select('*')
+    .eq('from_staff_id', selectedStaffId.value)
+    .eq('status', '待接受')
+    .order('created_at', { ascending: false })
+
+  const allReqs = [...(incoming || []), ...(outgoing || [])]
+  const subIds = [...new Set(allReqs.map(r => r.sub_order_id))]
+  let subMap: Record<string, any> = {}
+  if (subIds.length > 0) {
+    const { data: subs } = await supabase
+      .from('sub_orders')
+      .select('id, asin, product_name, scheduled_date, status')
+      .in('id', subIds)
+    ;(subs || []).forEach(s => { subMap[s.id] = s })
+  }
+
+  incomingRequests.value = (incoming || []).map(r => ({ ...r, _sub: subMap[r.sub_order_id] || null }))
+  outgoingRequests.value = (outgoing || []).map(r => ({ ...r, _sub: subMap[r.sub_order_id] || null }))
 }
 
 function initTaskFields(task: any) {
@@ -1120,32 +1242,104 @@ async function submitTransfer() {
   transferSaving.value = true
   try {
     const toStaff = staffList.value.find(s => s.id === transferForm.value.staffId)
-    const { error } = await supabase.from('sub_orders').update({
-      staff_id: transferForm.value.staffId,
-      staff_name: toStaff?.name || '',
-    }).eq('id', transferTarget.value.id)
-    if (error) throw error
-
-    await supabase.from('grab_hall_logs').insert({
+    const fromStaff = staffList.value.find(s => s.id === selectedStaffId.value)
+    const { error } = await supabase.from('transfer_requests').insert({
       sub_order_id: transferTarget.value.id,
       sub_order_number: transferTarget.value.sub_order_number,
-      action: '转单',
       from_staff_id: selectedStaffId.value,
-      from_staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
+      from_staff_name: fromStaff?.name || '',
       to_staff_id: transferForm.value.staffId,
       to_staff_name: toStaff?.name || '',
-      reason: transferForm.value.reason,
+      reason: transferForm.value.reason || '',
+      status: '待接受',
     })
+    if (error) throw error
 
-    allTasks.value = allTasks.value.filter(t => t.id !== transferTarget.value.id)
-    filterTaskList()
     transferModalOpen.value = false
-    message.success('已转给 ' + toStaff?.name)
-    await loadStaff()
+    message.success(`互转请求已发送给 ${toStaff?.name}，等待对方确认`)
+    await loadTransferRequests()
   } catch (e: any) {
     message.error(e.message)
   } finally {
     transferSaving.value = false
+  }
+}
+
+async function acceptTransfer(req: any) {
+  req._accepting = true
+  try {
+    const { error: updateSubErr } = await supabase.from('sub_orders').update({
+      staff_id: req.to_staff_id,
+      staff_name: req.to_staff_name,
+    }).eq('id', req.sub_order_id)
+    if (updateSubErr) throw updateSubErr
+
+    const { error: updateReqErr } = await supabase.from('transfer_requests').update({
+      status: '已接受',
+      responded_at: new Date().toISOString(),
+    }).eq('id', req.id)
+    if (updateReqErr) throw updateReqErr
+
+    await supabase.from('grab_hall_logs').insert({
+      sub_order_id: req.sub_order_id,
+      sub_order_number: req.sub_order_number,
+      action: '互转接受',
+      from_staff_id: req.from_staff_id,
+      from_staff_name: req.from_staff_name,
+      to_staff_id: req.to_staff_id,
+      to_staff_name: req.to_staff_name,
+      reason: req.reason,
+    })
+
+    incomingRequests.value = incomingRequests.value.filter(r => r.id !== req.id)
+    message.success('已接受转单，订单已加入你的工作台')
+    await loadTasks()
+    await loadStaff()
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    req._accepting = false
+  }
+}
+
+function openRejectModal(req: any) {
+  rejectTarget.value = req
+  rejectForm.value = { reason: '' }
+  rejectModalOpen.value = true
+}
+
+async function submitReject() {
+  if (!rejectTarget.value) return
+  rejectSaving.value = true
+  try {
+    const { error } = await supabase.from('transfer_requests').update({
+      status: '已拒绝',
+      reject_reason: rejectForm.value.reason || '',
+      responded_at: new Date().toISOString(),
+    }).eq('id', rejectTarget.value.id)
+    if (error) throw error
+
+    incomingRequests.value = incomingRequests.value.filter(r => r.id !== rejectTarget.value.id)
+    rejectModalOpen.value = false
+    message.success('已拒绝该转单请求')
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    rejectSaving.value = false
+  }
+}
+
+async function cancelTransferRequest(req: any) {
+  try {
+    const { error } = await supabase.from('transfer_requests').update({
+      status: '已取消',
+      responded_at: new Date().toISOString(),
+    }).eq('id', req.id)
+    if (error) throw error
+    outgoingRequests.value = outgoingRequests.value.filter(r => r.id !== req.id)
+    message.success('已撤销转单请求')
+  } catch (e: any) {
+    message.error(e.message)
   }
 }
 
@@ -1464,4 +1658,96 @@ onMounted(() => { loadStaff(); loadBuyers() })
   color: #6b7280;
 }
 .return-info-item strong { color: #374151; }
+
+/* 互转请求弹窗 */
+.transfer-req-modal-body { padding: 4px 0; }
+.transfer-req-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  background: #f9fafb;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.transfer-req-info strong { color: #374151; }
+
+/* 待接收互转面板 */
+.incoming-transfer-panel {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.incoming-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.incoming-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #92400e;
+}
+.incoming-list { display: flex; flex-direction: column; gap: 8px; }
+.incoming-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  gap: 12px;
+}
+.incoming-item-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.incoming-from { display: flex; align-items: center; gap: 6px; }
+.incoming-from-name { font-weight: 700; color: #374151; font-size: 13px; }
+.incoming-from-label { font-size: 11px; color: #9ca3af; }
+.incoming-sub-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.incoming-sub-no { font-family: 'Courier New', monospace; font-weight: 700; color: #1a1a2e; background: #f3f4f6; padding: 1px 6px; border-radius: 4px; }
+.incoming-asin { font-family: 'Courier New', monospace; font-size: 11px; color: #6b7280; }
+.incoming-pname { color: #374151; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.incoming-date { color: #dc2626; font-size: 11px; font-weight: 600; }
+.incoming-reason { font-size: 11px; color: #9ca3af; }
+.incoming-item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+.incoming-time { font-size: 11px; color: #9ca3af; white-space: nowrap; }
+.incoming-actions { display: flex; gap: 6px; }
+
+/* 我发出的互转面板 */
+.outgoing-transfer-panel {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 8px;
+}
+.outgoing-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.outgoing-title { font-size: 12px; font-weight: 600; color: #6b7280; }
+.outgoing-list { display: flex; flex-direction: column; gap: 4px; }
+.outgoing-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #374151;
+  padding: 6px 8px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #f0f0f0;
+}
+.outgoing-sub-no { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 700; color: #1a1a2e; }
+.outgoing-to { font-weight: 600; color: #374151; }
+.outgoing-reason { color: #9ca3af; font-size: 11px; flex: 1; }
+.outgoing-time { font-size: 11px; color: #9ca3af; white-space: nowrap; margin-left: auto; }
 </style>
