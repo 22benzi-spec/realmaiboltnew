@@ -97,50 +97,12 @@
 
           <div class="card-panel">
             <h3 class="section-title">佣金设置</h3>
-            <a-row :gutter="16">
-              <a-col :span="8">
-                <a-form-item label="免评佣金(人民币)">
-                  <a-input-number v-model:value="form.price_no_review" :min="0" style="width:100%" @change="recalc">
-                    <template #prefix>¥</template>
-                  </a-input-number>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="文字评佣金(人民币)">
-                  <a-input-number v-model:value="form.price_text" :min="0" style="width:100%" @change="recalc">
-                    <template #prefix>¥</template>
-                  </a-input-number>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="图片评佣金(人民币)">
-                  <a-input-number v-model:value="form.price_image" :min="0" style="width:100%" @change="recalc">
-                    <template #prefix>¥</template>
-                  </a-input-number>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="视频评佣金(人民币)">
-                  <a-input-number v-model:value="form.price_video" :min="0" style="width:100%" @change="recalc">
-                    <template #prefix>¥</template>
-                  </a-input-number>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="Feedback佣金(人民币)">
-                  <a-input-number v-model:value="form.price_feedback" :min="0" style="width:100%" @change="recalc">
-                    <template #prefix>¥</template>
-                  </a-input-number>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="固定服务费(人民币)">
-                  <a-input-number v-model:value="form.commission_fee" :min="0" style="width:100%" @change="recalc">
-                    <template #prefix>¥</template>
-                  </a-input-number>
-                </a-form-item>
-              </a-col>
-            </a-row>
+            <div class="price-table">
+              <div class="price-table-row" v-for="item in priceTableItems" :key="item.label">
+                <span class="price-table-label">{{ item.label }}</span>
+                <span class="price-table-value">¥{{ item.value }}</span>
+              </div>
+            </div>
 
             <div class="bill-summary">
               <h4 class="bill-title">账单计算</h4>
@@ -155,10 +117,6 @@
                 <div class="bill-row">
                   <span>佣金小计 ({{ form.order_type }})</span>
                   <span>¥{{ commissionSubtotal.toFixed(2) }}</span>
-                </div>
-                <div class="bill-row">
-                  <span>固定服务费</span>
-                  <span>¥{{ form.commission_fee.toFixed(2) }}</span>
                 </div>
                 <div class="bill-divider"></div>
                 <div class="bill-row total-row">
@@ -289,12 +247,12 @@ const defaultForm = () => ({
   review_mode: '免评模式' as const,
   order_type: '免评' as const,
   order_quantity: 1,
-  price_no_review: 0,
-  price_text: 0,
-  price_image: 0,
-  price_video: 0,
-  price_feedback: 0,
-  commission_fee: 88,
+  price_no_review: 25,
+  price_text: 88,
+  price_image: 100,
+  price_video: 150,
+  price_feedback: 20,
+  commission_fee: 0,
   unit_price: 0,
   total_price: 0,
   total_orders: 0,
@@ -332,6 +290,14 @@ const priceMap = computed<Record<string, number>>(() => ({
 
 const currentTypePrice = computed(() => priceMap.value[form.order_type] || 0)
 
+const priceTableItems = computed(() => [
+  { label: '免评佣金', value: form.price_no_review },
+  { label: '文字评佣金', value: form.price_text },
+  { label: '图片评佣金', value: form.price_image },
+  { label: '视频评佣金', value: form.price_video },
+  { label: 'Feedback佣金', value: form.price_feedback },
+])
+
 const productSubtotal = computed(() =>
   (form.product_price || 0) * form.exchange_rate * form.order_quantity
 )
@@ -343,7 +309,7 @@ const commissionSubtotal = computed(() =>
 function recalc() {
   form.product_cost_cny = (form.product_price || 0) * form.exchange_rate
   form.unit_price = form.product_cost_cny + currentTypePrice.value
-  form.total_amount = productSubtotal.value + commissionSubtotal.value + form.commission_fee
+  form.total_amount = productSubtotal.value + commissionSubtotal.value
 }
 
 function addKeyword() {
@@ -493,6 +459,28 @@ onMounted(() => {
   font-size: 18px;
   color: #2563eb;
   font-weight: 700;
+}
+.price-table {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.price-table-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.price-table-label {
+  color: #64748b;
+}
+.price-table-value {
+  font-weight: 600;
+  color: #1e40af;
 }
 .keyword-row {
   display: flex;
