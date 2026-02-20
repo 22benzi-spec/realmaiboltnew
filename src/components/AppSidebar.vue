@@ -13,7 +13,7 @@
       </button>
     </div>
 
-    <div v-if="!collapsed && currentUser" class="user-info">
+    <div v-if="!collapsed" class="user-info">
       <div class="user-avatar" :style="{ background: avatarColor }">
         {{ currentUser.name.slice(0, 1) }}
       </div>
@@ -94,12 +94,12 @@ const collapsed = ref(false)
 const currentRoute = computed(() => route.name as string)
 
 const visibleNavGroups = computed(() =>
-  getNavGroupsForRole(currentUser.value?.role ?? null)
+  getNavGroupsForRole(currentUser.value.role)
 )
 
 const avatarColor = computed(() => {
   const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed']
-  const name = currentUser.value?.name ?? ''
+  const name = currentUser.value.name
   return colors[name.charCodeAt(0) % colors.length] ?? '#2563eb'
 })
 
