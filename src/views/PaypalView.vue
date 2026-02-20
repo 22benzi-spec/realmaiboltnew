@@ -59,63 +59,6 @@
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="refunds" tab="退款记录">
-        <div class="card-panel">
-          <div class="toolbar">
-            <a-select v-model:value="refundFilterMethod" style="width:120px" allow-clear placeholder="全部渠道" @change="loadRefunds">
-              <a-select-option value="PayPal">PayPal</a-select-option>
-              <a-select-option value="礼品卡">礼品卡</a-select-option>
-            </a-select>
-            <a-button @click="loadRefunds"><ReloadOutlined /></a-button>
-            <span class="total-hint" style="margin-left:auto">共 {{ refunds.length }} 条已处理退款</span>
-          </div>
-          <a-table
-            :columns="refundColumns"
-            :data-source="refunds"
-            :loading="refundsLoading"
-            row-key="id"
-            size="middle"
-            :scroll="{ x: 1000 }"
-            :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: (total: number) => `共 ${total} 条` }"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'order_info'">
-                <div class="cell-info">
-                  <div class="cell-subno">{{ record.sub_order_number || '—' }}</div>
-                  <div class="cell-product">{{ record.product_name || '—' }}</div>
-                </div>
-              </template>
-              <template v-if="column.key === 'buyer'">
-                <div>{{ record.buyer_name || '—' }}</div>
-                <div v-if="record.buyer_paypal_email" class="cell-email">{{ record.buyer_paypal_email }}</div>
-              </template>
-              <template v-if="column.key === 'refund_method'">
-                <a-tag :color="record.refund_method === '礼品卡' ? 'gold' : 'blue'">{{ record.refund_method }}</a-tag>
-              </template>
-              <template v-if="column.key === 'amount_usd'">
-                <span class="amount-usd-cell">${{ Number(record.refund_amount_usd || 0).toFixed(2) }}</span>
-              </template>
-              <template v-if="column.key === 'result'">
-                <template v-if="record.refund_method === 'PayPal'">
-                  <div class="result-paypal-cell">
-                    <div>{{ record.assigned_paypal_email || '—' }}</div>
-                    <a v-if="record.paypal_receipt_screenshot" :href="record.paypal_receipt_screenshot" target="_blank" class="receipt-link">查看截图</a>
-                  </div>
-                </template>
-                <template v-else>
-                  <div class="result-gc-cell">
-                    <span class="gc-code">{{ record.assigned_gift_card_code || '—' }}</span>
-                    <span v-if="record.gift_card_face_value_usd" class="gc-face">${{ Number(record.gift_card_face_value_usd).toFixed(2) }}</span>
-                  </div>
-                </template>
-              </template>
-              <template v-if="column.key === 'handled_at'">
-                <span style="font-size:12px">{{ record.handled_at ? dayjs(record.handled_at).format('YYYY-MM-DD HH:mm') : '—' }}</span>
-              </template>
-            </template>
-          </a-table>
-        </div>
-      </a-tab-pane>
     </a-tabs>
 
     <a-modal v-model:open="usdModalOpen" title="新增美金批次" @ok="handleAddUsd" :confirm-loading="submittingUsd">
@@ -155,19 +98,16 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
 const activeTab = ref('usd')
 const usdLoading = ref(false)
 const accountsLoading = ref(false)
-const refundsLoading = ref(false)
 const usdBatches = ref<any[]>([])
 const accounts = ref<any[]>([])
-const refunds = ref<any[]>([])
 const accountSearch = ref('')
-const refundFilterMethod = ref('')
 const usdModalOpen = ref(false)
 const accountModalOpen = ref(false)
 const submittingUsd = ref(false)
@@ -205,15 +145,6 @@ const accountColumns = [
   { title: '操作', key: 'action', width: 100 },
 ]
 
-const refundColumns = [
-  { title: '子订单 / 产品', key: 'order_info', width: 180 },
-  { title: '买手', key: 'buyer', width: 160 },
-  { title: '渠道', key: 'refund_method', width: 90 },
-  { title: '退款金额', key: 'amount_usd', width: 100 },
-  { title: '打款账号 / 礼品卡', key: 'result' },
-  { title: '处理时间', key: 'handled_at', width: 140 },
-]
-
 async function loadUsd() {
   usdLoading.value = true
   const { data } = await supabase.from('usd_fund_batches').select('*').order('created_at', { ascending: false })
@@ -228,20 +159,6 @@ async function loadAccounts() {
   const { data } = await query
   accounts.value = data || []
   accountsLoading.value = false
-}
-
-async function loadRefunds() {
-  refundsLoading.value = true
-  let query = supabase
-    .from('refund_requests')
-    .select('id, sub_order_number, product_name, buyer_name, buyer_paypal_email, refund_method, refund_amount_usd, assigned_paypal_email, paypal_receipt_screenshot, assigned_gift_card_code, gift_card_face_value_usd, handled_at, finance_notes')
-    .eq('status', '已处理')
-    .order('handled_at', { ascending: false })
-    .limit(200)
-  if (refundFilterMethod.value) query = query.eq('refund_method', refundFilterMethod.value)
-  const { data } = await query
-  refunds.value = data || []
-  refundsLoading.value = false
 }
 
 async function handleAddUsd() {
@@ -312,7 +229,7 @@ async function deleteUsdBatch(id: string) {
   loadUsd()
 }
 
-onMounted(() => { loadUsd(); loadAccounts(); loadRefunds() })
+onMounted(() => { loadUsd(); loadAccounts() })
 </script>
 
 <style scoped>
@@ -329,14 +246,4 @@ onMounted(() => { loadUsd(); loadAccounts(); loadRefunds() })
 .stat-l { font-size: 12px; color: #6b7280; margin-top: 4px; }
 .total-hint { font-size: 12px; color: #9ca3af; }
 
-.cell-info { display: flex; flex-direction: column; gap: 2px; }
-.cell-subno { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 700; color: #1a1a2e; }
-.cell-product { font-size: 12px; color: #374151; }
-.cell-email { font-size: 11px; color: #6b7280; }
-.amount-usd-cell { font-weight: 700; color: #dc2626; font-size: 14px; }
-.result-paypal-cell { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
-.receipt-link { font-size: 11px; color: #2563eb; }
-.result-gc-cell { display: flex; align-items: center; gap: 8px; }
-.gc-code { font-family: 'Courier New', monospace; font-size: 12px; color: #059669; font-weight: 700; }
-.gc-face { font-size: 12px; color: #374151; }
 </style>
