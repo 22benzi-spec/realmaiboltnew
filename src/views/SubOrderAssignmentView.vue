@@ -180,6 +180,7 @@
       @ok="handleBatchAssign"
       :confirm-loading="assigning"
       ok-text="确认分配"
+      width="560px"
     >
       <div class="assign-modal-body">
         <div class="assign-count-tip">
@@ -190,6 +191,48 @@
             <a-select v-model:value="selectedStaffId" placeholder="请选择业务员" style="width:100%" show-search option-filter-prop="label">
               <a-select-option v-for="s in staffList" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
             </a-select>
+          </a-form-item>
+          <a-form-item label="分配买手（可选）">
+            <div class="buyer-search-wrap">
+              <a-input
+                v-model:value="buyerSearchText"
+                placeholder="搜索买手ID / 姓名 / 邮箱"
+                allow-clear
+                @input="onBuyerSearch"
+              >
+                <template #prefix><SearchOutlined style="color:#9ca3af" /></template>
+              </a-input>
+              <div v-if="buyerSearchText" class="buyer-result-list">
+                <div v-if="buyerSearchLoading" class="buyer-search-loading"><a-spin size="small" /> 搜索中...</div>
+                <template v-else-if="buyerSearchResults.length">
+                  <div
+                    v-for="b in buyerSearchResults"
+                    :key="b.id"
+                    class="buyer-result-item"
+                    :class="{ selected: selectedBuyerId === b.id }"
+                    @click="selectBuyer(b)"
+                  >
+                    <div class="buyer-result-main">
+                      <span class="buyer-result-num">{{ b.buyer_number }}</span>
+                      <span class="buyer-result-name">{{ b.name }}</span>
+                      <a-tag :color="getLevelColor(b.level)" size="small">{{ b.level }}</a-tag>
+                      <a-tag :color="getStatusColor(b.status)" size="small">{{ b.status }}</a-tag>
+                    </div>
+                    <div class="buyer-result-sub">
+                      <span>{{ b.country }}</span>
+                      <span v-if="b.email" class="buyer-result-email">{{ b.email }}</span>
+                      <span v-if="b.staff_name" class="buyer-result-staff">归属：{{ b.staff_name }}</span>
+                    </div>
+                  </div>
+                </template>
+                <div v-else class="buyer-no-result">未找到匹配买手</div>
+              </div>
+              <div v-if="selectedBuyerId" class="buyer-selected-chip">
+                <CheckCircleOutlined style="color:#059669" />
+                已选买手：<strong>{{ selectedBuyerName }}</strong>（{{ selectedBuyerNumber }}）
+                <a-button type="link" size="small" danger @click="clearBuyer">取消</a-button>
+              </div>
+            </div>
           </a-form-item>
         </a-form>
       </div>
@@ -202,18 +245,62 @@
       @ok="handleSingleAssign"
       :confirm-loading="assigning"
       ok-text="确认分配"
+      width="560px"
     >
       <div class="assign-modal-body">
         <div v-if="currentRecord" class="assign-sub-info">
           <span class="assign-info-item">关键词：<strong>{{ currentRecord.keyword || '—' }}</strong></span>
           <span class="assign-info-item">排期：<strong>{{ currentRecord.scheduled_date || '—' }}</strong></span>
           <span class="assign-info-item">当前业务员：<strong>{{ currentRecord.staff_name || '未分配' }}</strong></span>
+          <span v-if="currentRecord.buyer_name" class="assign-info-item">当前买手：<strong>{{ currentRecord.buyer_name }}</strong></span>
         </div>
         <a-form layout="vertical">
           <a-form-item label="选择业务员">
             <a-select v-model:value="selectedStaffId" placeholder="请选择业务员" style="width:100%" show-search option-filter-prop="label" allow-clear>
               <a-select-option v-for="s in staffList" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
             </a-select>
+          </a-form-item>
+          <a-form-item label="分配买手（可选）">
+            <div class="buyer-search-wrap">
+              <a-input
+                v-model:value="buyerSearchText"
+                placeholder="搜索买手ID / 姓名 / 邮箱"
+                allow-clear
+                @input="onBuyerSearch"
+              >
+                <template #prefix><SearchOutlined style="color:#9ca3af" /></template>
+              </a-input>
+              <div v-if="buyerSearchText" class="buyer-result-list">
+                <div v-if="buyerSearchLoading" class="buyer-search-loading"><a-spin size="small" /> 搜索中...</div>
+                <template v-else-if="buyerSearchResults.length">
+                  <div
+                    v-for="b in buyerSearchResults"
+                    :key="b.id"
+                    class="buyer-result-item"
+                    :class="{ selected: selectedBuyerId === b.id }"
+                    @click="selectBuyer(b)"
+                  >
+                    <div class="buyer-result-main">
+                      <span class="buyer-result-num">{{ b.buyer_number }}</span>
+                      <span class="buyer-result-name">{{ b.name }}</span>
+                      <a-tag :color="getLevelColor(b.level)" size="small">{{ b.level }}</a-tag>
+                      <a-tag :color="getStatusColor(b.status)" size="small">{{ b.status }}</a-tag>
+                    </div>
+                    <div class="buyer-result-sub">
+                      <span>{{ b.country }}</span>
+                      <span v-if="b.email" class="buyer-result-email">{{ b.email }}</span>
+                      <span v-if="b.staff_name" class="buyer-result-staff">归属：{{ b.staff_name }}</span>
+                    </div>
+                  </div>
+                </template>
+                <div v-else class="buyer-no-result">未找到匹配买手</div>
+              </div>
+              <div v-if="selectedBuyerId" class="buyer-selected-chip">
+                <CheckCircleOutlined style="color:#059669" />
+                已选买手：<strong>{{ selectedBuyerName }}</strong>（{{ selectedBuyerNumber }}）
+                <a-button type="link" size="small" danger @click="clearBuyer">取消</a-button>
+              </div>
+            </div>
           </a-form-item>
         </a-form>
       </div>
@@ -226,6 +313,7 @@
       @ok="handleGroupAssign"
       :confirm-loading="assigning"
       ok-text="确认分配"
+      width="560px"
     >
       <div class="assign-modal-body">
         <div v-if="currentGroup" class="assign-count-tip">
@@ -237,6 +325,48 @@
               <a-select-option v-for="s in staffList" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
             </a-select>
           </a-form-item>
+          <a-form-item label="分配买手（可选）">
+            <div class="buyer-search-wrap">
+              <a-input
+                v-model:value="buyerSearchText"
+                placeholder="搜索买手ID / 姓名 / 邮箱"
+                allow-clear
+                @input="onBuyerSearch"
+              >
+                <template #prefix><SearchOutlined style="color:#9ca3af" /></template>
+              </a-input>
+              <div v-if="buyerSearchText" class="buyer-result-list">
+                <div v-if="buyerSearchLoading" class="buyer-search-loading"><a-spin size="small" /> 搜索中...</div>
+                <template v-else-if="buyerSearchResults.length">
+                  <div
+                    v-for="b in buyerSearchResults"
+                    :key="b.id"
+                    class="buyer-result-item"
+                    :class="{ selected: selectedBuyerId === b.id }"
+                    @click="selectBuyer(b)"
+                  >
+                    <div class="buyer-result-main">
+                      <span class="buyer-result-num">{{ b.buyer_number }}</span>
+                      <span class="buyer-result-name">{{ b.name }}</span>
+                      <a-tag :color="getLevelColor(b.level)" size="small">{{ b.level }}</a-tag>
+                      <a-tag :color="getStatusColor(b.status)" size="small">{{ b.status }}</a-tag>
+                    </div>
+                    <div class="buyer-result-sub">
+                      <span>{{ b.country }}</span>
+                      <span v-if="b.email" class="buyer-result-email">{{ b.email }}</span>
+                      <span v-if="b.staff_name" class="buyer-result-staff">归属：{{ b.staff_name }}</span>
+                    </div>
+                  </div>
+                </template>
+                <div v-else class="buyer-no-result">未找到匹配买手</div>
+              </div>
+              <div v-if="selectedBuyerId" class="buyer-selected-chip">
+                <CheckCircleOutlined style="color:#059669" />
+                已选买手：<strong>{{ selectedBuyerName }}</strong>（{{ selectedBuyerNumber }}）
+                <a-button type="link" size="small" danger @click="clearBuyer">取消</a-button>
+              </div>
+            </div>
+          </a-form-item>
         </a-form>
       </div>
     </a-modal>
@@ -246,7 +376,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { UserAddOutlined, ReloadOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { UserAddOutlined, ReloadOutlined, RightOutlined, SearchOutlined, CheckCircleOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -266,6 +396,14 @@ const currentGroup = ref<any>(null)
 const assigning = ref(false)
 const expandedKeys = ref<string[]>([])
 const pagination = ref({ current: 1, pageSize: 50, total: 0 })
+
+const buyerSearchText = ref('')
+const buyerSearchLoading = ref(false)
+const buyerSearchResults = ref<any[]>([])
+const selectedBuyerId = ref('')
+const selectedBuyerName = ref('')
+const selectedBuyerNumber = ref('')
+let buyerSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留评', '已完成', '已取消']
 const countries = ['美国', '德国', '英国', '加拿大']
@@ -357,15 +495,76 @@ function onSelectionChange(keys: any[]) {
   selectedKeys.value = keys
 }
 
+function getLevelColor(level: string) {
+  const map: Record<string, string> = { 'VIP': 'gold', '优质': 'blue', '普通': 'default' }
+  return map[level] || 'default'
+}
+
+function getStatusColor(status: string) {
+  const map: Record<string, string> = { '活跃': 'green', '暂停': 'orange', '黑名单': 'red' }
+  return map[status] || 'default'
+}
+
+function clearBuyer() {
+  selectedBuyerId.value = ''
+  selectedBuyerName.value = ''
+  selectedBuyerNumber.value = ''
+  buyerSearchText.value = ''
+  buyerSearchResults.value = []
+}
+
+function resetBuyerSearch() {
+  buyerSearchText.value = ''
+  buyerSearchResults.value = []
+  selectedBuyerId.value = ''
+  selectedBuyerName.value = ''
+  selectedBuyerNumber.value = ''
+}
+
+function selectBuyer(b: any) {
+  selectedBuyerId.value = b.id
+  selectedBuyerName.value = b.name
+  selectedBuyerNumber.value = b.buyer_number
+  buyerSearchText.value = ''
+  buyerSearchResults.value = []
+}
+
+function onBuyerSearch() {
+  if (buyerSearchTimer) clearTimeout(buyerSearchTimer)
+  const kw = buyerSearchText.value.trim()
+  if (!kw) { buyerSearchResults.value = []; return }
+  buyerSearchLoading.value = true
+  buyerSearchTimer = setTimeout(async () => {
+    try {
+      const { data } = await supabase
+        .from('erp_buyers')
+        .select('id, buyer_number, name, email, country, level, status, staff_name')
+        .or(`buyer_number.ilike.%${kw}%,name.ilike.%${kw}%,email.ilike.%${kw}%`)
+        .neq('status', '黑名单')
+        .limit(10)
+      buyerSearchResults.value = data || []
+    } finally {
+      buyerSearchLoading.value = false
+    }
+  }, 300)
+}
+
 function openSingleAssign(record: any) {
   currentRecord.value = record
   selectedStaffId.value = record.staff_id || ''
+  resetBuyerSearch()
+  if (record.buyer_id) {
+    selectedBuyerId.value = record.buyer_id
+    selectedBuyerName.value = record.buyer_name || ''
+    selectedBuyerNumber.value = ''
+  }
   singleAssignOpen.value = true
 }
 
 function openGroupAssign(group: any) {
   currentGroup.value = group
   selectedStaffId.value = ''
+  resetBuyerSearch()
   groupAssignOpen.value = true
 }
 
@@ -436,16 +635,22 @@ async function handleBatchAssign() {
   assigning.value = true
   try {
     const staff = staffList.value.find(s => s.id === selectedStaffId.value)
-    const { error } = await supabase.from('sub_orders').update({
+    const updateData: any = {
       staff_id: selectedStaffId.value,
       staff_name: staff?.name || '',
       status: '已分配',
-    }).in('id', selectedKeys.value)
+    }
+    if (selectedBuyerId.value) {
+      updateData.buyer_id = selectedBuyerId.value
+      updateData.buyer_name = selectedBuyerName.value
+    }
+    const { error } = await supabase.from('sub_orders').update(updateData).in('id', selectedKeys.value)
     if (error) throw error
     message.success(`成功分配 ${selectedKeys.value.length} 条子单`)
     batchAssignOpen.value = false
     selectedKeys.value = []
     selectedStaffId.value = ''
+    resetBuyerSearch()
     load()
   } catch (e: any) {
     message.error('分配失败：' + e.message)
@@ -459,15 +664,21 @@ async function handleSingleAssign() {
   assigning.value = true
   try {
     const staff = staffList.value.find(s => s.id === selectedStaffId.value)
-    const { error } = await supabase.from('sub_orders').update({
+    const updateData: any = {
       staff_id: selectedStaffId.value,
       staff_name: staff?.name || '',
       status: '已分配',
-    }).eq('id', currentRecord.value.id)
+    }
+    if (selectedBuyerId.value) {
+      updateData.buyer_id = selectedBuyerId.value
+      updateData.buyer_name = selectedBuyerName.value
+    }
+    const { error } = await supabase.from('sub_orders').update(updateData).eq('id', currentRecord.value.id)
     if (error) throw error
     message.success('分配成功')
     singleAssignOpen.value = false
     selectedStaffId.value = ''
+    resetBuyerSearch()
     load()
   } catch (e: any) {
     message.error('分配失败：' + e.message)
@@ -485,15 +696,21 @@ async function handleGroupAssign() {
       .filter((s: any) => s.status === '待分配')
       .map((s: any) => s.id)
     if (ids.length === 0) { message.info('本组没有待分配子单'); return }
-    const { error } = await supabase.from('sub_orders').update({
+    const updateData: any = {
       staff_id: selectedStaffId.value,
       staff_name: staff?.name || '',
       status: '已分配',
-    }).in('id', ids)
+    }
+    if (selectedBuyerId.value) {
+      updateData.buyer_id = selectedBuyerId.value
+      updateData.buyer_name = selectedBuyerName.value
+    }
+    const { error } = await supabase.from('sub_orders').update(updateData).in('id', ids)
     if (error) throw error
     message.success(`成功分配 ${ids.length} 条子单`)
     groupAssignOpen.value = false
     selectedStaffId.value = ''
+    resetBuyerSearch()
     load()
   } catch (e: any) {
     message.error('分配失败：' + e.message)
@@ -658,4 +875,82 @@ onMounted(() => { load(); loadStaff() })
 }
 .assign-info-item { font-size: 12px; color: #6b7280; }
 .assign-info-item strong { color: #374151; }
+
+.buyer-search-wrap { display: flex; flex-direction: column; gap: 8px; }
+
+.buyer-result-list {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.buyer-search-loading {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.buyer-result-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.15s;
+}
+.buyer-result-item:last-child { border-bottom: none; }
+.buyer-result-item:hover { background: #f0f7ff; }
+.buyer-result-item.selected { background: #eff6ff; border-left: 3px solid #2563eb; }
+
+.buyer-result-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.buyer-result-num {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.buyer-result-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+.buyer-result-sub {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #9ca3af;
+}
+.buyer-result-email { color: #6b7280; }
+.buyer-result-staff { color: #059669; }
+
+.buyer-no-result {
+  padding: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.buyer-selected-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #166534;
+}
+.buyer-selected-chip strong { color: #15803d; }
 </style>
