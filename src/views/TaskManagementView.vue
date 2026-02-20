@@ -441,32 +441,56 @@ async function generateSubOrders(record: any) {
       ? Number(record.commission_fee)
       : Number(record.unit_price || 0) - Number(record.product_price || 0) * Number(record.exchange_rate || 1)
 
-    const rows = Array.from({ length: toCreate }, () => ({
-      order_id: record.id,
-      asin: record.asin,
-      store_name: record.store_name,
-      country: record.country,
-      order_type: record.order_type,
-      product_price: record.product_price,
-      unit_price: record.unit_price,
-      commission_fee: commissionFee > 0 ? commissionFee : 0,
-      exchange_rate: record.exchange_rate,
-      product_image: record.product_image,
-      product_name: record.product_name,
-      brand_name: record.brand_name,
-      category: record.category,
-      review_level: record.review_level,
-      review_type: record.review_type,
-      variant_info: record.variant_info,
-      customer_name: record.customer_name,
-      customer_id_str: record.customer_id_str,
-      sales_person: record.sales_person,
-      status: '待分配',
-    }))
+    const { data: schedules } = await supabase
+      .from('order_schedules')
+      .select('schedule_date, quantity, keywords')
+      .eq('order_id', record.id)
+      .order('schedule_date', { ascending: true })
+
+    const scheduleSlots: Array<{ date: string; keyword: string }> = []
+    for (const s of (schedules || [])) {
+      const kws: string[] = (s.keywords || []).filter((k: string) => k.trim())
+      for (let i = 0; i < (s.quantity || 1); i++) {
+        scheduleSlots.push({
+          date: s.schedule_date,
+          keyword: kws[i % kws.length] || kws[0] || '',
+        })
+      }
+    }
+
+    const existingCount = existing.length
+    const rows = Array.from({ length: toCreate }, (_, i) => {
+      const slot = scheduleSlots[existingCount + i]
+      return {
+        order_id: record.id,
+        asin: record.asin,
+        store_name: record.store_name,
+        country: record.country,
+        order_type: record.order_type,
+        product_price: record.product_price,
+        unit_price: record.unit_price,
+        commission_fee: commissionFee > 0 ? commissionFee : 0,
+        exchange_rate: record.exchange_rate,
+        product_image: record.product_image,
+        product_name: record.product_name,
+        brand_name: record.brand_name,
+        category: record.category,
+        review_level: record.review_level,
+        review_type: record.review_type,
+        variant_info: record.variant_info,
+        customer_name: record.customer_name,
+        customer_id_str: record.customer_id_str,
+        sales_person: record.sales_person,
+        scheduled_date: slot?.date || null,
+        keyword: slot?.keyword || '',
+        status: '待分配',
+      }
+    })
 
     const { error } = await supabase.from('sub_orders').insert(rows)
     if (error) throw error
-    message.success(`成功生成 ${toCreate} 条子订单`)
+    const withSchedule = rows.filter(r => r.scheduled_date).length
+    message.success(`成功生成 ${toCreate} 条子订单${withSchedule > 0 ? `，其中 ${withSchedule} 条已按排期分配日期和关键词` : ''}`)
     await loadSubOrders(record.id)
   } catch (e: any) {
     message.error('生成子订单失败：' + e.message)
