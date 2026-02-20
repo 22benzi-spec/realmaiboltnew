@@ -129,6 +129,31 @@
 
           <div class="card-panel">
             <h3 class="section-title">排期设置</h3>
+
+            <div class="schedule-summary-bar">
+              <div class="summary-item">
+                <span class="summary-label">任务总订单量</span>
+                <span class="summary-val total">{{ form.order_quantity }}</span>
+              </div>
+              <div class="summary-divider"></div>
+              <div class="summary-item">
+                <span class="summary-label">已排订单数</span>
+                <span class="summary-val scheduled" :class="{ over: scheduledTotal > form.order_quantity }">{{ scheduledTotal }}</span>
+              </div>
+              <div class="summary-divider"></div>
+              <div class="summary-item">
+                <span class="summary-label">剩余未排数</span>
+                <span class="summary-val" :class="remainingClass">{{ form.order_quantity - scheduledTotal }}</span>
+              </div>
+              <div class="summary-progress">
+                <div
+                  class="summary-progress-bar"
+                  :class="{ over: scheduledTotal > form.order_quantity }"
+                  :style="{ width: Math.min((scheduledTotal / (form.order_quantity || 1)) * 100, 100) + '%' }"
+                ></div>
+              </div>
+            </div>
+
             <div class="schedule-layout">
               <div class="calendar-area">
                 <a-calendar
@@ -256,7 +281,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
@@ -285,6 +310,17 @@ const editingEntry = reactive<{ quantity: number; keywords: string[] }>({
 const scheduleEntriesSorted = computed(() =>
   [...scheduleEntries.value].sort((a, b) => a.date.localeCompare(b.date))
 )
+
+const scheduledTotal = computed(() =>
+  scheduleEntries.value.reduce((sum, e) => sum + (e.quantity || 0), 0)
+)
+
+const remainingClass = computed(() => {
+  const rem = form.order_quantity - scheduledTotal.value
+  if (rem < 0) return 'over'
+  if (rem === 0) return 'done'
+  return 'remaining'
+})
 
 function getScheduleForDate(d: Dayjs): ScheduleEntry | undefined {
   return scheduleEntries.value.find(e => e.date === d.format('YYYY-MM-DD'))
@@ -315,7 +351,21 @@ function saveScheduleEntry() {
     message.warning('请输入有效的订单数量')
     return
   }
+
   const idx = scheduleEntries.value.findIndex(e => e.date === selectedDateStr.value)
+  const prevQty = idx >= 0 ? scheduleEntries.value[idx].quantity : 0
+  const newTotal = scheduledTotal.value - prevQty + editingEntry.quantity
+  const total = form.order_quantity
+
+  if (newTotal > total) {
+    Modal.warning({
+      title: '排期数量超出',
+      content: `当前任务总订单量为 ${total} 单，保存后已排数量将达 ${newTotal} 单，超出 ${newTotal - total} 单。请调整后重新保存。`,
+      okText: '知道了',
+    })
+    return
+  }
+
   const entry: ScheduleEntry = {
     date: selectedDateStr.value,
     quantity: editingEntry.quantity,
@@ -326,7 +376,13 @@ function saveScheduleEntry() {
   } else {
     scheduleEntries.value.push(entry)
   }
-  message.success(`${selectedDateStr.value} 排期已保存`)
+
+  const remaining = total - newTotal
+  if (remaining > 0) {
+    message.success(`${selectedDateStr.value} 排期已保存，剩余未排 ${remaining} 单`)
+  } else {
+    message.success(`${selectedDateStr.value} 排期已保存，全部订单已排期完毕！`)
+  }
 }
 
 function removeScheduleEntry() {
@@ -437,6 +493,20 @@ function removeKeyword(i: number) {
 }
 
 async function handleSubmit() {
+  if (scheduleEntries.value.length > 0 && scheduledTotal.value < form.order_quantity) {
+    Modal.confirm({
+      title: '排期数量不足',
+      content: `任务总订单量为 ${form.order_quantity} 单，当前仅排期了 ${scheduledTotal.value} 单，还有 ${form.order_quantity - scheduledTotal.value} 单未排期。是否仍要提交？`,
+      okText: '继续提交',
+      cancelText: '返回补充',
+      onOk: () => doSubmit(),
+    })
+    return
+  }
+  await doSubmit()
+}
+
+async function doSubmit() {
   submitting.value = true
   try {
     recalc()
@@ -613,6 +683,66 @@ onMounted(() => {
 .price-table-value {
   font-weight: 600;
   color: #1e40af;
+}
+.schedule-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0 16px;
+}
+.summary-label {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.summary-val {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.summary-val.total { color: #374151; }
+.summary-val.scheduled { color: #2563eb; }
+.summary-val.scheduled.over { color: #dc2626; }
+.summary-val.remaining { color: #f59e0b; }
+.summary-val.done { color: #16a34a; }
+.summary-val.over { color: #dc2626; }
+.summary-divider {
+  width: 1px;
+  height: 36px;
+  background: #e2e8f0;
+  margin: 0 4px;
+}
+.summary-progress {
+  flex: 1;
+  min-width: 80px;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 99px;
+  overflow: hidden;
+  align-self: center;
+  margin-left: 8px;
+}
+.summary-progress-bar {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+.summary-progress-bar.over {
+  background: #dc2626;
 }
 .schedule-layout {
   display: flex;
