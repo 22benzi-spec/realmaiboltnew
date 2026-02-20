@@ -80,6 +80,22 @@
 
         <div class="card-sep" />
 
+        <!-- 负责商务经理 -->
+        <div class="card-manager">
+          <div class="section-label">负责商务</div>
+          <div v-if="company.business_owner_name" class="manager-assigned" @click="openAssignManager(company)">
+            <div class="manager-dot" />
+            <span class="manager-name">{{ company.business_owner_name }}</span>
+            <EditOutlined class="manager-edit-icon" />
+          </div>
+          <div v-else class="manager-unassigned" @click="openAssignManager(company)">
+            <PlusOutlined style="font-size:11px" />
+            <span>分配经理</span>
+          </div>
+        </div>
+
+        <div class="card-sep" />
+
         <!-- 对接人列表 -->
         <div class="card-contacts">
           <div class="section-label">对接人</div>
@@ -92,9 +108,6 @@
                   <a-tag v-if="c.is_primary" color="blue" style="margin-left:4px;font-size:10px;line-height:16px;padding:0 4px">主</a-tag>
                 </div>
                 <div class="chip-sub">
-                  <span v-if="c.business_manager_name" class="chip-manager">
-                    <UserOutlined style="font-size:10px" /> {{ c.business_manager_name }}
-                  </span>
                   <span v-if="c.wechat_account_id_str" class="chip-wechat">
                     <WechatOutlined style="font-size:10px;color:#07c160" /> {{ c.wechat_account_id_str }}
                   </span>
@@ -209,7 +222,12 @@
               <a-tag :color="statusColor[currentCompany.status || '活跃']">{{ currentCompany.status }}</a-tag>
             </div>
           </div>
-          <a-button type="link" size="small" @click="openEditModal(currentCompany)" style="margin-left:auto">编辑</a-button>
+          <div style="margin-left:auto;display:flex;gap:4px">
+            <a-button size="small" @click="openAssignManager(currentCompany)">
+              <UserOutlined /> {{ currentCompany.business_owner_name || '分配商务' }}
+            </a-button>
+            <a-button type="link" size="small" @click="openEditModal(currentCompany)">编辑</a-button>
+          </div>
         </div>
 
         <div class="drawer-body">
@@ -302,6 +320,43 @@
       </template>
     </a-drawer>
 
+    <!-- 分配商务经理 Modal -->
+    <a-modal
+      v-model:open="assignModalOpen"
+      title="分配负责商务经理"
+      @ok="handleAssignManager"
+      :confirm-loading="assigning"
+      ok-text="确定"
+      cancel-text="取消"
+      width="400px"
+    >
+      <div style="padding:16px 0">
+        <div style="margin-bottom:8px;font-size:13px;color:#374151">
+          客户：<strong>{{ assignTarget?.company_name }}</strong>
+        </div>
+        <a-select
+          v-model:value="assignManagerId"
+          placeholder="选择负责商务经理"
+          style="width:100%"
+          allow-clear
+          :options="managerOptions.map(m => ({ value: m.id, label: m.name }))"
+        />
+        <div v-if="assignManagerId" style="margin-top:10px">
+          <div style="font-size:12px;color:#6b7280;margin-bottom:6px">选择对接微信号（可选）</div>
+          <a-select
+            v-model:value="assignWechatId"
+            placeholder="选择该经理的商务微信"
+            style="width:100%"
+            allow-clear
+          >
+            <a-select-option v-for="w in managerWechatOptions" :key="w.id" :value="w.id">
+              {{ w.wechat_id }}{{ w.wechat_nickname ? `（${w.wechat_nickname}）` : '' }}
+            </a-select-option>
+          </a-select>
+        </div>
+      </div>
+    </a-modal>
+
     <!-- 添加对接人 Modal -->
     <a-modal v-model:open="contactModalOpen" title="添加对接人" @ok="handleAddContact" :confirm-loading="savingContact" ok-text="确定" cancel-text="取消" width="600px">
       <a-form layout="vertical" style="margin-top:8px">
@@ -384,7 +439,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 
 const loading = ref(false)
@@ -403,6 +458,17 @@ const pagination = ref({ current: 1, pageSize: 15, total: 0 })
 
 const managerOptions = ref<any[]>([])
 const wechatOptions = ref<any[]>([])
+
+const assignModalOpen = ref(false)
+const assigning = ref(false)
+const assignTarget = ref<any>(null)
+const assignManagerId = ref<string>('')
+const assignWechatId = ref<string>('')
+
+const managerWechatOptions = computed(() => {
+  if (!assignManagerId.value) return []
+  return wechatOptions.value.filter(w => w.manager_id === assignManagerId.value)
+})
 
 const levelColor: Record<string, string> = { S: 'gold', A: 'green', B: 'blue', C: 'default' }
 const levelBg: Record<string, string> = { S: '#d97706', A: '#059669', B: '#2563eb', C: '#6b7280' }
@@ -571,6 +637,53 @@ async function deleteClient(id: string) {
   load()
 }
 
+function openAssignManager(company: any) {
+  assignTarget.value = company
+  assignManagerId.value = company.business_owner_id || ''
+  assignWechatId.value = ''
+  assignModalOpen.value = true
+}
+
+async function handleAssignManager() {
+  if (!assignTarget.value) return
+  assigning.value = true
+  try {
+    const mgr = managerOptions.value.find(m => m.id === assignManagerId.value)
+    const payload: any = {
+      business_owner_id: assignManagerId.value || null,
+      business_owner_name: mgr?.name || null,
+    }
+    const { error } = await supabase
+      .from('client_companies')
+      .update(payload)
+      .eq('id', assignTarget.value.id)
+    if (error) throw error
+
+    if (assignWechatId.value) {
+      const w = wechatOptions.value.find(x => x.id === assignWechatId.value)
+      await supabase
+        .from('client_contacts')
+        .update({
+          business_manager_id: assignManagerId.value || null,
+          business_manager_name: mgr?.name || '',
+          wechat_account_id: assignWechatId.value || null,
+          wechat_account_id_str: w?.wechat_id || '',
+          wechat_nickname: w?.wechat_nickname || '',
+        })
+        .eq('company_id', assignTarget.value.id)
+        .eq('is_primary', true)
+    }
+
+    message.success('商务经理已分配')
+    assignModalOpen.value = false
+    load()
+  } catch (e: any) {
+    message.error('分配失败：' + e.message)
+  } finally {
+    assigning.value = false
+  }
+}
+
 function openAddContact() {
   Object.assign(contactForm, defaultContactForm())
   contactModalOpen.value = true
@@ -711,6 +824,30 @@ onMounted(() => {
 .stat-num.teal { color: #0891b2; }
 .stat-lbl { font-size: 11px; color: #9ca3af; margin-top: 2px; }
 .stat-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 8px; flex-shrink: 0; }
+
+/* 负责商务 */
+.card-manager { min-width: 110px; flex-shrink: 0; }
+.manager-assigned {
+  display: flex; align-items: center; gap: 5px;
+  cursor: pointer; padding: 4px 8px;
+  border-radius: 6px; background: #f0fdf4; border: 1px solid #bbf7d0;
+  transition: background 0.15s;
+}
+.manager-assigned:hover { background: #dcfce7; }
+.manager-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #16a34a; flex-shrink: 0;
+}
+.manager-name { font-size: 13px; font-weight: 600; color: #15803d; white-space: nowrap; }
+.manager-edit-icon { font-size: 10px; color: #86efac; margin-left: 2px; }
+.manager-unassigned {
+  display: flex; align-items: center; gap: 4px;
+  cursor: pointer; padding: 4px 8px;
+  border-radius: 6px; border: 1px dashed #d1d5db;
+  color: #9ca3af; font-size: 12px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.manager-unassigned:hover { border-color: #2563eb; color: #2563eb; }
 
 /* 对接人 */
 .card-contacts { flex: 1; min-width: 0; }
