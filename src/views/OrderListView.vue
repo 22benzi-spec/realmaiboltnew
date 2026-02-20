@@ -144,9 +144,6 @@
           <a-descriptions-item label="测评模式">{{ currentOrder.review_mode }}</a-descriptions-item>
           <a-descriptions-item label="下单类型">{{ currentOrder.order_type }}</a-descriptions-item>
           <a-descriptions-item label="下单数量">{{ currentOrder.order_quantity }}</a-descriptions-item>
-          <a-descriptions-item label="汇率">{{ currentOrder.exchange_rate }}</a-descriptions-item>
-          <a-descriptions-item label="单价(CNY)">¥{{ Number(currentOrder.unit_price).toFixed(2) }}</a-descriptions-item>
-          <a-descriptions-item label="总金额(CNY)">¥{{ Number(currentOrder.total_amount).toFixed(2) }}</a-descriptions-item>
           <a-descriptions-item label="状态">
             <a-tag :color="getStatusColor(currentOrder.status)">{{ currentOrder.status }}</a-tag>
           </a-descriptions-item>
@@ -154,6 +151,52 @@
           <a-descriptions-item label="客户名称" :span="2">{{ currentOrder.customer_name || '-' }}</a-descriptions-item>
           <a-descriptions-item label="备注" :span="2">{{ currentOrder.notes || '-' }}</a-descriptions-item>
         </a-descriptions>
+
+        <a-divider style="margin: 20px 0 16px" />
+        <div class="detail-section-title">金额明细</div>
+        <div class="amount-breakdown">
+          <div class="amount-row">
+            <div class="amount-row-left">
+              <span class="amount-label">产品单价</span>
+              <span class="amount-desc">（美金定价）</span>
+            </div>
+            <span class="amount-usd">$ {{ Number(currentOrder.product_price || 0).toFixed(2) }} USD</span>
+          </div>
+          <div class="amount-row amount-row-sub">
+            <div class="amount-row-left">
+              <span class="amount-label amount-label-sm">× 汇率 {{ Number(currentOrder.exchange_rate || 1).toFixed(2) }}</span>
+            </div>
+            <span class="amount-cny-sm">= ¥{{ (Number(currentOrder.product_price || 0) * Number(currentOrder.exchange_rate || 1)).toFixed(2) }}</span>
+          </div>
+          <div class="amount-row">
+            <div class="amount-row-left">
+              <span class="amount-label">佣金金额</span>
+              <span class="amount-desc">（服务商收费）</span>
+            </div>
+            <span class="amount-commission">+ ¥{{ Number(currentOrder.commission_fee || 0).toFixed(2) }}</span>
+          </div>
+          <div class="amount-divider"></div>
+          <div class="amount-row amount-row-unit">
+            <div class="amount-row-left">
+              <span class="amount-label">单笔金额</span>
+              <span class="amount-desc">（产品折人民币 + 佣金）</span>
+            </div>
+            <span class="amount-unit-total">¥{{ (Number(currentOrder.product_price || 0) * Number(currentOrder.exchange_rate || 1) + Number(currentOrder.commission_fee || 0)).toFixed(2) }}</span>
+          </div>
+          <div class="amount-row amount-row-sub">
+            <div class="amount-row-left">
+              <span class="amount-label amount-label-sm">× 数量 {{ currentOrder.order_quantity }}</span>
+            </div>
+            <span class="amount-cny-sm"></span>
+          </div>
+          <div class="amount-divider amount-divider-bold"></div>
+          <div class="amount-row amount-row-total">
+            <div class="amount-row-left">
+              <span class="amount-label-total">总金额</span>
+            </div>
+            <span class="amount-total">¥{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
+          </div>
+        </div>
 
         <div v-if="currentOrder.product_image" style="margin-top:16px">
           <div class="detail-section-title">商品图片</div>
@@ -377,5 +420,58 @@ onMounted(loadOrders)
   border-radius: 10px;
   border: 1px solid #e5e7eb;
   display: block;
+}
+
+.amount-breakdown {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.amount-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 0;
+}
+.amount-row-sub {
+  padding: 3px 0 6px 16px;
+  opacity: 0.75;
+}
+.amount-row-unit {
+  background: #eff6ff;
+  border-radius: 6px;
+  padding: 9px 10px;
+  margin: 0 -4px;
+}
+.amount-row-total {
+  padding: 10px 0 2px;
+}
+.amount-row-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.amount-label { font-size: 14px; color: #374151; font-weight: 500; }
+.amount-label-sm { font-size: 12px; color: #6b7280; font-weight: 400; }
+.amount-label-total { font-size: 15px; font-weight: 700; color: #111827; }
+.amount-desc { font-size: 12px; color: #9ca3af; }
+.amount-usd { font-size: 15px; font-weight: 700; color: #0369a1; font-family: 'Courier New', monospace; }
+.amount-cny-sm { font-size: 12px; color: #6b7280; font-family: 'Courier New', monospace; }
+.amount-commission { font-size: 14px; font-weight: 600; color: #d97706; font-family: 'Courier New', monospace; }
+.amount-unit-total { font-size: 15px; font-weight: 700; color: #2563eb; font-family: 'Courier New', monospace; }
+.amount-total { font-size: 20px; font-weight: 800; color: #dc2626; font-family: 'Courier New', monospace; }
+.amount-divider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 4px 0;
+}
+.amount-divider-bold {
+  height: 2px;
+  background: #d1d5db;
+  margin: 6px 0;
 }
 </style>
