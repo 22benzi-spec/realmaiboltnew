@@ -308,27 +308,12 @@ function removeKeyword(i: number) {
   keywords.value.splice(i, 1)
 }
 
-function generateOrderNumber(): string {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let suffix = ''
-  for (let i = 0; i < 6; i++) {
-    suffix += chars[Math.floor(Math.random() * chars.length)]
-  }
-  return `ORD-${y}${m}${d}-${suffix}`
-}
-
 async function handleSubmit() {
   submitting.value = true
   try {
     recalc()
-    const orderNum = generateOrderNumber()
     const { data, error } = await supabase.from('erp_orders').insert([{
       ...form,
-      order_number: orderNum,
       total_orders: form.order_quantity,
     }]).select().single()
 
