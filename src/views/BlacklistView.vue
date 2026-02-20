@@ -22,62 +22,55 @@
       <a-empty description="暂无黑名单记录" />
     </div>
 
-    <div v-else class="card-grid">
-      <div v-for="record in blacklist" :key="record.id" class="blacklist-card" @click="openDetail(record)">
-        <div class="card-header-row">
-          <div class="buyer-avatar">{{ record.name ? record.name.charAt(0).toUpperCase() : '?' }}</div>
-          <div class="buyer-meta">
-            <div class="buyer-name">{{ record.name || '—' }}</div>
-            <div class="buyer-no">{{ record.buyer_number || '—' }}</div>
-          </div>
-          <div class="card-badges">
-            <a-tag color="red" style="margin:0">黑名单</a-tag>
-            <a-tag v-if="record.country" color="default" style="margin:0;margin-left:4px">{{ record.country }}</a-tag>
-          </div>
-        </div>
-
-        <div class="reason-box">
-          <WarningFilled class="reason-icon" />
-          <span>{{ record.blacklist_reason || '未填写原因' }}</span>
-        </div>
-
-        <div class="info-grid">
-          <div class="info-item" v-if="record.platform_account">
-            <span class="info-label">平台账号</span>
-            <span class="info-val">{{ record.platform_account }}</span>
-          </div>
-          <div class="info-item" v-if="record.paypal_email">
-            <span class="info-label">PayPal</span>
-            <span class="info-val">{{ record.paypal_email }}</span>
-          </div>
-          <div class="info-item" v-if="record.phone">
-            <span class="info-label">手机</span>
-            <span class="info-val">{{ record.phone }}</span>
-          </div>
-          <div class="info-item" v-if="record.facebook_name">
-            <span class="info-label">Facebook</span>
-            <span class="info-val">{{ record.facebook_name }}</span>
-          </div>
-          <div class="info-item" v-if="record.staff_name">
-            <span class="info-label">负责业务员</span>
-            <span class="info-val">{{ record.staff_name }}</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">加入时间</span>
-            <span class="info-val">{{ record.updated_at ? dayjs(record.updated_at).format('YYYY-MM-DD') : '—' }}</span>
-          </div>
-        </div>
-
-        <div class="card-footer">
-          <div class="stat-pills">
-            <span class="pill completed">完成 {{ record.total_completed || 0 }} 单</span>
-            <span v-if="record.success_rate != null" class="pill rate">成功率 {{ (Number(record.success_rate) * 100).toFixed(0) }}%</span>
-          </div>
-          <a-popconfirm title="确定将此买手移出黑名单?" @confirm.stop="removeFromBlacklist(record)" @click.stop>
-            <a-button size="small" type="link" danger>移出黑名单</a-button>
-          </a-popconfirm>
-        </div>
-      </div>
+    <div v-else class="card-panel">
+      <a-table
+        :columns="columns"
+        :data-source="blacklist"
+        :loading="loading"
+        row-key="id"
+        size="middle"
+        :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: (total: number) => `共 ${total} 条` }"
+        :scroll="{ x: 1200 }"
+        :row-class-name="() => 'clickable-row'"
+        @row-click="(record: any) => openDetail(record)"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <div class="name-cell">
+              <div class="row-avatar">{{ record.name ? record.name.charAt(0).toUpperCase() : '?' }}</div>
+              <div>
+                <div class="row-name">{{ record.name || '—' }}</div>
+                <div class="row-no">{{ record.buyer_number || '—' }}</div>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'blacklist_reason'">
+            <div class="reason-cell">
+              <WarningFilled class="reason-cell-icon" />
+              <span>{{ record.blacklist_reason || '—' }}</span>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'country'">
+            <a-tag v-if="record.country" color="default">{{ record.country }}</a-tag>
+            <span v-else>—</span>
+          </template>
+          <template v-else-if="column.key === 'stats'">
+            <span class="pill completed">{{ record.total_completed || 0 }} 单</span>
+            <span v-if="record.success_rate != null" class="pill rate" style="margin-left:4px">{{ (Number(record.success_rate) * 100).toFixed(0) }}%</span>
+          </template>
+          <template v-else-if="column.key === 'updated_at'">
+            {{ record.updated_at ? dayjs(record.updated_at).format('YYYY-MM-DD') : '—' }}
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <a-space @click.stop>
+              <a-button type="link" size="small" @click.stop="openDetail(record)">详情</a-button>
+              <a-popconfirm title="确定将此买手移出黑名单?" @confirm="removeFromBlacklist(record)">
+                <a-button type="link" size="small" danger>移出黑名单</a-button>
+              </a-popconfirm>
+            </a-space>
+          </template>
+        </template>
+      </a-table>
     </div>
 
     <a-drawer
@@ -201,6 +194,19 @@ const detailRecord = ref<any>(null)
 
 const levelColor: Record<string, string> = { '优质': 'gold', '普通': 'default', '新手': 'cyan' }
 
+const columns = [
+  { title: '买手', key: 'name', width: 160 },
+  { title: '国家', key: 'country', width: 80 },
+  { title: '平台账号', dataIndex: 'platform_account', key: 'platform_account', width: 140 },
+  { title: 'PayPal邮箱', dataIndex: 'paypal_email', key: 'paypal_email', width: 180 },
+  { title: '手机', dataIndex: 'phone', key: 'phone', width: 130 },
+  { title: '黑名单原因', key: 'blacklist_reason', ellipsis: true },
+  { title: '完成/成功率', key: 'stats', width: 120 },
+  { title: '负责业务员', dataIndex: 'staff_name', key: 'staff_name', width: 100 },
+  { title: '加入时间', key: 'updated_at', width: 110 },
+  { title: '操作', key: 'action', width: 140, fixed: 'right' },
+]
+
 const countryOptions = computed(() => {
   const set = new Set(blacklist.value.map(r => r.country).filter(Boolean))
   return Array.from(set)
@@ -246,54 +252,21 @@ onMounted(load)
 
 .loading-wrap, .empty-wrap { display: flex; justify-content: center; align-items: center; min-height: 300px; }
 
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+.card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 
-.blacklist-card {
-  background: #fff;
-  border-radius: 12px;
-  border: 1px solid #fecaca;
-  padding: 16px;
-  cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.15s;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.blacklist-card:hover { box-shadow: 0 4px 16px rgba(220,38,38,0.12); transform: translateY(-2px); }
-
-.card-header-row { display: flex; align-items: center; gap: 10px; }
-.buyer-avatar {
-  width: 42px; height: 42px; border-radius: 50%;
+.name-cell { display: flex; align-items: center; gap: 8px; }
+.row-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
   background: linear-gradient(135deg, #ef4444, #b91c1c);
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-weight: 700; font-size: 16px; flex-shrink: 0;
+  color: #fff; font-weight: 700; font-size: 13px; flex-shrink: 0;
 }
-.buyer-meta { flex: 1; min-width: 0; }
-.buyer-name { font-weight: 700; font-size: 14px; color: #111827; }
-.buyer-no { font-size: 11px; color: #9ca3af; font-family: monospace; }
-.card-badges { display: flex; align-items: center; flex-shrink: 0; }
+.row-name { font-weight: 600; font-size: 13px; color: #111827; }
+.row-no { font-size: 11px; color: #9ca3af; font-family: monospace; }
 
-.reason-box {
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 12px;
-  color: #c2410c;
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  line-height: 1.5;
-}
-.reason-icon { color: #f97316; margin-top: 1px; flex-shrink: 0; }
+.reason-cell { display: flex; align-items: flex-start; gap: 5px; color: #c2410c; font-size: 12px; }
+.reason-cell-icon { color: #f97316; flex-shrink: 0; margin-top: 2px; }
 
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
-.info-item { display: flex; flex-direction: column; }
-.info-label { font-size: 10px; color: #9ca3af; }
-.info-val { font-size: 12px; color: #374151; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.card-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 4px; border-top: 1px solid #f3f4f6; }
-.stat-pills { display: flex; gap: 6px; }
 .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; }
 .pill.completed { background: #f0fdf4; color: #15803d; }
 .pill.rate { background: #eff6ff; color: #1d4ed8; }
