@@ -148,7 +148,7 @@ const columns = [
 async function load() {
   loading.value = true
   try {
-    let query = supabase.from('buyers').select('*', { count: 'exact' }).order('created_at', { ascending: false })
+    let query = supabase.from('erp_buyers').select('*', { count: 'exact' }).order('created_at', { ascending: false })
     if (searchText.value) query = query.or(`name.ilike.%${searchText.value}%,platform_account.ilike.%${searchText.value}%`)
     if (filterStatus.value) query = query.eq('status', filterStatus.value)
     if (filterCountry.value) query = query.eq('country', filterCountry.value)
@@ -183,11 +183,11 @@ async function handleSubmit() {
   try {
     const payload = { ...form }
     if (editingId.value) {
-      const { error } = await supabase.from('buyers').update(payload).eq('id', editingId.value)
+      const { error } = await supabase.from('erp_buyers').update(payload).eq('id', editingId.value)
       if (error) throw error
       message.success('更新成功')
     } else {
-      const { error } = await supabase.from('buyers').insert([payload])
+      const { error } = await supabase.from('erp_buyers').insert([payload])
       if (error) throw error
       message.success('添加成功')
     }
@@ -201,7 +201,7 @@ async function handleSubmit() {
 }
 
 async function deleteBuyer(id: string) {
-  const { error } = await supabase.from('buyers').delete().eq('id', id)
+  const { error } = await supabase.from('erp_buyers').delete().eq('id', id)
   if (error) { message.error('删除失败'); return }
   message.success('删除成功')
   load()

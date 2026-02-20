@@ -179,7 +179,7 @@ async function loadStats() {
     const endStr = end.format('YYYY-MM-DD') + ' 23:59:59'
 
     const { data: orders } = await supabase
-      .from('orders')
+      .from('erp_orders')
       .select('id, order_number, asin, store_name, country, total_amount, status, created_at')
       .gte('created_at', startStr)
       .lte('created_at', endStr)

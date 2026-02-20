@@ -313,7 +313,7 @@ async function handleSubmit() {
   try {
     recalc()
     const orderNum = 'ORD-' + Date.now()
-    const { data, error } = await supabase.from('orders').insert([{
+    const { data, error } = await supabase.from('erp_orders').insert([{
       ...form,
       order_number: orderNum,
       total_orders: form.order_quantity,

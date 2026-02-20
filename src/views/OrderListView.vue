@@ -136,7 +136,7 @@ function getStatusColor(status: string) {
 async function loadOrders() {
   loading.value = true
   try {
-    let query = supabase.from('orders').select('*', { count: 'exact' }).order('created_at', { ascending: false })
+    let query = supabase.from('erp_orders').select('*', { count: 'exact' }).order('created_at', { ascending: false })
     if (searchText.value) {
       query = query.or(`order_number.ilike.%${searchText.value}%,asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%`)
     }
@@ -170,7 +170,7 @@ function viewDetail(record: any) {
 }
 
 async function deleteOrder(id: string) {
-  const { error } = await supabase.from('orders').delete().eq('id', id)
+  const { error } = await supabase.from('erp_orders').delete().eq('id', id)
   if (error) { message.error('删除失败'); return }
   message.success('删除成功')
   loadOrders()

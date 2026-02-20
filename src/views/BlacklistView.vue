@@ -47,7 +47,7 @@ const columns = [
 async function load() {
   loading.value = true
   try {
-    let query = supabase.from('buyers').select('*').eq('status', '黑名单').order('updated_at', { ascending: false })
+    let query = supabase.from('erp_buyers').select('*').eq('status', '黑名单').order('updated_at', { ascending: false })
     if (searchText.value) query = query.ilike('name', `%${searchText.value}%`)
     const { data, error } = await query
     if (error) throw error
@@ -58,7 +58,7 @@ async function load() {
 }
 
 async function removeFromBlacklist(record: any) {
-  const { error } = await supabase.from('buyers').update({ status: '暂停', blacklist_reason: null }).eq('id', record.id)
+  const { error } = await supabase.from('erp_buyers').update({ status: '暂停', blacklist_reason: null }).eq('id', record.id)
   if (error) { message.error('操作失败'); return }
   message.success('已移出黑名单')
   load()
