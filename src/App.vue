@@ -30,4 +30,17 @@ onMounted(() => {
   overflow-y: auto;
   background: #f5f7fa;
 }
+
+@media (max-width: 767px) {
+  .layout-wrapper {
+    display: block;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .layout-main {
+    height: 100vh;
+    padding-bottom: 56px;
+    overflow-y: auto;
+  }
+}
 </style>

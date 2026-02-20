@@ -9,7 +9,7 @@
     </div>
 
     <a-row :gutter="[16, 16]" class="stat-row">
-      <a-col :span="6" v-for="stat in statCards" :key="stat.key">
+      <a-col :xs="12" :sm="12" :md="6" v-for="stat in statCards" :key="stat.key">
         <div class="stat-card">
           <div class="stat-card-header">
             <span class="stat-label">{{ stat.label }}</span>
@@ -24,7 +24,7 @@
     </a-row>
 
     <a-row :gutter="[16, 16]" style="margin-top: 16px">
-      <a-col :span="14">
+      <a-col :xs="24" :md="14">
         <div class="card-panel">
           <div class="panel-header">
             <h3>今日任务状态分布</h3>
@@ -45,7 +45,7 @@
           </div>
         </div>
       </a-col>
-      <a-col :span="10">
+      <a-col :xs="24" :md="10">
         <div class="card-panel">
           <div class="panel-header">
             <h3>快速入口</h3>
@@ -223,6 +223,21 @@ onMounted(loadStats)
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .page-content {
+    padding: 12px;
+  }
+  .dashboard-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .stat-value {
+    font-size: 22px !important;
+  }
 }
 .page-title {
   font-size: 22px;

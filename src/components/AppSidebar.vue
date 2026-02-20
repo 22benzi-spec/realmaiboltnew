@@ -1,5 +1,9 @@
 <template>
-  <div :class="['sidebar', collapsed ? 'sidebar--collapsed' : '']">
+  <!-- 移动端遮罩 -->
+  <div v-if="isMobile && drawerOpen" class="mobile-overlay" @click="drawerOpen = false"></div>
+
+  <!-- 桌面端 / 移动端侧边抽屉 -->
+  <div :class="['sidebar', collapsed ? 'sidebar--collapsed' : '', isMobile ? 'sidebar--mobile' : '', isMobile && drawerOpen ? 'sidebar--mobile-open' : '']">
     <div class="sidebar-logo">
       <div class="logo-icon">
         <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
@@ -7,7 +11,7 @@
         </svg>
       </div>
       <span v-if="!collapsed" class="logo-text">揽麦 ERP</span>
-      <button class="collapse-btn" @click="toggleCollapse">
+      <button class="collapse-btn" @click="isMobile ? drawerOpen = false : toggleCollapse()">
         <MenuFoldOutlined v-if="!collapsed" />
         <MenuUnfoldOutlined v-else />
       </button>
@@ -73,14 +77,32 @@
       </div>
     </div>
   </div>
+
+  <!-- 移动端底部导航栏 -->
+  <div v-if="isMobile" class="mobile-bottom-nav">
+    <div
+      v-for="tab in mobileTabs"
+      :key="tab.id"
+      :class="['mobile-tab', currentRoute === tab.id ? 'active' : '']"
+      @click="navigate(tab.id)"
+    >
+      <component :is="tab.icon" class="mobile-tab-icon" />
+      <span class="mobile-tab-label">{{ tab.label }}</span>
+    </div>
+    <div class="mobile-tab" @click="drawerOpen = true">
+      <MenuOutlined class="mobile-tab-icon" />
+      <span class="mobile-tab-label">更多</span>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   HomeOutlined, UserOutlined, MenuFoldOutlined,
-  MenuUnfoldOutlined, DownOutlined,
+  MenuUnfoldOutlined, DownOutlined, MenuOutlined,
+  ShoppingOutlined, CheckCircleOutlined, TeamOutlined,
 } from '@ant-design/icons-vue'
 import { useCurrentUser } from '../composables/useCurrentUser'
 import { getNavGroupsForRole } from '../composables/useNavGroups'
@@ -90,6 +112,8 @@ const route = useRoute()
 const { currentUser } = useCurrentUser()
 
 const collapsed = ref(false)
+const drawerOpen = ref(false)
+const isMobile = ref(false)
 
 const currentRoute = computed(() => route.name as string)
 
@@ -103,12 +127,32 @@ const avatarColor = computed(() => {
   return colors[name.charCodeAt(0) % colors.length] ?? '#2563eb'
 })
 
+const mobileTabs = computed(() => [
+  { id: 'home', label: '首页', icon: HomeOutlined },
+  { id: 'my-orders', label: '订单', icon: ShoppingOutlined },
+  { id: 'task-management', label: '任务', icon: CheckCircleOutlined },
+  { id: 'buyers', label: '买手', icon: TeamOutlined },
+])
+
 const findGroupForRoute = (routeName: string) =>
   visibleNavGroups.value.find(g => g.items.some(i => i.id === routeName))?.id
 
 const expandedGroups = ref<Set<string>>(new Set([
   findGroupForRoute(currentRoute.value) ?? 'order-center'
 ]))
+
+function checkMobile() {
+  isMobile.value = window.innerWidth < 768
+  if (!isMobile.value) drawerOpen.value = false
+}
+
+onMounted(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
+})
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value
@@ -126,6 +170,7 @@ function navigate(page: string) {
   router.push({ name: page })
   const group = findGroupForRoute(page)
   if (group) expandedGroups.value.add(group)
+  if (isMobile.value) drawerOpen.value = false
 }
 </script>
 
@@ -139,11 +184,38 @@ function navigate(page: string) {
   flex-direction: column;
   transition: width 0.25s ease, min-width 0.25s ease;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .sidebar--collapsed {
   width: 60px;
   min-width: 60px;
 }
+
+/* 移动端：侧边抽屉模式 */
+.sidebar--mobile {
+  position: fixed;
+  left: -240px;
+  top: 0;
+  z-index: 1001;
+  width: 240px !important;
+  min-width: 240px !important;
+  height: 100vh;
+  transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: none;
+}
+.sidebar--mobile-open {
+  left: 0;
+  box-shadow: 4px 0 24px rgba(0,0,0,0.35);
+}
+
+/* 遮罩 */
+.mobile-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+}
+
 .sidebar-logo {
   height: 56px;
   display: flex;
@@ -375,5 +447,52 @@ function navigate(page: string) {
   border-top: 1px solid rgba(255,255,255,0.08);
   padding: 8px 0;
   flex-shrink: 0;
+}
+
+/* 移动端底部导航栏 */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: #fff;
+  border-top: 1px solid #e5e7eb;
+  z-index: 999;
+  flex-direction: row;
+  align-items: stretch;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+}
+.mobile-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  color: #9ca3af;
+  transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-tab:active {
+  background: #f9fafb;
+}
+.mobile-tab.active {
+  color: #2563eb;
+}
+.mobile-tab-icon {
+  font-size: 20px;
+}
+.mobile-tab-label {
+  font-size: 10px;
+  font-weight: 500;
+}
+
+@media (max-width: 767px) {
+  .mobile-bottom-nav {
+    display: flex;
+  }
 }
 </style>
