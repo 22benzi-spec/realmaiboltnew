@@ -129,35 +129,80 @@
 
           <div class="card-panel">
             <h3 class="section-title">排期设置</h3>
-            <a-row :gutter="16">
-              <a-col :span="12">
-                <a-form-item label="每日固定下单量">
-                  <a-input-number v-model:value="form.fixed_daily_orders" :min="0" style="width:100%" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="每日新增下单量">
-                  <a-input-number v-model:value="form.new_daily_orders" :min="0" style="width:100%" />
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-row :gutter="16">
-              <a-col :span="8">
-                <a-form-item label="每日Feedback">
-                  <a-switch v-model:checked="form.daily_feedback" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="综合标签">
-                  <a-switch v-model:checked="form.comprehensive_label" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="快递标签">
-                  <a-switch v-model:checked="form.delivery_label" />
-                </a-form-item>
-              </a-col>
-            </a-row>
+            <div class="schedule-layout">
+              <div class="calendar-area">
+                <a-calendar
+                  v-model:value="calendarValue"
+                  :fullscreen="false"
+                  @select="handleDateSelect"
+                >
+                  <template #dateCellRender="{ current }">
+                    <div
+                      v-if="getScheduleForDate(current)"
+                      class="cal-dot"
+                    >
+                      {{ getScheduleForDate(current)!.quantity }}单
+                    </div>
+                  </template>
+                </a-calendar>
+              </div>
+              <div class="schedule-form-area">
+                <div class="selected-date-header">
+                  <span class="selected-date-label">已选日期</span>
+                  <span class="selected-date-value">{{ selectedDateStr || '请点击日历选择日期' }}</span>
+                </div>
+                <template v-if="selectedDateStr">
+                  <a-form-item label="当天订单数量" style="margin-top:12px">
+                    <a-input-number
+                      v-model:value="editingEntry.quantity"
+                      :min="1"
+                      style="width:100%"
+                      placeholder="输入数量"
+                    />
+                  </a-form-item>
+                  <a-form-item label="当天使用关键词">
+                    <div v-for="(_, i) in editingEntry.keywords" :key="i" class="keyword-row">
+                      <a-input
+                        v-model:value="editingEntry.keywords[i]"
+                        placeholder="输入关键词"
+                        style="flex:1"
+                      />
+                      <a-button type="text" danger @click="removeScheduleKeyword(i)">
+                        <DeleteOutlined />
+                      </a-button>
+                    </div>
+                    <a-button type="dashed" block @click="addScheduleKeyword" style="margin-top:6px">
+                      <PlusOutlined /> 添加关键词
+                    </a-button>
+                  </a-form-item>
+                  <div class="schedule-actions">
+                    <a-button type="primary" @click="saveScheduleEntry">保存排期</a-button>
+                    <a-button
+                      v-if="getScheduleForDate(calendarValue)"
+                      danger
+                      @click="removeScheduleEntry"
+                    >删除</a-button>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div v-if="scheduleEntries.length > 0" class="schedule-list">
+              <h4 class="schedule-list-title">已排期 ({{ scheduleEntries.length }} 天)</h4>
+              <div class="schedule-tags">
+                <div
+                  v-for="entry in scheduleEntriesSorted"
+                  :key="entry.date"
+                  class="schedule-tag"
+                >
+                  <span class="schedule-tag-date">{{ entry.date }}</span>
+                  <span class="schedule-tag-qty">{{ entry.quantity }}单</span>
+                  <span v-if="entry.keywords.filter(k=>k.trim()).length" class="schedule-tag-kw">
+                    {{ entry.keywords.filter(k=>k.trim()).join('、') }}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </a-col>
 
@@ -214,6 +259,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
+import dayjs, { type Dayjs } from 'dayjs'
 
 const formRef = ref()
 const submitting = ref(false)
@@ -221,6 +267,77 @@ const keywords = ref<string[]>([''])
 const currentOrderNumber = ref('')
 
 const countries = ['美国', '德国', '英国', '加拿大']
+
+interface ScheduleEntry {
+  date: string
+  quantity: number
+  keywords: string[]
+}
+
+const scheduleEntries = ref<ScheduleEntry[]>([])
+const calendarValue = ref<Dayjs>(dayjs())
+const selectedDateStr = ref('')
+const editingEntry = reactive<{ quantity: number; keywords: string[] }>({
+  quantity: 1,
+  keywords: [''],
+})
+
+const scheduleEntriesSorted = computed(() =>
+  [...scheduleEntries.value].sort((a, b) => a.date.localeCompare(b.date))
+)
+
+function getScheduleForDate(d: Dayjs): ScheduleEntry | undefined {
+  return scheduleEntries.value.find(e => e.date === d.format('YYYY-MM-DD'))
+}
+
+function handleDateSelect(d: Dayjs) {
+  calendarValue.value = d
+  selectedDateStr.value = d.format('YYYY-MM-DD')
+  const existing = getScheduleForDate(d)
+  if (existing) {
+    editingEntry.quantity = existing.quantity
+    editingEntry.keywords = [...existing.keywords]
+  } else {
+    editingEntry.quantity = 1
+    editingEntry.keywords = ['']
+  }
+}
+
+function addScheduleKeyword() {
+  editingEntry.keywords.push('')
+}
+function removeScheduleKeyword(i: number) {
+  editingEntry.keywords.splice(i, 1)
+}
+
+function saveScheduleEntry() {
+  if (!editingEntry.quantity || editingEntry.quantity < 1) {
+    message.warning('请输入有效的订单数量')
+    return
+  }
+  const idx = scheduleEntries.value.findIndex(e => e.date === selectedDateStr.value)
+  const entry: ScheduleEntry = {
+    date: selectedDateStr.value,
+    quantity: editingEntry.quantity,
+    keywords: editingEntry.keywords.filter(k => k.trim()),
+  }
+  if (idx >= 0) {
+    scheduleEntries.value[idx] = entry
+  } else {
+    scheduleEntries.value.push(entry)
+  }
+  message.success(`${selectedDateStr.value} 排期已保存`)
+}
+
+function removeScheduleEntry() {
+  const idx = scheduleEntries.value.findIndex(e => e.date === selectedDateStr.value)
+  if (idx >= 0) {
+    scheduleEntries.value.splice(idx, 1)
+    editingEntry.quantity = 1
+    editingEntry.keywords = ['']
+    message.success('排期已删除')
+  }
+}
 
 function generateOrderNumber(): string {
   const now = new Date()
@@ -260,7 +377,7 @@ const defaultForm = () => ({
   fixed_daily_orders: 0,
   new_daily_orders: 0,
   notes: '',
-  daily_feedback: true,
+  daily_feedback: false,
   comprehensive_label: false,
   delivery_label: false,
   seller: '',
@@ -338,6 +455,17 @@ async function handleSubmit() {
       )
     }
 
+    if (data && scheduleEntries.value.length > 0) {
+      await supabase.from('order_schedules').insert(
+        scheduleEntries.value.map(e => ({
+          order_id: data.id,
+          schedule_date: e.date,
+          quantity: e.quantity,
+          keywords: e.keywords,
+        }))
+      )
+    }
+
     message.success(`订单 ${orderNumber} 创建成功！`)
     resetForm()
     currentOrderNumber.value = generateOrderNumber()
@@ -351,6 +479,10 @@ async function handleSubmit() {
 function resetForm() {
   Object.assign(form, defaultForm())
   keywords.value = ['']
+  scheduleEntries.value = []
+  selectedDateStr.value = ''
+  editingEntry.quantity = 1
+  editingEntry.keywords = ['']
   formRef.value?.resetFields()
 }
 
@@ -481,6 +613,94 @@ onMounted(() => {
 .price-table-value {
   font-weight: 600;
   color: #1e40af;
+}
+.schedule-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.calendar-area {
+  flex: 0 0 280px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.schedule-form-area {
+  flex: 1;
+  min-width: 0;
+}
+.selected-date-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.selected-date-label {
+  font-size: 12px;
+  color: #64748b;
+}
+.selected-date-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e40af;
+}
+.schedule-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.cal-dot {
+  font-size: 10px;
+  color: #2563eb;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+.schedule-list {
+  margin-top: 16px;
+  border-top: 1px solid #f0f0f0;
+  padding-top: 14px;
+}
+.schedule-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 10px 0;
+}
+.schedule-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.schedule-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.schedule-tag-date {
+  font-weight: 600;
+  color: #1d4ed8;
+}
+.schedule-tag-qty {
+  color: #2563eb;
+  background: #dbeafe;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+.schedule-tag-kw {
+  color: #64748b;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .keyword-row {
   display: flex;
