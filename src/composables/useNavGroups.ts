@@ -3,6 +3,7 @@ import {
   ApartmentOutlined, InboxOutlined, UnorderedListOutlined, AppstoreOutlined,
   UserAddOutlined, DesktopOutlined, ThunderboltOutlined, UserOutlined,
   StopOutlined, CreditCardOutlined, BankOutlined, SendOutlined, MessageOutlined,
+  SwapOutlined,
 } from '@ant-design/icons-vue'
 import type { StaffRole } from '../types'
 
@@ -10,6 +11,7 @@ export interface NavItem {
   id: string
   label: string
   icon: unknown
+  roles?: StaffRole[]
 }
 
 export interface NavGroup {
@@ -43,6 +45,7 @@ export const allNavGroups: NavGroup[] = [
       { id: 'assignment', label: '分配管理', icon: UserAddOutlined },
       { id: 'staff-workbench', label: '业务员工作台', icon: DesktopOutlined },
       { id: 'grab-hall', label: '抢单大厅', icon: ThunderboltOutlined },
+      { id: 'transfer-management', label: '互转管理', icon: SwapOutlined, roles: ['管理员'] },
     ],
   },
   {
@@ -81,5 +84,10 @@ export const allNavGroups: NavGroup[] = [
 
 export function getNavGroupsForRole(role: StaffRole | null): NavGroup[] {
   if (!role) return []
-  return allNavGroups.filter(g => g.roles.includes(role))
+  return allNavGroups
+    .filter(g => g.roles.includes(role))
+    .map(g => ({
+      ...g,
+      items: g.items.filter(item => !item.roles || item.roles.includes(role)),
+    }))
 }
