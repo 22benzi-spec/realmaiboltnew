@@ -14,10 +14,6 @@
             <div class="stat-num gold">${{ gcStats.totalUsd.toFixed(2) }}</div>
             <div class="stat-label">礼品卡总面额 (USD)</div>
           </div>
-          <div class="stat-card highlight-cny">
-            <div class="stat-num cny">¥{{ gcStats.totalCny.toFixed(2) }}</div>
-            <div class="stat-label">折算成本 (CNY)</div>
-          </div>
         </div>
 
         <div class="card-panel">
@@ -61,10 +57,6 @@
                   </div>
                 </div>
               </template>
-              <template v-if="column.key === 'cost_cny'">
-                <span v-if="record.gift_card_cost_cny" class="cost-cny">¥{{ Number(record.gift_card_cost_cny).toFixed(2) }}</span>
-                <span v-else class="text-gray">—</span>
-              </template>
               <template v-if="column.key === 'handled_at'">
                 <span class="time-text">{{ fmtTime(record.handled_at) }}</span>
               </template>
@@ -86,10 +78,6 @@
           <div class="stat-card highlight-blue">
             <div class="stat-num blue">${{ ppStats.totalUsd.toFixed(2) }}</div>
             <div class="stat-label">退款总金额 (USD)</div>
-          </div>
-          <div class="stat-card highlight-cny">
-            <div class="stat-num cny">¥{{ ppStats.totalCny.toFixed(2) }}</div>
-            <div class="stat-label">折算成本 (CNY)</div>
           </div>
         </div>
 
@@ -136,13 +124,6 @@
                 <a v-if="record.paypal_receipt_screenshot" :href="record.paypal_receipt_screenshot" target="_blank" class="screenshot-link">查看截图</a>
                 <span v-else class="text-gray">—</span>
               </template>
-              <template v-if="column.key === 'exchange_rate'">
-                <span class="text-gray">{{ record.paypal_exchange_rate ? record.paypal_exchange_rate : '—' }}</span>
-              </template>
-              <template v-if="column.key === 'cost_cny'">
-                <span v-if="record.paypal_cost_cny" class="cost-cny">¥{{ Number(record.paypal_cost_cny).toFixed(2) }}</span>
-                <span v-else class="text-gray">—</span>
-              </template>
               <template v-if="column.key === 'handled_at'">
                 <span class="time-text">{{ fmtTime(record.handled_at) }}</span>
               </template>
@@ -187,7 +168,6 @@ const gcStats = computed(() => {
   return {
     count: data.length,
     totalUsd: data.reduce((s, r) => s + Number(r.gift_card_face_value_usd || r.refund_amount_usd || 0), 0),
-    totalCny: data.reduce((s, r) => s + Number(r.gift_card_cost_cny || 0), 0),
   }
 })
 
@@ -196,7 +176,6 @@ const ppStats = computed(() => {
   return {
     count: data.length,
     totalUsd: data.reduce((s, r) => s + Number(r.refund_amount_usd || 0), 0),
-    totalCny: data.reduce((s, r) => s + Number(r.paypal_cost_cny || 0), 0),
   }
 })
 
@@ -205,7 +184,6 @@ const gcColumns = [
   { title: '买手', key: 'buyer', width: 130 },
   { title: '退款金额', key: 'refund_amount', width: 100 },
   { title: '礼品卡卡号 / 卡码', key: 'gift_card', width: 200 },
-  { title: '折算成本(CNY)', key: 'cost_cny', width: 120 },
   { title: '处理时间', key: 'handled_at', width: 140 },
   { title: '财务备注', key: 'notes' },
 ]
@@ -216,8 +194,6 @@ const ppColumns = [
   { title: '退款金额', key: 'refund_amount', width: 100 },
   { title: '付款 PayPal', key: 'paypal_account', width: 200 },
   { title: '截图', key: 'screenshot', width: 80 },
-  { title: '汇率', key: 'exchange_rate', width: 80 },
-  { title: '折算成本(CNY)', key: 'cost_cny', width: 120 },
   { title: '处理时间', key: 'handled_at', width: 140 },
   { title: '财务备注', key: 'notes' },
 ]
@@ -240,7 +216,7 @@ async function loadGiftCardRefunds() {
   try {
     let query = supabase
       .from('refund_requests')
-      .select('id, sub_order_number, product_name, asin, buyer_name, refund_amount_usd, assigned_gift_card_number, assigned_gift_card_code, gift_card_face_value_usd, gift_card_cost_cny, handled_at, finance_notes', { count: 'exact' })
+      .select('id, sub_order_number, product_name, asin, buyer_name, refund_amount_usd, assigned_gift_card_number, assigned_gift_card_code, gift_card_face_value_usd, handled_at, finance_notes', { count: 'exact' })
       .eq('status', '已处理')
       .eq('refund_method', '礼品卡')
       .order('handled_at', { ascending: false })
@@ -263,7 +239,7 @@ async function loadGiftCardRefunds() {
 async function loadGiftCardStats() {
   let query = supabase
     .from('refund_requests')
-    .select('refund_amount_usd, gift_card_face_value_usd, gift_card_cost_cny')
+    .select('refund_amount_usd, gift_card_face_value_usd')
     .eq('status', '已处理')
     .eq('refund_method', '礼品卡')
   query = buildDateFilter(query, 'handled_at', gcDateRange.value)
@@ -276,7 +252,7 @@ async function loadPaypalRefunds() {
   try {
     let query = supabase
       .from('refund_requests')
-      .select('id, sub_order_number, product_name, asin, buyer_name, buyer_paypal_email, refund_amount_usd, assigned_paypal_email, paypal_receipt_screenshot, paypal_exchange_rate, paypal_cost_cny, handled_at, finance_notes', { count: 'exact' })
+      .select('id, sub_order_number, product_name, asin, buyer_name, buyer_paypal_email, refund_amount_usd, assigned_paypal_email, paypal_receipt_screenshot, handled_at, finance_notes', { count: 'exact' })
       .eq('status', '已处理')
       .eq('refund_method', 'PayPal')
       .order('handled_at', { ascending: false })
@@ -300,7 +276,7 @@ async function loadPaypalRefunds() {
 async function loadPaypalStats() {
   let query = supabase
     .from('refund_requests')
-    .select('refund_amount_usd, paypal_cost_cny')
+    .select('refund_amount_usd')
     .eq('status', '已处理')
     .eq('refund_method', 'PayPal')
   query = buildDateFilter(query, 'handled_at', ppDateRange.value)
