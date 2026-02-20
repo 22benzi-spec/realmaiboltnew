@@ -25,76 +25,87 @@
           <a-empty description="暂无可抢订单" />
         </div>
 
-        <div v-else class="order-grid">
-          <div v-for="order in hallOrders" :key="order.id" class="order-card">
-            <div class="card-header">
-              <div class="card-header-left">
-                <span class="sub-order-no">{{ order.sub_order_number }}</span>
-                <a-tag v-if="order.order_type" color="blue" style="font-size:11px">{{ order.order_type }}</a-tag>
-                <a-tag v-if="order.country" color="default" style="font-size:11px">{{ order.country }}</a-tag>
-              </div>
-              <div class="card-header-right">
-                <span v-if="isExpiringSoon(order.scheduled_date)" class="expiry-badge expiry-warn">
-                  <ClockCircleOutlined /> 即将到期
-                </span>
-                <span v-else-if="isExpired(order.scheduled_date)" class="expiry-badge expiry-danger">
-                  <ExclamationCircleOutlined /> 已过期 {{ expiredDays(order.scheduled_date) }} 天
-                </span>
-                <span v-else-if="order.scheduled_date" class="expiry-badge expiry-ok">
-                  <CalendarOutlined /> {{ order.scheduled_date }}
-                </span>
+        <div v-else class="order-list">
+          <div v-for="order in hallOrders" :key="order.id" class="order-row">
+            <!-- 产品图 -->
+            <div class="row-img-col">
+              <img v-if="order.product_image" :src="order.product_image" class="row-img" referrerpolicy="no-referrer" @error="onImgError" />
+              <div v-else class="row-img-placeholder">?</div>
+            </div>
+
+            <!-- 订单号 + 标签 -->
+            <div class="row-col col-order">
+              <span class="sub-order-no">{{ order.sub_order_number }}</span>
+              <div class="tag-row">
+                <a-tag v-if="order.order_type" color="blue" style="font-size:10px;margin:0">{{ order.order_type }}</a-tag>
+                <a-tag v-if="order.country" color="default" style="font-size:10px;margin:0">{{ order.country }}</a-tag>
               </div>
             </div>
 
-            <div class="card-body">
-              <div class="product-row">
-                <img v-if="order.product_image" :src="order.product_image" class="product-img" referrerpolicy="no-referrer" @error="onImgError" />
-                <div v-else class="product-img-placeholder">?</div>
-                <div class="product-info">
-                  <div class="product-name">{{ order.product_name || '—' }}</div>
-                  <div class="product-meta">
-                    <span class="meta-tag asin">{{ order.asin }}</span>
-                    <span v-if="order.store_name" class="meta-tag store">{{ order.store_name }}</span>
-                    <span v-if="order.brand_name" class="meta-tag brand">{{ order.brand_name }}</span>
-                  </div>
-                  <div class="product-meta" style="margin-top:4px">
-                    <span v-if="order.category" class="meta-tag category">{{ order.category }}</span>
-                    <span v-if="order.review_type" class="meta-tag review">{{ order.review_type }}</span>
-                    <span v-if="order.review_level" class="meta-tag level">{{ order.review_level }}</span>
-                  </div>
-                </div>
+            <!-- 产品信息 -->
+            <div class="row-col col-product">
+              <div class="product-name-row">{{ order.product_name || '—' }}</div>
+              <div class="meta-tags">
+                <span class="meta-tag asin">{{ order.asin }}</span>
+                <span v-if="order.store_name" class="meta-tag store">{{ order.store_name }}</span>
+                <span v-if="order.brand_name" class="meta-tag brand">{{ order.brand_name }}</span>
+                <span v-if="order.category" class="meta-tag category">{{ order.category }}</span>
               </div>
+            </div>
 
-              <div class="price-row">
-                <div class="price-item">
-                  <span class="price-label">产品售价</span>
-                  <span class="price-val usd">${{ Number(order.product_price || 0).toFixed(2) }}</span>
-                </div>
-                <div class="price-item">
-                  <span class="price-label">佣金</span>
-                  <span class="price-val cny">¥{{ Number(order.commission_fee || 0).toFixed(2) }}</span>
-                </div>
-                <div v-if="order.keyword" class="keyword-item">
-                  <span class="price-label">关键词</span>
-                  <span class="keyword-val">{{ order.keyword }}</span>
-                </div>
-                <div v-if="order.variant_info" class="keyword-item">
-                  <span class="price-label">变参</span>
-                  <span class="keyword-val">{{ order.variant_info }}</span>
-                </div>
+            <!-- 测评类型/等级 -->
+            <div class="row-col col-review">
+              <div v-if="order.review_type" class="info-line"><span class="info-label">类型</span><span class="meta-tag review">{{ order.review_type }}</span></div>
+              <div v-if="order.review_level" class="info-line"><span class="info-label">等级</span><span class="meta-tag level">{{ order.review_level }}</span></div>
+            </div>
+
+            <!-- 关键词/变参 -->
+            <div class="row-col col-keyword">
+              <div v-if="order.keyword" class="info-line"><span class="info-label">关键词</span><span class="info-val keyword-text">{{ order.keyword }}</span></div>
+              <div v-if="order.variant_info" class="info-line"><span class="info-label">变参</span><span class="info-val">{{ order.variant_info }}</span></div>
+              <div v-if="!order.keyword && !order.variant_info" class="info-empty">—</div>
+            </div>
+
+            <!-- 价格/佣金 -->
+            <div class="row-col col-price">
+              <div class="price-block">
+                <span class="price-label">售价</span>
+                <span class="price-usd">${{ Number(order.product_price || 0).toFixed(2) }}</span>
               </div>
+              <div class="price-block">
+                <span class="price-label">佣金</span>
+                <span class="price-cny">¥{{ Number(order.commission_fee || 0).toFixed(2) }}</span>
+              </div>
+            </div>
 
-              <div class="release-row">
+            <!-- 到期时间 -->
+            <div class="row-col col-expiry">
+              <span v-if="isExpired(order.scheduled_date)" class="expiry-badge expiry-danger">
+                <ExclamationCircleOutlined /> 逾期 {{ expiredDays(order.scheduled_date) }}天
+              </span>
+              <span v-else-if="isExpiringSoon(order.scheduled_date)" class="expiry-badge expiry-warn">
+                <ClockCircleOutlined /> {{ order.scheduled_date }}
+              </span>
+              <span v-else-if="order.scheduled_date" class="expiry-badge expiry-ok">
+                <CalendarOutlined /> {{ order.scheduled_date }}
+              </span>
+              <span v-else class="info-empty">无截止</span>
+            </div>
+
+            <!-- 来源业务员 -->
+            <div class="row-col col-staff">
+              <div class="staff-from">
                 <UserOutlined style="color:#9ca3af;font-size:11px" />
-                <span class="release-by">来自：{{ order.released_by_staff_name || '—' }}</span>
-                <span v-if="order.released_at" class="release-time">{{ fmtTime(order.released_at) }}</span>
+                <span>{{ order.released_by_staff_name || '—' }}</span>
               </div>
+              <div v-if="order.released_at" class="release-time">{{ fmtTime(order.released_at) }}</div>
             </div>
 
-            <div class="card-footer">
+            <!-- 抢单按钮 -->
+            <div class="row-col col-action">
               <a-button
                 type="primary"
-                block
+                size="small"
                 :loading="grabbingId === order.id"
                 :disabled="!!grabbingId && grabbingId !== order.id"
                 @click="grabOne(order)"
@@ -304,68 +315,51 @@ onMounted(() => {
 .loading-wrap { display: flex; justify-content: center; padding: 80px 0; }
 .empty-hall { background: #fff; border-radius: 12px; padding: 60px 0; }
 
-.order-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
-}
+/* 横排列表 */
+.order-list { display: flex; flex-direction: column; gap: 8px; }
 
-.order-card {
+.order-row {
   background: #fff;
-  border-radius: 12px;
   border: 1px solid #e5e7eb;
-  overflow: hidden;
+  border-radius: 10px;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 10px 14px;
   transition: box-shadow 0.15s, border-color 0.15s;
 }
-.order-card:hover {
-  box-shadow: 0 4px 16px rgba(37,99,235,0.1);
+.order-row:hover {
+  box-shadow: 0 3px 12px rgba(37,99,235,0.09);
   border-color: #bfdbfe;
 }
 
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: #f8fafc;
-  border-bottom: 1px solid #f0f0f0;
-  gap: 8px;
-}
-.card-header-left { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
-.sub-order-no { font-size: 12px; font-weight: 700; color: #374151; font-family: monospace; }
-.card-header-right { flex-shrink: 0; }
-
-.expiry-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 12px;
-}
-.expiry-ok { background: #f0fdf4; color: #16a34a; }
-.expiry-warn { background: #fffbeb; color: #d97706; }
-.expiry-danger { background: #fef2f2; color: #dc2626; }
-
-.card-body { padding: 14px; flex: 1; display: flex; flex-direction: column; gap: 12px; }
-
-.product-row { display: flex; gap: 10px; align-items: flex-start; }
-.product-img {
-  width: 56px; height: 56px; object-fit: cover;
-  border-radius: 8px; border: 1px solid #f0f0f0; flex-shrink: 0;
-}
-.product-img-placeholder {
-  width: 56px; height: 56px; border-radius: 8px;
+.row-img-col { flex-shrink: 0; margin-right: 12px; }
+.row-img { width: 52px; height: 52px; object-fit: cover; border-radius: 7px; border: 1px solid #f0f0f0; display: block; }
+.row-img-placeholder {
+  width: 52px; height: 52px; border-radius: 7px;
   background: #f3f4f6; display: flex; align-items: center;
-  justify-content: center; color: #d1d5db; font-size: 20px; flex-shrink: 0;
+  justify-content: center; color: #d1d5db; font-size: 18px;
 }
-.product-info { flex: 1; min-width: 0; }
-.product-name { font-size: 13px; font-weight: 600; color: #111827; line-height: 1.4; margin-bottom: 6px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.product-meta { display: flex; flex-wrap: wrap; gap: 4px; }
-.meta-tag { font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+
+.row-col { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 10px; border-right: 1px solid #f3f4f6; }
+.row-col:last-child { border-right: none; }
+
+.col-order { min-width: 130px; flex-shrink: 0; }
+.col-product { flex: 2; min-width: 0; }
+.col-review { min-width: 90px; flex-shrink: 0; }
+.col-keyword { min-width: 120px; flex: 1; }
+.col-price { min-width: 110px; flex-shrink: 0; }
+.col-expiry { min-width: 110px; flex-shrink: 0; }
+.col-staff { min-width: 100px; flex-shrink: 0; }
+.col-action { min-width: 96px; flex-shrink: 0; padding-left: 14px; border-right: none; }
+
+.sub-order-no { font-size: 12px; font-weight: 700; color: #111827; font-family: monospace; white-space: nowrap; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 3px; }
+
+.product-name-row { font-size: 13px; font-weight: 600; color: #111827; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.meta-tags { display: flex; flex-wrap: wrap; gap: 3px; }
+
+.meta-tag { font-size: 10px; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
 .meta-tag.asin { background: #eff6ff; color: #1d4ed8; font-family: monospace; font-weight: 600; }
 .meta-tag.store { background: #f0fdf4; color: #15803d; }
 .meta-tag.brand { background: #fdf4ff; color: #7e22ce; }
@@ -373,34 +367,30 @@ onMounted(() => {
 .meta-tag.review { background: #f0f9ff; color: #0369a1; }
 .meta-tag.level { background: #fefce8; color: #854d0e; }
 
-.price-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-.price-item { display: flex; flex-direction: column; gap: 2px; }
-.keyword-item { display: flex; flex-direction: column; gap: 2px; }
+.info-line { display: flex; align-items: center; gap: 4px; }
+.info-label { font-size: 10px; color: #9ca3af; white-space: nowrap; flex-shrink: 0; }
+.info-val { font-size: 12px; color: #374151; font-weight: 500; }
+.keyword-text { color: #0369a1; }
+.info-empty { font-size: 12px; color: #d1d5db; }
+
+.price-block { display: flex; align-items: baseline; gap: 4px; }
 .price-label { font-size: 10px; color: #9ca3af; }
-.price-val { font-size: 15px; font-weight: 700; }
-.price-val.usd { color: #0369a1; }
-.price-val.cny { color: #059669; }
-.keyword-val { font-size: 12px; color: #374151; font-weight: 500; }
+.price-usd { font-size: 15px; font-weight: 700; color: #0369a1; }
+.price-cny { font-size: 14px; font-weight: 700; color: #059669; }
 
-.release-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-top: 4px;
-  border-top: 1px solid #f3f4f6;
+.expiry-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 10px;
+  white-space: nowrap;
 }
-.release-by { font-size: 11px; color: #6b7280; }
-.release-time { font-size: 11px; color: #9ca3af; margin-left: auto; }
+.expiry-ok { background: #f0fdf4; color: #16a34a; }
+.expiry-warn { background: #fffbeb; color: #d97706; }
+.expiry-danger { background: #fef2f2; color: #dc2626; }
 
-.card-footer { padding: 12px 14px; border-top: 1px solid #f0f0f0; }
-.grab-btn { height: 36px; font-weight: 600; font-size: 14px; border-radius: 8px; }
+.staff-from { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #6b7280; }
+.release-time { font-size: 10px; color: #9ca3af; }
+
+.grab-btn { font-weight: 600; border-radius: 7px; width: 100%; }
 
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 </style>
