@@ -1400,6 +1400,9 @@ async function releaseToHall(task: any) {
       released_at: new Date().toISOString(),
       released_by_staff_id: selectedStaffId.value,
       released_by_staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
+      status: '待分配',
+      staff_id: null,
+      staff_name: null,
     }).eq('id', task.id)
     if (error) throw error
 
@@ -1412,8 +1415,10 @@ async function releaseToHall(task: any) {
       reason: '放入抢单大厅',
     })
 
-    task.released_to_hall = true
+    allTasks.value = allTasks.value.filter(t => t.id !== task.id)
+    filterTaskList()
     message.success('已放到抢单大厅')
+    await loadStaff()
   } catch (e: any) {
     message.error(e.message)
   }
