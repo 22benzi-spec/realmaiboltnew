@@ -6,7 +6,7 @@
       <!-- 左侧业务员列表 -->
       <div class="staff-sidebar">
         <div class="staff-search">
-          <a-input-search v-model:value="staffSearch" placeholder="搜索业务员" allow-clear />
+          <a-input-search v-model:value="staffSearch" placeholder="搜索业务员" allow-clear size="small" />
         </div>
         <div class="staff-list">
           <div
@@ -15,201 +15,325 @@
             :class="['staff-item', selectedStaffId === s.id ? 'active' : '']"
             @click="selectStaff(s.id)"
           >
-            <div class="staff-avatar" :style="{ background: s.avatar_color || '#2563eb' }">
-              {{ s.name.charAt(0) }}
-            </div>
+            <div class="staff-avatar" :style="{ background: s.avatar_color || '#2563eb' }">{{ s.name.charAt(0) }}</div>
             <div class="staff-info">
               <div class="staff-name">{{ s.name }}</div>
               <div class="staff-role">{{ s.role || '业务员' }}</div>
             </div>
             <a-badge :count="s.pending_count" :overflow-count="99" />
           </div>
+          <div v-if="filteredStaff.length === 0" class="no-staff">暂无业务员</div>
         </div>
       </div>
 
       <!-- 右侧主内容 -->
       <div class="workbench-main">
         <template v-if="selectedStaffId">
-          <!-- 统计卡片 -->
-          <div class="workbench-stats">
-            <div v-for="stat in workbenchStats" :key="stat.label" :class="['stat-mini', stat.colorClass]">
-              <div class="stat-mini-value">{{ stat.value }}</div>
-              <div class="stat-mini-label">{{ stat.label }}</div>
+          <!-- 统计栏 + 筛选 -->
+          <div class="top-bar">
+            <div class="filter-tabs">
+              <span
+                v-for="tab in filterTabs"
+                :key="tab.value"
+                :class="['filter-tab', taskFilter === tab.value ? 'active' : '']"
+                @click="setFilter(tab.value)"
+              >
+                {{ tab.label }}
+                <em v-if="tab.count !== undefined">{{ tab.count }}</em>
+              </span>
+            </div>
+            <div class="filter-right">
+              <a-checkbox v-model:checked="filterOverdue" @change="filterTaskList">
+                <span class="overdue-label">逾期</span>
+              </a-checkbox>
+              <a-checkbox v-model:checked="filterToday" @change="filterTaskList">今日</a-checkbox>
+              <a-checkbox v-model:checked="filterSoon" @change="filterTaskList">即将到期</a-checkbox>
+              <a-input-search
+                v-model:value="taskSearch"
+                placeholder="搜索子订单号/ASIN/买手/关键词..."
+                style="width:260px"
+                @search="filterTaskList"
+                allow-clear
+                size="small"
+              />
+              <span class="total-hint">{{ filteredTasks.length }} 条任务</span>
             </div>
           </div>
 
-          <div class="card-panel">
-            <div class="toolbar">
-              <a-select v-model:value="taskFilter" style="width:140px" @change="loadTasks">
-                <a-select-option value="">全部任务</a-select-option>
-                <a-select-option v-for="s in subOrderStatuses" :key="s" :value="s">{{ s }}</a-select-option>
-              </a-select>
-              <a-input-search v-model:value="taskSearch" placeholder="搜索ASIN/关键词" style="width:200px" @search="loadTasks" allow-clear />
-              <a-button @click="loadTasks"><ReloadOutlined /> 刷新</a-button>
-              <span class="total-hint">共 {{ tasks.length }} 条子单</span>
-            </div>
+          <div v-if="tasksLoading" class="loading-wrap"><a-spin /></div>
 
-            <div v-if="tasksLoading" class="loading-wrap"><a-spin /></div>
+          <div v-else-if="filteredTasks.length === 0" class="empty-list">
+            <a-empty description="暂无任务数据" />
+          </div>
 
-            <div v-else>
-              <div v-if="tasks.length === 0" class="empty-list">
-                <a-empty description="暂无任务数据" />
+          <!-- 任务卡片列表 -->
+          <div v-else class="task-card-list">
+            <div
+              v-for="task in filteredTasks"
+              :key="task.id"
+              :class="['task-card', task._expanded ? 'expanded' : '', getDangerClass(task)]"
+            >
+              <!-- 任务卡头 -->
+              <div class="task-card-header" @click="toggleExpand(task)">
+                <div class="card-header-left">
+                  <span class="toggle-icon">{{ task._expanded ? '▼' : '▶' }}</span>
+                  <img v-if="task.product_image" :src="task.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="onImgError" />
+                  <div v-else class="product-thumb-placeholder"><span>?</span></div>
+
+                  <div class="task-meta">
+                    <div class="meta-row1">
+                      <span class="sub-no-text">{{ task.sub_order_number }}</span>
+                      <a-tag :color="getStatusColor(task.status)" style="margin-left:6px;font-size:11px">{{ task.status }}</a-tag>
+                      <a-tag v-if="isOverdue(task.scheduled_date) && !isDone(task.status)" color="error" style="font-size:10px">日超期 {{ overdayCount(task.scheduled_date) }} 天</a-tag>
+                      <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px">{{ task.refund_status }}</a-tag>
+                      <a-tag v-if="task.order_type" color="default" style="font-size:10px">{{ task.order_type }}</a-tag>
+                      <span v-if="task.product_name" class="product-name-sm">{{ task.product_name }}</span>
+                    </div>
+                    <div class="meta-row2">
+                      <span class="mono-sm">{{ task.asin }}</span>
+                      <span class="sep">{{ task.store_name }}</span>
+                      <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
+                      <span v-if="task.review_type" class="sep text-gray">{{ task.review_type }}</span>
+                      <span v-if="task.category" class="sep text-gray">{{ task.category }}</span>
+                      <span v-if="task.country" class="sep text-gray">{{ task.country }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card-header-right">
+                  <div v-if="task.keyword" class="keyword-badge">🔍 {{ task.keyword }}</div>
+                  <div v-if="task.scheduled_date" :class="['date-badge', isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-ok']">
+                    截止 {{ task.scheduled_date }}
+                  </div>
+                  <!-- 进度点 -->
+                  <div class="progress-dots">
+                    <span v-for="(_step, i) in workflowSteps" :key="i" :class="['dot', getStepDone(task, i) ? 'done' : getStepCurrent(task, i) ? 'current' : 'pending']"></span>
+                  </div>
+                  <div class="header-assign">
+                    <span v-if="task.buyer_name" class="buyer-badge">{{ task.buyer_name }}</span>
+                    <span v-else class="buyer-none">未分配买手</span>
+                  </div>
+                  <div class="commission-badge">佣金 <strong>¥{{ Number(task.commission_fee || 0).toFixed(2) }}</strong></div>
+                </div>
               </div>
 
-              <div v-else class="sub-table-wrap">
-                <table class="sub-table">
-                  <thead>
-                    <tr>
-                      <th class="col-no">子订单号</th>
-                      <th class="col-asin">ASIN</th>
-                      <th class="col-keyword">关键词</th>
-                      <th class="col-variant">变参</th>
-                      <th class="col-date">排期</th>
-                      <th class="col-status">状态</th>
-                      <th class="col-amazon">亚马逊订单号</th>
-                      <th class="col-price">单价</th>
-                      <th class="col-buyer">买手</th>
-                      <th class="col-note">任务备注</th>
-                      <th class="col-action">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template v-for="task in tasks" :key="task.id">
-                      <tr
-                        :class="['sub-row', editingId === task.id ? 'editing-row' : '', isOverdue(task.scheduled_date) && !['已完成','已取消'].includes(task.status) ? 'overdue-row' : '']"
-                      >
-                        <td class="col-no">
-                          <span class="sub-no">{{ task.sub_order_number }}</span>
-                        </td>
-                        <td class="col-asin">
-                          <div class="asin-cell">
-                            <img v-if="task.product_image" :src="task.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="onImgError" />
-                            <div>
-                              <div class="asin-code">{{ task.asin }}</div>
-                              <div class="store-name">{{ task.store_name }}</div>
-                            </div>
+              <!-- 展开：步骤化做单流程 -->
+              <div v-if="task._expanded" class="workflow-body">
+                <!-- 产品信息栏 -->
+                <div class="product-info-bar">
+                  <div class="pi-item"><span class="pi-label">产品名称</span><span class="pi-val">{{ task.product_name || '—' }}</span></div>
+                  <div class="pi-item"><span class="pi-label">品牌</span><span class="pi-val">{{ task.brand_name || '—' }}</span></div>
+                  <div class="pi-item"><span class="pi-label">类目</span><span class="pi-val">{{ task.category || '—' }}</span></div>
+                  <div class="pi-item"><span class="pi-label">测评等级</span><span class="pi-val">{{ task.review_level || '—' }}</span></div>
+                  <div class="pi-item"><span class="pi-label">变参</span>
+                    <a-input v-model:value="task._edit_variant" size="small" style="width:90px" placeholder="无" @blur="quickSave(task, 'variant_info', task._edit_variant)" />
+                  </div>
+                  <div class="pi-item"><span class="pi-label">客户</span><span class="pi-val">{{ task.customer_name || '—' }}</span></div>
+                  <div class="pi-item">
+                    <span class="pi-label">任务备注</span>
+                    <a-input v-model:value="task._edit_task_notes" size="small" style="width:150px" placeholder="备注" @blur="quickSave(task, 'task_notes', task._edit_task_notes)" />
+                  </div>
+                </div>
+
+                <!-- 步骤流程 -->
+                <div class="workflow-steps">
+                  <!-- Step 1: 分配买手 -->
+                  <div :class="['step-block', getStepDone(task, 0) ? 'step-done' : 'step-active']">
+                    <div class="step-number" :class="getStepDone(task, 0) ? 'num-done' : 'num-active'">
+                      <CheckCircleFilled v-if="getStepDone(task, 0)" />
+                      <span v-else>1</span>
+                    </div>
+                    <div class="step-content">
+                      <div class="step-title">分配买手</div>
+                      <div v-if="task.buyer_id" class="step-done-info">
+                        <UserOutlined />
+                        <span class="buyer-name-text">{{ task.buyer_name }}</span>
+                        <a class="re-edit" @click.stop="task._editing_buyer = true">更换</a>
+                      </div>
+                      <div v-if="!task.buyer_id || task._editing_buyer" class="step-input-row">
+                        <a-select
+                          v-model:value="task._sel_buyer_id"
+                          style="width:180px"
+                          show-search
+                          option-filter-prop="label"
+                          placeholder="选择买手"
+                          size="small"
+                          allow-clear
+                        >
+                          <a-select-option v-for="b in buyerList" :key="b.id" :value="b.id" :label="b.name">
+                            <span>{{ b.name }}</span>
+                            <span class="buyer-opt-meta"> · {{ b.country || '—' }} · {{ b.level }}</span>
+                          </a-select-option>
+                        </a-select>
+                        <a-button type="primary" size="small" :loading="task._saving_buyer" @click="assignBuyer(task)">确认分配</a-button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Step 2: 退款方式设置 -->
+                  <div :class="['step-block', getStepDone(task, 1) ? 'step-done' : getStepDone(task, 0) ? 'step-active' : 'step-locked']">
+                    <div class="step-number" :class="getStepDone(task, 1) ? 'num-done' : getStepDone(task, 0) ? 'num-active' : 'num-locked'">
+                      <CheckCircleFilled v-if="getStepDone(task, 1)" />
+                      <span v-else>2</span>
+                    </div>
+                    <div class="step-content">
+                      <div class="step-title">设置退款方式</div>
+                      <div v-if="task.refund_method" class="step-done-info">
+                        <span class="refund-method-badge">{{ task.refund_method }}</span>
+                        <span v-if="task.refund_sequence" class="refund-seq">{{ task.refund_sequence }}</span>
+                        <a class="re-edit" @click.stop="task._editing_refund_method = !task._editing_refund_method">修改</a>
+                      </div>
+                      <div v-if="!task.refund_method || task._editing_refund_method" class="step-input-row">
+                        <a-radio-group v-model:value="task._sel_refund_method" size="small" button-style="solid">
+                          <a-radio-button value="礼品卡">礼品卡</a-radio-button>
+                          <a-radio-button value="PayPal">PayPal</a-radio-button>
+                          <a-radio-button value="先退款后给单">先退款后给单</a-radio-button>
+                          <a-radio-button value="先给单后退款">先给单后退款</a-radio-button>
+                        </a-radio-group>
+                        <a-button type="primary" size="small" :loading="task._saving_refund_method" :disabled="!task._sel_refund_method" @click="saveRefundMethod(task)">确认</a-button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Step 3: 退款给买手 -->
+                  <div :class="['step-block', getStepDone(task, 2) ? 'step-done' : getStepDone(task, 1) ? 'step-active' : 'step-locked']">
+                    <div class="step-number" :class="getStepDone(task, 2) ? 'num-done' : getStepDone(task, 1) ? 'num-active' : 'num-locked'">
+                      <CheckCircleFilled v-if="getStepDone(task, 2)" />
+                      <span v-else>3</span>
+                    </div>
+                    <div class="step-content">
+                      <div class="step-title">退款给买手</div>
+                      <div v-if="task.refund_status === '已退款'" class="step-done-info">
+                        <span class="green-text">已退款</span>
+                        <span v-if="task.refund_amount" class="refund-amount-text">¥{{ Number(task.refund_amount).toFixed(2) }}</span>
+                        <a class="re-edit" @click.stop="task._editing_refund = true">修改</a>
+                      </div>
+                      <div v-if="task.refund_status !== '已退款' || task._editing_refund" class="step-input-col">
+                        <div v-if="task.refund_method === '礼品卡'" class="refund-gift-panel">
+                          <div class="refund-panel-label">亚马逊礼品卡退款</div>
+                          <div class="refund-row">
+                            <label>退款金额(USD)</label>
+                            <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:100px" />
+                            <span class="price-hint">产品售价 ${{ Number(task.product_price || 0).toFixed(2) }}</span>
                           </div>
-                        </td>
-                        <td class="col-keyword">
-                          <template v-if="editingId === task.id">
-                            <a-input v-model:value="editForm.keyword" size="small" placeholder="关键词" />
-                          </template>
-                          <span v-else-if="task.keyword" class="keyword-tag">{{ task.keyword }}</span>
-                          <span v-else class="text-gray">—</span>
-                        </td>
-                        <td class="col-variant">
-                          <template v-if="editingId === task.id">
-                            <a-input v-model:value="editForm.variant_info" size="small" placeholder="变参" />
-                          </template>
-                          <span v-else>{{ task.variant_info || '—' }}</span>
-                        </td>
-                        <td class="col-date">
-                          <template v-if="editingId === task.id">
-                            <a-date-picker v-model:value="editForm.scheduled_date_obj" size="small" style="width:118px" format="YYYY-MM-DD" value-format="YYYY-MM-DD" />
-                          </template>
-                          <span v-else-if="task.scheduled_date" :class="isOverdue(task.scheduled_date) && !['已完成','已取消'].includes(task.status) ? 'date-overdue' : 'date-normal'">
-                            {{ task.scheduled_date }}
-                          </span>
-                          <span v-else class="text-gray">—</span>
-                        </td>
-                        <td class="col-status">
-                          <template v-if="editingId === task.id">
-                            <a-select v-model:value="editForm.status" size="small" style="width:100px">
-                              <a-select-option v-for="s in subOrderStatuses" :key="s" :value="s">{{ s }}</a-select-option>
-                            </a-select>
-                          </template>
-                          <a-tag v-else :color="getStatusColor(task.status)" style="font-size:11px">{{ task.status }}</a-tag>
-                        </td>
-                        <td class="col-amazon">
-                          <template v-if="editingId === task.id">
-                            <a-input v-model:value="editForm.amazon_order_id" size="small" placeholder="亚马逊订单号" style="width:145px" />
-                          </template>
-                          <span v-else-if="task.amazon_order_id" class="amazon-order">{{ task.amazon_order_id }}</span>
-                          <span v-else class="text-gray">—</span>
-                        </td>
-                        <td class="col-price">
-                          <div class="price-cell">
-                            <span class="price-usd">${{ Number(task.product_price || 0).toFixed(2) }}</span>
-                            <span class="price-cny">¥{{ Number(task.unit_price || 0).toFixed(2) }}</span>
+                        </div>
+                        <div v-else-if="task.refund_method === 'PayPal'" class="refund-paypal-panel">
+                          <div class="refund-panel-label">PayPal 退款</div>
+                          <div class="refund-row">
+                            <label>买手PayPal邮箱</label>
+                            <a-input v-model:value="task._buyer_paypal_email" size="small" style="width:200px" placeholder="buyer@email.com" />
                           </div>
-                        </td>
-                        <td class="col-buyer">
-                          <template v-if="editingId === task.id">
-                            <a-select v-model:value="editForm.buyer_id" size="small" style="width:90px" allow-clear placeholder="买手" show-search option-filter-prop="label">
-                              <a-select-option v-for="b in buyerList" :key="b.id" :value="b.id" :label="b.name">{{ b.name }}</a-select-option>
-                            </a-select>
-                          </template>
-                          <span v-else-if="task.buyer_name" class="buyer-name">{{ task.buyer_name }}</span>
-                          <span v-else class="text-gray">—</span>
-                        </td>
-                        <td class="col-note">
-                          <template v-if="editingId === task.id">
-                            <a-input v-model:value="editForm.task_notes" size="small" placeholder="备注" />
-                          </template>
-                          <span v-else class="note-text">{{ task.task_notes || '—' }}</span>
-                        </td>
-                        <td class="col-action">
-                          <template v-if="editingId === task.id">
-                            <a-space>
-                              <a-button type="primary" size="small" :loading="saveLoading" @click="saveRow(task)"><SaveOutlined /></a-button>
-                              <a-button size="small" @click="cancelEdit"><CloseOutlined /></a-button>
-                            </a-space>
-                          </template>
-                          <template v-else>
-                            <a-space>
-                              <a-button type="link" size="small" @click="startEdit(task)"><EditOutlined /> 编辑</a-button>
-                              <a-button type="link" size="small" @click="openDetail(task)">详情</a-button>
-                            </a-space>
-                          </template>
-                        </td>
-                      </tr>
-                      <!-- 编辑行展开区 - 时间节点 -->
-                      <tr v-if="editingId === task.id" class="edit-extra-row">
-                        <td colspan="11">
-                          <div class="edit-extra-panel">
-                            <div class="edit-extra-title">时间节点 & 退款</div>
-                            <div class="edit-extra-grid">
-                              <div class="edit-field">
-                                <label>买手接单时间</label>
-                                <a-input v-model:value="editForm.buyer_assigned_at" size="small" placeholder="YYYY-MM-DD HH:mm" />
-                              </div>
-                              <div class="edit-field">
-                                <label>亚马逊下单时间</label>
-                                <a-input v-model:value="editForm.amazon_order_placed_at" size="small" placeholder="YYYY-MM-DD HH:mm" />
-                              </div>
-                              <div class="edit-field">
-                                <label>收货确认时间</label>
-                                <a-input v-model:value="editForm.delivery_confirmed_at" size="small" placeholder="YYYY-MM-DD HH:mm" />
-                              </div>
-                              <div class="edit-field">
-                                <label>留评提交时间</label>
-                                <a-input v-model:value="editForm.review_submitted_at" size="small" placeholder="YYYY-MM-DD HH:mm" />
-                              </div>
-                              <div class="edit-field">
-                                <label>退款状态</label>
-                                <a-select v-model:value="editForm.refund_status" size="small" style="width:100%" allow-clear placeholder="无退款">
-                                  <a-select-option v-for="s in refundStatuses" :key="s" :value="s">{{ s }}</a-select-option>
-                                </a-select>
-                              </div>
-                              <div class="edit-field">
-                                <label>退款金额(¥)</label>
-                                <a-input-number v-model:value="editForm.refund_amount" size="small" :min="0" :precision="2" style="width:100%" />
-                              </div>
-                              <div class="edit-field">
-                                <label>留评截图URL</label>
-                                <a-input v-model:value="editForm.review_screenshot_url" size="small" placeholder="截图链接" />
-                              </div>
-                              <div class="edit-field">
-                                <label>订单备注</label>
-                                <a-input v-model:value="editForm.notes" size="small" placeholder="订单备注" />
-                              </div>
-                            </div>
+                          <div class="refund-row">
+                            <label>退款金额(CNY)</label>
+                            <a-input-number v-model:value="task._refund_amount_cny" size="small" :min="0" :precision="2" style="width:100px" prefix="¥" />
                           </div>
-                        </td>
-                      </tr>
-                    </template>
-                  </tbody>
-                </table>
+                        </div>
+                        <div v-else class="refund-other-panel">
+                          <div class="refund-row">
+                            <label>退款金额(CNY)</label>
+                            <a-input-number v-model:value="task._refund_amount_cny" size="small" :min="0" :precision="2" style="width:100px" prefix="¥" />
+                          </div>
+                        </div>
+                        <a-button
+                          type="primary"
+                          size="small"
+                          :loading="task._saving_refund"
+                          :disabled="!task.refund_method"
+                          @click="confirmRefund(task)"
+                          style="margin-top:8px"
+                        >确认已退款</a-button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Step 4: 填写Amazon订单号 -->
+                  <div :class="['step-block', getStepDone(task, 3) ? 'step-done' : getStepDone(task, 2) ? 'step-active' : 'step-locked']">
+                    <div class="step-number" :class="getStepDone(task, 3) ? 'num-done' : getStepDone(task, 2) ? 'num-active' : 'num-locked'">
+                      <CheckCircleFilled v-if="getStepDone(task, 3)" />
+                      <span v-else>4</span>
+                    </div>
+                    <div class="step-content">
+                      <div class="step-title">填写Amazon订单号</div>
+                      <div v-if="task.amazon_order_id && !task._editing_amazon" class="step-done-info">
+                        <span class="amazon-order-text">{{ task.amazon_order_id }}</span>
+                        <span v-if="task.amazon_order_placed_at" class="time-hint">{{ fmtTime(task.amazon_order_placed_at) }}</span>
+                        <a class="re-edit" @click.stop="task._editing_amazon = true">修改</a>
+                      </div>
+                      <div v-if="!task.amazon_order_id || task._editing_amazon" class="step-input-row">
+                        <a-input
+                          v-model:value="task._input_amazon_order_id"
+                          size="small"
+                          style="width:220px"
+                          placeholder="111-1111111-1111111"
+                        />
+                        <a-button type="primary" size="small" :loading="task._saving_amazon" :disabled="!task._input_amazon_order_id" @click="saveAmazonOrder(task)">确认</a-button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Step 5: 确认签收 -->
+                  <div :class="['step-block', getStepDone(task, 4) ? 'step-done' : getStepDone(task, 3) ? 'step-active' : 'step-locked']">
+                    <div class="step-number" :class="getStepDone(task, 4) ? 'num-done' : getStepDone(task, 3) ? 'num-active' : 'num-locked'">
+                      <CheckCircleFilled v-if="getStepDone(task, 4)" />
+                      <span v-else>5</span>
+                    </div>
+                    <div class="step-content">
+                      <div class="step-title">确认签收</div>
+                      <div v-if="task.delivery_confirmed_at" class="step-done-info">
+                        <span class="green-text">已签收</span>
+                        <span class="time-hint">{{ fmtTime(task.delivery_confirmed_at) }}</span>
+                        <a v-if="!task._show_delivery_estimate" class="re-edit" @click.stop="task._show_delivery_estimate = !task._show_delivery_estimate">查看预计</a>
+                      </div>
+                      <div v-else class="step-input-col">
+                        <div v-if="task.amazon_order_placed_at" class="delivery-estimate-box">
+                          <span class="estimate-icon">⏱</span>
+                          <div>
+                            <div class="estimate-label">预计签收时间</div>
+                            <div class="estimate-val">还剩 <strong>{{ estimateDeliveryDays(task.amazon_order_placed_at) }} 天</strong></div>
+                            <div class="estimate-date">预计送达 {{ estimateDeliveryDate(task.amazon_order_placed_at) }}</div>
+                          </div>
+                        </div>
+                        <a-button type="default" size="small" :loading="task._saving_delivery" @click="confirmDelivery(task)" class="confirm-btn-gray">确认已签收</a-button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Step 6: 上传留评截图 -->
+                  <div :class="['step-block', getStepDone(task, 5) ? 'step-done' : getStepDone(task, 4) ? 'step-active' : 'step-locked']">
+                    <div class="step-number" :class="getStepDone(task, 5) ? 'num-done' : getStepDone(task, 4) ? 'num-active' : 'num-locked'">
+                      <CheckCircleFilled v-if="getStepDone(task, 5)" />
+                      <span v-else>6</span>
+                    </div>
+                    <div class="step-content">
+                      <div class="step-title">上传留评截图</div>
+                      <div v-if="task.review_screenshot_url && !task._editing_screenshot" class="step-done-info">
+                        <img :src="task.review_screenshot_url" class="screenshot-preview" referrerpolicy="no-referrer" @error="onImgError" />
+                        <a class="re-edit" @click.stop="task._editing_screenshot = true">重传</a>
+                      </div>
+                      <div v-if="!task.review_screenshot_url || task._editing_screenshot" class="step-input-row">
+                        <a-input
+                          v-model:value="task._input_screenshot_url"
+                          size="small"
+                          style="width:280px"
+                          placeholder="粘贴截图URL..."
+                        />
+                        <a-button type="primary" size="small" :loading="task._saving_screenshot" :disabled="!task._input_screenshot_url" @click="saveScreenshot(task)">提交</a-button>
+                      </div>
+                      <div v-if="getStepDone(task, 5)" class="step-input-row" style="margin-top:8px">
+                        <a-button type="primary" size="small" :loading="task._completing" @click="completeTask(task)" style="background:#059669;border-color:#059669">标记已完成</a-button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 底部操作栏 -->
+                <div class="workflow-footer">
+                  <a-popconfirm title="确认客户取消？需填写原因" @confirm="openCancelModal(task)">
+                    <a-button size="small" danger ghost><CloseCircleOutlined /> 客户取消 &amp; 补单</a-button>
+                  </a-popconfirm>
+                  <a-button size="small" ghost @click="openTransferModal(task)"><SwapOutlined /> 转给其他业务员</a-button>
+                  <a-button size="small" ghost style="color:#f59e0b;border-color:#f59e0b" @click="releaseToHall(task)"><ExportOutlined /> 放到抢单大厅</a-button>
+                </div>
               </div>
             </div>
           </div>
@@ -222,90 +346,36 @@
       </div>
     </div>
 
-    <!-- 子订单详情弹窗（只读） -->
-    <a-modal
-      v-model:open="detailOpen"
-      :title="`子订单详情 - ${detailRecord?.sub_order_number}`"
-      :footer="null"
-      width="800px"
-      :destroy-on-close="true"
-    >
-      <div v-if="detailRecord" class="detail-modal-body">
-        <div class="detail-header">
-          <a-tag :color="getStatusColor(detailRecord.status)">{{ detailRecord.status || '已分配' }}</a-tag>
-          <span class="detail-sub-number">{{ detailRecord.sub_order_number }}</span>
-          <div style="flex:1"></div>
-          <a-button type="primary" size="small" @click="detailOpen=false; startEdit(detailRecord)"><EditOutlined /> 编辑</a-button>
-        </div>
+    <!-- 取消弹窗 -->
+    <a-modal v-model:open="cancelModalOpen" title="客户取消 & 补单" @ok="submitCancel" :confirm-loading="cancelSaving">
+      <a-form layout="vertical">
+        <a-form-item label="取消原因">
+          <a-textarea v-model:value="cancelForm.reason" :rows="3" placeholder="请填写取消原因" />
+        </a-form-item>
+        <a-form-item label="是否需要补单">
+          <a-radio-group v-model:value="cancelForm.needComplement">
+            <a-radio :value="true">需要补单</a-radio>
+            <a-radio :value="false">无需补单</a-radio>
+          </a-radio-group>
+        </a-form-item>
+      </a-form>
+    </a-modal>
 
-        <div class="detail-sections">
-          <div class="detail-section">
-            <div class="detail-section-title">产品 & 订单</div>
-            <div class="detail-grid">
-              <div class="detail-item"><label>ASIN</label><span class="mono">{{ detailRecord.asin }}</span></div>
-              <div class="detail-item"><label>产品名称</label><span>{{ detailRecord.product_name || '—' }}</span></div>
-              <div class="detail-item"><label>店铺</label><span>{{ detailRecord.store_name || '—' }}</span></div>
-              <div class="detail-item"><label>国家</label><span>{{ detailRecord.country || '—' }}</span></div>
-              <div class="detail-item"><label>类型</label><span>{{ detailRecord.order_type || '—' }}</span></div>
-              <div class="detail-item"><label>测评类型</label><span>{{ detailRecord.review_type || '—' }}</span></div>
-              <div class="detail-item"><label>评价等级</label><span>{{ detailRecord.review_level || '—' }}</span></div>
-              <div class="detail-item"><label>关键词</label><span class="keyword-highlight">{{ detailRecord.keyword || '—' }}</span></div>
-              <div class="detail-item"><label>变参</label><span>{{ detailRecord.variant_info || '—' }}</span></div>
-              <div class="detail-item"><label>排期日期</label><span :class="detailRecord.scheduled_date && isOverdue(detailRecord.scheduled_date) ? 'date-overdue' : ''">{{ detailRecord.scheduled_date || '—' }}</span></div>
-              <div class="detail-item"><label>亚马逊订单号</label><span class="mono">{{ detailRecord.amazon_order_id || '—' }}</span></div>
-              <div class="detail-item">
-                <label>价格</label>
-                <span class="price-usd-text">${{ Number(detailRecord.product_price||0).toFixed(2) }} / ¥{{ Number(detailRecord.unit_price||0).toFixed(2) }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <div class="detail-section-title">人员 & 买手</div>
-            <div class="detail-grid">
-              <div class="detail-item"><label>业务员</label><span>{{ detailRecord.staff_name || '—' }}</span></div>
-              <div class="detail-item"><label>买手</label><span>{{ detailRecord.buyer_name || '—' }}</span></div>
-              <div class="detail-item"><label>客户</label><span>{{ detailRecord.customer_name || '—' }}</span></div>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <div class="detail-section-title">时间节点</div>
-            <div class="detail-grid">
-              <div class="detail-item"><label>买手接单</label><span>{{ fmtTime(detailRecord.buyer_assigned_at) }}</span></div>
-              <div class="detail-item"><label>亚马逊下单</label><span>{{ fmtTime(detailRecord.amazon_order_placed_at) }}</span></div>
-              <div class="detail-item"><label>收货确认</label><span>{{ fmtTime(detailRecord.delivery_confirmed_at) }}</span></div>
-              <div class="detail-item"><label>留评提交</label><span>{{ fmtTime(detailRecord.review_submitted_at) }}</span></div>
-              <div class="detail-item"><label>创建时间</label><span>{{ fmtTime(detailRecord.created_at) }}</span></div>
-              <div class="detail-item"><label>更新时间</label><span>{{ fmtTime(detailRecord.updated_at) }}</span></div>
-            </div>
-          </div>
-
-          <div v-if="detailRecord.refund_status || detailRecord.refund_amount" class="detail-section">
-            <div class="detail-section-title">退款信息</div>
-            <div class="detail-grid">
-              <div class="detail-item"><label>退款状态</label><a-tag color="orange">{{ detailRecord.refund_status }}</a-tag></div>
-              <div class="detail-item"><label>退款金额</label><span class="refund-highlight">¥{{ Number(detailRecord.refund_amount||0).toFixed(2) }}</span></div>
-              <div class="detail-item"><label>退款方式</label><span>{{ detailRecord.refund_method || '—' }}</span></div>
-            </div>
-          </div>
-
-          <div v-if="detailRecord.task_notes || detailRecord.notes" class="detail-section">
-            <div class="detail-section-title">备注</div>
-            <div class="detail-grid">
-              <div class="detail-item detail-full"><label>任务备注</label><span>{{ detailRecord.task_notes || '—' }}</span></div>
-              <div class="detail-item detail-full"><label>订单备注</label><span>{{ detailRecord.notes || '—' }}</span></div>
-            </div>
-          </div>
-
-          <div v-if="detailRecord.review_screenshot_url" class="detail-section">
-            <div class="detail-section-title">留评截图</div>
-            <div style="padding:10px 14px">
-              <img :src="detailRecord.review_screenshot_url" class="review-screenshot" referrerpolicy="no-referrer" @error="onImgError" />
-            </div>
-          </div>
-        </div>
-      </div>
+    <!-- 转单弹窗 -->
+    <a-modal v-model:open="transferModalOpen" title="转给其他业务员" @ok="submitTransfer" :confirm-loading="transferSaving">
+      <a-form layout="vertical">
+        <a-form-item label="目标业务员">
+          <a-select v-model:value="transferForm.staffId" style="width:100%" show-search option-filter-prop="label" placeholder="选择业务员">
+            <a-select-option
+              v-for="s in staffList.filter(s => s.id !== selectedStaffId)"
+              :key="s.id" :value="s.id" :label="s.name"
+            >{{ s.name }}</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="备注">
+          <a-input v-model:value="transferForm.reason" placeholder="转单原因（可选）" />
+        </a-form-item>
+      </a-form>
     </a-modal>
   </div>
 </template>
@@ -313,43 +383,52 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, TeamOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons-vue'
+import {
+  TeamOutlined, UserOutlined, CheckCircleFilled,
+  CloseCircleOutlined, SwapOutlined, ExportOutlined
+} from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
 const staffSearch = ref('')
 const staffList = ref<any[]>([])
 const selectedStaffId = ref('')
-const tasks = ref<any[]>([])
+const allTasks = ref<any[]>([])
+const filteredTasks = ref<any[]>([])
 const tasksLoading = ref(false)
 const taskFilter = ref('')
 const taskSearch = ref('')
+const filterOverdue = ref(false)
+const filterToday = ref(false)
+const filterSoon = ref(false)
 const buyerList = ref<any[]>([])
 
-const editingId = ref<string | null>(null)
-const editForm = ref<any>({})
-const saveLoading = ref(false)
+const cancelModalOpen = ref(false)
+const cancelSaving = ref(false)
+const cancelForm = ref<any>({ reason: '', needComplement: false })
+const cancelTarget = ref<any>(null)
 
-const detailOpen = ref(false)
-const detailRecord = ref<any>(null)
+const transferModalOpen = ref(false)
+const transferSaving = ref(false)
+const transferForm = ref<any>({ staffId: null, reason: '' })
+const transferTarget = ref<any>(null)
 
-const subOrderStatuses = ['已分配', '进行中', '已下单', '已留评', '已完成', '已取消']
-const refundStatuses = ['待退款', '退款中', '已退款', '退款失败']
+const workflowSteps = [0, 1, 2, 3, 4, 5]
 
 const filteredStaff = computed(() =>
   staffList.value.filter(s => !staffSearch.value || s.name.includes(staffSearch.value))
 )
 
-const workbenchStats = computed(() => {
-  const total = tasks.value.length
-  const inProgress = tasks.value.filter(t => ['已分配', '进行中', '已下单', '已留评'].includes(t.status)).length
-  const completed = tasks.value.filter(t => t.status === '已完成').length
-  const reviewed = tasks.value.filter(t => t.status === '已留评').length
+const filterTabs = computed(() => {
+  const all = allTasks.value
   return [
-    { label: '全部任务', value: total, colorClass: 'stat-default' },
-    { label: '进行中', value: inProgress, colorClass: 'stat-blue' },
-    { label: '已留评', value: reviewed, colorClass: 'stat-geekblue' },
-    { label: '已完成', value: completed, colorClass: 'stat-green' },
+    { label: '全部', value: '', count: all.length },
+    { label: '已分配', value: '已分配', count: all.filter(t => t.status === '已分配').length },
+    { label: '进行中', value: '进行中', count: all.filter(t => t.status === '进行中').length },
+    { label: '已下单', value: '已下单', count: all.filter(t => t.status === '已下单').length },
+    { label: '已留评', value: '已留评', count: all.filter(t => t.status === '已留评').length },
+    { label: '已完成', value: '已完成', count: all.filter(t => t.status === '已完成').length },
+    { label: '已取消', value: '已取消', count: all.filter(t => t.status === '已取消').length },
   ]
 })
 
@@ -361,9 +440,24 @@ function getStatusColor(s: string) {
   return map[s] || 'default'
 }
 
+function isDone(status: string) {
+  return ['已完成', '已取消'].includes(status)
+}
+
 function isOverdue(dateStr: string) {
   if (!dateStr) return false
   return dayjs(dateStr).isBefore(dayjs(), 'day')
+}
+
+function overdayCount(dateStr: string) {
+  if (!dateStr) return 0
+  return dayjs().diff(dayjs(dateStr), 'day')
+}
+
+function getDangerClass(task: any) {
+  if (isDone(task.status)) return ''
+  if (isOverdue(task.scheduled_date)) return 'card-overdue'
+  return ''
 }
 
 function fmtTime(t: string | null) {
@@ -374,6 +468,35 @@ function fmtTime(t: string | null) {
 function onImgError(e: Event) {
   const img = e.target as HTMLImageElement
   img.style.display = 'none'
+}
+
+function estimateDeliveryDays(placedAt: string) {
+  const deliverDate = dayjs(placedAt).add(7, 'day')
+  const diff = deliverDate.diff(dayjs(), 'day')
+  return diff < 0 ? 0 : diff
+}
+
+function estimateDeliveryDate(placedAt: string) {
+  return dayjs(placedAt).add(7, 'day').format('M/D')
+}
+
+// 步骤逻辑
+function getStepDone(task: any, step: number): boolean {
+  switch (step) {
+    case 0: return !!task.buyer_id
+    case 1: return !!task.refund_method
+    case 2: return task.refund_status === '已退款'
+    case 3: return !!task.amazon_order_id
+    case 4: return !!task.delivery_confirmed_at
+    case 5: return !!task.review_screenshot_url
+    default: return false
+  }
+}
+
+function getStepCurrent(task: any, step: number): boolean {
+  if (getStepDone(task, step)) return false
+  if (step === 0) return true
+  return getStepDone(task, step - 1)
 }
 
 async function loadStaff() {
@@ -396,107 +519,351 @@ async function loadStaff() {
 }
 
 async function loadBuyers() {
-  const { data } = await supabase.from('buyers').select('id, name').eq('status', '活跃')
+  const { data } = await supabase
+    .from('erp_buyers')
+    .select('id, name, country, level, status, paypal_email')
+    .eq('status', '活跃')
+    .order('name')
   buyerList.value = data || []
 }
 
 async function selectStaff(id: string) {
   selectedStaffId.value = id
-  editingId.value = null
+  taskFilter.value = ''
+  filterOverdue.value = false
+  filterToday.value = false
+  filterSoon.value = false
+  taskSearch.value = ''
   await loadTasks()
+}
+
+function initTaskFields(task: any) {
+  task._expanded = false
+  task._edit_variant = task.variant_info || ''
+  task._edit_task_notes = task.task_notes || ''
+  task._sel_buyer_id = task.buyer_id || null
+  task._editing_buyer = false
+  task._saving_buyer = false
+  task._sel_refund_method = task.refund_method || ''
+  task._editing_refund_method = false
+  task._saving_refund_method = false
+  task._refund_amount_usd = task.product_price ? Number(task.product_price) : null
+  task._refund_amount_cny = task.refund_amount ? Number(task.refund_amount) : null
+  task._buyer_paypal_email = task.buyer_paypal_email || ''
+  task._editing_refund = false
+  task._saving_refund = false
+  task._input_amazon_order_id = task.amazon_order_id || ''
+  task._editing_amazon = false
+  task._saving_amazon = false
+  task._saving_delivery = false
+  task._show_delivery_estimate = false
+  task._input_screenshot_url = task.review_screenshot_url || ''
+  task._editing_screenshot = false
+  task._saving_screenshot = false
+  task._completing = false
+  return task
 }
 
 async function loadTasks() {
   if (!selectedStaffId.value) return
   tasksLoading.value = true
   try {
-    let query = supabase
+    const { data, error } = await supabase
       .from('sub_orders')
       .select('*')
       .eq('staff_id', selectedStaffId.value)
       .order('scheduled_date', { ascending: true, nullsFirst: false })
-    if (taskFilter.value) query = query.eq('status', taskFilter.value)
-    if (taskSearch.value) {
-      query = query.or(`asin.ilike.%${taskSearch.value}%,keyword.ilike.%${taskSearch.value}%`)
-    }
-    const { data, error } = await query
     if (error) throw error
-    tasks.value = data || []
+    allTasks.value = (data || []).map(initTaskFields)
+    filterTaskList()
   } finally {
     tasksLoading.value = false
   }
 }
 
-function startEdit(task: any) {
-  editingId.value = task.id
-  editForm.value = {
-    status: task.status || '已分配',
-    keyword: task.keyword || '',
-    variant_info: task.variant_info || '',
-    scheduled_date_obj: task.scheduled_date || null,
-    amazon_order_id: task.amazon_order_id || '',
-    buyer_id: task.buyer_id || null,
-    task_notes: task.task_notes || '',
-    notes: task.notes || '',
-    buyer_assigned_at: task.buyer_assigned_at ? dayjs(task.buyer_assigned_at).format('YYYY-MM-DD HH:mm') : '',
-    amazon_order_placed_at: task.amazon_order_placed_at ? dayjs(task.amazon_order_placed_at).format('YYYY-MM-DD HH:mm') : '',
-    delivery_confirmed_at: task.delivery_confirmed_at ? dayjs(task.delivery_confirmed_at).format('YYYY-MM-DD HH:mm') : '',
-    review_submitted_at: task.review_submitted_at ? dayjs(task.review_submitted_at).format('YYYY-MM-DD HH:mm') : '',
-    refund_status: task.refund_status || '',
-    refund_amount: task.refund_amount ? Number(task.refund_amount) : null,
-    review_screenshot_url: task.review_screenshot_url || '',
+function setFilter(val: string) {
+  taskFilter.value = val
+  filterTaskList()
+}
+
+function filterTaskList() {
+  let list = allTasks.value
+  if (taskFilter.value) list = list.filter(t => t.status === taskFilter.value)
+  if (filterOverdue.value) list = list.filter(t => isOverdue(t.scheduled_date) && !isDone(t.status))
+  if (filterToday.value) list = list.filter(t => t.scheduled_date === dayjs().format('YYYY-MM-DD'))
+  if (filterSoon.value) list = list.filter(t => {
+    if (!t.scheduled_date || isDone(t.status)) return false
+    const diff = dayjs(t.scheduled_date).diff(dayjs(), 'day')
+    return diff >= 0 && diff <= 2
+  })
+  if (taskSearch.value) {
+    const kw = taskSearch.value.toLowerCase()
+    list = list.filter(t =>
+      (t.sub_order_number || '').toLowerCase().includes(kw) ||
+      (t.asin || '').toLowerCase().includes(kw) ||
+      (t.buyer_name || '').toLowerCase().includes(kw) ||
+      (t.keyword || '').toLowerCase().includes(kw) ||
+      (t.product_name || '').toLowerCase().includes(kw)
+    )
+  }
+  filteredTasks.value = list
+}
+
+function toggleExpand(task: any) {
+  task._expanded = !task._expanded
+}
+
+async function quickSave(task: any, field: string, value: any) {
+  const { error } = await supabase.from('sub_orders').update({ [field]: value }).eq('id', task.id)
+  if (!error) task[field] = value
+}
+
+async function assignBuyer(task: any) {
+  if (!task._sel_buyer_id) return
+  task._saving_buyer = true
+  try {
+    const buyer = buyerList.value.find(b => b.id === task._sel_buyer_id)
+    const payload = {
+      buyer_id: task._sel_buyer_id,
+      buyer_name: buyer?.name || '',
+      status: task.status === '待分配' ? '已分配' : task.status,
+      buyer_assigned_at: new Date().toISOString(),
+    }
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+    if (error) throw error
+    Object.assign(task, payload)
+    task._editing_buyer = false
+    message.success('买手已分配')
+    await loadStaff()
+  } catch (e: any) {
+    message.error('分配失败：' + e.message)
+  } finally {
+    task._saving_buyer = false
   }
 }
 
-function cancelEdit() {
-  editingId.value = null
-  editForm.value = {}
-}
-
-async function saveRow(task: any) {
-  saveLoading.value = true
+async function saveRefundMethod(task: any) {
+  if (!task._sel_refund_method) return
+  task._saving_refund_method = true
   try {
-    const f = editForm.value
-    const parseTs = (v: string) => v ? dayjs(v, 'YYYY-MM-DD HH:mm').toISOString() : null
-
-    const buyer = buyerList.value.find(b => b.id === f.buyer_id)
-    const payload: any = {
-      status: f.status,
-      keyword: f.keyword || null,
-      variant_info: f.variant_info || null,
-      scheduled_date: f.scheduled_date_obj || null,
-      amazon_order_id: f.amazon_order_id || null,
-      buyer_id: f.buyer_id || null,
-      buyer_name: buyer?.name || (f.buyer_id ? task.buyer_name : null),
-      task_notes: f.task_notes || null,
-      notes: f.notes || null,
-      buyer_assigned_at: parseTs(f.buyer_assigned_at),
-      amazon_order_placed_at: parseTs(f.amazon_order_placed_at),
-      delivery_confirmed_at: parseTs(f.delivery_confirmed_at),
-      review_submitted_at: parseTs(f.review_submitted_at),
-      refund_status: f.refund_status || null,
-      refund_amount: f.refund_amount || null,
-      review_screenshot_url: f.review_screenshot_url || null,
+    const payload: any = { refund_method: task._sel_refund_method }
+    const seqMap: Record<string, string> = {
+      '先退款后给单': '先退款后给单',
+      '先给单后退款': '先给单后退款',
+      '礼品卡': '先退款后给单',
+      'PayPal': '先退款后给单',
     }
-
+    payload.refund_sequence = seqMap[task._sel_refund_method] || ''
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
     if (error) throw error
-
     Object.assign(task, payload)
-    editingId.value = null
-    editForm.value = {}
-    message.success('保存成功')
-    await loadStaff()
+    task._editing_refund_method = false
+    message.success('退款方式已设置')
   } catch (e: any) {
     message.error('保存失败：' + e.message)
   } finally {
-    saveLoading.value = false
+    task._saving_refund_method = false
   }
 }
 
-function openDetail(task: any) {
-  detailRecord.value = { ...task }
-  detailOpen.value = true
+async function confirmRefund(task: any) {
+  task._saving_refund = true
+  try {
+    const amountCny = task.refund_method === '礼品卡'
+      ? (task._refund_amount_usd || 0) * (task.exchange_rate || 7.25)
+      : (task._refund_amount_cny || 0)
+    const payload: any = {
+      refund_status: '已退款',
+      refund_amount: amountCny,
+      refund_date: dayjs().format('YYYY-MM-DD'),
+      status: '进行中',
+    }
+    if (task.refund_method === '礼品卡' && task._refund_amount_usd) {
+      payload.refund_amount = Number((task._refund_amount_usd * (task.exchange_rate || 7.25)).toFixed(2))
+    }
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+    if (error) throw error
+    Object.assign(task, payload)
+    task._editing_refund = false
+    message.success('退款已确认')
+  } catch (e: any) {
+    message.error('操作失败：' + e.message)
+  } finally {
+    task._saving_refund = false
+  }
+}
+
+async function saveAmazonOrder(task: any) {
+  if (!task._input_amazon_order_id) return
+  task._saving_amazon = true
+  try {
+    const payload = {
+      amazon_order_id: task._input_amazon_order_id,
+      amazon_order_placed_at: new Date().toISOString(),
+      status: '已下单',
+    }
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+    if (error) throw error
+    Object.assign(task, payload)
+    task._editing_amazon = false
+    message.success('Amazon订单号已保存')
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    task._saving_amazon = false
+  }
+}
+
+async function confirmDelivery(task: any) {
+  task._saving_delivery = true
+  try {
+    const payload = { delivery_confirmed_at: new Date().toISOString() }
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+    if (error) throw error
+    Object.assign(task, payload)
+    message.success('签收已确认')
+  } catch (e: any) {
+    message.error('操作失败：' + e.message)
+  } finally {
+    task._saving_delivery = false
+  }
+}
+
+async function saveScreenshot(task: any) {
+  if (!task._input_screenshot_url) return
+  task._saving_screenshot = true
+  try {
+    const payload = {
+      review_screenshot_url: task._input_screenshot_url,
+      review_submitted_at: new Date().toISOString(),
+      status: '已留评',
+    }
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+    if (error) throw error
+    Object.assign(task, payload)
+    task._editing_screenshot = false
+    message.success('截图已提交')
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    task._saving_screenshot = false
+  }
+}
+
+async function completeTask(task: any) {
+  task._completing = true
+  try {
+    const { error } = await supabase.from('sub_orders').update({ status: '已完成' }).eq('id', task.id)
+    if (error) throw error
+    task.status = '已完成'
+    filterTaskList()
+    message.success('任务已标记完成')
+    await loadStaff()
+  } catch (e: any) {
+    message.error('操作失败：' + e.message)
+  } finally {
+    task._completing = false
+  }
+}
+
+function openCancelModal(task: any) {
+  cancelTarget.value = task
+  cancelForm.value = { reason: '', needComplement: false }
+  cancelModalOpen.value = true
+}
+
+async function submitCancel() {
+  if (!cancelTarget.value || !cancelForm.value.reason) {
+    message.warning('请填写取消原因')
+    return
+  }
+  cancelSaving.value = true
+  try {
+    const { error } = await supabase.from('sub_orders').update({
+      status: '已取消',
+      cancel_reason: cancelForm.value.reason,
+    }).eq('id', cancelTarget.value.id)
+    if (error) throw error
+    cancelTarget.value.status = '已取消'
+    cancelTarget.value.cancel_reason = cancelForm.value.reason
+    filterTaskList()
+    cancelModalOpen.value = false
+    message.success('已取消')
+    await loadStaff()
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    cancelSaving.value = false
+  }
+}
+
+function openTransferModal(task: any) {
+  transferTarget.value = task
+  transferForm.value = { staffId: null, reason: '' }
+  transferModalOpen.value = true
+}
+
+async function submitTransfer() {
+  if (!transferTarget.value || !transferForm.value.staffId) {
+    message.warning('请选择目标业务员')
+    return
+  }
+  transferSaving.value = true
+  try {
+    const toStaff = staffList.value.find(s => s.id === transferForm.value.staffId)
+    const { error } = await supabase.from('sub_orders').update({
+      staff_id: transferForm.value.staffId,
+      staff_name: toStaff?.name || '',
+    }).eq('id', transferTarget.value.id)
+    if (error) throw error
+
+    await supabase.from('grab_hall_logs').insert({
+      sub_order_id: transferTarget.value.id,
+      sub_order_number: transferTarget.value.sub_order_number,
+      action: '转单',
+      from_staff_id: selectedStaffId.value,
+      from_staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
+      to_staff_id: transferForm.value.staffId,
+      to_staff_name: toStaff?.name || '',
+      reason: transferForm.value.reason,
+    })
+
+    allTasks.value = allTasks.value.filter(t => t.id !== transferTarget.value.id)
+    filterTaskList()
+    transferModalOpen.value = false
+    message.success('已转给 ' + toStaff?.name)
+    await loadStaff()
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    transferSaving.value = false
+  }
+}
+
+async function releaseToHall(task: any) {
+  try {
+    const { error } = await supabase.from('sub_orders').update({
+      released_to_hall: true,
+      released_at: new Date().toISOString(),
+      released_by_staff_id: selectedStaffId.value,
+      released_by_staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
+    }).eq('id', task.id)
+    if (error) throw error
+
+    await supabase.from('grab_hall_logs').insert({
+      sub_order_id: task.id,
+      sub_order_number: task.sub_order_number,
+      action: '放入抢单大厅',
+      from_staff_id: selectedStaffId.value,
+      from_staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
+      reason: '放入抢单大厅',
+    })
+
+    task.released_to_hall = true
+    message.success('已放到抢单大厅')
+  } catch (e: any) {
+    message.error(e.message)
+  }
 }
 
 onMounted(() => { loadStaff(); loadBuyers() })
@@ -507,160 +874,210 @@ onMounted(() => { loadStaff(); loadBuyers() })
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
 
 .workbench-layout { display: flex; gap: 16px; min-height: calc(100vh - 140px); }
-.staff-sidebar { width: 220px; flex-shrink: 0; background: #fff; border-radius: 12px; border: 1px solid #f0f0f0; overflow: hidden; display: flex; flex-direction: column; }
-.staff-search { padding: 12px; border-bottom: 1px solid #f0f0f0; }
-.staff-list { flex: 1; overflow-y: auto; padding: 8px; }
-.staff-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; cursor: pointer; transition: background 0.15s; margin-bottom: 4px; }
+
+/* 左侧侧栏 */
+.staff-sidebar { width: 200px; flex-shrink: 0; background: #fff; border-radius: 12px; border: 1px solid #f0f0f0; overflow: hidden; display: flex; flex-direction: column; }
+.staff-search { padding: 10px; border-bottom: 1px solid #f0f0f0; }
+.staff-list { flex: 1; overflow-y: auto; padding: 6px; }
+.staff-item { display: flex; align-items: center; gap: 8px; padding: 9px 8px; border-radius: 8px; cursor: pointer; transition: background 0.15s; margin-bottom: 2px; }
 .staff-item:hover { background: #f5f7fa; }
-.staff-item.active { background: #eff6ff; }
-.staff-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+.staff-item.active { background: #eff6ff; border: 1px solid #bfdbfe; }
+.staff-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; flex-shrink: 0; }
 .staff-name { font-size: 13px; font-weight: 600; color: #374151; }
-.staff-role { font-size: 11px; color: #9ca3af; }
+.staff-role { font-size: 10px; color: #9ca3af; }
 .staff-info { flex: 1; min-width: 0; }
+.no-staff { font-size: 12px; color: #9ca3af; text-align: center; padding: 20px 0; }
 
-.workbench-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+/* 右侧主区 */
+.workbench-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 
-.workbench-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.stat-mini {
+/* 顶部筛选栏 */
+.top-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; background: #fff; border-radius: 10px; padding: 10px 16px; border: 1px solid #f0f0f0; }
+.filter-tabs { display: flex; gap: 4px; }
+.filter-tab {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #6b7280;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.filter-tab:hover { color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+.filter-tab.active { color: #2563eb; background: #eff6ff; border-color: #2563eb; font-weight: 600; }
+.filter-tab em { font-style: normal; margin-left: 4px; font-size: 11px; color: #9ca3af; }
+.filter-tab.active em { color: #2563eb; }
+.filter-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.overdue-label { color: #ef4444; font-weight: 600; }
+.total-hint { font-size: 12px; color: #9ca3af; white-space: nowrap; }
+
+.loading-wrap { display: flex; justify-content: center; padding: 60px 0; background: #fff; border-radius: 12px; }
+.empty-list { background: #fff; border-radius: 12px; padding: 40px 0; }
+
+/* 任务卡片 */
+.task-card-list { display: flex; flex-direction: column; gap: 10px; }
+.task-card {
   background: #fff;
   border-radius: 10px;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  border: 1px solid #f0f0f0;
-  border-left: 4px solid transparent;
-}
-.stat-mini.stat-default { border-left-color: #9ca3af; }
-.stat-mini.stat-blue { border-left-color: #2563eb; }
-.stat-mini.stat-geekblue { border-left-color: #6366f1; }
-.stat-mini.stat-green { border-left-color: #059669; }
-.stat-mini-value { font-size: 28px; font-weight: 700; color: #1a1a2e; line-height: 1.1; }
-.stat-mini-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
-
-.card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
-.toolbar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
-.total-hint { font-size: 13px; color: #6b7280; margin-left: 4px; }
-.loading-wrap { display: flex; justify-content: center; padding: 60px 0; }
-.empty-list { padding: 40px 0; }
-
-.sub-table-wrap { overflow-x: auto; }
-.sub-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  min-width: 1200px;
-}
-.sub-table thead tr {
-  background: #f8fafc;
-  border-bottom: 2px solid #e5e7eb;
-}
-.sub-table th {
-  padding: 9px 10px;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  color: #6b7280;
-  white-space: nowrap;
-  border-right: 1px solid #f0f0f0;
-}
-.sub-table th:last-child { border-right: none; }
-.sub-table td {
-  padding: 8px 10px;
-  border-bottom: 1px solid #f4f4f5;
-  border-right: 1px solid #f4f4f5;
-  vertical-align: middle;
-}
-.sub-table td:last-child { border-right: none; }
-.sub-row:hover td { background: #fafbff; }
-.editing-row td { background: #fffbeb !important; }
-.overdue-row td:first-child { border-left: 3px solid #ef4444; }
-
-.col-no { width: 155px; }
-.col-asin { width: 160px; }
-.col-keyword { width: 120px; }
-.col-variant { width: 80px; }
-.col-date { width: 120px; }
-.col-status { width: 105px; }
-.col-amazon { width: 150px; }
-.col-price { width: 100px; }
-.col-buyer { width: 95px; }
-.col-note { width: 120px; }
-.col-action { width: 120px; }
-
-.sub-no { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
-.asin-cell { display: flex; align-items: center; gap: 6px; }
-.product-thumb { width: 30px; height: 30px; object-fit: cover; border-radius: 4px; border: 1px solid #f0f0f0; flex-shrink: 0; }
-.asin-code { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 600; color: #374151; }
-.store-name { font-size: 10px; color: #9ca3af; margin-top: 1px; }
-.keyword-tag {
-  display: inline-block;
-  background: #eff6ff;
-  color: #2563eb;
-  border: 1px solid #bfdbfe;
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  max-width: 110px;
+  border: 1px solid #e5e7eb;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  transition: box-shadow 0.15s;
 }
-.date-normal { font-size: 12px; color: #374151; }
-.date-overdue { font-size: 12px; color: #dc2626; font-weight: 600; }
-.amazon-order { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
-.price-cell { display: flex; flex-direction: column; gap: 1px; }
-.price-usd { font-size: 12px; font-weight: 600; color: #16a34a; }
-.price-cny { font-size: 11px; color: #9ca3af; }
-.buyer-name { font-size: 12px; color: #374151; }
-.note-text { font-size: 11px; color: #6b7280; max-width: 110px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.text-gray { color: #9ca3af; font-size: 12px; }
+.task-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.task-card.card-overdue { border-left: 4px solid #ef4444; }
+.task-card.expanded { border-color: #2563eb; box-shadow: 0 2px 12px rgba(37,99,235,0.1); }
 
-.edit-extra-row td { padding: 0; border-top: none; }
-.edit-extra-panel {
-  background: #fffbeb;
-  border-top: 1px dashed #fbbf24;
-  padding: 12px 16px 14px;
-}
-.edit-extra-title { font-size: 11px; font-weight: 600; color: #92400e; margin-bottom: 10px; }
-.edit-extra-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.edit-field { display: flex; flex-direction: column; gap: 4px; }
-.edit-field label { font-size: 11px; color: #6b7280; font-weight: 500; }
-
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: #9ca3af; gap: 12px; font-size: 14px; background: #fff; border-radius: 12px; }
-
-/* 详情弹窗 */
-.detail-modal-body { padding: 0; }
-.detail-header {
+/* 卡片头 */
+.task-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.task-card-header:hover { background: #fafbff; }
+.card-header-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.toggle-icon { font-size: 10px; color: #9ca3af; width: 14px; flex-shrink: 0; }
+.product-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #f0f0f0; flex-shrink: 0; }
+.product-thumb-placeholder { width: 44px; height: 44px; border-radius: 6px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: #d1d5db; font-size: 18px; flex-shrink: 0; }
+.task-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.meta-row1 { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.meta-row2 { display: flex; align-items: center; flex-wrap: wrap; gap: 0; font-size: 12px; color: #6b7280; }
+.sub-no-text { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; color: #1a1a2e; }
+.product-name-sm { font-size: 12px; color: #374151; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono-sm { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 600; color: #374151; }
+.sep { padding-left: 10px; }
+.price-sm { font-size: 12px; font-weight: 600; color: #16a34a; padding-left: 10px; }
+.text-gray { color: #9ca3af; }
+.card-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-left: 12px; }
+.keyword-badge { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.date-badge { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
+.date-ok { background: #f0fdf4; color: #16a34a; }
+.date-overdue { background: #fef2f2; color: #dc2626; }
+.progress-dots { display: flex; gap: 4px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; }
+.dot.done { background: #059669; }
+.dot.current { background: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+.dot.pending { background: #e5e7eb; }
+.header-assign { font-size: 12px; }
+.buyer-badge { background: #f0fdf4; color: #059669; border: 1px solid #bbf7d0; border-radius: 10px; padding: 2px 8px; font-weight: 500; white-space: nowrap; }
+.buyer-none { color: #f59e0b; font-size: 11px; }
+.commission-badge { font-size: 12px; color: #6b7280; white-space: nowrap; }
+.commission-badge strong { color: #059669; }
+
+/* 工作流主体 */
+.workflow-body { border-top: 1px solid #e5e7eb; }
+
+/* 产品信息栏 */
+.product-info-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
   background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px 16px;
 }
-.detail-sub-number { font-family: 'Courier New', monospace; font-size: 14px; font-weight: 700; color: #1a1a2e; }
-.detail-sections { padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; max-height: 68vh; overflow-y: auto; }
-.detail-section { border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; }
-.detail-section-title {
-  font-size: 11px; font-weight: 600; color: #6b7280;
-  text-transform: uppercase; letter-spacing: 0.5px;
-  background: #f9fafb; padding: 6px 14px;
-  border-bottom: 1px solid #f0f0f0;
+.pi-item { display: flex; align-items: center; gap: 5px; padding: 3px 12px; border-right: 1px solid #e5e7eb; }
+.pi-item:last-child { border-right: none; }
+.pi-label { font-size: 11px; color: #9ca3af; font-weight: 500; white-space: nowrap; }
+.pi-val { font-size: 12px; color: #374151; }
+
+/* 步骤 */
+.workflow-steps { padding: 16px 20px 10px; display: flex; flex-direction: column; gap: 0; }
+.step-block { display: flex; gap: 14px; padding: 10px 0; position: relative; }
+.step-block::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 32px;
+  bottom: -10px;
+  width: 2px;
+  background: #e5e7eb;
+  z-index: 0;
 }
-.detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
-.detail-item {
-  padding: 8px 14px; border-right: 1px solid #f0f0f0; border-bottom: 1px solid #f0f0f0;
-  display: flex; flex-direction: column; gap: 3px;
+.step-block:last-child::before { display: none; }
+
+.step-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  margin-top: 2px;
 }
-.detail-item:nth-child(3n) { border-right: none; }
-.detail-item label { font-size: 11px; color: #9ca3af; font-weight: 500; }
-.detail-item span { font-size: 13px; color: #374151; word-break: break-all; }
-.detail-full { grid-column: 1 / -1; }
-.mono { font-family: 'Courier New', monospace; font-size: 12px; }
-.keyword-highlight { color: #2563eb; font-weight: 600; background: #eff6ff; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
-.price-usd-text { color: #16a34a; font-weight: 600; }
-.refund-highlight { color: #f59e0b; font-weight: 600; }
-.review-screenshot { max-width: 100%; border-radius: 8px; border: 1px solid #f0f0f0; }
+.num-done { background: #059669; color: #fff; font-size: 14px; }
+.num-active { background: #2563eb; color: #fff; }
+.num-locked { background: #e5e7eb; color: #9ca3af; }
+
+.step-content { flex: 1; min-width: 0; }
+.step-title { font-size: 13px; font-weight: 600; color: #1a1a2e; margin-bottom: 6px; }
+.step-done { opacity: 1; }
+.step-active { opacity: 1; }
+.step-locked { opacity: 0.6; pointer-events: none; }
+.step-locked .step-title { color: #9ca3af; }
+
+.step-done-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.re-edit { font-size: 11px; color: #2563eb; cursor: pointer; text-decoration: underline; margin-left: 4px; }
+.buyer-name-text { font-weight: 600; color: #374151; }
+.refund-method-badge { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 10px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+.refund-seq { font-size: 11px; color: #9ca3af; }
+.green-text { color: #059669; font-weight: 600; }
+.refund-amount-text { color: #f59e0b; font-weight: 600; }
+.amazon-order-text { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 700; color: #374151; }
+.time-hint { font-size: 11px; color: #9ca3af; }
+
+.step-input-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.step-input-col { display: flex; flex-direction: column; gap: 8px; }
+
+.buyer-opt-meta { font-size: 11px; color: #9ca3af; }
+
+/* 退款面板 */
+.refund-gift-panel, .refund-paypal-panel, .refund-other-panel {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.refund-panel-label { font-size: 11px; font-weight: 600; color: #059669; }
+.refund-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #374151; }
+.refund-row label { white-space: nowrap; font-weight: 500; min-width: 110px; }
+.price-hint { font-size: 11px; color: #9ca3af; }
+.confirm-btn-gray { background: #6b7280; border-color: #6b7280; color: #fff; }
+.confirm-btn-gray:hover { background: #4b5563 !important; border-color: #4b5563 !important; }
+
+/* 截图预览 */
+.screenshot-preview { max-width: 200px; max-height: 100px; border-radius: 6px; border: 1px solid #f0f0f0; object-fit: cover; }
+
+/* 签收预估 */
+.delivery-estimate-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.estimate-icon { font-size: 18px; }
+.estimate-label { font-size: 11px; color: #6b7280; }
+.estimate-val { font-size: 14px; font-weight: 600; color: #2563eb; }
+.estimate-date { font-size: 11px; color: #9ca3af; }
+
+/* 底部操作 */
+.workflow-footer { display: flex; gap: 8px; padding: 10px 20px 14px; border-top: 1px dashed #f0f0f0; flex-wrap: wrap; }
+
+/* 空状态 */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: #9ca3af; gap: 12px; font-size: 14px; background: #fff; border-radius: 12px; }
 </style>
