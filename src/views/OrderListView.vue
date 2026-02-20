@@ -141,7 +141,6 @@
           <a-descriptions-item label="品牌">{{ currentOrder.brand_name }}</a-descriptions-item>
           <a-descriptions-item label="国家">{{ currentOrder.country }}</a-descriptions-item>
           <a-descriptions-item label="测评类型">{{ currentOrder.review_type }}</a-descriptions-item>
-          <a-descriptions-item label="测评模式">{{ currentOrder.review_mode }}</a-descriptions-item>
           <a-descriptions-item label="下单类型">{{ currentOrder.order_type }}</a-descriptions-item>
           <a-descriptions-item label="下单数量">{{ currentOrder.order_quantity }}</a-descriptions-item>
           <a-descriptions-item label="状态">
@@ -182,13 +181,13 @@
             <div class="amount-row-left">
               <span class="amount-label">{{ currentOrder.order_type }} 佣金单价</span>
             </div>
-            <span class="amount-commission">¥{{ Number(currentOrder.commission_fee || 0).toFixed(2) }} / 单</span>
+            <span class="amount-commission">¥{{ getCommissionUnitPrice(currentOrder).toFixed(2) }} / 单</span>
           </div>
           <div class="amount-row amount-row-sub">
             <div class="amount-row-left">
               <span class="amount-label amount-label-sm">× 数量 {{ currentOrder.order_quantity }} 单</span>
             </div>
-            <span class="amount-cny-sm">小计 ¥{{ (Number(currentOrder.commission_fee || 0) * Number(currentOrder.order_quantity || 1)).toFixed(2) }}</span>
+            <span class="amount-cny-sm">小计 ¥{{ (getCommissionUnitPrice(currentOrder) * Number(currentOrder.order_quantity || 1)).toFixed(2) }}</span>
           </div>
 
           <div class="amount-divider amount-divider-bold" style="margin: 10px 0"></div>
@@ -230,6 +229,15 @@ const filterStatus = ref('')
 const filterCountry = ref('')
 const drawerOpen = ref(false)
 const currentOrder = ref<any>(null)
+
+function getCommissionUnitPrice(order: any): number {
+  const cf = Number(order.commission_fee || 0)
+  if (cf > 0) return cf
+  const unitPrice = Number(order.unit_price || 0)
+  const productCostCny = Number(order.product_price || 0) * Number(order.exchange_rate || 1)
+  const derived = unitPrice - productCostCny
+  return derived > 0 ? derived : 0
+}
 const selectedRowKeys = ref<string[]>([])
 const taskLoadingId = ref<string | null>(null)
 

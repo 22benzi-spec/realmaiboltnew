@@ -481,7 +481,8 @@ const commissionSubtotal = computed(() =>
 
 function recalc() {
   form.product_cost_cny = (form.product_price || 0) * form.exchange_rate
-  form.unit_price = form.product_cost_cny + currentTypePrice.value
+  form.commission_fee = currentTypePrice.value
+  form.unit_price = form.product_cost_cny + form.commission_fee
   form.total_amount = productSubtotal.value + commissionSubtotal.value
 }
 
