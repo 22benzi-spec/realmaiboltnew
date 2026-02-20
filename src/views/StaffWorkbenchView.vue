@@ -145,27 +145,50 @@
                     </div>
                     <div class="step-content">
                       <div class="step-title">分配买手</div>
-                      <div v-if="task.buyer_id" class="step-done-info">
+                      <div v-if="task.buyer_id && !task._editing_buyer" class="step-done-info">
                         <UserOutlined />
                         <span class="buyer-name-text">{{ task.buyer_name }}</span>
-                        <a class="re-edit" @click.stop="task._editing_buyer = true">更换</a>
+                        <a class="re-edit" @click.stop="task._editing_buyer = true; task._buyer_validation = null">更换</a>
                       </div>
-                      <div v-if="!task.buyer_id || task._editing_buyer" class="step-input-row">
-                        <a-select
-                          v-model:value="task._sel_buyer_id"
-                          style="width:180px"
-                          show-search
-                          option-filter-prop="label"
-                          placeholder="选择买手"
-                          size="small"
-                          allow-clear
-                        >
-                          <a-select-option v-for="b in buyerList" :key="b.id" :value="b.id" :label="b.name">
-                            <span>{{ b.name }}</span>
-                            <span class="buyer-opt-meta"> · {{ b.country || '—' }} · {{ b.level }}</span>
-                          </a-select-option>
-                        </a-select>
-                        <a-button type="primary" size="small" :loading="task._saving_buyer" @click="assignBuyer(task)">确认分配</a-button>
+                      <div v-if="!task.buyer_id || task._editing_buyer" class="buyer-assign-area">
+                        <div class="step-input-row">
+                          <a-select
+                            v-model:value="task._sel_buyer_id"
+                            style="width:220px"
+                            show-search
+                            option-filter-prop="label"
+                            placeholder="选择买手"
+                            size="small"
+                            allow-clear
+                            @change="(val: string) => onBuyerSelect(task, val)"
+                          >
+                            <a-select-option v-for="b in buyerList" :key="b.id" :value="b.id" :label="b.name" :disabled="!!getBuyerBlockReason(task, b.id)">
+                              <div class="buyer-opt-row">
+                                <span>{{ b.name }}</span>
+                                <span class="buyer-opt-meta"> · {{ b.country || '—' }} · {{ b.level }}</span>
+                                <span v-if="getBuyerBlockReason(task, b.id)" class="buyer-opt-blocked">{{ getBuyerBlockReason(task, b.id) }}</span>
+                              </div>
+                            </a-select-option>
+                          </a-select>
+                          <a-button
+                            type="primary" size="small"
+                            :loading="task._saving_buyer || task._validating_buyer"
+                            :disabled="!task._sel_buyer_id || task._buyer_validation?.blocked"
+                            @click="assignBuyer(task)"
+                          >确认分配</a-button>
+                        </div>
+                        <!-- 验证结果提示 -->
+                        <div v-if="task._validating_buyer" class="buyer-validation-hint checking">
+                          <LoadingOutlined /> 验证买手资格...
+                        </div>
+                        <div v-else-if="task._buyer_validation?.blocked" class="buyer-validation-hint blocked">
+                          <ExclamationCircleOutlined />
+                          <span>{{ task._buyer_validation.reason }}</span>
+                        </div>
+                        <div v-else-if="task._buyer_validation && !task._buyer_validation.blocked" class="buyer-validation-hint passed">
+                          <CheckCircleFilled /> 买手资格验证通过
+                          <span v-if="task._buyer_validation.monthlyCount !== undefined" class="val-detail">· 本月已接单 {{ task._buyer_validation.monthlyCount }}/2</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -471,7 +494,8 @@ import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   TeamOutlined, UserOutlined, CheckCircleFilled,
-  CloseCircleOutlined, SwapOutlined, ExportOutlined
+  CloseCircleOutlined, SwapOutlined, ExportOutlined,
+  LoadingOutlined, ExclamationCircleOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -488,6 +512,8 @@ const filterOverdue = ref(false)
 const filterToday = ref(false)
 const filterSoon = ref(false)
 const buyerList = ref<any[]>([])
+const buyerMonthlyCountMap = ref<Record<string, number>>({})
+const buyerAsinMap = ref<Record<string, string[]>>({})
 
 const cancelModalOpen = ref(false)
 const cancelSaving = ref(false)
@@ -607,10 +633,53 @@ async function loadStaff() {
 async function loadBuyers() {
   const { data } = await supabase
     .from('erp_buyers')
-    .select('id, name, country, level, status, paypal_email')
+    .select('id, name, country, level, status, paypal_email, purchased_asins')
     .eq('status', '活跃')
     .order('name')
   buyerList.value = data || []
+
+  if (data && data.length > 0) {
+    const ids = data.map(b => b.id)
+    const monthStart = dayjs().startOf('month').toISOString()
+    const { data: monthOrders } = await supabase
+      .from('sub_orders')
+      .select('buyer_id')
+      .in('buyer_id', ids)
+      .not('status', 'in', '("已取消")')
+      .gte('buyer_assigned_at', monthStart)
+    const countMap: Record<string, number> = {}
+    monthOrders?.forEach(o => { countMap[o.buyer_id] = (countMap[o.buyer_id] || 0) + 1 })
+    buyerMonthlyCountMap.value = countMap
+
+    const asinMap: Record<string, string[]> = {}
+    const { data: asinOrders } = await supabase
+      .from('sub_orders')
+      .select('buyer_id, asin')
+      .in('buyer_id', ids)
+      .not('status', 'in', '("已取消")')
+      .not('asin', 'eq', '')
+    asinOrders?.forEach(o => {
+      if (!asinMap[o.buyer_id]) asinMap[o.buyer_id] = []
+      if (o.asin && !asinMap[o.buyer_id].includes(o.asin)) asinMap[o.buyer_id].push(o.asin)
+    })
+    data.forEach(b => {
+      if (b.purchased_asins) {
+        const existing = asinMap[b.id] || []
+        const fromProfile = b.purchased_asins.split(/[,，\s]+/).map((s: string) => s.trim()).filter(Boolean)
+        asinMap[b.id] = [...new Set([...existing, ...fromProfile])]
+      }
+    })
+    buyerAsinMap.value = asinMap
+  }
+}
+
+function getBuyerBlockReason(task: any, buyerId: string): string {
+  if (!buyerId) return ''
+  const monthlyCount = buyerMonthlyCountMap.value[buyerId] || 0
+  if (monthlyCount >= 2) return `本月已接单 ${monthlyCount}/2`
+  const boughtAsins = buyerAsinMap.value[buyerId] || []
+  if (task.asin && boughtAsins.includes(task.asin)) return '已购过此ASIN'
+  return ''
 }
 
 async function selectStaff(id: string) {
@@ -630,6 +699,8 @@ function initTaskFields(task: any) {
   task._sel_buyer_id = task.buyer_id || null
   task._editing_buyer = false
   task._saving_buyer = false
+  task._validating_buyer = false
+  task._buyer_validation = null
   task._sel_refund_sequence = task.refund_sequence || ''
   task._sel_refund_method = task.refund_method || ''
   task._editing_refund_method = false
@@ -724,8 +795,63 @@ async function quickSave(task: any, field: string, value: any) {
   if (!error) task[field] = value
 }
 
+async function onBuyerSelect(task: any, buyerId: string) {
+  if (!buyerId) { task._buyer_validation = null; return }
+  task._validating_buyer = true
+  task._buyer_validation = null
+  try {
+    const monthStart = dayjs().startOf('month').toISOString()
+    const { data: monthOrders, error: e1 } = await supabase
+      .from('sub_orders')
+      .select('id')
+      .eq('buyer_id', buyerId)
+      .not('status', 'in', '("已取消")')
+      .gte('buyer_assigned_at', monthStart)
+    if (e1) throw e1
+    const monthlyCount = monthOrders?.length || 0
+
+    if (monthlyCount >= 2) {
+      task._buyer_validation = { blocked: true, reason: `该买手本月已接单 ${monthlyCount} 次，超过每月限额（2次）` }
+      return
+    }
+
+    if (task.asin) {
+      const { data: asinOrders, error: e2 } = await supabase
+        .from('sub_orders')
+        .select('id')
+        .eq('buyer_id', buyerId)
+        .eq('asin', task.asin)
+        .not('status', 'in', '("已取消")')
+        .limit(1)
+      if (e2) throw e2
+      if (asinOrders && asinOrders.length > 0) {
+        task._buyer_validation = { blocked: true, reason: `该买手已购买过 ASIN: ${task.asin}，不能重复购买` }
+        return
+      }
+      const buyer = buyerList.value.find(b => b.id === buyerId)
+      if (buyer?.purchased_asins) {
+        const asins = buyer.purchased_asins.split(/[,，\s]+/).map((s: string) => s.trim()).filter(Boolean)
+        if (asins.includes(task.asin)) {
+          task._buyer_validation = { blocked: true, reason: `该买手历史记录中已购买过 ASIN: ${task.asin}` }
+          return
+        }
+      }
+    }
+
+    task._buyer_validation = { blocked: false, monthlyCount }
+  } catch (e: any) {
+    task._buyer_validation = { blocked: false, monthlyCount: 0 }
+  } finally {
+    task._validating_buyer = false
+  }
+}
+
 async function assignBuyer(task: any) {
   if (!task._sel_buyer_id) return
+  if (task._buyer_validation?.blocked) {
+    message.error(task._buyer_validation.reason)
+    return
+  }
   task._saving_buyer = true
   try {
     const buyer = buyerList.value.find(b => b.id === task._sel_buyer_id)
@@ -739,7 +865,14 @@ async function assignBuyer(task: any) {
     if (error) throw error
     Object.assign(task, payload)
     task._editing_buyer = false
+    task._buyer_validation = null
     message.success('买手已分配')
+    buyerMonthlyCountMap.value[task._sel_buyer_id] = (buyerMonthlyCountMap.value[task._sel_buyer_id] || 0) + 1
+    if (task.asin && buyerAsinMap.value[task._sel_buyer_id]) {
+      if (!buyerAsinMap.value[task._sel_buyer_id].includes(task.asin)) {
+        buyerAsinMap.value[task._sel_buyer_id].push(task.asin)
+      }
+    }
     await loadStaff()
   } catch (e: any) {
     message.error('分配失败：' + e.message)
@@ -1175,6 +1308,15 @@ onMounted(() => { loadStaff(); loadBuyers() })
 .step-input-col { display: flex; flex-direction: column; gap: 8px; }
 
 .buyer-opt-meta { font-size: 11px; color: #9ca3af; }
+.buyer-opt-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.buyer-opt-blocked { font-size: 10px; color: #ef4444; background: #fef2f2; border-radius: 6px; padding: 1px 5px; margin-left: auto; white-space: nowrap; font-weight: 600; }
+
+.buyer-assign-area { display: flex; flex-direction: column; gap: 6px; }
+.buyer-validation-hint { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 10px; border-radius: 6px; }
+.buyer-validation-hint.checking { background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; }
+.buyer-validation-hint.blocked { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-weight: 500; }
+.buyer-validation-hint.passed { background: #f0fdf4; color: #059669; border: 1px solid #bbf7d0; }
+.val-detail { font-size: 11px; color: #6b7280; margin-left: 4px; }
 
 /* 退款面板 */
 .refund-gift-panel, .refund-paypal-panel, .refund-other-panel {
