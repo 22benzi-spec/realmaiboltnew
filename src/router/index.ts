@@ -17,6 +17,7 @@ const router = createRouter({
     { path: '/gift-cards', name: 'gift-cards', component: () => import('../views/GiftCardView.vue') },
     { path: '/paypal', name: 'paypal', component: () => import('../views/PaypalView.vue') },
     { path: '/refund-queue', name: 'refund-queue', component: () => import('../views/RefundQueueView.vue') },
+    { path: '/refund-ledger', name: 'refund-ledger', component: () => import('../views/RefundLedgerView.vue') },
     { path: '/clients', name: 'clients', component: () => import('../views/ClientManagerView.vue') },
     { path: '/business', name: 'business', component: () => import('../views/BusinessManagerView.vue') },
     { path: '/profile', name: 'profile', component: () => import('../views/ProfileView.vue') },

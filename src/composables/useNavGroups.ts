@@ -3,6 +3,7 @@ import {
   ApartmentOutlined, InboxOutlined, UnorderedListOutlined, AppstoreOutlined,
   UserAddOutlined, DesktopOutlined, ThunderboltOutlined, UserOutlined,
   StopOutlined, CreditCardOutlined, BankOutlined, SendOutlined, MessageOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons-vue'
 import type { StaffRole } from '../types'
 
@@ -65,6 +66,7 @@ export const allNavGroups: NavGroup[] = [
       { id: 'gift-cards', label: '礼品卡管理', icon: CreditCardOutlined },
       { id: 'paypal', label: 'PayPal / 美金库', icon: BankOutlined },
       { id: 'refund-queue', label: '退款审批', icon: SendOutlined },
+      { id: 'refund-ledger', label: '退款账单', icon: FileTextOutlined },
     ],
   },
   {
