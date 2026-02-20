@@ -84,15 +84,24 @@
         <div class="card-contacts">
           <div class="section-label">对接人</div>
           <div v-if="company.client_contacts?.length" class="contact-chips">
-            <div v-for="c in company.client_contacts.slice(0, 3)" :key="c.id" class="contact-chip">
+            <div v-for="c in company.client_contacts.slice(0, 2)" :key="c.id" class="contact-chip">
               <div class="chip-avatar">{{ c.name.charAt(0) }}</div>
               <div class="chip-info">
-                <div class="chip-name">{{ c.name }}</div>
-                <div class="chip-id">{{ c.client_id || '—' }}</div>
+                <div class="chip-name">
+                  {{ c.name }}
+                  <a-tag v-if="c.is_primary" color="blue" style="margin-left:4px;font-size:10px;line-height:16px;padding:0 4px">主</a-tag>
+                </div>
+                <div class="chip-sub">
+                  <span v-if="c.business_manager_name" class="chip-manager">
+                    <UserOutlined style="font-size:10px" /> {{ c.business_manager_name }}
+                  </span>
+                  <span v-if="c.wechat_account_id_str" class="chip-wechat">
+                    <WechatOutlined style="font-size:10px;color:#07c160" /> {{ c.wechat_account_id_str }}
+                  </span>
+                </div>
               </div>
-              <a-tag v-if="c.is_primary" color="blue" style="margin:0;font-size:10px;line-height:16px;padding:0 4px">主</a-tag>
             </div>
-            <div v-if="company.client_contacts.length > 3" class="contact-more">+{{ company.client_contacts.length - 3 }}人</div>
+            <div v-if="company.client_contacts.length > 2" class="contact-more">+{{ company.client_contacts.length - 2 }}人</div>
           </div>
           <span v-else class="empty-val">暂无对接人</span>
         </div>
@@ -184,7 +193,7 @@
       v-model:open="detailOpen"
       :title="null"
       placement="right"
-      width="600"
+      width="620"
       :body-style="{ padding: 0 }"
     >
       <template v-if="currentCompany">
@@ -261,12 +270,27 @@
                     <span class="contact-name">{{ c.name }}</span>
                     <a-tag v-if="c.is_primary" color="blue" style="font-size:10px;margin:0;padding:0 4px">主要</a-tag>
                     <span class="contact-client-id">{{ c.client_id || '—' }}</span>
+                    <a-tag :color="contactStatusColor[c.contact_wechat_status || '活跃']" style="font-size:10px;margin:0;padding:0 4px">{{ c.contact_wechat_status || '活跃' }}</a-tag>
                   </div>
                   <div class="contact-meta">
-                    <span v-if="c.role">{{ c.role }}</span>
-                    <span v-if="c.phone">{{ c.phone }}</span>
-                    <span v-if="c.wechat">微信: {{ c.wechat }}</span>
-                    <a-tag :color="contactStatusColor[c.contact_wechat_status || '活跃']" style="font-size:10px;margin:0;padding:0 4px">{{ c.contact_wechat_status || '活跃' }}</a-tag>
+                    <span v-if="c.role" class="meta-item"><TeamOutlined /> {{ c.role }}</span>
+                    <span v-if="c.phone" class="meta-item"><PhoneOutlined /> {{ c.phone }}</span>
+                    <span v-if="c.wechat" class="meta-item">微信: {{ c.wechat }}</span>
+                  </div>
+                  <!-- 对接关系 -->
+                  <div class="contact-binding">
+                    <div v-if="c.business_manager_name" class="binding-item manager-binding">
+                      <UserOutlined />
+                      <span>{{ c.business_manager_name }}</span>
+                    </div>
+                    <div v-if="c.wechat_account_id_str" class="binding-item wechat-binding">
+                      <WechatOutlined />
+                      <span>{{ c.wechat_account_id_str }}</span>
+                      <span v-if="c.wechat_nickname" class="wechat-nick">（{{ c.wechat_nickname }}）</span>
+                    </div>
+                    <div v-if="!c.business_manager_name && !c.wechat_account_id_str" class="binding-empty">
+                      暂未分配对接商务
+                    </div>
                   </div>
                   <div v-if="c.monthly_budget_cny" class="contact-budget">月预算：¥{{ formatMoney(c.monthly_budget_cny) }}</div>
                 </div>
@@ -279,7 +303,7 @@
     </a-drawer>
 
     <!-- 添加对接人 Modal -->
-    <a-modal v-model:open="contactModalOpen" title="添加对接人" @ok="handleAddContact" :confirm-loading="savingContact" ok-text="确定" cancel-text="取消">
+    <a-modal v-model:open="contactModalOpen" title="添加对接人" @ok="handleAddContact" :confirm-loading="savingContact" ok-text="确定" cancel-text="取消" width="600px">
       <a-form layout="vertical" style="margin-top:8px">
         <a-row :gutter="12">
           <a-col :span="12">
@@ -292,11 +316,43 @@
             <a-form-item label="手机"><a-input v-model:value="contactForm.phone" /></a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="微信号"><a-input v-model:value="contactForm.wechat" /></a-form-item>
+            <a-form-item label="客户微信号"><a-input v-model:value="contactForm.wechat" placeholder="客户本人微信号" /></a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-divider style="margin:12px 0"><span style="font-size:12px;color:#6b7280">对接关系</span></a-divider>
+
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="负责商务经理">
+              <a-select
+                v-model:value="contactForm.business_manager_id"
+                placeholder="选择商务经理"
+                allow-clear
+                @change="onManagerChange"
+              >
+                <a-select-option v-for="m in managerOptions" :key="m.id" :value="m.id">{{ m.name }}</a-select-option>
+              </a-select>
+            </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="WhatsApp"><a-input v-model:value="contactForm.whatsapp" /></a-form-item>
+            <a-form-item label="对接微信号">
+              <a-select
+                v-model:value="contactForm.wechat_account_id"
+                placeholder="选择商务微信号"
+                allow-clear
+                :disabled="!contactForm.business_manager_id"
+                @change="onWechatChange"
+              >
+                <a-select-option v-for="w in filteredWechatOptions" :key="w.id" :value="w.id">
+                  {{ w.wechat_id }}{{ w.wechat_nickname ? `（${w.wechat_nickname}）` : '' }}
+                </a-select-option>
+              </a-select>
+            </a-form-item>
           </a-col>
+        </a-row>
+
+        <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="月预算（元）">
               <a-input-number v-model:value="contactForm.monthly_budget_cny" :min="0" style="width:100%" />
@@ -326,9 +382,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 
 const loading = ref(false)
@@ -345,10 +401,18 @@ const editingId = ref('')
 const currentCompany = ref<any>(null)
 const pagination = ref({ current: 1, pageSize: 15, total: 0 })
 
+const managerOptions = ref<any[]>([])
+const wechatOptions = ref<any[]>([])
+
 const levelColor: Record<string, string> = { S: 'gold', A: 'green', B: 'blue', C: 'default' }
 const levelBg: Record<string, string> = { S: '#d97706', A: '#059669', B: '#2563eb', C: '#6b7280' }
 const statusColor: Record<string, string> = { 活跃: 'green', 暂停: 'orange', 流失: 'red' }
 const contactStatusColor: Record<string, string> = { 活跃: 'green', 沉默: 'orange', 流失: 'red' }
+
+const filteredWechatOptions = computed(() => {
+  if (!contactForm.business_manager_id) return []
+  return wechatOptions.value.filter(w => w.manager_id === contactForm.business_manager_id)
+})
 
 function formatMoney(val: any) {
   const n = Number(val || 0)
@@ -380,8 +444,42 @@ const defaultContactForm = () => ({
   contact_wechat_status: '活跃',
   monthly_budget_cny: 0,
   notes: '',
+  business_manager_id: '' as string,
+  business_manager_name: '',
+  wechat_account_id: '' as string,
+  wechat_account_id_str: '',
+  wechat_nickname: '',
 })
 const contactForm = reactive(defaultContactForm())
+
+function onManagerChange(managerId: string) {
+  const mgr = managerOptions.value.find(m => m.id === managerId)
+  contactForm.business_manager_name = mgr?.name || ''
+  contactForm.wechat_account_id = ''
+  contactForm.wechat_account_id_str = ''
+  contactForm.wechat_nickname = ''
+}
+
+function onWechatChange(wechatId: string) {
+  const w = wechatOptions.value.find(x => x.id === wechatId)
+  contactForm.wechat_account_id_str = w?.wechat_id || ''
+  contactForm.wechat_nickname = w?.wechat_nickname || ''
+}
+
+async function loadManagerOptions() {
+  const { data } = await supabase
+    .from('business_managers')
+    .select('id, name')
+    .eq('status', '在职')
+    .order('name')
+  managerOptions.value = data || []
+
+  const { data: wdata } = await supabase
+    .from('business_wechat_accounts')
+    .select('id, wechat_id, wechat_nickname, manager_id, status')
+    .eq('status', '在用')
+  wechatOptions.value = wdata || []
+}
 
 async function load() {
   loading.value = true
@@ -484,11 +582,26 @@ async function handleAddContact() {
   savingContact.value = true
   try {
     const clientId = 'CLI-' + Math.random().toString(36).substring(2, 8).toUpperCase()
-    const { error } = await supabase.from('client_contacts').insert([{
-      ...contactForm,
+    const payload: any = {
       client_id: clientId,
       company_id: currentCompany.value.id,
-    }])
+      name: contactForm.name,
+      role: contactForm.role,
+      phone: contactForm.phone,
+      wechat: contactForm.wechat,
+      whatsapp: contactForm.whatsapp,
+      is_primary: contactForm.is_primary,
+      contact_wechat_status: contactForm.contact_wechat_status,
+      monthly_budget_cny: contactForm.monthly_budget_cny,
+      notes: contactForm.notes,
+      business_manager_name: contactForm.business_manager_name,
+      wechat_account_id_str: contactForm.wechat_account_id_str,
+      wechat_nickname: contactForm.wechat_nickname,
+    }
+    if (contactForm.business_manager_id) payload.business_manager_id = contactForm.business_manager_id
+    if (contactForm.wechat_account_id) payload.wechat_account_id = contactForm.wechat_account_id
+
+    const { error } = await supabase.from('client_contacts').insert([payload])
     if (error) throw error
     message.success('对接人已添加')
     contactModalOpen.value = false
@@ -520,7 +633,10 @@ function handlePageChange(page: number) {
   load()
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadManagerOptions()
+})
 </script>
 
 <style scoped>
@@ -551,10 +667,10 @@ onMounted(load)
   border-color: #bfdbfe;
 }
 
-.card-sep { width: 1px; height: 56px; background: #f0f0f0; margin: 0 18px; flex-shrink: 0; }
+.card-sep { width: 1px; height: 60px; background: #f0f0f0; margin: 0 18px; flex-shrink: 0; }
 
 /* 左侧：组织 */
-.card-org { display: flex; align-items: center; gap: 12px; min-width: 220px; max-width: 240px; flex-shrink: 0; }
+.card-org { display: flex; align-items: center; gap: 12px; min-width: 200px; max-width: 230px; flex-shrink: 0; }
 .org-avatar {
   width: 44px; height: 44px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
@@ -572,10 +688,10 @@ onMounted(load)
   padding: 1px 6px; border-radius: 4px; font-family: monospace; white-space: nowrap;
 }
 .org-brands { display: flex; align-items: center; gap: 4px; }
-.brand-text { font-size: 11px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.brand-text { font-size: 11px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 
 /* ASIN */
-.card-asins { min-width: 160px; max-width: 180px; flex-shrink: 0; }
+.card-asins { min-width: 150px; max-width: 170px; flex-shrink: 0; }
 .section-label { font-size: 11px; color: #9ca3af; margin-bottom: 5px; }
 .asin-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .asin-tag {
@@ -587,33 +703,36 @@ onMounted(load)
 
 /* 统计 */
 .card-stats { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
-.stat-block { display: flex; flex-direction: column; align-items: center; min-width: 70px; }
+.stat-block { display: flex; flex-direction: column; align-items: center; min-width: 64px; }
 .stat-num { font-size: 17px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
 .stat-num.blue { color: #2563eb; }
 .stat-num.green { color: #059669; }
 .stat-num.orange { color: #d97706; }
 .stat-num.teal { color: #0891b2; }
 .stat-lbl { font-size: 11px; color: #9ca3af; margin-top: 2px; }
-.stat-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 10px; flex-shrink: 0; }
+.stat-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 8px; flex-shrink: 0; }
 
 /* 对接人 */
 .card-contacts { flex: 1; min-width: 0; }
 .contact-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .contact-chip {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: flex-start; gap: 7px;
   background: #f8fafc; border: 1px solid #e5e7eb;
-  border-radius: 8px; padding: 5px 10px;
+  border-radius: 8px; padding: 6px 10px;
+  min-width: 0;
 }
 .chip-avatar {
-  width: 26px; height: 26px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
   background: #2563eb; color: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; flex-shrink: 0;
+  font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
 }
-.chip-info { display: flex; flex-direction: column; }
-.chip-name { font-size: 12px; font-weight: 600; color: #1f2937; white-space: nowrap; }
-.chip-id { font-size: 10px; color: #9ca3af; font-family: monospace; }
-.contact-more { font-size: 12px; color: #6b7280; }
+.chip-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chip-name { font-size: 12px; font-weight: 600; color: #1f2937; white-space: nowrap; display: flex; align-items: center; }
+.chip-sub { display: flex; flex-direction: column; gap: 2px; }
+.chip-manager { font-size: 11px; color: #374151; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
+.chip-wechat { font-size: 11px; color: #07c160; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
+.contact-more { font-size: 12px; color: #6b7280; white-space: nowrap; }
 
 /* 操作 */
 .card-actions { display: flex; flex-direction: column; gap: 0; flex-shrink: 0; }
@@ -676,21 +795,35 @@ onMounted(load)
 
 .contact-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .contact-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; background: #f8fafc;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px; background: #f8fafc;
   border-radius: 8px; border: 1px solid #e5e7eb;
 }
 .contact-avatar-sm {
-  width: 32px; height: 32px; border-radius: 50%;
+  width: 34px; height: 34px; border-radius: 50%;
   background: #2563eb; color: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 700; flex-shrink: 0;
+  font-size: 13px; font-weight: 700; flex-shrink: 0; margin-top: 2px;
 }
-.contact-detail { flex: 1; min-width: 0; }
+.contact-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .contact-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.contact-name { font-size: 13px; font-weight: 600; color: #1f2937; }
+.contact-name { font-size: 14px; font-weight: 600; color: #1f2937; }
 .contact-client-id { font-size: 11px; color: #9ca3af; font-family: monospace; }
-.contact-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; flex-wrap: wrap; }
-.contact-meta span { font-size: 12px; color: #6b7280; }
-.contact-budget { font-size: 11px; color: #059669; margin-top: 2px; }
+.contact-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.meta-item { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 4px; }
+
+.contact-binding {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 10px; background: #f0fdf4; border-radius: 6px;
+  border: 1px solid #bbf7d0; margin-top: 2px;
+}
+.binding-item {
+  display: flex; align-items: center; gap: 4px; font-size: 12px;
+}
+.manager-binding { color: #1f2937; font-weight: 500; }
+.manager-binding::after { content: '›'; margin: 0 4px; color: #9ca3af; font-size: 14px; }
+.wechat-binding { color: #059669; font-weight: 500; }
+.wechat-nick { color: #9ca3af; font-weight: 400; }
+.binding-empty { font-size: 12px; color: #9ca3af; }
+.contact-budget { font-size: 11px; color: #059669; }
 </style>
