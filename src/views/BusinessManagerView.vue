@@ -2,60 +2,177 @@
   <div class="page-content">
     <div class="page-header">
       <h1 class="page-title">商务管理</h1>
-      <a-button type="primary" @click="openAddManager"><PlusOutlined /> 添加商务经理</a-button>
+      <div class="header-actions">
+        <a-input-search v-model:value="searchText" placeholder="搜索商务经理姓名" style="width:220px" allow-clear @search="load" />
+        <a-button @click="load"><ReloadOutlined /></a-button>
+        <a-button type="primary" @click="openAddManager"><PlusOutlined /> 添加商务经理</a-button>
+      </div>
     </div>
 
-    <div class="card-panel">
-      <div class="toolbar">
-        <a-input-search v-model:value="searchText" placeholder="搜索商务经理姓名" style="width:240px" allow-clear @search="load" />
-        <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
-      </div>
+    <div v-if="loading" class="loading-wrap">
+      <a-spin size="large" />
+    </div>
 
-      <a-table
-        :columns="managerColumns"
-        :data-source="managerList"
-        :loading="loading"
-        row-key="id"
-        size="middle"
-        :expandable="expandableConfig"
-        :pagination="{ pageSize: 10 }"
+    <div v-else-if="managerList.length === 0" class="empty-wrap">
+      <a-empty description="暂无商务经理数据" />
+    </div>
+
+    <div v-else class="manager-grid">
+      <div
+        v-for="record in managerList"
+        :key="record.id"
+        class="manager-card"
       >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <div class="staff-cell">
-              <div class="avatar" :style="{ background: record.avatar_color || '#2563eb' }">{{ record.name.charAt(0) }}</div>
-              <div>
-                <div class="staff-name">{{ record.name }}</div>
-                <div class="staff-phone">{{ record.phone || '—' }}</div>
+        <div class="card-left">
+          <div class="avatar-lg" :style="{ background: record.avatar_color || '#2563eb' }">
+            {{ record.name.charAt(0) }}
+          </div>
+          <div class="card-name-block">
+            <span class="card-name clickable" @click="openDetail(record)">{{ record.name }}</span>
+            <a-tag :color="record.status === '在职' ? 'green' : 'default'" style="margin-top:4px">{{ record.status }}</a-tag>
+          </div>
+        </div>
+
+        <div class="card-divider" />
+
+        <div class="card-stats">
+          <div class="stat-item">
+            <div class="stat-num blue">{{ record.business_wechat_accounts?.length || 0 }}</div>
+            <div class="stat-label">商务微信</div>
+          </div>
+          <div class="stat-sep" />
+          <div class="stat-item">
+            <div class="stat-num green">{{ getTotalClients(record) }}</div>
+            <div class="stat-label">管理客户</div>
+          </div>
+          <div class="stat-sep" />
+          <div class="stat-item">
+            <div class="stat-num orange">{{ getActiveClients(record) }}</div>
+            <div class="stat-label">活跃客户</div>
+          </div>
+        </div>
+
+        <div class="card-divider" />
+
+        <div class="card-meta">
+          <div class="meta-row"><span class="meta-label">手机</span><span class="meta-val">{{ record.phone || '—' }}</span></div>
+          <div class="meta-row"><span class="meta-label">入职</span><span class="meta-val">{{ record.join_date ? formatDate(record.join_date) : '—' }}</span></div>
+        </div>
+
+        <div class="card-divider" />
+
+        <div class="card-actions">
+          <a-button type="link" size="small" @click="openDetail(record)">查看详情</a-button>
+          <a-button type="link" size="small" @click="openAddWechat(record)"><PlusOutlined /> 添加微信</a-button>
+          <a-button type="link" size="small" danger @click="confirmDeleteManager(record)"><DeleteOutlined /></a-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 经理详情抽屉 -->
+    <a-drawer
+      v-model:open="detailOpen"
+      :title="null"
+      placement="right"
+      width="520"
+      :body-style="{ padding: 0 }"
+    >
+      <template v-if="detailManager">
+        <div class="drawer-header">
+          <div class="drawer-avatar" :style="{ background: detailManager.avatar_color || '#2563eb' }">
+            {{ detailManager.name.charAt(0) }}
+          </div>
+          <div class="drawer-title-block">
+            <div class="drawer-name">{{ detailManager.name }}</div>
+            <div class="drawer-sub">
+              <a-tag :color="detailManager.status === '在职' ? 'green' : 'default'">{{ detailManager.status }}</a-tag>
+              <span v-if="detailManager.join_date" class="drawer-join">入职 {{ formatDate(detailManager.join_date) }}</span>
+            </div>
+          </div>
+          <div class="drawer-header-actions">
+            <a-button type="link" size="small" danger @click="confirmDeleteManager(detailManager)"><DeleteOutlined /> 删除</a-button>
+          </div>
+        </div>
+
+        <div class="drawer-body">
+          <div class="drawer-section">
+            <div class="section-title">基本信息</div>
+            <div class="info-grid">
+              <div class="info-item"><span class="info-label">手机号</span><span class="info-val">{{ detailManager.phone || '—' }}</span></div>
+              <div class="info-item"><span class="info-label">邮箱</span><span class="info-val">{{ detailManager.email || '—' }}</span></div>
+              <div class="info-item"><span class="info-label">入职日期</span><span class="info-val">{{ detailManager.join_date ? formatDate(detailManager.join_date) : '—' }}</span></div>
+              <div class="info-item" v-if="detailManager.notes"><span class="info-label">备注</span><span class="info-val">{{ detailManager.notes }}</span></div>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <div class="section-title-row">
+              <span class="section-title">商务微信号</span>
+              <a-button type="primary" size="small" @click="openAddWechat(detailManager)"><PlusOutlined /> 添加微信号</a-button>
+            </div>
+            <div v-if="!detailManager.business_wechat_accounts?.length" class="empty-text">暂无商务微信号</div>
+            <div v-else class="wechat-list">
+              <div v-for="acc in detailManager.business_wechat_accounts" :key="acc.id" class="wechat-item">
+                <div class="witem-left">
+                  <div class="witem-id">{{ acc.wechat_id }}</div>
+                  <div v-if="acc.wechat_nickname" class="witem-nick">{{ acc.wechat_nickname }}</div>
+                </div>
+                <div class="witem-mid">
+                  <div class="witem-stat">
+                    <span class="wstat-num">{{ acc.wechat_clients?.length || 0 }}</span>
+                    <span class="wstat-label">客户</span>
+                  </div>
+                  <div class="witem-stat">
+                    <span class="wstat-num green">{{ acc.wechat_clients?.filter((c: any) => c.status === '活跃').length || 0 }}</span>
+                    <span class="wstat-label">活跃</span>
+                  </div>
+                </div>
+                <div class="witem-right">
+                  <a-tag :color="acc.status === '在用' ? 'green' : acc.status === '停用' ? 'orange' : 'red'" style="margin:0">{{ acc.status }}</a-tag>
+                  <a-button type="link" size="small" @click="openClientModal(acc)">管理客户</a-button>
+                  <a-button type="link" size="small" danger @click="confirmDeleteWechat(acc)"><DeleteOutlined /></a-button>
+                </div>
               </div>
             </div>
-          </template>
-          <template v-if="column.key === 'wechat_count'">
-            <a-badge :count="record.business_wechat_accounts?.length || 0" show-zero :number-style="{ backgroundColor: '#2563eb' }" />
-          </template>
-          <template v-if="column.key === 'client_count'">
-            <span class="total-clients">{{ getTotalClients(record) }} 位</span>
-          </template>
-          <template v-if="column.key === 'status'">
-            <a-tag :color="record.status === '在职' ? 'green' : 'default'">{{ record.status }}</a-tag>
-          </template>
-          <template v-if="column.key === 'action'">
-            <div class="action-btns">
-              <a-button type="link" size="small" @click="openAddWechat(record)"><PlusOutlined /> 添加微信号</a-button>
-              <a-button type="link" size="small" danger @click="confirmDeleteManager(record)"><DeleteOutlined /> 删除</a-button>
+          </div>
+
+          <div class="drawer-stats-row">
+            <div class="dstat-card">
+              <div class="dstat-num blue">{{ detailManager.business_wechat_accounts?.length || 0 }}</div>
+              <div class="dstat-label">商务微信数</div>
             </div>
-          </template>
-        </template>
-      </a-table>
-    </div>
+            <div class="dstat-card">
+              <div class="dstat-num green">{{ getTotalClients(detailManager) }}</div>
+              <div class="dstat-label">管理客户总数</div>
+            </div>
+            <div class="dstat-card">
+              <div class="dstat-num orange">{{ getActiveClients(detailManager) }}</div>
+              <div class="dstat-label">活跃客户数</div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </a-drawer>
 
     <!-- 添加商务经理 Modal -->
     <a-modal v-model:open="managerModalOpen" title="添加商务经理" @ok="handleAddManager" :confirm-loading="submitting" ok-text="确定" cancel-text="取消">
       <a-form layout="vertical" style="margin-top:8px">
-        <a-form-item label="姓名" required><a-input v-model:value="managerForm.name" placeholder="请输入姓名" /></a-form-item>
-        <a-form-item label="手机号"><a-input v-model:value="managerForm.phone" placeholder="请输入手机号" /></a-form-item>
-        <a-form-item label="邮箱"><a-input v-model:value="managerForm.email" placeholder="请输入邮箱" /></a-form-item>
-        <a-form-item label="个人微信号"><a-input v-model:value="managerForm.wechat_id" placeholder="请输入个人微信号" /></a-form-item>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="姓名" required><a-input v-model:value="managerForm.name" placeholder="请输入姓名" /></a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="手机号"><a-input v-model:value="managerForm.phone" placeholder="请输入手机号" /></a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="邮箱"><a-input v-model:value="managerForm.email" placeholder="请输入邮箱" /></a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="入职日期"><a-date-picker v-model:value="managerForm.join_date" style="width:100%" placeholder="选择入职日期" /></a-form-item>
+          </a-col>
+        </a-row>
         <a-form-item label="备注"><a-textarea v-model:value="managerForm.notes" :rows="2" placeholder="备注信息" /></a-form-item>
       </a-form>
     </a-modal>
@@ -63,8 +180,14 @@
     <!-- 添加微信号 Modal -->
     <a-modal v-model:open="wechatModalOpen" :title="`为 ${currentManager?.name} 添加商务微信号`" @ok="handleAddWechat" :confirm-loading="submitting" ok-text="确定" cancel-text="取消">
       <a-form layout="vertical" style="margin-top:8px">
-        <a-form-item label="微信号" required><a-input v-model:value="wechatForm.wechat_id" placeholder="请输入微信号" /></a-form-item>
-        <a-form-item label="微信昵称"><a-input v-model:value="wechatForm.wechat_nickname" placeholder="请输入微信昵称" /></a-form-item>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="微信号" required><a-input v-model:value="wechatForm.wechat_id" placeholder="请输入微信号" /></a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="微信昵称"><a-input v-model:value="wechatForm.wechat_nickname" placeholder="请输入微信昵称" /></a-form-item>
+          </a-col>
+        </a-row>
         <a-form-item label="状态">
           <a-select v-model:value="wechatForm.status">
             <a-select-option value="在用">在用</a-select-option>
@@ -108,8 +231,14 @@
     <!-- 添加客户 Modal -->
     <a-modal v-model:open="addClientModalOpen" title="添加客户" @ok="handleAddClient" :confirm-loading="submitting" ok-text="确定" cancel-text="取消">
       <a-form layout="vertical" style="margin-top:8px">
-        <a-form-item label="客户名称" required><a-input v-model:value="clientForm.client_name" placeholder="请输入客户名称" /></a-form-item>
-        <a-form-item label="客户微信号"><a-input v-model:value="clientForm.client_wechat" placeholder="请输入客户微信号" /></a-form-item>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="客户名称" required><a-input v-model:value="clientForm.client_name" placeholder="请输入客户名称" /></a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="客户微信号"><a-input v-model:value="clientForm.client_wechat" placeholder="请输入客户微信号" /></a-form-item>
+          </a-col>
+        </a-row>
         <a-form-item label="备注标记"><a-input v-model:value="clientForm.remark" placeholder="如：高价值客户、长期合作等" /></a-form-item>
         <a-form-item label="状态">
           <a-select v-model:value="clientForm.status">
@@ -125,10 +254,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
+import dayjs from 'dayjs'
 
 const loading = ref(false)
 const managerList = ref<any[]>([])
@@ -140,23 +270,16 @@ const clientModalOpen = ref(false)
 const addClientModalOpen = ref(false)
 const submitting = ref(false)
 const clientLoading = ref(false)
+const detailOpen = ref(false)
+const detailManager = ref<any>(null)
 
 const currentManager = ref<any>(null)
 const currentWechat = ref<any>(null)
 const clientList = ref<any[]>([])
 
-const managerForm = reactive({ name: '', phone: '', email: '', wechat_id: '', notes: '' })
+const managerForm = reactive({ name: '', phone: '', email: '', join_date: null as any, notes: '' })
 const wechatForm = reactive({ wechat_id: '', wechat_nickname: '', status: '在用', notes: '' })
 const clientForm = reactive({ client_name: '', client_wechat: '', remark: '', status: '活跃', notes: '' })
-
-const managerColumns = [
-  { title: '商务经理', key: 'name', width: 180 },
-  { title: '个人微信', dataIndex: 'wechat_id', key: 'wechat_id', width: 130 },
-  { title: '商务微信数', key: 'wechat_count', width: 110 },
-  { title: '管理客户数', key: 'client_count', width: 110 },
-  { title: '状态', key: 'status', width: 80 },
-  { title: '操作', key: 'action', width: 200 },
-]
 
 const clientColumns = [
   { title: '客户名称', dataIndex: 'client_name', key: 'client_name', width: 130 },
@@ -166,58 +289,20 @@ const clientColumns = [
   { title: '操作', key: 'action', width: 70 },
 ]
 
-const expandableConfig = computed(() => ({
-  expandedRowRender: (record: any) => expandedRowRender(record),
-}))
-
 function getTotalClients(record: any): number {
   return (record.business_wechat_accounts || []).reduce((sum: number, acc: any) => {
     return sum + (acc.wechat_clients?.length || 0)
   }, 0)
 }
 
-function expandedRowRender(record: any) {
-  const accounts = record.business_wechat_accounts || []
-  if (!accounts.length) return h('span', { style: 'color:#9ca3af;font-size:12px;padding:8px 0;display:block' }, '暂无商务微信号，点击「添加微信号」开始添加')
+function getActiveClients(record: any): number {
+  return (record.business_wechat_accounts || []).reduce((sum: number, acc: any) => {
+    return sum + (acc.wechat_clients?.filter((c: any) => c.status === '活跃').length || 0)
+  }, 0)
+}
 
-  return h('div', { class: 'wechat-cards' }, accounts.map((acc: any) => {
-    const clientCount = acc.wechat_clients?.length || 0
-    const statusClass = acc.status === '在用' ? 'green' : acc.status === '停用' ? 'orange' : 'red'
-    const statusBorderColor = acc.status === '在用' ? '#10b981' : acc.status === '停用' ? '#f59e0b' : '#ef4444'
-
-    return h('div', { class: 'wechat-card', key: acc.id, style: `border-top: 3px solid ${statusBorderColor}` }, [
-      h('div', { class: 'wcard-header' }, [
-        h('div', { class: 'wcard-title-row' }, [
-          h('span', { class: 'wcard-icon' }, '💬'),
-          h('div', { class: 'wcard-id' }, acc.wechat_id),
-        ]),
-        h('span', { class: `wcard-status wcard-status-${statusClass}` }, acc.status),
-      ]),
-      acc.wechat_nickname ? h('div', { class: 'wcard-nick' }, `昵称：${acc.wechat_nickname}`) : null,
-      h('div', { class: 'wcard-stats' }, [
-        h('div', { class: 'wcard-stat' }, [
-          h('div', { class: 'wcard-stat-num', style: `color: ${clientCount > 0 ? '#2563eb' : '#9ca3af'}` }, String(clientCount)),
-          h('div', { class: 'wcard-stat-label' }, '管理客户'),
-        ]),
-        h('div', { class: 'wcard-stat-divider' }),
-        h('div', { class: 'wcard-stat' }, [
-          h('div', { class: 'wcard-stat-num', style: 'color:#059669' }, String(acc.wechat_clients?.filter((c: any) => c.status === '活跃').length || 0)),
-          h('div', { class: 'wcard-stat-label' }, '活跃客户'),
-        ]),
-      ]),
-      acc.notes ? h('div', { class: 'wcard-notes' }, acc.notes) : null,
-      h('div', { class: 'wcard-footer' }, [
-        h('a', {
-          class: 'wcard-btn',
-          onClick: () => openClientModal(acc)
-        }, '管理客户'),
-        h('a', {
-          class: 'wcard-btn danger',
-          onClick: () => confirmDeleteWechat(acc)
-        }, '删除'),
-      ]),
-    ])
-  }))
+function formatDate(d: string) {
+  return dayjs(d).format('YYYY-MM-DD')
 }
 
 async function load() {
@@ -232,13 +317,21 @@ async function load() {
     const { data, error } = await query
     if (error) throw error
     managerList.value = data || []
+    if (detailManager.value) {
+      detailManager.value = managerList.value.find(m => m.id === detailManager.value.id) || null
+    }
   } finally {
     loading.value = false
   }
 }
 
+function openDetail(record: any) {
+  detailManager.value = record
+  detailOpen.value = true
+}
+
 function openAddManager() {
-  Object.assign(managerForm, { name: '', phone: '', email: '', wechat_id: '', notes: '' })
+  Object.assign(managerForm, { name: '', phone: '', email: '', join_date: null, notes: '' })
   managerModalOpen.value = true
 }
 
@@ -250,7 +343,7 @@ async function handleAddManager() {
       name: managerForm.name.trim(),
       phone: managerForm.phone,
       email: managerForm.email,
-      wechat_id: managerForm.wechat_id,
+      join_date: managerForm.join_date ? dayjs(managerForm.join_date).format('YYYY-MM-DD') : null,
       notes: managerForm.notes,
       avatar_color: randomColor(),
     }])
@@ -281,6 +374,7 @@ async function deleteManager(id: string) {
     const { error } = await supabase.from('business_managers').delete().eq('id', id)
     if (error) throw error
     message.success('已删除')
+    detailOpen.value = false
     load()
   } catch (e: any) {
     message.error('删除失败：' + e.message)
@@ -393,7 +487,7 @@ function confirmDeleteClient(record: any) {
 }
 
 function randomColor() {
-  const colors = ['#2563eb', '#059669', '#dc2626', '#d97706', '#7c3aed', '#0891b2', '#be185d']
+  const colors = ['#2563eb', '#059669', '#dc2626', '#d97706', '#0891b2', '#be185d']
   return colors[Math.floor(Math.random() * colors.length)]
 }
 
@@ -402,57 +496,150 @@ onMounted(load)
 
 <style scoped>
 .page-content { padding: 24px; }
-.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 0; }
-.card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
-.toolbar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
-.staff-cell { display: flex; align-items: center; gap: 10px; }
-.avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; flex-shrink: 0; }
-.staff-name { font-size: 13px; font-weight: 600; color: #1f2937; }
-.staff-phone { font-size: 12px; color: #9ca3af; }
-.total-clients { font-size: 13px; color: #374151; font-weight: 500; }
-.action-btns { display: flex; gap: 4px; }
-.client-toolbar { margin-bottom: 12px; }
-</style>
+.header-actions { display: flex; gap: 10px; align-items: center; }
 
-<style>
-.wechat-cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px 0 6px;
+.loading-wrap { display: flex; justify-content: center; padding: 80px 0; }
+.empty-wrap { padding: 80px 0; }
+
+.manager-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+  gap: 16px;
 }
-.wechat-card {
+
+.manager-card {
   background: #fff;
+  border-radius: 12px;
   border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 14px 16px 10px;
-  width: 200px;
-  min-width: 180px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: box-shadow 0.2s;
+  align-items: center;
+  padding: 18px 20px;
+  gap: 0;
+  transition: box-shadow 0.2s, border-color 0.2s;
 }
-.wechat-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.1); }
-.wcard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
-.wcard-title-row { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.wcard-icon { font-size: 14px; flex-shrink: 0; }
-.wcard-id { font-weight: 700; font-size: 13px; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wcard-status { font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
-.wcard-status-green { background: #d1fae5; color: #065f46; }
-.wcard-status-orange { background: #fef3c7; color: #92400e; }
-.wcard-status-red { background: #fee2e2; color: #991b1b; }
-.wcard-nick { font-size: 12px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wcard-stats { display: flex; align-items: center; background: #f8fafc; border-radius: 7px; padding: 8px 0; }
-.wcard-stat { flex: 1; text-align: center; }
-.wcard-stat-num { font-size: 18px; font-weight: 700; line-height: 1.2; }
-.wcard-stat-label { font-size: 11px; color: #9ca3af; margin-top: 2px; }
-.wcard-stat-divider { width: 1px; height: 28px; background: #e5e7eb; }
-.wcard-notes { font-size: 11px; color: #9ca3af; background: #f9fafb; border-radius: 5px; padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wcard-footer { display: flex; gap: 8px; border-top: 1px solid #f3f4f6; padding-top: 8px; margin-top: 2px; }
-.wcard-btn { font-size: 12px; color: #2563eb; cursor: pointer; text-decoration: none; flex: 1; text-align: center; }
-.wcard-btn:hover { text-decoration: underline; }
-.wcard-btn.danger { color: #dc2626; }
+.manager-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  border-color: #bfdbfe;
+}
+
+.card-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 130px;
+}
+.avatar-lg {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.card-name-block { display: flex; flex-direction: column; }
+.card-name { font-size: 15px; font-weight: 700; color: #111827; }
+.card-name.clickable { cursor: pointer; }
+.card-name.clickable:hover { color: #2563eb; text-decoration: underline; }
+
+.card-divider { width: 1px; height: 48px; background: #f0f0f0; margin: 0 16px; flex-shrink: 0; }
+
+.card-stats { display: flex; align-items: center; gap: 0; min-width: 180px; }
+.stat-item { display: flex; flex-direction: column; align-items: center; min-width: 55px; }
+.stat-num { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.stat-num.blue { color: #2563eb; }
+.stat-num.green { color: #059669; }
+.stat-num.orange { color: #d97706; }
+.stat-label { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+.stat-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 10px; }
+
+.card-meta { min-width: 160px; display: flex; flex-direction: column; gap: 6px; }
+.meta-row { display: flex; align-items: center; gap: 6px; }
+.meta-label { font-size: 12px; color: #9ca3af; width: 28px; flex-shrink: 0; }
+.meta-val { font-size: 12px; color: #374151; }
+
+.card-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-left: auto; }
+
+.client-toolbar { margin-bottom: 12px; }
+
+/* Drawer */
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 24px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafbfc;
+}
+.drawer-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.drawer-title-block { flex: 1; }
+.drawer-name { font-size: 18px; font-weight: 700; color: #111827; }
+.drawer-sub { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+.drawer-join { font-size: 12px; color: #9ca3af; }
+.drawer-header-actions { margin-left: auto; }
+
+.drawer-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+.drawer-section { }
+.section-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f3f4f6; }
+.section-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f3f4f6; }
+
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.info-item { display: flex; flex-direction: column; gap: 2px; }
+.info-label { font-size: 11px; color: #9ca3af; }
+.info-val { font-size: 13px; color: #1f2937; font-weight: 500; }
+
+.empty-text { font-size: 13px; color: #9ca3af; padding: 8px 0; }
+
+.wechat-list { display: flex; flex-direction: column; gap: 8px; }
+.wechat-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+.witem-left { min-width: 100px; }
+.witem-id { font-weight: 700; font-size: 13px; color: #1f2937; }
+.witem-nick { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+.witem-mid { display: flex; gap: 16px; }
+.witem-stat { display: flex; flex-direction: column; align-items: center; min-width: 32px; }
+.wstat-num { font-size: 16px; font-weight: 700; color: #2563eb; }
+.wstat-num.green { color: #059669; }
+.wstat-label { font-size: 10px; color: #9ca3af; }
+.witem-right { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+
+.drawer-stats-row {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: #f0f7ff;
+  border-radius: 10px;
+  border: 1px solid #bfdbfe;
+}
+.dstat-card { flex: 1; text-align: center; }
+.dstat-num { font-size: 24px; font-weight: 700; line-height: 1.2; }
+.dstat-num.blue { color: #2563eb; }
+.dstat-num.green { color: #059669; }
+.dstat-num.orange { color: #d97706; }
+.dstat-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
 </style>
