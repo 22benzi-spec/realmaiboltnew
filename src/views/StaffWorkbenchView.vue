@@ -440,9 +440,9 @@
                   <a-popconfirm title="确认客户取消？需填写原因" @confirm="openCancelModal(task)">
                     <a-button size="small" danger ghost><CloseCircleOutlined /> 客户取消 &amp; 补单</a-button>
                   </a-popconfirm>
-                  <a-button size="small" ghost @click="openTransferModal(task)"><SwapOutlined /> 转给其他业务员</a-button>
                   <a-button size="small" ghost style="color:#7c3aed;border-color:#c4b5fd" @click="openReturnModal(task)"><RollbackOutlined /> 回转给管理员</a-button>
                   <a-button size="small" ghost style="color:#f59e0b;border-color:#f59e0b" @click="releaseToHall(task)"><ExportOutlined /> 放到抢单大厅</a-button>
+                  <a-button size="small" type="primary" ghost style="color:#0284c7;border-color:#0284c7" @click="openTransferModal(task)"><SwapOutlined /> 订单互转</a-button>
                 </div>
               </div>
             </div>
