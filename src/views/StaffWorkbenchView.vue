@@ -441,6 +441,7 @@
                     <a-button size="small" danger ghost><CloseCircleOutlined /> 客户取消 &amp; 补单</a-button>
                   </a-popconfirm>
                   <a-button size="small" ghost @click="openTransferModal(task)"><SwapOutlined /> 转给其他业务员</a-button>
+                  <a-button size="small" ghost style="color:#7c3aed;border-color:#c4b5fd" @click="openReturnModal(task)"><RollbackOutlined /> 回转给管理员</a-button>
                   <a-button size="small" ghost style="color:#f59e0b;border-color:#f59e0b" @click="releaseToHall(task)"><ExportOutlined /> 放到抢单大厅</a-button>
                 </div>
               </div>
@@ -486,6 +487,40 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 回转弹窗 -->
+    <a-modal
+      v-model:open="returnModalOpen"
+      title="回转给管理员重新分配"
+      @ok="submitReturn"
+      :confirm-loading="returnSaving"
+      ok-text="确认回转"
+    >
+      <div v-if="returnTarget" class="return-modal-body">
+        <div class="return-info-bar">
+          <span class="return-info-item">子订单号：<strong>{{ returnTarget.sub_order_number }}</strong></span>
+          <span class="return-info-item">当前状态：<a-tag :color="getStatusColor(returnTarget.status)" size="small">{{ returnTarget.status }}</a-tag></span>
+          <span v-if="returnTarget.buyer_name" class="return-info-item">当前买手：<strong>{{ returnTarget.buyer_name }}</strong></span>
+        </div>
+        <a-alert
+          message="回转后该子单将重新变为「待分配」状态，从当前业务员工作台移除，等待管理员重新分配。"
+          type="warning"
+          show-icon
+          style="margin-bottom:16px"
+        />
+        <a-form layout="vertical">
+          <a-form-item label="回转原因（必填）">
+            <a-textarea v-model:value="returnForm.reason" :rows="3" placeholder="请说明回转原因，如：买手不合适、排期冲突、客户要求更换等" />
+          </a-form-item>
+          <a-form-item label="是否同时清除买手分配">
+            <a-radio-group v-model:value="returnForm.clearBuyer">
+              <a-radio :value="true">是，清除买手（重新分配买手）</a-radio>
+              <a-radio :value="false">否，保留当前买手</a-radio>
+            </a-radio-group>
+          </a-form-item>
+        </a-form>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -495,7 +530,7 @@ import { message } from 'ant-design-vue'
 import {
   TeamOutlined, UserOutlined, CheckCircleFilled,
   CloseCircleOutlined, SwapOutlined, ExportOutlined,
-  LoadingOutlined, ExclamationCircleOutlined
+  LoadingOutlined, ExclamationCircleOutlined, RollbackOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -524,6 +559,11 @@ const transferModalOpen = ref(false)
 const transferSaving = ref(false)
 const transferForm = ref<any>({ staffId: null, reason: '' })
 const transferTarget = ref<any>(null)
+
+const returnModalOpen = ref(false)
+const returnSaving = ref(false)
+const returnForm = ref<any>({ reason: '', clearBuyer: true })
+const returnTarget = ref<any>(null)
 
 const workflowSteps = [0, 1, 2, 3, 4, 5]
 
@@ -1109,6 +1149,56 @@ async function submitTransfer() {
   }
 }
 
+function openReturnModal(task: any) {
+  returnTarget.value = task
+  returnForm.value = { reason: '', clearBuyer: true }
+  returnModalOpen.value = true
+}
+
+async function submitReturn() {
+  if (!returnTarget.value || !returnForm.value.reason.trim()) {
+    message.warning('请填写回转原因')
+    return
+  }
+  returnSaving.value = true
+  try {
+    const fromStaff = staffList.value.find(s => s.id === selectedStaffId.value)
+    const updateData: any = {
+      status: '待分配',
+      staff_id: null,
+      staff_name: null,
+      return_reason: returnForm.value.reason,
+      returned_at: new Date().toISOString(),
+    }
+    if (returnForm.value.clearBuyer) {
+      updateData.buyer_id = null
+      updateData.buyer_name = null
+      updateData.buyer_assigned_at = null
+    }
+    const { error } = await supabase.from('sub_orders').update(updateData).eq('id', returnTarget.value.id)
+    if (error) throw error
+
+    await supabase.from('grab_hall_logs').insert({
+      sub_order_id: returnTarget.value.id,
+      sub_order_number: returnTarget.value.sub_order_number,
+      action: '回转',
+      from_staff_id: selectedStaffId.value,
+      from_staff_name: fromStaff?.name || '',
+      reason: returnForm.value.reason,
+    })
+
+    allTasks.value = allTasks.value.filter(t => t.id !== returnTarget.value.id)
+    filterTaskList()
+    returnModalOpen.value = false
+    message.success('已回转，等待管理员重新分配')
+    await loadStaff()
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    returnSaving.value = false
+  }
+}
+
 async function releaseToHall(task: any) {
   try {
     const { error } = await supabase.from('sub_orders').update({
@@ -1358,4 +1448,20 @@ onMounted(() => { loadStaff(); loadBuyers() })
 
 /* 空状态 */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: #9ca3af; gap: 12px; font-size: 14px; background: #fff; border-radius: 12px; }
+
+/* 回转弹窗 */
+.return-modal-body { padding: 4px 0; }
+.return-info-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  background: #f9fafb;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.return-info-item strong { color: #374151; }
 </style>
