@@ -170,78 +170,164 @@
                     </div>
                   </div>
 
-                  <!-- Step 2: 退款方式设置 -->
+                  <!-- Step 2: 退款设置（时序 + 渠道） -->
                   <div :class="['step-block', getStepDone(task, 1) ? 'step-done' : getStepDone(task, 0) ? 'step-active' : 'step-locked']">
                     <div class="step-number" :class="getStepDone(task, 1) ? 'num-done' : getStepDone(task, 0) ? 'num-active' : 'num-locked'">
                       <CheckCircleFilled v-if="getStepDone(task, 1)" />
                       <span v-else>2</span>
                     </div>
                     <div class="step-content">
-                      <div class="step-title">设置退款方式</div>
-                      <div v-if="task.refund_method" class="step-done-info">
+                      <div class="step-title">退款设置</div>
+                      <div v-if="task.refund_sequence && task.refund_method && !task._editing_refund_method" class="step-done-info">
+                        <span class="refund-seq-badge">{{ task.refund_sequence }}</span>
+                        <span class="sep-dot">·</span>
                         <span class="refund-method-badge">{{ task.refund_method }}</span>
-                        <span v-if="task.refund_sequence" class="refund-seq">{{ task.refund_sequence }}</span>
-                        <a class="re-edit" @click.stop="task._editing_refund_method = !task._editing_refund_method">修改</a>
+                        <a class="re-edit" @click.stop="task._editing_refund_method = true">修改</a>
                       </div>
-                      <div v-if="!task.refund_method || task._editing_refund_method" class="step-input-row">
-                        <a-radio-group v-model:value="task._sel_refund_method" size="small" button-style="solid">
-                          <a-radio-button value="礼品卡">礼品卡</a-radio-button>
-                          <a-radio-button value="PayPal">PayPal</a-radio-button>
-                          <a-radio-button value="先退款后给单">先退款后给单</a-radio-button>
-                          <a-radio-button value="先给单后退款">先给单后退款</a-radio-button>
-                        </a-radio-group>
-                        <a-button type="primary" size="small" :loading="task._saving_refund_method" :disabled="!task._sel_refund_method" @click="saveRefundMethod(task)">确认</a-button>
+                      <div v-if="!task.refund_sequence || !task.refund_method || task._editing_refund_method" class="refund-setup-panel">
+                        <div class="refund-setup-row">
+                          <span class="refund-setup-label">退款时序</span>
+                          <a-radio-group v-model:value="task._sel_refund_sequence" size="small" button-style="solid">
+                            <a-radio-button value="先退款后给单">先退款后给单</a-radio-button>
+                            <a-radio-button value="先给单后退款">先给单后退款</a-radio-button>
+                          </a-radio-group>
+                        </div>
+                        <div class="refund-setup-row">
+                          <span class="refund-setup-label">退款渠道</span>
+                          <a-radio-group v-model:value="task._sel_refund_method" size="small" button-style="solid">
+                            <a-radio-button value="礼品卡">礼品卡</a-radio-button>
+                            <a-radio-button value="PayPal">PayPal</a-radio-button>
+                          </a-radio-group>
+                        </div>
+                        <a-button
+                          type="primary" size="small"
+                          :loading="task._saving_refund_method"
+                          :disabled="!task._sel_refund_sequence || !task._sel_refund_method"
+                          @click="saveRefundMethod(task)"
+                          style="margin-top:4px"
+                        >确认</a-button>
                       </div>
                     </div>
                   </div>
 
-                  <!-- Step 3: 退款给买手 -->
+                  <!-- Step 3: 申请退款（向财务） -->
                   <div :class="['step-block', getStepDone(task, 2) ? 'step-done' : getStepDone(task, 1) ? 'step-active' : 'step-locked']">
                     <div class="step-number" :class="getStepDone(task, 2) ? 'num-done' : getStepDone(task, 1) ? 'num-active' : 'num-locked'">
                       <CheckCircleFilled v-if="getStepDone(task, 2)" />
                       <span v-else>3</span>
                     </div>
                     <div class="step-content">
-                      <div class="step-title">退款给买手</div>
-                      <div v-if="task.refund_status === '已退款'" class="step-done-info">
-                        <span class="green-text">已退款</span>
-                        <span v-if="task.refund_amount" class="refund-amount-text">¥{{ Number(task.refund_amount).toFixed(2) }}</span>
-                        <a class="re-edit" @click.stop="task._editing_refund = true">修改</a>
+                      <div class="step-title">申请退款</div>
+
+                      <!-- 已有退款申请，显示状态 -->
+                      <div v-if="task._refund_request" class="refund-request-status">
+                        <div v-if="task._refund_request.status === '待处理'" class="refund-pending-box">
+                          <span class="refund-pending-icon">⏳</span>
+                          <div>
+                            <div class="refund-pending-title">退款申请已提交，等待财务处理</div>
+                            <div class="refund-pending-meta">
+                              申请金额 <strong>${{ Number(task._refund_request.refund_amount_usd || 0).toFixed(2) }}</strong>
+                              · 渠道 <strong>{{ task._refund_request.refund_method }}</strong>
+                              <span v-if="task._refund_request.buyer_paypal_email"> · 买手PayPal: {{ task._refund_request.buyer_paypal_email }}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- 财务已处理 PayPal -->
+                        <div v-else-if="task._refund_request.status === '已处理' && task._refund_request.refund_method === 'PayPal'" class="refund-done-box">
+                          <div class="refund-done-header">
+                            <span class="green-text">财务已完成 PayPal 退款</span>
+                          </div>
+                          <div class="refund-result-grid">
+                            <div class="result-item">
+                              <span class="result-label">付款账号</span>
+                              <span class="result-val mono">{{ task._refund_request.assigned_paypal_email || '—' }}</span>
+                            </div>
+                            <div class="result-item">
+                              <span class="result-label">退款金额</span>
+                              <span class="result-val amount-usd">${{ Number(task._refund_request.refund_amount_usd || 0).toFixed(2) }}</span>
+                            </div>
+                            <div v-if="task._refund_request.paypal_receipt_screenshot" class="result-item full">
+                              <span class="result-label">退款截图</span>
+                              <a :href="task._refund_request.paypal_receipt_screenshot" target="_blank" class="screenshot-link">
+                                <img :src="task._refund_request.paypal_receipt_screenshot" class="screenshot-preview" referrerpolicy="no-referrer" @error="onImgError" />
+                              </a>
+                            </div>
+                            <div v-if="task._refund_request.finance_notes" class="result-item full">
+                              <span class="result-label">财务备注</span>
+                              <span class="result-val">{{ task._refund_request.finance_notes }}</span>
+                            </div>
+                          </div>
+                          <a-button type="primary" size="small" style="margin-top:10px;background:#059669;border-color:#059669" @click="markRefundDone(task)">确认退款已到账</a-button>
+                        </div>
+
+                        <!-- 财务已处理 礼品卡 -->
+                        <div v-else-if="task._refund_request.status === '已处理' && task._refund_request.refund_method === '礼品卡'" class="refund-done-box">
+                          <div class="refund-done-header">
+                            <span class="green-text">财务已分配礼品卡</span>
+                          </div>
+                          <div class="refund-result-grid">
+                            <div class="result-item">
+                              <span class="result-label">礼品卡面额</span>
+                              <span class="result-val amount-usd">${{ Number(task._refund_request.gift_card_face_value_usd || task._refund_request.refund_amount_usd || 0).toFixed(2) }}</span>
+                            </div>
+                            <div class="result-item">
+                              <span class="result-label">卡号</span>
+                              <span class="result-val mono">{{ task._refund_request.assigned_gift_card_number || '—' }}</span>
+                            </div>
+                            <div class="result-item full">
+                              <span class="result-label">卡Code</span>
+                              <span class="result-val card-code">{{ task._refund_request.assigned_gift_card_code || '—' }}</span>
+                              <a-button type="link" size="small" @click="copyText(task._refund_request.assigned_gift_card_code)">复制</a-button>
+                            </div>
+                            <div v-if="task._refund_request.finance_notes" class="result-item full">
+                              <span class="result-label">财务备注</span>
+                              <span class="result-val">{{ task._refund_request.finance_notes }}</span>
+                            </div>
+                          </div>
+                          <a-button type="primary" size="small" style="margin-top:10px;background:#059669;border-color:#059669" @click="markRefundDone(task)">确认礼品卡已发给买手</a-button>
+                        </div>
+
+                        <!-- 已完成 -->
+                        <div v-else-if="task.refund_status === '已退款'" class="step-done-info">
+                          <span class="green-text">退款完成</span>
+                          <span v-if="task.refund_amount" class="refund-amount-text">${{ Number(task._refund_request?.refund_amount_usd || 0).toFixed(2) }}</span>
+                        </div>
                       </div>
-                      <div v-if="task.refund_status !== '已退款' || task._editing_refund" class="step-input-col">
-                        <div v-if="task.refund_method === '礼品卡'" class="refund-gift-panel">
-                          <div class="refund-panel-label">亚马逊礼品卡退款</div>
+
+                      <!-- 未提交申请，显示申请表单 -->
+                      <div v-else-if="task.refund_status !== '已退款'" class="step-input-col">
+                        <div class="refund-apply-panel">
+                          <div class="refund-apply-label">
+                            向财务申请退款
+                            <span class="refund-apply-sub">· {{ task.refund_method === '礼品卡' ? '礼品卡' : 'PayPal' }} · {{ task.refund_sequence }}</span>
+                          </div>
                           <div class="refund-row">
-                            <label>退款金额(USD)</label>
-                            <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:100px" />
+                            <label>退款金额 (USD)</label>
+                            <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:110px" prefix="$" />
                             <span class="price-hint">产品售价 ${{ Number(task.product_price || 0).toFixed(2) }}</span>
                           </div>
-                        </div>
-                        <div v-else-if="task.refund_method === 'PayPal'" class="refund-paypal-panel">
-                          <div class="refund-panel-label">PayPal 退款</div>
-                          <div class="refund-row">
-                            <label>买手PayPal邮箱</label>
-                            <a-input v-model:value="task._buyer_paypal_email" size="small" style="width:200px" placeholder="buyer@email.com" />
+                          <div v-if="task.refund_method === 'PayPal'" class="refund-row">
+                            <label>买手 PayPal 邮箱</label>
+                            <a-input v-model:value="task._buyer_paypal_email" size="small" style="width:220px" placeholder="buyer@example.com" />
                           </div>
                           <div class="refund-row">
-                            <label>退款金额(CNY)</label>
-                            <a-input-number v-model:value="task._refund_amount_cny" size="small" :min="0" :precision="2" style="width:100px" prefix="¥" />
-                          </div>
-                        </div>
-                        <div v-else class="refund-other-panel">
-                          <div class="refund-row">
-                            <label>退款金额(CNY)</label>
-                            <a-input-number v-model:value="task._refund_amount_cny" size="small" :min="0" :precision="2" style="width:100px" prefix="¥" />
+                            <label>备注</label>
+                            <a-input v-model:value="task._refund_apply_notes" size="small" style="width:220px" placeholder="可选" />
                           </div>
                         </div>
                         <a-button
-                          type="primary"
-                          size="small"
-                          :loading="task._saving_refund"
-                          :disabled="!task.refund_method"
-                          @click="confirmRefund(task)"
+                          type="primary" size="small"
+                          :loading="task._submitting_refund"
+                          :disabled="!task._refund_amount_usd"
+                          @click="submitRefundRequest(task)"
                           style="margin-top:8px"
-                        >确认已退款</a-button>
+                        >提交退款申请</a-button>
+                      </div>
+
+                      <!-- 已退款完成状态 -->
+                      <div v-else class="step-done-info">
+                        <span class="green-text">退款已完成</span>
                       </div>
                     </div>
                   </div>
@@ -544,14 +630,15 @@ function initTaskFields(task: any) {
   task._sel_buyer_id = task.buyer_id || null
   task._editing_buyer = false
   task._saving_buyer = false
+  task._sel_refund_sequence = task.refund_sequence || ''
   task._sel_refund_method = task.refund_method || ''
   task._editing_refund_method = false
   task._saving_refund_method = false
   task._refund_amount_usd = task.product_price ? Number(task.product_price) : null
-  task._refund_amount_cny = task.refund_amount ? Number(task.refund_amount) : null
-  task._buyer_paypal_email = task.buyer_paypal_email || ''
-  task._editing_refund = false
-  task._saving_refund = false
+  task._buyer_paypal_email = task.buyer?.paypal_email || ''
+  task._refund_apply_notes = ''
+  task._submitting_refund = false
+  task._refund_request = null
   task._input_amazon_order_id = task.amazon_order_id || ''
   task._editing_amazon = false
   task._saving_amazon = false
@@ -574,7 +661,26 @@ async function loadTasks() {
       .eq('staff_id', selectedStaffId.value)
       .order('scheduled_date', { ascending: true, nullsFirst: false })
     if (error) throw error
-    allTasks.value = (data || []).map(initTaskFields)
+    const tasks = (data || []).map(initTaskFields)
+
+    const subOrderIds = tasks.map(t => t.id)
+    if (subOrderIds.length > 0) {
+      const { data: refundReqs } = await supabase
+        .from('refund_requests')
+        .select('*')
+        .in('sub_order_id', subOrderIds)
+        .in('status', ['待处理', '已处理'])
+        .order('created_at', { ascending: false })
+      if (refundReqs) {
+        const reqMap: Record<string, any> = {}
+        refundReqs.forEach(r => {
+          if (!reqMap[r.sub_order_id]) reqMap[r.sub_order_id] = r
+        })
+        tasks.forEach(t => { t._refund_request = reqMap[t.id] || null })
+      }
+    }
+
+    allTasks.value = tasks
     filterTaskList()
   } finally {
     tasksLoading.value = false
@@ -643,22 +749,18 @@ async function assignBuyer(task: any) {
 }
 
 async function saveRefundMethod(task: any) {
-  if (!task._sel_refund_method) return
+  if (!task._sel_refund_method || !task._sel_refund_sequence) return
   task._saving_refund_method = true
   try {
-    const payload: any = { refund_method: task._sel_refund_method }
-    const seqMap: Record<string, string> = {
-      '先退款后给单': '先退款后给单',
-      '先给单后退款': '先给单后退款',
-      '礼品卡': '先退款后给单',
-      'PayPal': '先退款后给单',
+    const payload = {
+      refund_method: task._sel_refund_method,
+      refund_sequence: task._sel_refund_sequence,
     }
-    payload.refund_sequence = seqMap[task._sel_refund_method] || ''
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
     if (error) throw error
     Object.assign(task, payload)
     task._editing_refund_method = false
-    message.success('退款方式已设置')
+    message.success('退款设置已保存')
   } catch (e: any) {
     message.error('保存失败：' + e.message)
   } finally {
@@ -666,31 +768,65 @@ async function saveRefundMethod(task: any) {
   }
 }
 
-async function confirmRefund(task: any) {
-  task._saving_refund = true
+async function submitRefundRequest(task: any) {
+  if (!task._refund_amount_usd) return
+  task._submitting_refund = true
   try {
-    const amountCny = task.refund_method === '礼品卡'
-      ? (task._refund_amount_usd || 0) * (task.exchange_rate || 7.25)
-      : (task._refund_amount_cny || 0)
-    const payload: any = {
+    const buyer = buyerList.value.find(b => b.id === task.buyer_id)
+    const paypalEmail = task.refund_method === 'PayPal'
+      ? (task._buyer_paypal_email || buyer?.paypal_email || '')
+      : ''
+
+    const payload = {
+      sub_order_id: task.id,
+      order_id: task.order_id,
+      sub_order_number: task.sub_order_number,
+      buyer_name: task.buyer_name || '',
+      buyer_paypal_email: paypalEmail,
+      refund_amount_usd: Number(task._refund_amount_usd),
+      refund_amount: Number(task._refund_amount_usd),
+      refund_method: task.refund_method,
+      refund_sequence: task.refund_sequence,
+      product_name: task.product_name || '',
+      product_price: task.product_price || 0,
+      asin: task.asin || '',
+      store_name: task.store_name || '',
+      staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
+      notes: task._refund_apply_notes || '',
+      status: '待处理',
+    }
+    const { data, error } = await supabase.from('refund_requests').insert(payload).select().maybeSingle()
+    if (error) throw error
+    task._refund_request = data
+    task._refund_apply_notes = ''
+    message.success('退款申请已提交，等待财务处理')
+  } catch (e: any) {
+    message.error('提交失败：' + e.message)
+  } finally {
+    task._submitting_refund = false
+  }
+}
+
+async function markRefundDone(task: any) {
+  try {
+    const payload = {
       refund_status: '已退款',
-      refund_amount: amountCny,
+      refund_amount: task._refund_request?.refund_amount_usd || 0,
       refund_date: dayjs().format('YYYY-MM-DD'),
       status: '进行中',
-    }
-    if (task.refund_method === '礼品卡' && task._refund_amount_usd) {
-      payload.refund_amount = Number((task._refund_amount_usd * (task.exchange_rate || 7.25)).toFixed(2))
     }
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
     if (error) throw error
     Object.assign(task, payload)
-    task._editing_refund = false
-    message.success('退款已确认')
+    message.success('退款已确认完成')
   } catch (e: any) {
     message.error('操作失败：' + e.message)
-  } finally {
-    task._saving_refund = false
   }
+}
+
+function copyText(text: string) {
+  if (!text) return
+  navigator.clipboard.writeText(text).then(() => message.success('已复制'))
 }
 
 async function saveAmazonOrder(task: any) {
