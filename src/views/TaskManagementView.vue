@@ -27,6 +27,9 @@
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'source_order'">
+            <span class="source-order-num">{{ record.erp_orders?.order_number || '-' }}</span>
+          </template>
           <template v-if="column.key === 'status'">
             <a-tag :color="getStatusColor(record.status)">{{ record.status }}</a-tag>
           </template>
@@ -68,6 +71,7 @@ const countries = ['美国', '德国', '英国', '加拿大']
 
 const columns = [
   { title: '子单号', dataIndex: 'sub_order_number', key: 'sub_order_number', width: 150 },
+  { title: '来源订单号', key: 'source_order', width: 180 },
   { title: 'ASIN', dataIndex: 'asin', key: 'asin', width: 120 },
   { title: '店铺', dataIndex: 'store_name', key: 'store_name', width: 130 },
   { title: '国家', dataIndex: 'country', key: 'country', width: 80 },
@@ -94,7 +98,7 @@ function getRefundColor(status: string) {
 async function load() {
   loading.value = true
   try {
-    let query = supabase.from('sub_orders').select('*', { count: 'exact' }).order('created_at', { ascending: false })
+    let query = supabase.from('sub_orders').select('*, erp_orders(order_number)', { count: 'exact' }).order('created_at', { ascending: false })
     if (searchText.value) {
       query = query.or(`sub_order_number.ilike.%${searchText.value}%,asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%`)
     }
@@ -136,4 +140,5 @@ onMounted(load)
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+.source-order-num { font-family: 'Courier New', monospace; font-size: 12px; color: #374151; }
 </style>

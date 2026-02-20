@@ -157,6 +157,17 @@
             @error="onImgError($event)"
           />
         </div>
+
+        <a-divider style="margin: 20px 0 16px" />
+        <div class="detail-section-title">任务操作</div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <a-button type="primary" :loading="creatingTask" @click="createTaskFromOrder">
+            <PlusOutlined /> 生成任务到任务中心
+          </a-button>
+          <span v-if="existingSubOrderCount > 0" style="color:#6b7280;font-size:12px">
+            已有 {{ existingSubOrderCount }} 条任务
+          </span>
+        </div>
       </template>
     </a-drawer>
   </div>
@@ -165,7 +176,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, DownOutlined, PictureOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, DownOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -177,6 +188,8 @@ const filterCountry = ref('')
 const drawerOpen = ref(false)
 const currentOrder = ref<any>(null)
 const selectedRowKeys = ref<string[]>([])
+const creatingTask = ref(false)
+const existingSubOrderCount = ref(0)
 
 const statuses = ['待处理', '进行中', '已完成', '已取消', '暂停']
 const countries = ['美国', '德国', '英国', '加拿大']
@@ -246,9 +259,62 @@ function handleTableChange(pag: any) {
   loadOrders()
 }
 
-function viewDetail(record: any) {
+async function viewDetail(record: any) {
   currentOrder.value = record
   drawerOpen.value = true
+  existingSubOrderCount.value = 0
+  const { count } = await supabase.from('sub_orders').select('*', { count: 'exact', head: true }).eq('order_id', record.id)
+  existingSubOrderCount.value = count || 0
+}
+
+async function createTaskFromOrder() {
+  if (!currentOrder.value) return
+  creatingTask.value = true
+  try {
+    const order = currentOrder.value
+    const today = dayjs().format('YYYY-MM-DD')
+    const dateKey = today.replace(/-/g, '')
+    const { data: counterRow } = await supabase
+      .from('id_daily_counters')
+      .select('last_value')
+      .eq('counter_key', 'SUB')
+      .eq('counter_date', today)
+      .maybeSingle()
+    const nextVal = (counterRow?.last_value || 0) + 1
+    const subOrderNumber = `SUB${dateKey}${String(nextVal).padStart(6, '0')}`
+    await supabase.from('id_daily_counters').upsert({ counter_key: 'SUB', counter_date: today, last_value: nextVal }, { onConflict: 'counter_key,counter_date' })
+
+    const { error } = await supabase.from('sub_orders').insert({
+      order_id: order.id,
+      sub_order_number: subOrderNumber,
+      asin: order.asin,
+      store_name: order.store_name,
+      country: order.country,
+      order_type: order.order_type,
+      product_price: order.product_price,
+      unit_price: order.unit_price,
+      product_image: order.product_image,
+      product_name: order.product_name,
+      brand_name: order.brand_name,
+      category: order.category,
+      review_level: order.review_level,
+      review_type: order.review_type,
+      variant_info: order.variant_info,
+      customer_name: order.customer_name,
+      customer_id_str: order.customer_id_str,
+      sales_person: order.sales_person,
+      commission_fee: order.commission_fee,
+      exchange_rate: order.exchange_rate,
+      status: '待分配',
+    })
+    if (error) throw error
+    existingSubOrderCount.value += 1
+    message.success(`任务 ${subOrderNumber} 已生成到任务中心`)
+  } catch (e: any) {
+    message.error('生成任务失败：' + e.message)
+  } finally {
+    creatingTask.value = false
+  }
 }
 
 async function deleteOrder(id: string) {
