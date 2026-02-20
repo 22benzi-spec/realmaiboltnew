@@ -10,10 +10,13 @@
           </div>
           <a-row :gutter="[12,12]" style="margin-bottom:16px">
             <a-col :span="6">
-              <div class="stat-mini"><div class="stat-v">{{ totalUsd.toFixed(2) }}</div><div class="stat-l">总金额 (USD)</div></div>
+              <div class="stat-mini"><div class="stat-v">{{ totalUsd.toFixed(2) }}</div><div class="stat-l">总入金 (USD)</div></div>
             </a-col>
             <a-col :span="6">
-              <div class="stat-mini"><div class="stat-v">{{ remainingUsd.toFixed(2) }}</div><div class="stat-l">剩余 (USD)</div></div>
+              <div class="stat-mini consumed"><div class="stat-v red">{{ consumedUsd.toFixed(2) }}</div><div class="stat-l">已消耗退款 (USD)</div></div>
+            </a-col>
+            <a-col :span="6">
+              <div class="stat-mini remaining"><div class="stat-v green">{{ remainingUsd.toFixed(2) }}</div><div class="stat-l">剩余 (USD)</div></div>
             </a-col>
           </a-row>
           <a-table :columns="usdColumns" :data-source="usdBatches" :loading="usdLoading" row-key="id" size="middle">
@@ -58,12 +61,57 @@
 
       <a-tab-pane key="refunds" tab="退款记录">
         <div class="card-panel">
-          <a-table :columns="refundColumns" :data-source="refunds" :loading="refundsLoading" row-key="id" size="small">
+          <div class="toolbar">
+            <a-select v-model:value="refundFilterMethod" style="width:120px" allow-clear placeholder="全部渠道" @change="loadRefunds">
+              <a-select-option value="PayPal">PayPal</a-select-option>
+              <a-select-option value="礼品卡">礼品卡</a-select-option>
+            </a-select>
+            <a-button @click="loadRefunds"><ReloadOutlined /></a-button>
+            <span class="total-hint" style="margin-left:auto">共 {{ refunds.length }} 条已处理退款</span>
+          </div>
+          <a-table
+            :columns="refundColumns"
+            :data-source="refunds"
+            :loading="refundsLoading"
+            row-key="id"
+            size="middle"
+            :scroll="{ x: 1000 }"
+            :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: (total: number) => `共 ${total} 条` }"
+          >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'status'">
-                <a-tag :color="refundStatusColor[record.status] || 'default'">{{ record.status }}</a-tag>
+              <template v-if="column.key === 'order_info'">
+                <div class="cell-info">
+                  <div class="cell-subno">{{ record.sub_order_number || '—' }}</div>
+                  <div class="cell-product">{{ record.product_name || '—' }}</div>
+                </div>
               </template>
-              <template v-if="column.key === 'cost_cny'">¥{{ Number(record.cost_cny).toFixed(2) }}</template>
+              <template v-if="column.key === 'buyer'">
+                <div>{{ record.buyer_name || '—' }}</div>
+                <div v-if="record.buyer_paypal_email" class="cell-email">{{ record.buyer_paypal_email }}</div>
+              </template>
+              <template v-if="column.key === 'refund_method'">
+                <a-tag :color="record.refund_method === '礼品卡' ? 'gold' : 'blue'">{{ record.refund_method }}</a-tag>
+              </template>
+              <template v-if="column.key === 'amount_usd'">
+                <span class="amount-usd-cell">${{ Number(record.refund_amount_usd || 0).toFixed(2) }}</span>
+              </template>
+              <template v-if="column.key === 'result'">
+                <template v-if="record.refund_method === 'PayPal'">
+                  <div class="result-paypal-cell">
+                    <div>{{ record.assigned_paypal_email || '—' }}</div>
+                    <a v-if="record.paypal_receipt_screenshot" :href="record.paypal_receipt_screenshot" target="_blank" class="receipt-link">查看截图</a>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="result-gc-cell">
+                    <span class="gc-code">{{ record.assigned_gift_card_code || '—' }}</span>
+                    <span v-if="record.gift_card_face_value_usd" class="gc-face">${{ Number(record.gift_card_face_value_usd).toFixed(2) }}</span>
+                  </div>
+                </template>
+              </template>
+              <template v-if="column.key === 'handled_at'">
+                <span style="font-size:12px">{{ record.handled_at ? dayjs(record.handled_at).format('YYYY-MM-DD HH:mm') : '—' }}</span>
+              </template>
             </template>
           </a-table>
         </div>
@@ -107,7 +155,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -119,6 +167,7 @@ const usdBatches = ref<any[]>([])
 const accounts = ref<any[]>([])
 const refunds = ref<any[]>([])
 const accountSearch = ref('')
+const refundFilterMethod = ref('')
 const usdModalOpen = ref(false)
 const accountModalOpen = ref(false)
 const submittingUsd = ref(false)
@@ -130,10 +179,10 @@ const accountForm = reactive({ email: '', account_alias: '', owner_name: '', ris
 
 const accountStatusColor: Record<string, string> = { '正常': 'green', '受限': 'orange', '已关闭': 'red' }
 const riskColor: Record<string, string> = { '低风险': 'green', '中风险': 'orange', '高风险': 'red' }
-const refundStatusColor: Record<string, string> = { '待退款': 'orange', '已退款': 'green', '失败': 'red' }
 
 const totalUsd = computed(() => usdBatches.value.reduce((s, b) => s + Number(b.amount_usd || 0), 0))
 const remainingUsd = computed(() => usdBatches.value.reduce((s, b) => s + Number(b.remaining_usd || 0), 0))
+const consumedUsd = computed(() => totalUsd.value - remainingUsd.value)
 
 const usdColumns = [
   { title: '批次号', dataIndex: 'batch_number', key: 'batch_number' },
@@ -157,13 +206,12 @@ const accountColumns = [
 ]
 
 const refundColumns = [
-  { title: '买手', dataIndex: 'buyer_name', key: 'buyer_name' },
-  { title: '买手PayPal', dataIndex: 'buyer_paypal_email', key: 'buyer_paypal_email' },
-  { title: '金额(USD)', dataIndex: 'amount_usd', key: 'amount_usd', width: 100 },
-  { title: '汇率', dataIndex: 'exchange_rate', key: 'exchange_rate', width: 80 },
-  { title: '成本(CNY)', key: 'cost_cny', width: 100 },
-  { title: '状态', key: 'status', width: 80 },
-  { title: '退款日期', dataIndex: 'refund_date', key: 'refund_date', width: 110 },
+  { title: '子订单 / 产品', key: 'order_info', width: 180 },
+  { title: '买手', key: 'buyer', width: 160 },
+  { title: '渠道', key: 'refund_method', width: 90 },
+  { title: '退款金额', key: 'amount_usd', width: 100 },
+  { title: '打款账号 / 礼品卡', key: 'result' },
+  { title: '处理时间', key: 'handled_at', width: 140 },
 ]
 
 async function loadUsd() {
@@ -184,7 +232,14 @@ async function loadAccounts() {
 
 async function loadRefunds() {
   refundsLoading.value = true
-  const { data } = await supabase.from('paypal_refunds').select('*').order('created_at', { ascending: false }).limit(100)
+  let query = supabase
+    .from('refund_requests')
+    .select('id, sub_order_number, product_name, buyer_name, buyer_paypal_email, refund_method, refund_amount_usd, assigned_paypal_email, paypal_receipt_screenshot, assigned_gift_card_code, gift_card_face_value_usd, handled_at, finance_notes')
+    .eq('status', '已处理')
+    .order('handled_at', { ascending: false })
+    .limit(200)
+  if (refundFilterMethod.value) query = query.eq('refund_method', refundFilterMethod.value)
+  const { data } = await query
   refunds.value = data || []
   refundsLoading.value = false
 }
@@ -266,6 +321,22 @@ onMounted(() => { loadUsd(); loadAccounts(); loadRefunds() })
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
 .stat-mini { background: #f8fafc; border-radius: 10px; padding: 16px; text-align: center; border: 1px solid #f0f0f0; }
+.stat-mini.consumed { background: #fff7f7; border-color: #fecaca; }
+.stat-mini.remaining { background: #f0fdf4; border-color: #bbf7d0; }
 .stat-v { font-size: 22px; font-weight: 700; color: #1a1a2e; }
+.stat-v.red { color: #dc2626; }
+.stat-v.green { color: #16a34a; }
 .stat-l { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.total-hint { font-size: 12px; color: #9ca3af; }
+
+.cell-info { display: flex; flex-direction: column; gap: 2px; }
+.cell-subno { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 700; color: #1a1a2e; }
+.cell-product { font-size: 12px; color: #374151; }
+.cell-email { font-size: 11px; color: #6b7280; }
+.amount-usd-cell { font-weight: 700; color: #dc2626; font-size: 14px; }
+.result-paypal-cell { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.receipt-link { font-size: 11px; color: #2563eb; }
+.result-gc-cell { display: flex; align-items: center; gap: 8px; }
+.gc-code { font-family: 'Courier New', monospace; font-size: 12px; color: #059669; font-weight: 700; }
+.gc-face { font-size: 12px; color: #374151; }
 </style>
