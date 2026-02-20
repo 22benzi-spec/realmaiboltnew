@@ -1,6 +1,12 @@
 <template>
   <div class="page-content">
-    <h1 class="page-title">创建订单</h1>
+    <div class="page-header">
+      <h1 class="page-title">创建订单</h1>
+      <div class="order-number-badge" v-if="currentOrderNumber">
+        <span class="badge-label">任务订单号</span>
+        <span class="badge-value">{{ currentOrderNumber }}</span>
+      </div>
+    </div>
     <a-form
       :model="form"
       :rules="rules"
@@ -40,7 +46,7 @@
               </a-col>
               <a-col :span="12">
                 <a-form-item label="产品价格(USD)" name="product_price">
-                  <a-input-number v-model:value="form.product_price" :min="0" style="width:100%" placeholder="0.00" />
+                  <a-input-number v-model:value="form.product_price" :min="0" style="width:100%" placeholder="0.00" @change="recalc" />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
@@ -52,7 +58,7 @@
               </a-col>
               <a-col :span="12">
                 <a-form-item label="汇率" name="exchange_rate">
-                  <a-input-number v-model:value="form.exchange_rate" :min="1" :step="0.01" style="width:100%" />
+                  <a-input-number v-model:value="form.exchange_rate" :min="1" :step="0.01" style="width:100%" @change="recalc" />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -71,17 +77,8 @@
                 </a-form-item>
               </a-col>
               <a-col :span="12">
-                <a-form-item label="测评模式" name="review_mode">
-                  <a-select v-model:value="form.review_mode">
-                    <a-select-option value="免评模式">免评模式</a-select-option>
-                    <a-select-option value="首评模式">首评模式</a-select-option>
-                    <a-select-option value="免评首评模式">免评首评模式</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
                 <a-form-item label="下单类型" name="order_type">
-                  <a-select v-model:value="form.order_type">
+                  <a-select v-model:value="form.order_type" @change="recalc">
                     <a-select-option value="免评">免评</a-select-option>
                     <a-select-option value="文字评">文字评</a-select-option>
                     <a-select-option value="图片评">图片评</a-select-option>
@@ -99,48 +96,75 @@
           </div>
 
           <div class="card-panel">
-            <h3 class="section-title">价格设置</h3>
+            <h3 class="section-title">佣金设置</h3>
             <a-row :gutter="16">
               <a-col :span="8">
-                <a-form-item label="免评价格(USD)">
-                  <a-input-number v-model:value="form.price_no_review" :min="0" style="width:100%" @change="recalc" />
+                <a-form-item label="免评佣金(人民币)">
+                  <a-input-number v-model:value="form.price_no_review" :min="0" style="width:100%" @change="recalc">
+                    <template #prefix>¥</template>
+                  </a-input-number>
                 </a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="文字评价格(USD)">
-                  <a-input-number v-model:value="form.price_text" :min="0" style="width:100%" @change="recalc" />
+                <a-form-item label="文字评佣金(人民币)">
+                  <a-input-number v-model:value="form.price_text" :min="0" style="width:100%" @change="recalc">
+                    <template #prefix>¥</template>
+                  </a-input-number>
                 </a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="图片评价格(USD)">
-                  <a-input-number v-model:value="form.price_image" :min="0" style="width:100%" @change="recalc" />
+                <a-form-item label="图片评佣金(人民币)">
+                  <a-input-number v-model:value="form.price_image" :min="0" style="width:100%" @change="recalc">
+                    <template #prefix>¥</template>
+                  </a-input-number>
                 </a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="视频评价格(USD)">
-                  <a-input-number v-model:value="form.price_video" :min="0" style="width:100%" @change="recalc" />
+                <a-form-item label="视频评佣金(人民币)">
+                  <a-input-number v-model:value="form.price_video" :min="0" style="width:100%" @change="recalc">
+                    <template #prefix>¥</template>
+                  </a-input-number>
                 </a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="Feedback价格(USD)">
-                  <a-input-number v-model:value="form.price_feedback" :min="0" style="width:100%" @change="recalc" />
+                <a-form-item label="Feedback佣金(人民币)">
+                  <a-input-number v-model:value="form.price_feedback" :min="0" style="width:100%" @change="recalc">
+                    <template #prefix>¥</template>
+                  </a-input-number>
                 </a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="佣金费率(%)">
-                  <a-input-number v-model:value="form.commission_fee" :min="0" :max="100" style="width:100%" @change="recalc" />
+                <a-form-item label="固定服务费(人民币)">
+                  <a-input-number v-model:value="form.commission_fee" :min="0" style="width:100%" @change="recalc">
+                    <template #prefix>¥</template>
+                  </a-input-number>
                 </a-form-item>
               </a-col>
             </a-row>
 
-            <div class="price-summary">
-              <div class="price-row">
-                <span>单价</span>
-                <strong>¥{{ form.unit_price.toFixed(2) }}</strong>
+            <div class="bill-summary">
+              <h4 class="bill-title">账单计算</h4>
+              <div class="bill-formula">
+                <span class="formula-text">产品价格 ${{ form.product_price || 0 }} × 汇率 {{ form.exchange_rate }} × 数量 {{ form.order_quantity }} + {{ form.order_type }}佣金 ¥{{ currentTypePrice }} × 数量 {{ form.order_quantity }}</span>
               </div>
-              <div class="price-row">
-                <span>总金额</span>
-                <strong class="total-price">¥{{ form.total_amount.toFixed(2) }}</strong>
+              <div class="bill-rows">
+                <div class="bill-row">
+                  <span>产品回款小计</span>
+                  <span>¥{{ productSubtotal.toFixed(2) }}</span>
+                </div>
+                <div class="bill-row">
+                  <span>佣金小计 ({{ form.order_type }})</span>
+                  <span>¥{{ commissionSubtotal.toFixed(2) }}</span>
+                </div>
+                <div class="bill-row">
+                  <span>固定服务费</span>
+                  <span>¥{{ form.commission_fee.toFixed(2) }}</span>
+                </div>
+                <div class="bill-divider"></div>
+                <div class="bill-row total-row">
+                  <span>合计总金额</span>
+                  <strong class="total-amount">¥{{ form.total_amount.toFixed(2) }}</strong>
+                </div>
               </div>
             </div>
           </div>
@@ -218,7 +242,7 @@
           <div class="form-actions">
             <a-button @click="resetForm">重置</a-button>
             <a-button type="primary" html-type="submit" :loading="submitting">
-              创建订单
+              提交订单
             </a-button>
           </div>
         </a-col>
@@ -228,7 +252,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
@@ -236,8 +260,21 @@ import { supabase } from '../lib/supabase'
 const formRef = ref()
 const submitting = ref(false)
 const keywords = ref<string[]>([''])
+const currentOrderNumber = ref('')
 
 const countries = ['美国', '德国', '英国', '加拿大']
+
+function generateOrderNumber(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  const h = String(now.getHours()).padStart(2, '0')
+  const min = String(now.getMinutes()).padStart(2, '0')
+  const s = String(now.getSeconds()).padStart(2, '0')
+  const rand = String(Math.floor(Math.random() * 1000)).padStart(3, '0')
+  return `ORD${y}${m}${d}${h}${min}${s}${rand}`
+}
 
 const defaultForm = () => ({
   asin: '',
@@ -257,7 +294,7 @@ const defaultForm = () => ({
   price_image: 0,
   price_video: 0,
   price_feedback: 0,
-  commission_fee: 0,
+  commission_fee: 88,
   unit_price: 0,
   total_price: 0,
   total_orders: 0,
@@ -285,20 +322,28 @@ const rules = {
   order_quantity: [{ required: true, message: '请输入下单数量' }],
 }
 
+const priceMap = computed<Record<string, number>>(() => ({
+  '免评': form.price_no_review,
+  '文字评': form.price_text,
+  '图片评': form.price_image,
+  '视频评': form.price_video,
+  'Feedback': form.price_feedback,
+}))
+
+const currentTypePrice = computed(() => priceMap.value[form.order_type] || 0)
+
+const productSubtotal = computed(() =>
+  (form.product_price || 0) * form.exchange_rate * form.order_quantity
+)
+
+const commissionSubtotal = computed(() =>
+  currentTypePrice.value * form.order_quantity
+)
+
 function recalc() {
-  const priceMap: Record<string, number> = {
-    '免评': form.price_no_review,
-    '文字评': form.price_text,
-    '图片评': form.price_image,
-    '视频评': form.price_video,
-    'Feedback': form.price_feedback,
-  }
-  const basePrice = priceMap[form.order_type] || 0
-  const productCostCny = (form.product_price || 0) * form.exchange_rate
-  const commissionCny = productCostCny * (form.commission_fee / 100)
-  form.unit_price = basePrice * form.exchange_rate + productCostCny + commissionCny
-  form.total_amount = form.unit_price * form.order_quantity
-  form.product_cost_cny = productCostCny
+  form.product_cost_cny = (form.product_price || 0) * form.exchange_rate
+  form.unit_price = form.product_cost_cny + currentTypePrice.value
+  form.total_amount = productSubtotal.value + commissionSubtotal.value + form.commission_fee
 }
 
 function addKeyword() {
@@ -312,8 +357,10 @@ async function handleSubmit() {
   submitting.value = true
   try {
     recalc()
+    const orderNumber = currentOrderNumber.value
     const { data, error } = await supabase.from('erp_orders').insert([{
       ...form,
+      order_number: orderNumber,
       total_orders: form.order_quantity,
     }]).select().single()
 
@@ -325,8 +372,9 @@ async function handleSubmit() {
       )
     }
 
-    message.success('订单创建成功！')
+    message.success(`订单 ${orderNumber} 创建成功！`)
     resetForm()
+    currentOrderNumber.value = generateOrderNumber()
   } catch (e: any) {
     message.error('创建失败：' + e.message)
   } finally {
@@ -339,11 +387,47 @@ function resetForm() {
   keywords.value = ['']
   formRef.value?.resetFields()
 }
+
+onMounted(() => {
+  currentOrderNumber.value = generateOrderNumber()
+  recalc()
+})
 </script>
 
 <style scoped>
 .page-content { padding: 24px; }
-.page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 0;
+}
+.order-number-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 6px 14px;
+}
+.badge-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+.badge-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #2563eb;
+  letter-spacing: 0.5px;
+  font-family: 'Courier New', monospace;
+}
 .card-panel {
   background: #fff;
   border-radius: 12px;
@@ -360,23 +444,55 @@ function resetForm() {
   padding-bottom: 8px;
   border-bottom: 1px solid #f0f0f0;
 }
-.price-summary {
+.bill-summary {
   background: #f8fafc;
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-top: 8px;
+  border-radius: 10px;
+  padding: 16px;
+  margin-top: 12px;
+  border: 1px solid #e2e8f0;
 }
-.price-row {
+.bill-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 10px 0;
+}
+.bill-formula {
+  background: #fff;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px dashed #cbd5e1;
+}
+.formula-text {
+  font-size: 12px;
+  color: #64748b;
+  font-family: 'Courier New', monospace;
+}
+.bill-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bill-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   font-size: 13px;
   color: #374151;
-  margin-bottom: 4px;
 }
-.total-price {
-  font-size: 16px;
+.bill-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 4px 0;
+}
+.total-row {
+  font-size: 14px;
+  font-weight: 600;
+}
+.total-amount {
+  font-size: 18px;
   color: #2563eb;
+  font-weight: 700;
 }
 .keyword-row {
   display: flex;
