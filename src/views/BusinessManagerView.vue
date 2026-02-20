@@ -17,7 +17,7 @@
         :loading="loading"
         row-key="id"
         size="middle"
-        :expandable="{ expandedRowRender }"
+        :expandable="expandableConfig"
         :pagination="{ pageSize: 10 }"
       >
         <template #bodyCell="{ column, record }">
@@ -125,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted } from 'vue'
+import { ref, reactive, h, onMounted, computed } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
@@ -165,6 +165,10 @@ const clientColumns = [
   { title: '状态', key: 'status', width: 80 },
   { title: '操作', key: 'action', width: 70 },
 ]
+
+const expandableConfig = computed(() => ({
+  expandedRowRender: (record: any) => expandedRowRender(record),
+}))
 
 function getTotalClients(record: any): number {
   return (record.business_wechat_accounts || []).reduce((sum: number, acc: any) => {
