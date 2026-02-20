@@ -174,30 +174,46 @@ function getTotalClients(record: any): number {
 
 function expandedRowRender(record: any) {
   const accounts = record.business_wechat_accounts || []
-  if (!accounts.length) return h('span', { style: 'color:#9ca3af;font-size:12px' }, '暂无商务微信号')
+  if (!accounts.length) return h('span', { style: 'color:#9ca3af;font-size:12px;padding:8px 0;display:block' }, '暂无商务微信号，点击「添加微信号」开始添加')
 
-  return h('div', { class: 'wechat-list' }, accounts.map((acc: any) =>
-    h('div', { class: 'wechat-item', key: acc.id }, [
-      h('div', { class: 'wechat-main' }, [
-        h('div', { class: 'wechat-id' }, acc.wechat_id),
-        acc.wechat_nickname ? h('div', { class: 'wechat-nick' }, acc.wechat_nickname) : null,
-        h('span', {
-          class: `wechat-badge wechat-badge-${acc.status === '在用' ? 'green' : acc.status === '停用' ? 'orange' : 'red'}`
-        }, acc.status),
-        h('span', { class: 'wechat-clients' }, `${acc.wechat_clients?.length || 0} 位客户`),
+  return h('div', { class: 'wechat-cards' }, accounts.map((acc: any) => {
+    const clientCount = acc.wechat_clients?.length || 0
+    const statusClass = acc.status === '在用' ? 'green' : acc.status === '停用' ? 'orange' : 'red'
+    const statusBorderColor = acc.status === '在用' ? '#10b981' : acc.status === '停用' ? '#f59e0b' : '#ef4444'
+
+    return h('div', { class: 'wechat-card', key: acc.id, style: `border-top: 3px solid ${statusBorderColor}` }, [
+      h('div', { class: 'wcard-header' }, [
+        h('div', { class: 'wcard-title-row' }, [
+          h('span', { class: 'wcard-icon' }, '💬'),
+          h('div', { class: 'wcard-id' }, acc.wechat_id),
+        ]),
+        h('span', { class: `wcard-status wcard-status-${statusClass}` }, acc.status),
       ]),
-      h('div', { class: 'wechat-actions' }, [
+      acc.wechat_nickname ? h('div', { class: 'wcard-nick' }, `昵称：${acc.wechat_nickname}`) : null,
+      h('div', { class: 'wcard-stats' }, [
+        h('div', { class: 'wcard-stat' }, [
+          h('div', { class: 'wcard-stat-num', style: `color: ${clientCount > 0 ? '#2563eb' : '#9ca3af'}` }, String(clientCount)),
+          h('div', { class: 'wcard-stat-label' }, '管理客户'),
+        ]),
+        h('div', { class: 'wcard-stat-divider' }),
+        h('div', { class: 'wcard-stat' }, [
+          h('div', { class: 'wcard-stat-num', style: 'color:#059669' }, String(acc.wechat_clients?.filter((c: any) => c.status === '活跃').length || 0)),
+          h('div', { class: 'wcard-stat-label' }, '活跃客户'),
+        ]),
+      ]),
+      acc.notes ? h('div', { class: 'wcard-notes' }, acc.notes) : null,
+      h('div', { class: 'wcard-footer' }, [
         h('a', {
-          class: 'wechat-action-link',
+          class: 'wcard-btn',
           onClick: () => openClientModal(acc)
         }, '管理客户'),
         h('a', {
-          class: 'wechat-action-link danger',
+          class: 'wcard-btn danger',
           onClick: () => confirmDeleteWechat(acc)
         }, '删除'),
       ]),
     ])
-  ))
+  }))
 }
 
 async function load() {
@@ -396,18 +412,43 @@ onMounted(load)
 </style>
 
 <style>
-.wechat-list { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
-.wechat-item { display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 14px; }
-.wechat-main { display: flex; align-items: center; gap: 10px; }
-.wechat-id { font-weight: 600; font-size: 13px; color: #374151; }
-.wechat-nick { font-size: 12px; color: #6b7280; }
-.wechat-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
-.wechat-badge-green { background: #d1fae5; color: #065f46; }
-.wechat-badge-orange { background: #fed7aa; color: #92400e; }
-.wechat-badge-red { background: #fee2e2; color: #991b1b; }
-.wechat-clients { font-size: 12px; color: #6b7280; }
-.wechat-actions { display: flex; gap: 12px; }
-.wechat-action-link { font-size: 12px; color: #2563eb; cursor: pointer; text-decoration: none; }
-.wechat-action-link:hover { text-decoration: underline; }
-.wechat-action-link.danger { color: #dc2626; }
+.wechat-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0 6px;
+}
+.wechat-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 16px 10px;
+  width: 200px;
+  min-width: 180px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow 0.2s;
+}
+.wechat-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.1); }
+.wcard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.wcard-title-row { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.wcard-icon { font-size: 14px; flex-shrink: 0; }
+.wcard-id { font-weight: 700; font-size: 13px; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wcard-status { font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.wcard-status-green { background: #d1fae5; color: #065f46; }
+.wcard-status-orange { background: #fef3c7; color: #92400e; }
+.wcard-status-red { background: #fee2e2; color: #991b1b; }
+.wcard-nick { font-size: 12px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wcard-stats { display: flex; align-items: center; background: #f8fafc; border-radius: 7px; padding: 8px 0; }
+.wcard-stat { flex: 1; text-align: center; }
+.wcard-stat-num { font-size: 18px; font-weight: 700; line-height: 1.2; }
+.wcard-stat-label { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+.wcard-stat-divider { width: 1px; height: 28px; background: #e5e7eb; }
+.wcard-notes { font-size: 11px; color: #9ca3af; background: #f9fafb; border-radius: 5px; padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wcard-footer { display: flex; gap: 8px; border-top: 1px solid #f3f4f6; padding-top: 8px; margin-top: 2px; }
+.wcard-btn { font-size: 12px; color: #2563eb; cursor: pointer; text-decoration: none; flex: 1; text-align: center; }
+.wcard-btn:hover { text-decoration: underline; }
+.wcard-btn.danger { color: #dc2626; }
 </style>
