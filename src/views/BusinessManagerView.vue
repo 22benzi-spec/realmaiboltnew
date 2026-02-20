@@ -23,48 +23,47 @@
         :key="record.id"
         class="manager-card"
       >
-        <div class="card-left">
-          <div class="avatar-lg" :style="{ background: record.avatar_color || '#2563eb' }">
-            {{ record.name.charAt(0) }}
+        <div class="card-top">
+          <div class="card-left">
+            <div class="avatar-lg" :style="{ background: record.avatar_color || '#2563eb' }">
+              {{ record.name.charAt(0) }}
+            </div>
+            <div class="card-name-block">
+              <span class="card-name clickable" @click="openDetail(record)">{{ record.name }}</span>
+              <a-tag :color="record.status === '在职' ? 'green' : 'default'" style="margin-top:4px">{{ record.status }}</a-tag>
+            </div>
           </div>
-          <div class="card-name-block">
-            <span class="card-name clickable" @click="openDetail(record)">{{ record.name }}</span>
-            <a-tag :color="record.status === '在职' ? 'green' : 'default'" style="margin-top:4px">{{ record.status }}</a-tag>
-          </div>
-        </div>
-
-        <div class="card-divider" />
-
-        <div class="card-stats">
-          <div class="stat-item">
-            <div class="stat-num blue">{{ record.business_wechat_accounts?.length || 0 }}</div>
-            <div class="stat-label">商务微信</div>
-          </div>
-          <div class="stat-sep" />
-          <div class="stat-item">
-            <div class="stat-num green">{{ getTotalClients(record) }}</div>
-            <div class="stat-label">管理客户</div>
-          </div>
-          <div class="stat-sep" />
-          <div class="stat-item">
-            <div class="stat-num orange">{{ getActiveClients(record) }}</div>
-            <div class="stat-label">活跃客户</div>
+          <div class="card-actions">
+            <a-button type="link" size="small" @click="openDetail(record)">查看详情</a-button>
+            <a-button type="link" size="small" @click="openAddWechat(record)"><PlusOutlined /> 添加微信</a-button>
+            <a-button type="link" size="small" danger @click="confirmDeleteManager(record)"><DeleteOutlined /></a-button>
           </div>
         </div>
 
-        <div class="card-divider" />
+        <div class="card-bottom">
+          <div class="card-stats">
+            <div class="stat-item">
+              <div class="stat-num blue">{{ record.business_wechat_accounts?.length || 0 }}</div>
+              <div class="stat-label">商务微信</div>
+            </div>
+            <div class="stat-sep" />
+            <div class="stat-item">
+              <div class="stat-num green">{{ getTotalClients(record) }}</div>
+              <div class="stat-label">管理客户</div>
+            </div>
+            <div class="stat-sep" />
+            <div class="stat-item">
+              <div class="stat-num orange">{{ getActiveClients(record) }}</div>
+              <div class="stat-label">活跃客户</div>
+            </div>
+          </div>
 
-        <div class="card-meta">
-          <div class="meta-row"><span class="meta-label">手机</span><span class="meta-val">{{ record.phone || '—' }}</span></div>
-          <div class="meta-row"><span class="meta-label">入职</span><span class="meta-val">{{ record.join_date ? formatDate(record.join_date) : '—' }}</span></div>
-        </div>
+          <div class="card-divider-v" />
 
-        <div class="card-divider" />
-
-        <div class="card-actions">
-          <a-button type="link" size="small" @click="openDetail(record)">查看详情</a-button>
-          <a-button type="link" size="small" @click="openAddWechat(record)"><PlusOutlined /> 添加微信</a-button>
-          <a-button type="link" size="small" danger @click="confirmDeleteManager(record)"><DeleteOutlined /></a-button>
+          <div class="card-meta">
+            <div class="meta-row"><span class="meta-label">手机</span><span class="meta-val">{{ record.phone || '—' }}</span></div>
+            <div class="meta-row"><span class="meta-label">入职</span><span class="meta-val">{{ record.join_date ? formatDate(record.join_date) : '—' }}</span></div>
+          </div>
         </div>
       </div>
     </div>
@@ -505,7 +504,7 @@ onMounted(load)
 
 .manager-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
 }
 
@@ -515,56 +514,73 @@ onMounted(load)
   border: 1px solid #e5e7eb;
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
   display: flex;
-  align-items: center;
-  padding: 18px 20px;
-  gap: 0;
+  flex-direction: column;
+  padding: 16px 18px;
+  gap: 12px;
   transition: box-shadow 0.2s, border-color 0.2s;
+  overflow: hidden;
 }
 .manager-card:hover {
   box-shadow: 0 4px 16px rgba(0,0,0,0.1);
   border-color: #bfdbfe;
 }
 
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+
 .card-left {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-width: 130px;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 .avatar-lg {
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 17px;
   flex-shrink: 0;
 }
-.card-name-block { display: flex; flex-direction: column; }
-.card-name { font-size: 15px; font-weight: 700; color: #111827; }
+.card-name-block { display: flex; flex-direction: column; min-width: 0; }
+.card-name { font-size: 15px; font-weight: 700; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-name.clickable { cursor: pointer; }
 .card-name.clickable:hover { color: #2563eb; text-decoration: underline; }
 
-.card-divider { width: 1px; height: 48px; background: #f0f0f0; margin: 0 16px; flex-shrink: 0; }
+.card-divider-v { width: 1px; height: 40px; background: #f0f0f0; margin: 0 14px; flex-shrink: 0; }
 
-.card-stats { display: flex; align-items: center; gap: 0; min-width: 180px; }
-.stat-item { display: flex; flex-direction: column; align-items: center; min-width: 55px; }
-.stat-num { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.card-stats { display: flex; align-items: center; flex: 1; }
+.stat-item { display: flex; flex-direction: column; align-items: center; flex: 1; }
+.stat-num { font-size: 18px; font-weight: 700; line-height: 1.2; }
 .stat-num.blue { color: #2563eb; }
 .stat-num.green { color: #059669; }
 .stat-num.orange { color: #d97706; }
-.stat-label { font-size: 11px; color: #9ca3af; margin-top: 2px; }
-.stat-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 10px; }
+.stat-label { font-size: 11px; color: #9ca3af; margin-top: 2px; white-space: nowrap; }
+.stat-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 6px; flex-shrink: 0; }
 
-.card-meta { min-width: 160px; display: flex; flex-direction: column; gap: 6px; }
-.meta-row { display: flex; align-items: center; gap: 6px; }
+.card-meta { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+.meta-row { display: flex; align-items: center; gap: 5px; }
 .meta-label { font-size: 12px; color: #9ca3af; width: 28px; flex-shrink: 0; }
-.meta-val { font-size: 12px; color: #374151; }
+.meta-val { font-size: 12px; color: #374151; white-space: nowrap; }
 
-.card-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-left: auto; }
+.card-actions { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 
 .client-toolbar { margin-bottom: 12px; }
 
