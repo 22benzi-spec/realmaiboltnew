@@ -36,8 +36,8 @@
                 <a-tag v-else-if="record.order_type === '图片评'" color="blue" class="info-tag">图片评</a-tag>
                 <a-tag v-else-if="record.order_type === '视频评'" color="geekblue" class="info-tag">视频评</a-tag>
                 <a-tag v-else-if="record.order_type" color="default" class="info-tag">{{ record.order_type }}</a-tag>
-                <a-tag color="default" class="info-tag">{{ record.review_level || '普通' }}</a-tag>
-                <a-tag color="default" class="info-tag">{{ record.review_type || '普通测评' }}</a-tag>
+                <a-tag v-if="record.review_level" color="default" class="info-tag">{{ record.review_level }}</a-tag>
+                <a-tag v-if="record.review_type" color="default" class="info-tag">{{ record.review_type }}</a-tag>
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">产品：{{ record.product_name || record.asin }}</span>
@@ -47,7 +47,7 @@
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">类目：{{ record.category || '—' }}</span>
-                <span class="detail-sep">单价：<span class="price-text">¥{{ Number(record.unit_price || 0).toFixed(2) }}</span></span>
+                <span class="detail-sep">单价：<span class="price-text">${{ Number(record.product_price || 0).toFixed(2) }}</span></span>
                 <span class="detail-sep">客户：{{ record.customer_name || '—' }}</span>
                 <span class="detail-sep">业务员：{{ record.sales_person || '—' }}</span>
               </div>
@@ -90,7 +90,6 @@
               >
                 <ThunderboltOutlined /> 生成
               </a-button>
-              <a-button size="small" type="text" class="icon-btn" @click.stop="openEditOrder(record)"><EditOutlined /></a-button>
               <a-popconfirm title="确定删除此任务及所有子订单吗?" @confirm="deleteTask(record.id)">
                 <a-button size="small" type="text" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
               </a-popconfirm>
@@ -108,7 +107,7 @@
               :pagination="false"
               row-key="id"
               size="small"
-              :scroll="{ x: 1600 }"
+              :scroll="{ x: 1800 }"
               style="margin-top:10px"
             >
               <template #bodyCell="{ column, record: sub }">
@@ -119,6 +118,10 @@
                   <span v-if="sub.keyword" class="keyword-tag">{{ sub.keyword }}</span>
                   <span v-else class="text-gray">—</span>
                 </template>
+                <template v-if="column.key === 'sub_variant'">
+                  <span v-if="sub.variant_info" class="variant-text">{{ sub.variant_info }}</span>
+                  <span v-else class="text-gray">—</span>
+                </template>
                 <template v-if="column.key === 'sub_scheduled'">
                   <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
                     {{ sub.scheduled_date }}
@@ -127,6 +130,15 @@
                 </template>
                 <template v-if="column.key === 'sub_status'">
                   <a-tag :color="getSubStatusColor(sub.status)" size="small">{{ sub.status || '待分配' }}</a-tag>
+                </template>
+                <template v-if="column.key === 'sub_order_type'">
+                  <span style="font-size:12px">{{ sub.order_type || '—' }}</span>
+                </template>
+                <template v-if="column.key === 'sub_review_type'">
+                  <span style="font-size:12px">{{ sub.review_type || '—' }}</span>
+                </template>
+                <template v-if="column.key === 'sub_review_level'">
+                  <span style="font-size:12px">{{ sub.review_level || '—' }}</span>
                 </template>
                 <template v-if="column.key === 'sub_staff'">
                   <span v-if="sub.staff_name" class="staff-name">{{ sub.staff_name }}</span>
@@ -158,7 +170,7 @@
                 </template>
                 <template v-if="column.key === 'sub_action'">
                   <a-space>
-                    <a-button type="link" size="small" @click="openDetail(sub)">详情</a-button>
+                    <a-button type="link" size="small" @click="openDetail(sub, record.id)">详情</a-button>
                     <a-popconfirm title="确定删除这条子订单吗?" @confirm="deleteSubOrder(sub.id, record.id)">
                       <a-button type="link" size="small" danger>删除</a-button>
                     </a-popconfirm>
@@ -188,21 +200,59 @@
       </div>
     </div>
 
-    <!-- 子订单详情弹窗 -->
+    <!-- 子订单详情/编辑弹窗 -->
     <a-modal
       v-model:open="detailOpen"
-      title="子订单详情"
+      :title="editMode ? '编辑子订单' : '子订单详情'"
       :footer="null"
-      width="800px"
+      width="860px"
       :body-style="{ padding: '0' }"
+      :destroy-on-close="true"
     >
       <div v-if="detailRecord" class="detail-modal-body">
         <div class="detail-header">
           <div class="detail-sub-number">{{ detailRecord.sub_order_number }}</div>
           <a-tag :color="getSubStatusColor(detailRecord.status)">{{ detailRecord.status || '待分配' }}</a-tag>
+          <div style="flex:1"></div>
+          <a-button v-if="!editMode" type="primary" size="small" @click="startEdit"><EditOutlined /> 编辑</a-button>
+          <template v-else>
+            <a-button type="primary" size="small" :loading="saveLoading" @click="saveDetail"><SaveOutlined /> 保存</a-button>
+            <a-button size="small" style="margin-left:8px" @click="cancelEdit">取消</a-button>
+          </template>
         </div>
 
         <div class="detail-sections">
+          <!-- 订单状态 -->
+          <div class="detail-section">
+            <div class="detail-section-title">订单状态</div>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>状态</label>
+                <template v-if="editMode">
+                  <a-select v-model:value="editForm.status" size="small" style="width:100%">
+                    <a-select-option v-for="s in subStatuses" :key="s" :value="s">{{ s }}</a-select-option>
+                  </a-select>
+                </template>
+                <a-tag v-else :color="getSubStatusColor(detailRecord.status)">{{ detailRecord.status || '待分配' }}</a-tag>
+              </div>
+              <div class="detail-item">
+                <label>排期日期</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.scheduled_date" size="small" placeholder="YYYY-MM-DD" />
+                </template>
+                <span v-else :class="detailRecord.scheduled_date && isOverdue(detailRecord.scheduled_date) ? 'date-overdue' : 'date-normal'">{{ detailRecord.scheduled_date || '—' }}</span>
+              </div>
+              <div class="detail-item">
+                <label>亚马逊订单号</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.amazon_order_id" size="small" placeholder="亚马逊订单号" />
+                </template>
+                <span v-else class="mono">{{ detailRecord.amazon_order_id || '—' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 产品信息 -->
           <div class="detail-section">
             <div class="detail-section-title">产品信息</div>
             <div class="detail-grid">
@@ -216,69 +266,208 @@
               <div class="detail-item"><label>店铺名称</label><span>{{ detailRecord.store_name || '—' }}</span></div>
               <div class="detail-item"><label>国家/站点</label><span>{{ detailRecord.country || '—' }}</span></div>
               <div class="detail-item"><label>类目</label><span>{{ detailRecord.category || '—' }}</span></div>
-              <div class="detail-item"><label>变参信息</label><span>{{ detailRecord.variant_info || '—' }}</span></div>
+              <div class="detail-item">
+                <label>变参信息</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.variant_info" size="small" placeholder="变参信息" />
+                </template>
+                <span v-else>{{ detailRecord.variant_info || '—' }}</span>
+              </div>
             </div>
           </div>
 
+          <!-- 订单信息 -->
           <div class="detail-section">
             <div class="detail-section-title">订单信息</div>
             <div class="detail-grid">
               <div class="detail-item"><label>下单类型</label><span>{{ detailRecord.order_type || '—' }}</span></div>
               <div class="detail-item"><label>测评类型</label><span>{{ detailRecord.review_type || '—' }}</span></div>
               <div class="detail-item"><label>评价等级</label><span>{{ detailRecord.review_level || '—' }}</span></div>
-              <div class="detail-item"><label>产品价格</label><span>${{ Number(detailRecord.product_price || 0).toFixed(2) }}</span></div>
+              <div class="detail-item">
+                <label>产品价格(USD)</label>
+                <template v-if="editMode">
+                  <a-input-number v-model:value="editForm.product_price" size="small" :min="0" :precision="2" prefix="$" style="width:100%" />
+                </template>
+                <span v-else class="price-usd">${{ Number(detailRecord.product_price || 0).toFixed(2) }}</span>
+              </div>
               <div class="detail-item"><label>汇率</label><span>{{ detailRecord.exchange_rate || '—' }}</span></div>
-              <div class="detail-item"><label>单价(CNY)</label><span class="price-highlight">¥{{ Number(detailRecord.unit_price || 0).toFixed(2) }}</span></div>
-              <div class="detail-item"><label>佣金</label><span class="commission-highlight">¥{{ Number(detailRecord.commission_fee || 0).toFixed(2) }}</span></div>
-              <div class="detail-item"><label>关键词</label><span class="keyword-highlight">{{ detailRecord.keyword || '—' }}</span></div>
-              <div class="detail-item"><label>排期日期</label><span :class="detailRecord.scheduled_date && isOverdue(detailRecord.scheduled_date) ? 'date-overdue' : 'date-normal'">{{ detailRecord.scheduled_date || '—' }}</span></div>
-              <div class="detail-item"><label>亚马逊订单号</label><span class="mono">{{ detailRecord.amazon_order_id || '—' }}</span></div>
+              <div class="detail-item">
+                <label>单价(CNY)</label>
+                <template v-if="editMode">
+                  <a-input-number v-model:value="editForm.unit_price" size="small" :min="0" :precision="2" prefix="¥" style="width:100%" />
+                </template>
+                <span v-else class="price-highlight">¥{{ Number(detailRecord.unit_price || 0).toFixed(2) }}</span>
+              </div>
+              <div class="detail-item">
+                <label>佣金</label>
+                <template v-if="editMode">
+                  <a-input-number v-model:value="editForm.commission_fee" size="small" :min="0" :precision="2" prefix="¥" style="width:100%" />
+                </template>
+                <span v-else class="commission-highlight">¥{{ Number(detailRecord.commission_fee || 0).toFixed(2) }}</span>
+              </div>
+              <div class="detail-item">
+                <label>关键词</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.keyword" size="small" placeholder="搜索关键词" />
+                </template>
+                <span v-else class="keyword-highlight">{{ detailRecord.keyword || '—' }}</span>
+              </div>
             </div>
           </div>
 
+          <!-- 人员信息 -->
           <div class="detail-section">
             <div class="detail-section-title">客户 / 人员</div>
             <div class="detail-grid">
               <div class="detail-item"><label>客户名称</label><span>{{ detailRecord.customer_name || '—' }}</span></div>
               <div class="detail-item"><label>客户ID</label><span class="mono">{{ detailRecord.customer_id_str || '—' }}</span></div>
               <div class="detail-item"><label>销售人员</label><span>{{ detailRecord.sales_person || '—' }}</span></div>
-              <div class="detail-item"><label>业务员</label><span>{{ detailRecord.staff_name || '未分配' }}</span></div>
-              <div class="detail-item"><label>买手</label><span>{{ detailRecord.buyer_name || '未分配' }}</span></div>
+              <div class="detail-item">
+                <label>业务员</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.staff_name" size="small" placeholder="业务员姓名" />
+                </template>
+                <span v-else>{{ detailRecord.staff_name || '未分配' }}</span>
+              </div>
+              <div class="detail-item">
+                <label>买手</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.buyer_name" size="small" placeholder="买手姓名" />
+                </template>
+                <span v-else>{{ detailRecord.buyer_name || '未分配' }}</span>
+              </div>
             </div>
           </div>
 
+          <!-- 退款信息 -->
           <div class="detail-section">
             <div class="detail-section-title">退款信息</div>
             <div class="detail-grid">
-              <div class="detail-item"><label>退款状态</label>
-                <a-tag v-if="detailRecord.refund_status" color="orange">{{ detailRecord.refund_status }}</a-tag>
+              <div class="detail-item">
+                <label>退款状态</label>
+                <template v-if="editMode">
+                  <a-select v-model:value="editForm.refund_status" size="small" style="width:100%" allow-clear placeholder="无退款">
+                    <a-select-option v-for="s in refundStatuses" :key="s" :value="s">{{ s }}</a-select-option>
+                  </a-select>
+                </template>
+                <template v-else>
+                  <a-tag v-if="detailRecord.refund_status" color="orange">{{ detailRecord.refund_status }}</a-tag>
+                  <span v-else class="text-gray">—</span>
+                </template>
+              </div>
+              <div class="detail-item">
+                <label>退款方式</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.refund_method" size="small" placeholder="退款方式" />
+                </template>
+                <span v-else>{{ detailRecord.refund_method || '—' }}</span>
+              </div>
+              <div class="detail-item">
+                <label>退款金额</label>
+                <template v-if="editMode">
+                  <a-input-number v-model:value="editForm.refund_amount" size="small" :min="0" :precision="2" prefix="¥" style="width:100%" />
+                </template>
+                <span v-else-if="detailRecord.refund_amount" class="refund-highlight">¥{{ Number(detailRecord.refund_amount).toFixed(2) }}</span>
                 <span v-else class="text-gray">—</span>
               </div>
-              <div class="detail-item"><label>退款方式</label><span>{{ detailRecord.refund_method || '—' }}</span></div>
-              <div class="detail-item"><label>退款顺序</label><span>{{ detailRecord.refund_sequence || '—' }}</span></div>
-              <div class="detail-item"><label>退款金额</label><span v-if="detailRecord.refund_amount" class="refund-highlight">¥{{ Number(detailRecord.refund_amount).toFixed(2) }}</span><span v-else class="text-gray">—</span></div>
-              <div class="detail-item"><label>退款日期</label><span>{{ detailRecord.refund_date || '—' }}</span></div>
+              <div class="detail-item">
+                <label>退款日期</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.refund_date" size="small" placeholder="YYYY-MM-DD" />
+                </template>
+                <span v-else>{{ detailRecord.refund_date || '—' }}</span>
+              </div>
+              <div class="detail-item">
+                <label>退款顺序</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.refund_sequence" size="small" placeholder="退款顺序" />
+                </template>
+                <span v-else>{{ detailRecord.refund_sequence || '—' }}</span>
+              </div>
             </div>
           </div>
 
+          <!-- 时间节点 -->
           <div class="detail-section">
             <div class="detail-section-title">时间节点</div>
             <div class="detail-grid">
-              <div class="detail-item"><label>买手接单时间</label><span>{{ fmtTime(detailRecord.buyer_assigned_at) }}</span></div>
-              <div class="detail-item"><label>亚马逊下单时间</label><span>{{ fmtTime(detailRecord.amazon_order_placed_at) }}</span></div>
-              <div class="detail-item"><label>收货确认时间</label><span>{{ fmtTime(detailRecord.delivery_confirmed_at) }}</span></div>
-              <div class="detail-item"><label>留评提交时间</label><span>{{ fmtTime(detailRecord.review_submitted_at) }}</span></div>
+              <div class="detail-item">
+                <label>买手接单时间</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.buyer_assigned_at" size="small" placeholder="YYYY-MM-DD HH:mm" />
+                </template>
+                <span v-else>{{ fmtTime(detailRecord.buyer_assigned_at) }}</span>
+              </div>
+              <div class="detail-item">
+                <label>亚马逊下单时间</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.amazon_order_placed_at" size="small" placeholder="YYYY-MM-DD HH:mm" />
+                </template>
+                <span v-else>{{ fmtTime(detailRecord.amazon_order_placed_at) }}</span>
+              </div>
+              <div class="detail-item">
+                <label>收货确认时间</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.delivery_confirmed_at" size="small" placeholder="YYYY-MM-DD HH:mm" />
+                </template>
+                <span v-else>{{ fmtTime(detailRecord.delivery_confirmed_at) }}</span>
+              </div>
+              <div class="detail-item">
+                <label>留评提交时间</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.review_submitted_at" size="small" placeholder="YYYY-MM-DD HH:mm" />
+                </template>
+                <span v-else>{{ fmtTime(detailRecord.review_submitted_at) }}</span>
+              </div>
               <div class="detail-item"><label>创建时间</label><span>{{ fmtTime(detailRecord.created_at) }}</span></div>
               <div class="detail-item"><label>更新时间</label><span>{{ fmtTime(detailRecord.updated_at) }}</span></div>
             </div>
           </div>
 
-          <div class="detail-section" v-if="detailRecord.notes || detailRecord.task_notes || detailRecord.cancel_reason">
+          <!-- 备注信息 -->
+          <div class="detail-section">
             <div class="detail-section-title">备注信息</div>
             <div class="detail-grid">
-              <div class="detail-item detail-full"><label>订单备注</label><span>{{ detailRecord.notes || '—' }}</span></div>
-              <div class="detail-item detail-full"><label>任务备注</label><span>{{ detailRecord.task_notes || '—' }}</span></div>
-              <div class="detail-item detail-full" v-if="detailRecord.cancel_reason"><label>取消原因</label><span class="text-red">{{ detailRecord.cancel_reason }}</span></div>
+              <div class="detail-item detail-full">
+                <label>订单备注</label>
+                <template v-if="editMode">
+                  <a-textarea v-model:value="editForm.notes" :rows="2" size="small" placeholder="备注内容" />
+                </template>
+                <span v-else>{{ detailRecord.notes || '—' }}</span>
+              </div>
+              <div class="detail-item detail-full">
+                <label>任务备注</label>
+                <template v-if="editMode">
+                  <a-textarea v-model:value="editForm.task_notes" :rows="2" size="small" placeholder="任务备注" />
+                </template>
+                <span v-else>{{ detailRecord.task_notes || '—' }}</span>
+              </div>
+              <div class="detail-item detail-full" v-if="editMode || detailRecord.cancel_reason">
+                <label>取消原因</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.cancel_reason" size="small" placeholder="取消原因" />
+                </template>
+                <span v-else class="text-red">{{ detailRecord.cancel_reason }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 留评截图 -->
+          <div class="detail-section">
+            <div class="detail-section-title">留评截图</div>
+            <div class="detail-grid">
+              <div class="detail-item detail-full">
+                <label>截图链接</label>
+                <template v-if="editMode">
+                  <a-input v-model:value="editForm.review_screenshot_url" size="small" placeholder="留评截图URL" />
+                </template>
+                <template v-else>
+                  <div v-if="detailRecord.review_screenshot_url">
+                    <img :src="detailRecord.review_screenshot_url" class="review-screenshot" referrerpolicy="no-referrer" @error="onImgError($event)" />
+                  </div>
+                  <span v-else class="text-gray">—</span>
+                </template>
+              </div>
             </div>
           </div>
         </div>
@@ -290,7 +479,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, RightOutlined, ThunderboltOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import {
+  ReloadOutlined, RightOutlined, ThunderboltOutlined,
+  DeleteOutlined, EditOutlined, SaveOutlined
+} from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -305,22 +497,32 @@ const subOrdersMap = ref<Record<string, any[]>>({})
 const genLoadingId = ref<string | null>(null)
 const detailOpen = ref(false)
 const detailRecord = ref<any>(null)
+const detailOrderId = ref<string>('')
+const editMode = ref(false)
+const saveLoading = ref(false)
+const editForm = ref<any>({})
 
 const taskStatuses = ['待处理', '进行中', '已完成', '已取消', '暂停']
+const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留评', '已完成', '已取消']
+const refundStatuses = ['待退款', '退款中', '已退款', '退款失败']
 const countries = ['美国', '德国', '英国', '加拿大']
 
 const subColumns = [
   { title: '子订单号', key: 'sub_no', width: 165 },
-  { title: '关键词', key: 'sub_keyword', width: 140 },
-  { title: '排期日期', key: 'sub_scheduled', width: 100 },
-  { title: '状态', key: 'sub_status', width: 90 },
-  { title: '业务员', key: 'sub_staff', width: 90 },
-  { title: '买手', key: 'sub_buyer', width: 90 },
-  { title: '亚马逊订单号', key: 'sub_amazon_order', width: 150 },
-  { title: '产品价/单价', key: 'sub_price', width: 110 },
-  { title: '佣金', key: 'sub_commission', width: 90 },
-  { title: '退款', key: 'sub_refund', width: 110 },
-  { title: '操作', key: 'sub_action', width: 110, fixed: 'right' },
+  { title: '关键词', key: 'sub_keyword', width: 130 },
+  { title: '变参', key: 'sub_variant', width: 80 },
+  { title: '排期日期', key: 'sub_scheduled', width: 95 },
+  { title: '状态', key: 'sub_status', width: 85 },
+  { title: '下单类型', key: 'sub_order_type', width: 80 },
+  { title: '测评类型', key: 'sub_review_type', width: 80 },
+  { title: '评价等级', key: 'sub_review_level', width: 75 },
+  { title: '业务员', key: 'sub_staff', width: 80 },
+  { title: '买手', key: 'sub_buyer', width: 80 },
+  { title: '亚马逊订单号', key: 'sub_amazon_order', width: 145 },
+  { title: '产品价/单价', key: 'sub_price', width: 105 },
+  { title: '佣金', key: 'sub_commission', width: 80 },
+  { title: '退款', key: 'sub_refund', width: 100 },
+  { title: '操作', key: 'sub_action', width: 100, fixed: 'right' },
 ]
 
 function getStatusColor(status: string) {
@@ -347,13 +549,97 @@ function fmtTime(t: string | null) {
   return dayjs(t).format('YYYY-MM-DD HH:mm')
 }
 
-function openDetail(sub: any) {
-  detailRecord.value = sub
+function openDetail(sub: any, orderId: string) {
+  detailRecord.value = { ...sub }
+  detailOrderId.value = orderId
+  editMode.value = false
+  editForm.value = {}
   detailOpen.value = true
 }
 
-function openEditOrder(_record: any) {
-  message.info('编辑功能请前往订单列表页操作')
+function startEdit() {
+  const d = detailRecord.value
+  editForm.value = {
+    status: d.status || '待分配',
+    scheduled_date: d.scheduled_date || '',
+    amazon_order_id: d.amazon_order_id || '',
+    variant_info: d.variant_info || '',
+    product_price: d.product_price ? Number(d.product_price) : null,
+    unit_price: d.unit_price ? Number(d.unit_price) : null,
+    commission_fee: d.commission_fee ? Number(d.commission_fee) : null,
+    keyword: d.keyword || '',
+    staff_name: d.staff_name || '',
+    buyer_name: d.buyer_name || '',
+    refund_status: d.refund_status || '',
+    refund_method: d.refund_method || '',
+    refund_amount: d.refund_amount ? Number(d.refund_amount) : null,
+    refund_date: d.refund_date || '',
+    refund_sequence: d.refund_sequence || '',
+    buyer_assigned_at: d.buyer_assigned_at ? dayjs(d.buyer_assigned_at).format('YYYY-MM-DD HH:mm') : '',
+    amazon_order_placed_at: d.amazon_order_placed_at ? dayjs(d.amazon_order_placed_at).format('YYYY-MM-DD HH:mm') : '',
+    delivery_confirmed_at: d.delivery_confirmed_at ? dayjs(d.delivery_confirmed_at).format('YYYY-MM-DD HH:mm') : '',
+    review_submitted_at: d.review_submitted_at ? dayjs(d.review_submitted_at).format('YYYY-MM-DD HH:mm') : '',
+    notes: d.notes || '',
+    task_notes: d.task_notes || '',
+    cancel_reason: d.cancel_reason || '',
+    review_screenshot_url: d.review_screenshot_url || '',
+  }
+  editMode.value = true
+}
+
+function cancelEdit() {
+  editMode.value = false
+  editForm.value = {}
+}
+
+async function saveDetail() {
+  if (!detailRecord.value?.id) return
+  saveLoading.value = true
+  try {
+    const f = editForm.value
+    const parseTs = (v: string) => v ? dayjs(v, 'YYYY-MM-DD HH:mm').toISOString() : null
+
+    const payload: any = {
+      status: f.status,
+      scheduled_date: f.scheduled_date || null,
+      amazon_order_id: f.amazon_order_id || null,
+      variant_info: f.variant_info || null,
+      product_price: f.product_price,
+      unit_price: f.unit_price,
+      commission_fee: f.commission_fee,
+      keyword: f.keyword || null,
+      staff_name: f.staff_name || null,
+      buyer_name: f.buyer_name || null,
+      refund_status: f.refund_status || null,
+      refund_method: f.refund_method || null,
+      refund_amount: f.refund_amount,
+      refund_date: f.refund_date || null,
+      refund_sequence: f.refund_sequence || null,
+      buyer_assigned_at: parseTs(f.buyer_assigned_at),
+      amazon_order_placed_at: parseTs(f.amazon_order_placed_at),
+      delivery_confirmed_at: parseTs(f.delivery_confirmed_at),
+      review_submitted_at: parseTs(f.review_submitted_at),
+      notes: f.notes || null,
+      task_notes: f.task_notes || null,
+      cancel_reason: f.cancel_reason || null,
+      review_screenshot_url: f.review_screenshot_url || null,
+    }
+
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', detailRecord.value.id)
+    if (error) throw error
+
+    Object.assign(detailRecord.value, payload)
+    editMode.value = false
+
+    if (detailOrderId.value) {
+      await loadSubOrders(detailOrderId.value)
+    }
+    message.success('子订单已保存')
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    saveLoading.value = false
+  }
 }
 
 async function toggleExpand(record: any) {
@@ -442,8 +728,13 @@ async function loadSubOrders(orderId: string) {
 async function generateSubOrders(record: any) {
   genLoadingId.value = record.id
   try {
-    const existing = subOrdersMap.value[record.id] || []
-    const toCreate = (record.order_quantity || 0) - existing.length
+    const { data: allSubs } = await supabase
+      .from('sub_orders')
+      .select('id')
+      .eq('order_id', record.id)
+    const existingTotal = allSubs?.length || 0
+
+    const toCreate = (record.order_quantity || 0) - existingTotal
     if (toCreate <= 0) {
       message.info('子订单已全部生成')
       return
@@ -470,9 +761,8 @@ async function generateSubOrders(record: any) {
       }
     }
 
-    const existingCount = existing.length
     const rows = Array.from({ length: toCreate }, (_, i) => {
-      const slot = scheduleSlots[existingCount + i]
+      const slot = scheduleSlots[existingTotal + i]
       return {
         order_id: record.id,
         asin: record.asin,
@@ -548,9 +838,7 @@ onMounted(load)
 
 .task-list { display: flex; flex-direction: column; gap: 0; }
 
-.task-card {
-  border-bottom: 1px solid #f0f0f0;
-}
+.task-card { border-bottom: 1px solid #f0f0f0; }
 .task-card:last-child { border-bottom: none; }
 
 .task-main-row {
@@ -572,10 +860,7 @@ onMounted(load)
   cursor: pointer;
   color: #9ca3af;
 }
-.expand-icon {
-  font-size: 11px;
-  transition: transform 0.2s;
-}
+.expand-icon { font-size: 11px; transition: transform 0.2s; }
 .expand-icon.expanded { transform: rotate(90deg); color: #2563eb; }
 
 .task-info {
@@ -585,14 +870,7 @@ onMounted(load)
   flex-direction: column;
   gap: 4px;
 }
-
-.task-top-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
+.task-top-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .order-num-link {
   font-family: 'Courier New', monospace;
   font-size: 13px;
@@ -602,34 +880,24 @@ onMounted(load)
   text-decoration: none;
 }
 .order-num-link:hover { text-decoration: underline; }
-
 .status-tag { font-size: 11px; }
 .info-tag { font-size: 11px; }
-
 .task-detail-row {
   display: flex;
   align-items: center;
-  gap: 0;
   flex-wrap: wrap;
   font-size: 12px;
   color: #6b7280;
   line-height: 1.6;
 }
 .detail-item-text { color: #374151; }
-.detail-sep {
-  color: #6b7280;
-  padding-left: 12px;
-}
-.detail-sep::before {
-  content: '';
-}
+.detail-sep { color: #6b7280; padding-left: 12px; }
 .mono-sm { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
-.price-text { color: #2563eb; font-weight: 600; }
+.price-text { color: #16a34a; font-weight: 600; }
 
 .task-stats {
   display: flex;
   align-items: center;
-  gap: 0;
   flex-shrink: 0;
   margin: 0 20px;
   background: #f8fafc;
@@ -637,35 +905,13 @@ onMounted(load)
   padding: 8px 12px;
   border: 1px solid #e5e7eb;
 }
-
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 48px;
-  gap: 2px;
-}
-.stat-label {
-  font-size: 11px;
-  color: #9ca3af;
-  line-height: 1;
-}
-.stat-val {
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.2;
-}
+.stat-item { display: flex; flex-direction: column; align-items: center; min-width: 48px; gap: 2px; }
+.stat-label { font-size: 11px; color: #9ca3af; line-height: 1; }
+.stat-val { font-size: 20px; font-weight: 700; line-height: 1.2; }
 .stat-total { color: #1a1a2e; }
 .stat-schedule { color: #f59e0b; }
 .stat-sub { color: #2563eb; }
-
-.stat-divider {
-  width: 1px;
-  height: 32px;
-  background: #e5e7eb;
-  margin: 0 10px;
-}
-
+.stat-divider { width: 1px; height: 32px; background: #e5e7eb; margin: 0 10px; }
 .stat-right-col {
   display: flex;
   flex-direction: column;
@@ -674,10 +920,7 @@ onMounted(load)
   padding-left: 12px;
   border-left: 1px solid #e5e7eb;
 }
-.stat-mini-row {
-  display: flex;
-  gap: 8px;
-}
+.stat-mini-row { display: flex; gap: 8px; }
 .stat-mini-label {
   font-size: 11px;
   white-space: nowrap;
@@ -689,16 +932,9 @@ onMounted(load)
 .review-label { background: #eff6ff; color: #3b82f6; }
 .assign-label { background: #fef3c7; color: #d97706; }
 
-.task-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  padding-left: 8px;
-}
+.task-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding-left: 8px; }
 .gen-btn { font-size: 12px; }
 .icon-btn { color: #6b7280; font-size: 14px; }
-.icon-btn:hover { color: #374151; }
 .danger-btn:hover { color: #dc2626 !important; }
 
 .sub-orders-panel {
@@ -706,27 +942,12 @@ onMounted(load)
   border-top: 1px dashed #e5e7eb;
   padding: 12px 16px 16px 32px;
 }
-.sub-orders-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.sub-orders-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #374151;
-}
-.no-sub-orders {
-  margin-top: 10px;
-  color: #9ca3af;
-  font-size: 13px;
-  text-align: center;
-  padding: 12px 0;
-}
+.sub-orders-header { display: flex; align-items: center; justify-content: space-between; }
+.sub-orders-title { font-size: 12px; font-weight: 600; color: #374151; }
+.no-sub-orders { margin-top: 10px; color: #9ca3af; font-size: 13px; text-align: center; padding: 12px 0; }
 
 .sub-no { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
 .order-num-sm { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
-
 .keyword-tag {
   display: inline-block;
   background: #eff6ff;
@@ -736,17 +957,16 @@ onMounted(load)
   padding: 1px 6px;
   font-size: 11px;
   font-weight: 500;
-  max-width: 130px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
+.variant-text { font-size: 11px; color: #6b7280; }
 .date-normal { font-size: 12px; color: #374151; }
 .date-overdue { font-size: 12px; color: #dc2626; font-weight: 600; }
-
-.price-main { font-size: 11px; font-weight: 600; color: #374151; }
-.price-sub { font-size: 11px; color: #2563eb; }
+.price-main { font-size: 11px; font-weight: 600; color: #16a34a; }
+.price-sub { font-size: 11px; color: #6b7280; }
 .commission-val { font-size: 12px; font-weight: 600; color: #059669; }
 .refund-amount { font-size: 11px; color: #f59e0b; font-weight: 600; margin-top: 2px; }
 .staff-name { color: #374151; font-size: 12px; }
@@ -756,31 +976,39 @@ onMounted(load)
 .empty-list { padding: 40px 0; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
 
+/* 详情弹窗 */
 .detail-modal-body { padding: 0; }
 .detail-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 24px;
+  gap: 10px;
+  padding: 14px 20px;
   border-bottom: 1px solid #f0f0f0;
   background: #f8fafc;
 }
 .detail-sub-number {
   font-family: 'Courier New', monospace;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #1a1a2e;
 }
-.detail-sections { padding: 16px 24px; display: flex; flex-direction: column; gap: 20px; max-height: 70vh; overflow-y: auto; }
-.detail-section { border: 1px solid #f0f0f0; border-radius: 10px; overflow: hidden; }
+.detail-sections {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 72vh;
+  overflow-y: auto;
+}
+.detail-section { border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; }
 .detail-section-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   background: #f9fafb;
-  padding: 8px 14px;
+  padding: 7px 14px;
   border-bottom: 1px solid #f0f0f0;
 }
 .detail-grid {
@@ -789,21 +1017,31 @@ onMounted(load)
   gap: 0;
 }
 .detail-item {
-  padding: 10px 14px;
+  padding: 9px 14px;
   border-right: 1px solid #f0f0f0;
   border-bottom: 1px solid #f0f0f0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 .detail-item:nth-child(3n) { border-right: none; }
 .detail-item label { font-size: 11px; color: #9ca3af; font-weight: 500; }
 .detail-item span { font-size: 13px; color: #374151; word-break: break-all; }
 .detail-full { grid-column: 1 / -1; }
-.mono { font-family: 'Courier New', monospace; }
+.mono { font-family: 'Courier New', monospace; font-size: 12px; }
+.price-usd { color: #16a34a; font-weight: 600; font-size: 13px; }
 .price-highlight { color: #2563eb; font-weight: 600; }
 .commission-highlight { color: #059669; font-weight: 600; }
 .refund-highlight { color: #f59e0b; font-weight: 600; }
-.keyword-highlight { color: #2563eb; font-weight: 600; background: #eff6ff; padding: 1px 6px; border-radius: 4px; border: 1px solid #bfdbfe; }
+.keyword-highlight {
+  color: #2563eb;
+  font-weight: 600;
+  background: #eff6ff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid #bfdbfe;
+  font-size: 12px;
+}
 .detail-product-img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid #f0f0f0; }
+.review-screenshot { max-width: 100%; border-radius: 8px; border: 1px solid #f0f0f0; margin-top: 4px; }
 </style>
