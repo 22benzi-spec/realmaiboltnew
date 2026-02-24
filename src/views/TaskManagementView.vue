@@ -26,6 +26,19 @@
               <RightOutlined :class="['expand-icon', { 'expanded': expandedRowKeys.includes(record.id) }]" />
             </div>
 
+            <div class="task-product-img" @click="toggleExpand(record)">
+              <img
+                v-if="record.product_image"
+                :src="record.product_image"
+                class="task-product-thumb"
+                referrerpolicy="no-referrer"
+                @error="onImgError($event)"
+              />
+              <div v-else class="task-product-placeholder">
+                <PictureOutlined />
+              </div>
+            </div>
+
             <div class="task-info">
               <div class="task-top-row">
                 <a class="order-num-link">{{ record.order_number }}</a>
@@ -481,7 +494,7 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined, RightOutlined, ThunderboltOutlined,
-  DeleteOutlined, EditOutlined, SaveOutlined
+  DeleteOutlined, EditOutlined, SaveOutlined, PictureOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -889,6 +902,38 @@ onMounted(load)
 }
 .expand-icon { font-size: 11px; transition: transform 0.2s; }
 .expand-icon.expanded { transform: rotate(90deg); color: #2563eb; }
+
+.task-product-img {
+  flex-shrink: 0;
+  width: 60px;
+  height: 60px;
+  margin-right: 12px;
+  cursor: pointer;
+}
+.task-product-thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  display: block;
+  transition: box-shadow 0.15s;
+}
+.task-product-thumb:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.task-product-placeholder {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  border: 1px dashed #d1d5db;
+  background: #f9fafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d1d5db;
+  font-size: 20px;
+}
 
 .task-info {
   flex: 1;
