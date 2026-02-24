@@ -553,26 +553,21 @@ function openDetail(sub: any, orderId: string) {
   detailRecord.value = { ...sub }
   detailOrderId.value = orderId
   editMode.value = false
-  editForm.value = {}
-  detailOpen.value = true
-}
-
-function startEdit() {
-  const d = detailRecord.value
+  const d = sub
   editForm.value = {
     status: d.status || '待分配',
     scheduled_date: d.scheduled_date || '',
     amazon_order_id: d.amazon_order_id || '',
     variant_info: d.variant_info || '',
-    product_price: d.product_price ? Number(d.product_price) : null,
-    unit_price: d.unit_price ? Number(d.unit_price) : null,
-    commission_fee: d.commission_fee ? Number(d.commission_fee) : null,
+    product_price: d.product_price != null ? Number(d.product_price) : undefined,
+    unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
+    commission_fee: d.commission_fee != null ? Number(d.commission_fee) : undefined,
     keyword: d.keyword || '',
     staff_name: d.staff_name || '',
     buyer_name: d.buyer_name || '',
-    refund_status: d.refund_status || '',
+    refund_status: d.refund_status || null,
     refund_method: d.refund_method || '',
-    refund_amount: d.refund_amount ? Number(d.refund_amount) : null,
+    refund_amount: d.refund_amount != null ? Number(d.refund_amount) : undefined,
     refund_date: d.refund_date || '',
     refund_sequence: d.refund_sequence || '',
     buyer_assigned_at: d.buyer_assigned_at ? dayjs(d.buyer_assigned_at).format('YYYY-MM-DD HH:mm') : '',
@@ -584,6 +579,38 @@ function startEdit() {
     cancel_reason: d.cancel_reason || '',
     review_screenshot_url: d.review_screenshot_url || '',
   }
+  detailOpen.value = true
+}
+
+function startEdit() {
+  if (!detailRecord.value) return
+  const d = detailRecord.value
+  const form = {
+    status: d.status || '待分配',
+    scheduled_date: d.scheduled_date || '',
+    amazon_order_id: d.amazon_order_id || '',
+    variant_info: d.variant_info || '',
+    product_price: d.product_price != null ? Number(d.product_price) : undefined,
+    unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
+    commission_fee: d.commission_fee != null ? Number(d.commission_fee) : undefined,
+    keyword: d.keyword || '',
+    staff_name: d.staff_name || '',
+    buyer_name: d.buyer_name || '',
+    refund_status: d.refund_status || null,
+    refund_method: d.refund_method || '',
+    refund_amount: d.refund_amount != null ? Number(d.refund_amount) : undefined,
+    refund_date: d.refund_date || '',
+    refund_sequence: d.refund_sequence || '',
+    buyer_assigned_at: d.buyer_assigned_at ? dayjs(d.buyer_assigned_at).format('YYYY-MM-DD HH:mm') : '',
+    amazon_order_placed_at: d.amazon_order_placed_at ? dayjs(d.amazon_order_placed_at).format('YYYY-MM-DD HH:mm') : '',
+    delivery_confirmed_at: d.delivery_confirmed_at ? dayjs(d.delivery_confirmed_at).format('YYYY-MM-DD HH:mm') : '',
+    review_submitted_at: d.review_submitted_at ? dayjs(d.review_submitted_at).format('YYYY-MM-DD HH:mm') : '',
+    notes: d.notes || '',
+    task_notes: d.task_notes || '',
+    cancel_reason: d.cancel_reason || '',
+    review_screenshot_url: d.review_screenshot_url || '',
+  }
+  editForm.value = form
   editMode.value = true
 }
 
@@ -997,8 +1024,25 @@ onMounted(load)
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: 72vh;
+  max-height: calc(90vh - 120px);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px) {
+  .detail-sections {
+    max-height: calc(100dvh - 110px);
+    padding: 12px;
+  }
+  .detail-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .detail-item:nth-child(3n) {
+    border-right: 1px solid #f0f0f0;
+  }
+  .detail-item:nth-child(2n) {
+    border-right: none;
+  }
 }
 .detail-section { border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; }
 .detail-section-title {
