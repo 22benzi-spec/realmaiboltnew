@@ -2,7 +2,13 @@
   <div class="page-content">
     <h1 class="page-title">任务中心</h1>
 
-    <div class="card-panel">
+    <a-tabs v-model:activeKey="activeTab" class="main-tabs">
+      <a-tab-pane key="tasks" tab="任务列表" />
+      <a-tab-pane key="verify" tab="买手校验" />
+    </a-tabs>
+
+    <!-- ===== 任务列表 Tab ===== -->
+    <div v-show="activeTab === 'tasks'" class="card-panel">
       <div class="toolbar">
         <a-input-search v-model:value="searchText" placeholder="搜索订单号/ASIN/店铺" style="width:260px" @search="load" allow-clear />
         <a-select v-model:value="filterStatus" style="width:130px" @change="load" allow-clear placeholder="任务状态">
@@ -486,11 +492,156 @@
         </div>
       </div>
     </a-modal>
+
+    <!-- ===== 买手校验 Tab ===== -->
+    <div v-show="activeTab === 'verify'" class="card-panel verify-panel">
+      <div class="verify-layout">
+        <!-- 左侧：输入区 -->
+        <div class="verify-left">
+          <div class="verify-section-title">产品信息</div>
+          <div class="verify-product-row">
+            <a-input
+              v-model:value="verifyAsin"
+              placeholder="输入 ASIN"
+              style="width:180px"
+              allow-clear
+              @change="verifyProductInfo = null"
+            />
+            <a-button type="primary" :loading="verifyProductLoading" @click="lookupProduct">查找产品</a-button>
+          </div>
+          <div v-if="verifyProductInfo" class="verify-product-card">
+            <img
+              v-if="verifyProductInfo.product_image"
+              :src="verifyProductInfo.product_image"
+              class="verify-product-img"
+              referrerpolicy="no-referrer"
+              @error="onImgError($event)"
+            />
+            <div v-else class="verify-product-img-placeholder"><PictureOutlined /></div>
+            <div class="verify-product-meta">
+              <div class="verify-product-asin">{{ verifyProductInfo.asin }}</div>
+              <div class="verify-product-name">{{ verifyProductInfo.store_name }}</div>
+              <div class="verify-product-brand">{{ verifyProductInfo.brand_name }}</div>
+              <div class="verify-product-country">
+                <a-tag size="small">{{ verifyProductInfo.country }}</a-tag>
+              </div>
+            </div>
+          </div>
+
+          <a-divider style="margin:20px 0" />
+
+          <div class="verify-section-title">
+            选择买手
+            <span class="verify-section-hint">（可多选）</span>
+          </div>
+          <div class="verify-buyer-search">
+            <a-input-search
+              v-model:value="buyerSearchText"
+              placeholder="搜索买手姓名/编号"
+              allow-clear
+              style="width:100%"
+              @input="filterBuyerOptions"
+            />
+          </div>
+          <div class="verify-buyer-list">
+            <div
+              v-for="b in filteredBuyerOptions"
+              :key="b.id"
+              :class="['verify-buyer-item', selectedBuyerIds.includes(b.id) ? 'selected' : '']"
+              @click="toggleBuyerSelect(b.id)"
+            >
+              <a-checkbox :checked="selectedBuyerIds.includes(b.id)" style="pointer-events:none" />
+              <div class="verify-buyer-item-info">
+                <span class="verify-buyer-name">{{ b.name }}</span>
+                <span class="verify-buyer-meta">{{ b.country }} · {{ b.level }}</span>
+              </div>
+              <a-tag v-if="b.status === '黑名单'" color="red" size="small">黑名单</a-tag>
+              <a-tag v-else-if="b.status === '暂停'" color="orange" size="small">暂停</a-tag>
+            </div>
+            <div v-if="filteredBuyerOptions.length === 0 && !buyersLoading" class="verify-no-buyers">暂无买手数据</div>
+            <div v-if="buyersLoading" class="verify-no-buyers"><a-spin size="small" /></div>
+          </div>
+          <div class="verify-selected-hint">已选 {{ selectedBuyerIds.length }} 位买手</div>
+
+          <a-button
+            type="primary"
+            block
+            :loading="verifying"
+            :disabled="!verifyAsin || selectedBuyerIds.length === 0"
+            style="margin-top:16px"
+            @click="runVerify"
+          >
+            开始校验
+          </a-button>
+        </div>
+
+        <!-- 右侧：结果区 -->
+        <div class="verify-right">
+          <div v-if="!verifyDone" class="verify-empty-result">
+            <a-empty description="请在左侧选择产品和买手，然后点击「开始校验」" />
+          </div>
+          <template v-else>
+            <div class="verify-result-header">
+              <div class="verify-result-title">
+                校验结果
+                <span class="verify-result-asin">— ASIN: {{ verifyResultAsin }}</span>
+              </div>
+              <div class="verify-result-stats">
+                <div class="verify-stat ok">
+                  <span class="verify-stat-num">{{ verifyResults.filter(r => r.canBuy).length }}</span>
+                  <span class="verify-stat-label">可购买</span>
+                </div>
+                <div class="verify-stat fail">
+                  <span class="verify-stat-num">{{ verifyResults.filter(r => !r.canBuy).length }}</span>
+                  <span class="verify-stat-label">不可购买</span>
+                </div>
+                <div class="verify-stat total">
+                  <span class="verify-stat-num">{{ verifyResults.length }}</span>
+                  <span class="verify-stat-label">共校验</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="verify-result-filters">
+              <span
+                v-for="f in verifyFilters"
+                :key="f.value"
+                :class="['verify-filter-tab', verifyResultFilter === f.value ? 'active' : '']"
+                @click="verifyResultFilter = f.value"
+              >{{ f.label }}</span>
+            </div>
+
+            <div class="verify-result-list">
+              <div
+                v-for="r in filteredVerifyResults"
+                :key="r.buyerId"
+                :class="['verify-result-item', r.canBuy ? 'can-buy' : 'cannot-buy']"
+              >
+                <div class="verify-result-status-dot" :class="r.canBuy ? 'dot-ok' : 'dot-fail'"></div>
+                <div class="verify-result-buyer-info">
+                  <span class="verify-result-buyer-name">{{ r.buyerName }}</span>
+                  <span class="verify-result-buyer-meta">{{ r.country }} · {{ r.level }}</span>
+                </div>
+                <div class="verify-result-reasons">
+                  <a-tag v-if="r.canBuy" color="success">可购买</a-tag>
+                  <template v-else>
+                    <a-tag v-for="(reason, i) in r.reasons" :key="i" color="error">{{ reason }}</a-tag>
+                  </template>
+                </div>
+              </div>
+              <div v-if="filteredVerifyResults.length === 0" class="verify-no-result">
+                <a-empty description="该筛选条件下无结果" />
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined, RightOutlined, ThunderboltOutlined,
@@ -499,6 +650,129 @@ import {
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
+// ===== Tab =====
+const activeTab = ref('tasks')
+
+// ===== 买手校验 =====
+const verifyAsin = ref('')
+const verifyProductInfo = ref<any>(null)
+const verifyProductLoading = ref(false)
+const buyersLoading = ref(false)
+const allBuyerOptions = ref<any[]>([])
+const filteredBuyerOptions = ref<any[]>([])
+const buyerSearchText = ref('')
+const selectedBuyerIds = ref<string[]>([])
+const verifying = ref(false)
+const verifyDone = ref(false)
+const verifyResultAsin = ref('')
+const verifyResults = ref<any[]>([])
+const verifyResultFilter = ref('all')
+const verifyFilters = [
+  { label: '全部', value: 'all' },
+  { label: '可购买', value: 'ok' },
+  { label: '不可购买', value: 'fail' },
+]
+const filteredVerifyResults = computed(() => {
+  if (verifyResultFilter.value === 'ok') return verifyResults.value.filter(r => r.canBuy)
+  if (verifyResultFilter.value === 'fail') return verifyResults.value.filter(r => !r.canBuy)
+  return verifyResults.value
+})
+
+async function loadAllBuyers() {
+  buyersLoading.value = true
+  const { data, error } = await supabase
+    .from('erp_buyers')
+    .select('id, name, country, level, status, purchased_asins, blacklist_reason, tags')
+    .order('name', { ascending: true })
+  buyersLoading.value = false
+  if (error) { message.error('加载买手列表失败'); return }
+  allBuyerOptions.value = data || []
+  filteredBuyerOptions.value = data || []
+}
+
+function filterBuyerOptions() {
+  const q = buyerSearchText.value.trim().toLowerCase()
+  if (!q) {
+    filteredBuyerOptions.value = allBuyerOptions.value
+  } else {
+    filteredBuyerOptions.value = allBuyerOptions.value.filter(b =>
+      b.name.toLowerCase().includes(q)
+    )
+  }
+}
+
+function toggleBuyerSelect(id: string) {
+  const idx = selectedBuyerIds.value.indexOf(id)
+  if (idx === -1) selectedBuyerIds.value.push(id)
+  else selectedBuyerIds.value.splice(idx, 1)
+}
+
+async function lookupProduct() {
+  const asin = verifyAsin.value.trim()
+  if (!asin) return
+  verifyProductLoading.value = true
+  verifyProductInfo.value = null
+  const { data } = await supabase
+    .from('erp_orders')
+    .select('asin, store_name, brand_name, country, product_image')
+    .ilike('asin', asin)
+    .limit(1)
+    .maybeSingle()
+  verifyProductLoading.value = false
+  if (data) {
+    verifyProductInfo.value = data
+  } else {
+    message.warning('未找到该 ASIN 对应的产品，请确认 ASIN 正确')
+  }
+}
+
+async function runVerify() {
+  const asin = verifyAsin.value.trim()
+  if (!asin || selectedBuyerIds.value.length === 0) return
+  verifying.value = true
+  verifyDone.value = false
+
+  const selectedBuyers = allBuyerOptions.value.filter(b => selectedBuyerIds.value.includes(b.id))
+
+  const results = selectedBuyers.map(buyer => {
+    const reasons: string[] = []
+
+    if (buyer.status === '黑名单' || (buyer.blacklist_reason && buyer.blacklist_reason.trim())) {
+      reasons.push('已拉黑')
+    }
+    if (buyer.status === '暂停') {
+      reasons.push('账号暂停')
+    }
+
+    const purchasedRaw: string = buyer.purchased_asins || ''
+    const purchasedList = purchasedRaw
+      .split(/[,，\n\r\s]+/)
+      .map((s: string) => s.trim().toUpperCase())
+      .filter(Boolean)
+    if (purchasedList.includes(asin.toUpperCase())) {
+      reasons.push('已购买过该ASIN')
+    }
+
+    return {
+      buyerId: buyer.id,
+      buyerName: buyer.name,
+      country: buyer.country,
+      level: buyer.level,
+      canBuy: reasons.length === 0,
+      reasons,
+    }
+  })
+
+  results.sort((a, b) => (b.canBuy ? 1 : 0) - (a.canBuy ? 1 : 0))
+
+  verifyResults.value = results
+  verifyResultAsin.value = asin
+  verifyResultFilter.value = 'all'
+  verifyDone.value = true
+  verifying.value = false
+}
+
+// ===== 任务列表 =====
 const loading = ref(false)
 const tasks = ref<any[]>([])
 const searchText = ref('')
@@ -865,7 +1139,10 @@ function onPageChange(page: number, pageSize: number) {
   load()
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadAllBuyers()
+})
 </script>
 
 <style scoped>
@@ -1133,4 +1410,260 @@ onMounted(load)
 }
 .detail-product-img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid #f0f0f0; }
 .review-screenshot { max-width: 100%; border-radius: 8px; border: 1px solid #f0f0f0; margin-top: 4px; }
+
+/* ===== Main Tabs ===== */
+.main-tabs {
+  margin-bottom: -1px;
+}
+:deep(.main-tabs .ant-tabs-nav) {
+  margin-bottom: 0;
+}
+:deep(.main-tabs .ant-tabs-tab) {
+  font-size: 14px;
+  font-weight: 500;
+}
+:deep(.main-tabs .ant-tabs-tab-active .ant-tabs-tab-btn) {
+  color: #2563eb;
+}
+:deep(.main-tabs .ant-tabs-ink-bar) {
+  background: #2563eb;
+}
+
+/* ===== 买手校验 ===== */
+.verify-panel { padding: 24px; }
+
+.verify-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.verify-left {
+  width: 320px;
+  flex-shrink: 0;
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+}
+
+.verify-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.verify-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 10px;
+}
+.verify-section-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: #9ca3af;
+}
+
+.verify-product-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.verify-product-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+}
+.verify-product-img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+.verify-product-img-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  border: 1px dashed #d1d5db;
+  background: #f9fafb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d1d5db;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.verify-product-meta { display: flex; flex-direction: column; gap: 2px; }
+.verify-product-asin { font-size: 13px; font-weight: 700; color: #1a1a2e; font-family: monospace; }
+.verify-product-name { font-size: 12px; color: #374151; }
+.verify-product-brand { font-size: 11px; color: #6b7280; }
+.verify-product-country { margin-top: 2px; }
+
+.verify-buyer-search { margin-bottom: 8px; }
+
+.verify-buyer-list {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+.verify-buyer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.12s;
+}
+.verify-buyer-item:last-child { border-bottom: none; }
+.verify-buyer-item:hover { background: #f0f7ff; }
+.verify-buyer-item.selected { background: #eff6ff; }
+.verify-buyer-item-info { flex: 1; min-width: 0; }
+.verify-buyer-name { display: block; font-size: 13px; font-weight: 500; color: #1a1a2e; }
+.verify-buyer-meta { display: block; font-size: 11px; color: #9ca3af; }
+
+.verify-no-buyers {
+  text-align: center;
+  padding: 20px;
+  color: #9ca3af;
+  font-size: 13px;
+}
+.verify-selected-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 8px;
+  text-align: right;
+}
+
+/* 右侧结果 */
+.verify-empty-result {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.verify-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.verify-result-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+.verify-result-asin {
+  font-size: 13px;
+  font-weight: 400;
+  color: #6b7280;
+  font-family: monospace;
+}
+
+.verify-result-stats {
+  display: flex;
+  gap: 12px;
+}
+.verify-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 16px;
+  border: 1px solid #e5e7eb;
+  min-width: 64px;
+}
+.verify-stat.ok { border-color: #bbf7d0; background: #f0fdf4; }
+.verify-stat.fail { border-color: #fecaca; background: #fef2f2; }
+.verify-stat-num {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+.verify-stat.ok .verify-stat-num { color: #16a34a; }
+.verify-stat.fail .verify-stat-num { color: #dc2626; }
+.verify-stat.total .verify-stat-num { color: #2563eb; }
+.verify-stat-label { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+.verify-result-filters {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #f0f0f0;
+  margin-bottom: 12px;
+}
+.verify-filter-tab {
+  padding: 6px 18px;
+  font-size: 13px;
+  color: #6b7280;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s;
+}
+.verify-filter-tab:hover { color: #2563eb; }
+.verify-filter-tab.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
+
+.verify-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.verify-result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.1s;
+}
+.verify-result-item:last-child { border-bottom: none; }
+.verify-result-item.can-buy { background: #fff; }
+.verify-result-item.can-buy:hover { background: #f0fdf4; }
+.verify-result-item.cannot-buy { background: #fefefe; }
+.verify-result-item.cannot-buy:hover { background: #fff5f5; }
+
+.verify-result-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-ok { background: #22c55e; box-shadow: 0 0 0 3px #dcfce7; }
+.dot-fail { background: #ef4444; box-shadow: 0 0 0 3px #fee2e2; }
+
+.verify-result-buyer-info {
+  flex: 1;
+  min-width: 0;
+}
+.verify-result-buyer-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+.verify-result-buyer-meta {
+  display: block;
+  font-size: 12px;
+  color: #9ca3af;
+}
+.verify-result-reasons { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.verify-no-result {
+  padding: 40px;
+}
 </style>
