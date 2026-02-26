@@ -42,14 +42,14 @@
               </div>
             </div>
             <div v-if="!customerLocked" class="customer-fields">
-              <!-- 从客户库选择 -->
+              <!-- 选择客户公司 -->
               <div class="quick-select-bar">
-                <div class="quick-select-label"><ShopOutlined /> 从客户库快速选择</div>
+                <div class="quick-select-label"><ShopOutlined /> 关联客户</div>
                 <a-row :gutter="10" style="flex:1">
-                  <a-col :span="8">
+                  <a-col :span="10">
                     <a-select
                       v-model:value="form.company_id"
-                      placeholder="选择客户公司"
+                      placeholder="选择客户公司（选填）"
                       show-search
                       :filter-option="(input: string, option: any) => option.label?.toLowerCase().includes(input.toLowerCase())"
                       :loading="loadingCompanies"
@@ -67,40 +67,19 @@
                       </a-select-option>
                     </a-select>
                   </a-col>
-                  <a-col :span="8">
-                    <a-select
-                      v-model:value="form.store_id"
-                      placeholder="选择店铺"
-                      :disabled="!form.company_id"
-                      allow-clear
-                      style="width:100%"
-                      @change="onStoreChange"
-                    >
-                      <a-select-option v-for="s in storeOptions" :key="s.id" :value="s.id">
-                        {{ s.store_name }}
-                        <span v-if="s.country" style="color:#9ca3af;font-size:11px;margin-left:4px">{{ s.country }}</span>
-                      </a-select-option>
-                    </a-select>
-                  </a-col>
-                  <a-col :span="8">
-                    <a-select
-                      placeholder="选择ASIN"
-                      :disabled="!form.store_id || !asinOptions.length"
-                      allow-clear
-                      style="width:100%"
-                      @change="onAsinSelect"
-                    >
-                      <a-select-option v-for="a in asinOptions" :key="a.id" :value="a.id">
-                        <div style="display:flex;align-items:center;gap:6px">
-                          <span style="font-family:monospace;font-weight:700">{{ a.asin }}</span>
-                          <span v-if="a.brand_name" style="color:#2563eb;font-size:11px">{{ a.brand_name }}</span>
-                        </div>
-                      </a-select-option>
-                    </a-select>
+                  <a-col :span="14">
+                    <div v-if="form.company_id" class="client-lib-hint client-lib-hint--loaded">
+                      <span>已加载 {{ storeSuggestions.length }} 家历史店铺</span>
+                      <span v-if="allAsinRecords.length"> · {{ allAsinRecords.length }} 个历史ASIN</span>
+                      <span style="color:#9ca3af">，下方字段填写时提供建议（可不选择）</span>
+                    </div>
+                    <div v-else class="client-lib-hint">
+                      选择客户后，店铺/ASIN/品牌字段将根据历史数据给出建议
+                    </div>
                   </a-col>
                 </a-row>
               </div>
-              <a-divider style="margin:10px 0"><span style="font-size:11px;color:#9ca3af">或手动填写</span></a-divider>
+              <a-divider style="margin:10px 0"><span style="font-size:11px;color:#9ca3af">填写客户信息</span></a-divider>
               <a-row :gutter="16">
                 <a-col :span="8">
                   <a-form-item label="客户名称" style="margin-bottom:0">
@@ -139,17 +118,42 @@
             <a-row :gutter="16">
               <a-col :span="12">
                 <a-form-item label="ASIN" name="asin">
-                  <a-input v-model:value="form.asin" placeholder="请输入ASIN" />
+                  <a-auto-complete
+                    v-model:value="form.asin"
+                    :options="asinSuggestions"
+                    placeholder="请输入ASIN"
+                    @select="onAsinSuggestionSelect"
+                    style="width:100%"
+                  >
+                    <template #option="item">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span style="font-family:monospace;font-weight:700">{{ item.value }}</span>
+                        <span v-if="item.brand_name" style="color:#2563eb;font-size:11px">{{ item.brand_name }}</span>
+                      </div>
+                    </template>
+                  </a-auto-complete>
                 </a-form-item>
               </a-col>
               <a-col :span="12">
                 <a-form-item label="店铺名称" name="store_name">
-                  <a-input v-model:value="form.store_name" placeholder="请输入店铺名称" />
+                  <a-auto-complete
+                    v-model:value="form.store_name"
+                    :options="storeSuggestions"
+                    placeholder="请输入店铺名称"
+                    @select="onStoreSuggestionSelect"
+                    @change="onStoreNameChange"
+                    style="width:100%"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
                 <a-form-item label="品牌名称" name="brand_name">
-                  <a-input v-model:value="form.brand_name" placeholder="请输入品牌名称" />
+                  <a-auto-complete
+                    v-model:value="form.brand_name"
+                    :options="brandSuggestions"
+                    placeholder="请输入品牌名称"
+                    style="width:100%"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
@@ -749,9 +753,30 @@ const currentOrderNumber = ref('')
 const customerLocked = ref(false)
 
 const companyOptions = ref<any[]>([])
-const storeOptions = ref<any[]>([])
-const asinOptions = ref<any[]>([])
+const storeRecords = ref<any[]>([])
+const allAsinRecords = ref<any[]>([])
+const currentStoreAsins = ref<any[]>([])
 const loadingCompanies = ref(false)
+
+const storeSuggestions = computed(() =>
+  storeRecords.value.map(s => ({ value: s.store_name, storeId: s.id, country: s.country }))
+)
+
+const asinSuggestions = computed(() =>
+  currentStoreAsins.value.map(a => ({
+    value: a.asin,
+    brand_name: a.brand_name || '',
+    product_name: a.product_name || '',
+    product_image: a.product_image || '',
+    product_price: a.product_price || 0,
+  }))
+)
+
+const brandSuggestions = computed(() => {
+  const brands = new Set<string>()
+  allAsinRecords.value.forEach(a => { if (a.brand_name) brands.add(a.brand_name) })
+  return [...brands].map(b => ({ value: b }))
+})
 
 async function loadCompanies() {
   loadingCompanies.value = true
@@ -772,8 +797,9 @@ async function onCompanyChange(companyId: string) {
   form.product_name = ''
   form.product_image = ''
   form.product_price = 0
-  storeOptions.value = []
-  asinOptions.value = []
+  storeRecords.value = []
+  allAsinRecords.value = []
+  currentStoreAsins.value = []
 
   if (!companyId) {
     form.customer_name = ''
@@ -786,51 +812,93 @@ async function onCompanyChange(companyId: string) {
     form.customer_id_str = company.org_id || ''
   }
 
-  const { data } = await supabase
+  const { data: storeData } = await supabase
     .from('client_stores')
     .select('id, store_name, country, platform')
     .eq('company_id', companyId)
-    .eq('status', '活跃')
     .order('store_name')
-  storeOptions.value = data || []
+  storeRecords.value = storeData || []
+
+  if (storeRecords.value.length) {
+    const storeIds = storeRecords.value.map(s => s.id)
+    const { data: asinData } = await supabase
+      .from('client_store_asins')
+      .select('id, store_id, asin, brand_name, product_name, product_image, product_price')
+      .in('store_id', storeIds)
+      .order('asin')
+    allAsinRecords.value = asinData || []
+  }
 }
 
-async function onStoreChange(storeId: string) {
-  form.asin = ''
-  form.brand_name = ''
-  form.product_name = ''
-  form.product_image = ''
-  form.product_price = 0
-  asinOptions.value = []
-
-  if (!storeId) {
-    form.store_name = ''
-    return
+function onStoreSuggestionSelect(value: string, option: any) {
+  form.store_name = value
+  if (option.country) form.country = option.country
+  if (option.storeId) {
+    form.store_id = option.storeId
+    currentStoreAsins.value = allAsinRecords.value.filter(a => a.store_id === option.storeId)
   }
-  const store = storeOptions.value.find(s => s.id === storeId)
-  if (store) {
-    form.store_name = store.store_name
-    form.country = store.country || form.country
-  }
-
-  const { data } = await supabase
-    .from('client_store_asins')
-    .select('*')
-    .eq('store_id', storeId)
-    .eq('is_active', true)
-    .order('asin')
-  asinOptions.value = data || []
 }
 
-function onAsinSelect(asinId: string) {
-  const asinItem = asinOptions.value.find(a => a.id === asinId)
-  if (!asinItem) return
-  form.asin = asinItem.asin
-  form.brand_name = asinItem.brand_name || ''
-  form.product_name = asinItem.product_name || ''
-  form.product_image = asinItem.product_image || ''
-  form.product_price = asinItem.product_price || 0
-  recalc()
+function onStoreNameChange(value: string) {
+  const matched = storeRecords.value.find(s => s.store_name.toLowerCase() === value.toLowerCase())
+  if (matched) {
+    form.store_id = matched.id
+    currentStoreAsins.value = allAsinRecords.value.filter(a => a.store_id === matched.id)
+  } else {
+    form.store_id = ''
+    currentStoreAsins.value = allAsinRecords.value
+  }
+}
+
+function onAsinSuggestionSelect(value: string, option: any) {
+  form.asin = value
+  if (option.brand_name) form.brand_name = option.brand_name
+  if (option.product_name) form.product_name = option.product_name
+  if (option.product_image) form.product_image = option.product_image
+  if (option.product_price) { form.product_price = option.product_price; recalc() }
+}
+
+async function syncToClientLibrary() {
+  if (!form.company_id || !form.store_name?.trim() || !form.asin?.trim()) return
+  try {
+    const storePayload = {
+      company_id: form.company_id,
+      store_name: form.store_name.trim(),
+      platform: '亚马逊',
+      country: form.country || '美国',
+      status: '活跃',
+    }
+    const { data: storeResult } = await supabase
+      .from('client_stores')
+      .upsert([storePayload], { onConflict: 'company_id,store_name' })
+      .select('id')
+      .maybeSingle()
+
+    let storeId = storeResult?.id
+    if (!storeId) {
+      const { data: existing } = await supabase
+        .from('client_stores')
+        .select('id')
+        .eq('company_id', form.company_id)
+        .eq('store_name', form.store_name.trim())
+        .maybeSingle()
+      storeId = existing?.id
+    }
+    if (!storeId) return
+
+    await supabase.from('client_store_asins').upsert([{
+      store_id: storeId,
+      company_id: form.company_id,
+      asin: form.asin.trim().toUpperCase(),
+      brand_name: form.brand_name?.trim() || '',
+      product_name: form.product_name?.trim() || null,
+      product_image: form.product_image?.trim() || null,
+      product_price: form.product_price || null,
+      is_active: true,
+    }], { onConflict: 'store_id,asin' })
+  } catch {
+    // 静默处理，不影响主流程
+  }
 }
 
 const countries = ['美国', '德国', '英国', '加拿大']
@@ -1373,6 +1441,7 @@ async function doSubmit() {
       )
     }
 
+    await syncToClientLibrary()
     message.success(`订单 ${orderNumber} 创建成功！`)
     if (customerLocked.value) {
       const savedCustomer = {
@@ -1419,6 +1488,9 @@ function resetForm() {
   scheduleEntries.value = []
   selectedDates.value = []
   editingTypeDetails.value = []
+  currentStoreAsins.value = []
+  storeRecords.value = []
+  allAsinRecords.value = []
   quickSchedule.startDate = null
   quickSchedule.days = 1
   quickSchedule.dailyQty = 1
@@ -1434,8 +1506,8 @@ function continueNextAsin(savedCustomer: {
   company_id: string
   store_id: string
 }) {
-  const savedStoreOptions = [...storeOptions.value]
-  const savedAsinOptions = [...asinOptions.value]
+  const savedStoreRecords = [...storeRecords.value]
+  const savedAllAsinRecords = [...allAsinRecords.value]
   Object.assign(form, defaultForm())
   priceNoReview.value = 25
   priceText.value = 88
@@ -1446,6 +1518,7 @@ function continueNextAsin(savedCustomer: {
   scheduleEntries.value = []
   selectedDates.value = []
   editingTypeDetails.value = []
+  currentStoreAsins.value = []
   quickSchedule.startDate = null
   quickSchedule.days = 1
   quickSchedule.dailyQty = 1
@@ -1457,8 +1530,8 @@ function continueNextAsin(savedCustomer: {
   form.sales_person = savedCustomer.sales_person
   form.company_id = savedCustomer.company_id
   form.store_id = savedCustomer.store_id
-  storeOptions.value = savedStoreOptions
-  asinOptions.value = savedAsinOptions
+  storeRecords.value = savedStoreRecords
+  allAsinRecords.value = savedAllAsinRecords
   customerLocked.value = true
   currentOrderNumber.value = generateOrderNumber()
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -2278,6 +2351,15 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+.client-lib-hint {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 4px 0;
+  line-height: 1.5;
+}
+.client-lib-hint--loaded {
+  color: #374151;
 }
 
 /* ASIN 选中预览条 */

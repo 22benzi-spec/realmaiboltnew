@@ -5,11 +5,16 @@
         <span class="section-title" style="margin-bottom:0;border:none;padding:0">店铺 & ASIN</span>
         <span class="store-count-badge">{{ stores.length }} 家店铺</span>
       </div>
-      <a-button type="primary" size="small" @click="openAddStore"><PlusOutlined /> 添加店铺</a-button>
+      <a-button size="small" @click="openAddStore"><PlusOutlined /> 手动添加</a-button>
+    </div>
+
+    <div class="auto-sync-tip">
+      <span class="auto-sync-icon">&#x21BB;</span>
+      商务每次下单后，新店铺和ASIN会自动同步到此处。也可点击右上角手动添加。
     </div>
 
     <div v-if="loading" style="text-align:center;padding:16px"><a-spin /></div>
-    <div v-else-if="!stores.length" class="empty-val" style="margin-top:8px">暂无店铺，点击上方添加</div>
+    <div v-else-if="!stores.length" class="empty-val" style="margin-top:8px">暂无数据，下单时选择该客户后将自动填充</div>
 
     <div v-else class="store-list">
       <div v-for="store in stores" :key="store.id" class="store-card">
@@ -433,6 +438,23 @@ defineExpose({ loadStores })
 
 <style scoped>
 .store-manager { padding: 0; }
+
+.auto-sync-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 7px;
+  font-size: 12px;
+  color: #166534;
+  margin-bottom: 8px;
+}
+.auto-sync-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
 
 .store-count-badge {
   font-size: 11px; padding: 1px 8px;
