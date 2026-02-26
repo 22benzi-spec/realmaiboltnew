@@ -274,6 +274,70 @@
               </div>
             </div>
 
+            <!-- 关键词模板区域 -->
+            <div class="kw-groups-section">
+              <div class="kw-groups-header">
+                <span class="kw-groups-title">关键词模板</span>
+                <span class="kw-groups-hint">预设多组关键词，排期时可按组一键填入各下单类型（每行支持关键词+链接）</span>
+                <a-button type="primary" ghost size="small" @click="addKwGroup" style="margin-left:auto">
+                  <PlusOutlined /> 新增关键词组
+                </a-button>
+              </div>
+
+              <div v-if="kwGroups.length === 0" class="kw-groups-empty">
+                暂无关键词组，点击「新增关键词组」添加
+              </div>
+
+              <div v-for="(group, gi) in kwGroups" :key="gi" class="kw-group-card">
+                <div class="kw-group-card-header">
+                  <a-input
+                    v-model:value="group.name"
+                    size="small"
+                    style="width:160px;font-weight:600"
+                    placeholder="组名（如：主关键词、长尾词）"
+                  />
+                  <div class="kw-group-actions">
+                    <a-button
+                      size="small"
+                      type="primary"
+                      ghost
+                      :disabled="editingTypeDetails.length === 0"
+                      @click="applyGroupToAll(gi)"
+                    >填入所有类型</a-button>
+                    <a-button size="small" danger type="text" @click="removeKwGroup(gi)">
+                      <DeleteOutlined />
+                    </a-button>
+                  </div>
+                </div>
+                <div class="kw-group-items">
+                  <div class="kw-group-col-labels">
+                    <span class="kw-col-label kw-col-kw">关键词</span>
+                    <span class="kw-col-label kw-col-link">操作链接（选填）</span>
+                  </div>
+                  <div v-for="(item, ii) in group.items" :key="ii" class="kw-group-item-row">
+                    <a-input
+                      v-model:value="item.keyword"
+                      size="small"
+                      placeholder="输入关键词"
+                      class="kw-col-kw"
+                    />
+                    <a-input
+                      v-model:value="item.link"
+                      size="small"
+                      placeholder="操作链接（选填）"
+                      class="kw-col-link"
+                    />
+                    <a-button type="text" danger size="small" @click="removeKwGroupItem(gi, ii)" style="flex-shrink:0">
+                      <DeleteOutlined />
+                    </a-button>
+                  </div>
+                  <a-button type="dashed" size="small" @click="addKwGroupItem(gi)" style="margin-top:4px">
+                    <PlusOutlined /> 添加一行
+                  </a-button>
+                </div>
+              </div>
+            </div>
+
             <div class="schedule-layout">
               <div class="calendar-area">
                 <a-calendar
@@ -310,7 +374,7 @@
                       class="selected-date-chip"
                       :class="{ 'has-schedule': scheduleEntries.some(e=>e.date===d) }"
                     >{{ d }}</span>
-                    <a-button type="text" size="small" @click="clearDateSelection" style="color:#9ca3af;font-size:11px">清除</a-button>
+                    <a-button type="text" size="small" @click="clearDateSelection" style="color:#9ca3af;font-size:11px;margin-left:4px">清除选择</a-button>
                   </div>
                   <span v-else class="selected-date-value">点击日历选择，可多选</span>
                 </div>
@@ -331,7 +395,7 @@
                     >{{ ot.value }}</div>
                   </div>
 
-                  <!-- 每个类型的数量+关键词 -->
+                  <!-- 每个类型的数量+关键词/链接 -->
                   <div
                     v-for="(td, ti) in editingTypeDetails"
                     :key="td.type"
@@ -353,35 +417,51 @@
                     </div>
                     <div class="type-detail-keywords">
                       <div class="kw-quick-actions">
-                        <a-button
-                          v-if="keywords.filter(k=>k.trim()).length > 0"
-                          size="small"
-                          type="link"
-                          style="padding:0;font-size:11px"
-                          @click="fillFromMainKeywords(ti)"
-                        >填入主关键词</a-button>
+                        <template v-if="kwGroups.length > 0">
+                          <span style="font-size:11px;color:#6b7280;margin-right:2px">继承关键词组：</span>
+                          <a-button
+                            v-for="(grp, gi) in kwGroups"
+                            :key="gi"
+                            size="small"
+                            type="primary"
+                            ghost
+                            style="font-size:11px;height:22px;padding:0 8px"
+                            @click="fillFromGroup(ti, gi)"
+                          >{{ grp.name || `组${gi+1}` }}</a-button>
+                        </template>
                         <a-select
-                          v-if="scheduleEntries.length > 0"
+                          v-if="copyFromDateOptions(td.type).length > 0"
                           size="small"
                           placeholder="从已排期复制"
-                          style="width:120px;font-size:11px"
+                          style="width:130px;font-size:11px"
                           :options="copyFromDateOptions(td.type)"
                           @select="(val: string) => copyKeywordsFromDate(ti, val)"
                         />
                       </div>
-                      <div v-for="(_, ki) in td.keywords" :key="ki" class="keyword-row">
+                      <!-- 列标题 -->
+                      <div v-if="td.kwEntries && td.kwEntries.length > 0" class="kw-group-col-labels" style="margin-top:6px">
+                        <span class="kw-col-label kw-col-kw">关键词</span>
+                        <span class="kw-col-label kw-col-link">操作链接（选填）</span>
+                      </div>
+                      <div v-for="(entry, ei) in td.kwEntries" :key="ei" class="kw-group-item-row">
                         <a-input
-                          v-model:value="td.keywords[ki]"
-                          placeholder="关键词（选填）"
+                          v-model:value="entry.keyword"
+                          placeholder="输入关键词"
                           size="small"
-                          style="flex:1"
+                          class="kw-col-kw"
                         />
-                        <a-button type="text" danger size="small" @click="removeTypeKeyword(ti, ki)">
+                        <a-input
+                          v-model:value="entry.link"
+                          placeholder="操作链接（选填）"
+                          size="small"
+                          class="kw-col-link"
+                        />
+                        <a-button type="text" danger size="small" @click="removeTypeKwEntry(ti, ei)" style="flex-shrink:0">
                           <DeleteOutlined />
                         </a-button>
                       </div>
-                      <a-button type="dashed" size="small" @click="addTypeKeyword(ti)" style="margin-top:4px;width:100%">
-                        <PlusOutlined /> 添加关键词
+                      <a-button type="dashed" size="small" @click="addTypeKwEntry(ti)" style="margin-top:4px;width:100%">
+                        <PlusOutlined /> 添加关键词/链接行
                       </a-button>
                     </div>
                   </div>
@@ -403,7 +483,15 @@
                       danger
                       v-if="selectedDates.some(d => scheduleEntries.some(e=>e.date===d))"
                       @click="removeScheduleEntries"
-                    >删除所选</a-button>
+                    >删除所选日期排期</a-button>
+                    <a-button @click="clearDateSelection">取消选择</a-button>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div class="no-date-placeholder">
+                    <span>请在左侧日历点击选择日期</span>
+                    <span v-if="scheduleEntries.length > 0" style="font-size:12px;color:#9ca3af;margin-top:4px">点击已排期日期可查看/修改该日配置</span>
                   </div>
                 </template>
               </div>
@@ -517,6 +605,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 const formRef = ref()
 const submitting = ref(false)
 const keywords = ref<string[]>([''])
+const kwGroups = ref<KwGroup[]>([])
 const currentOrderNumber = ref('')
 
 const countries = ['美国', '德国', '英国', '加拿大']
@@ -541,10 +630,21 @@ function orderTypeColor(t: string): string {
   return TYPE_COLORS[t] || '#6b7280'
 }
 
+interface KwEntry {
+  keyword: string
+  link: string
+}
+
+interface KwGroup {
+  name: string
+  items: KwEntry[]
+}
+
 interface TypeDetail {
   type: string
   qty: number
   keywords: string[]
+  kwEntries: KwEntry[]
 }
 
 interface ScheduleEntry {
@@ -568,28 +668,58 @@ const editingQuantityTotal = computed(() =>
 function toggleManualType(val: string) {
   const idx = editingTypeDetails.value.findIndex(d => d.type === val)
   if (idx === -1) {
-    editingTypeDetails.value.push({ type: val, qty: 1, keywords: [''] })
+    editingTypeDetails.value.push({ type: val, qty: 1, keywords: [], kwEntries: [{ keyword: '', link: '' }] })
   } else {
     editingTypeDetails.value.splice(idx, 1)
   }
 }
 
-function addTypeKeyword(typeIdx: number) {
-  editingTypeDetails.value[typeIdx].keywords.push('')
-}
-function removeTypeKeyword(typeIdx: number, kwIdx: number) {
-  editingTypeDetails.value[typeIdx].keywords.splice(kwIdx, 1)
+function addKwGroup() {
+  kwGroups.value.push({ name: `关键词组 ${kwGroups.value.length + 1}`, items: [{ keyword: '', link: '' }] })
 }
 
-function fillFromMainKeywords(typeIdx: number) {
-  const kws = keywords.value.filter(k => k.trim())
-  if (!kws.length) return
-  editingTypeDetails.value[typeIdx].keywords = [...kws]
+function removeKwGroup(gi: number) {
+  kwGroups.value.splice(gi, 1)
+}
+
+function addKwGroupItem(gi: number) {
+  kwGroups.value[gi].items.push({ keyword: '', link: '' })
+}
+
+function removeKwGroupItem(gi: number, ii: number) {
+  kwGroups.value[gi].items.splice(ii, 1)
+}
+
+function fillFromGroup(typeIdx: number, gi: number) {
+  const group = kwGroups.value[gi]
+  const entries = group.items.filter(it => it.keyword.trim() || it.link.trim())
+  if (!entries.length) return
+  editingTypeDetails.value[typeIdx].kwEntries = entries.map(it => ({ keyword: it.keyword, link: it.link }))
+  editingTypeDetails.value[typeIdx].keywords = entries.map(it => it.keyword).filter(k => k.trim())
+}
+
+function applyGroupToAll(gi: number) {
+  const group = kwGroups.value[gi]
+  const entries = group.items.filter(it => it.keyword.trim() || it.link.trim())
+  if (!entries.length) return
+  editingTypeDetails.value.forEach(td => {
+    td.kwEntries = entries.map(it => ({ keyword: it.keyword, link: it.link }))
+    td.keywords = entries.map(it => it.keyword).filter(k => k.trim())
+  })
+  message.success(`"${group.name}" 已填入所有类型`)
+}
+
+function addTypeKwEntry(typeIdx: number) {
+  editingTypeDetails.value[typeIdx].kwEntries.push({ keyword: '', link: '' })
+}
+
+function removeTypeKwEntry(typeIdx: number, ei: number) {
+  editingTypeDetails.value[typeIdx].kwEntries.splice(ei, 1)
 }
 
 function copyFromDateOptions(typeName: string) {
   return scheduleEntries.value
-    .filter(e => e.typeDetails?.some(td => td.type === typeName && td.keywords.some(k => k.trim())))
+    .filter(e => e.typeDetails?.some(td => td.type === typeName && (td.kwEntries?.some(e => e.keyword.trim() || e.link.trim()) || td.keywords.some(k => k.trim()))))
     .map(e => ({ label: e.date, value: e.date }))
 }
 
@@ -597,8 +727,13 @@ function copyKeywordsFromDate(typeIdx: number, dateStr: string) {
   const entry = scheduleEntries.value.find(e => e.date === dateStr)
   const td = entry?.typeDetails?.find(d => d.type === editingTypeDetails.value[typeIdx].type)
   if (td) {
-    const kws = td.keywords.filter(k => k.trim())
-    if (kws.length) editingTypeDetails.value[typeIdx].keywords = [...kws]
+    if (td.kwEntries?.length) {
+      editingTypeDetails.value[typeIdx].kwEntries = td.kwEntries.map(e => ({ ...e }))
+      editingTypeDetails.value[typeIdx].keywords = td.kwEntries.map(e => e.keyword).filter(k => k.trim())
+    } else if (td.keywords?.length) {
+      editingTypeDetails.value[typeIdx].kwEntries = td.keywords.map(k => ({ keyword: k, link: '' }))
+      editingTypeDetails.value[typeIdx].keywords = [...td.keywords]
+    }
   }
 }
 
@@ -656,6 +791,7 @@ function applyQuickSchedule() {
           type: t,
           qty: quickSchedule.dailyQty,
           keywords: [...cleanKws],
+          kwEntries: cleanKws.map(k => ({ keyword: k, link: '' })),
         })),
       }
       if (idx >= 0) scheduleEntries.value[idx] = entry
@@ -710,6 +846,17 @@ function getScheduleForDate(d: Dayjs): ScheduleEntry | undefined {
   return scheduleEntries.value.find(e => e.date === d.format('YYYY-MM-DD'))
 }
 
+function loadTypeDetailsFromEntry(entry: ScheduleEntry) {
+  return entry.typeDetails.map(td => ({
+    type: td.type,
+    qty: td.qty,
+    keywords: [...(td.keywords || [])],
+    kwEntries: td.kwEntries?.length
+      ? td.kwEntries.map(e => ({ ...e }))
+      : (td.keywords || []).map(k => ({ keyword: k, link: '' })),
+  }))
+}
+
 function handleDateSelect(d: Dayjs) {
   const dateStr = d.format('YYYY-MM-DD')
   calendarValue.value = d
@@ -723,18 +870,14 @@ function handleDateSelect(d: Dayjs) {
       const lastDate = selectedDates.value[selectedDates.value.length - 1]
       const lastExisting = scheduleEntries.value.find(e => e.date === lastDate)
       if (lastExisting && lastExisting.typeDetails?.length) {
-        editingTypeDetails.value = lastExisting.typeDetails.map(td => ({
-          type: td.type, qty: td.qty, keywords: [...td.keywords],
-        }))
+        editingTypeDetails.value = loadTypeDetailsFromEntry(lastExisting)
       }
     }
   } else {
     selectedDates.value.push(dateStr)
     const existing = scheduleEntries.value.find(e => e.date === dateStr)
     if (existing && existing.typeDetails?.length) {
-      editingTypeDetails.value = existing.typeDetails.map(td => ({
-        type: td.type, qty: td.qty, keywords: [...td.keywords],
-      }))
+      editingTypeDetails.value = loadTypeDetailsFromEntry(existing)
     } else if (selectedDates.value.length === 1) {
       editingTypeDetails.value = []
     }
@@ -772,7 +915,8 @@ function saveScheduleEntry() {
     const details: TypeDetail[] = editingTypeDetails.value.map(td => ({
       type: td.type,
       qty: td.qty,
-      keywords: td.keywords.filter(k => k.trim()),
+      keywords: (td.kwEntries || []).map(e => e.keyword).filter(k => k.trim()),
+      kwEntries: (td.kwEntries || []).filter(e => e.keyword.trim() || e.link.trim()).map(e => ({ ...e })),
     }))
     selectedDates.value.forEach(dateStr => {
       const idx = scheduleEntries.value.findIndex(e => e.date === dateStr)
@@ -819,10 +963,19 @@ function removeScheduleEntries() {
     message.warning('所选日期没有排期数据')
     return
   }
-  scheduleEntries.value = scheduleEntries.value.filter(e => !toRemove.includes(e.date))
-  message.success(`已删除 ${toRemove.length} 天排期`)
-  selectedDates.value = []
-  editingTypeDetails.value = []
+  Modal.confirm({
+    title: `删除排期确认`,
+    content: `确定删除 ${toRemove.length} 天的排期数据？此操作不可恢复。`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => {
+      scheduleEntries.value = scheduleEntries.value.filter(e => !toRemove.includes(e.date))
+      message.success(`已删除 ${toRemove.length} 天排期`)
+      selectedDates.value = []
+      editingTypeDetails.value = []
+    },
+  })
 }
 
 
@@ -1488,9 +1641,97 @@ onMounted(() => {
 .kw-quick-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 6px;
   flex-wrap: wrap;
+}
+.kw-groups-section {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.kw-groups-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.kw-groups-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0369a1;
+  white-space: nowrap;
+}
+.kw-groups-hint {
+  font-size: 11px;
+  color: #0284c7;
+  opacity: 0.8;
+}
+.kw-groups-empty {
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: center;
+  padding: 8px 0;
+}
+.kw-group-card {
+  background: #fff;
+  border: 1px solid #e0f2fe;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.kw-group-card:last-child {
+  margin-bottom: 0;
+}
+.kw-group-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.kw-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kw-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kw-group-col-labels {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 2px;
+  padding-right: 32px;
+}
+.kw-col-label {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+.kw-col-kw {
+  flex: 1;
+}
+.kw-col-link {
+  flex: 1.2;
+}
+.kw-group-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.no-date-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: #9ca3af;
+  font-size: 13px;
+  gap: 4px;
 }
 .type-total-row {
   display: flex;
