@@ -113,8 +113,20 @@
                   <span class="sub-no">{{ sub.sub_order_number }}</span>
                 </template>
                 <template v-if="column.key === 'sub_keyword'">
-                  <span v-if="sub.keyword" class="keyword-tag">{{ sub.keyword }}</span>
-                  <span v-else class="text-gray">—</span>
+                  <div class="kw-cell" @click="openKwEdit(sub)">
+                    <template v-if="sub.keyword_type === 'link'">
+                      <a-tag color="cyan" size="small" style="cursor:pointer">
+                        <LinkOutlined /> 链接
+                      </a-tag>
+                    </template>
+                    <template v-else-if="sub.keyword">
+                      <span class="keyword-tag" style="cursor:pointer">{{ sub.keyword }}</span>
+                    </template>
+                    <template v-else>
+                      <span class="text-gray kw-empty" style="cursor:pointer">点击设置</span>
+                    </template>
+                    <EditOutlined class="kw-edit-icon" />
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_variant'">
                   <span v-if="sub.variant_info" class="variant-text">{{ sub.variant_info }}</span>
@@ -249,7 +261,14 @@
     >
       <div class="assign-modal-body">
         <div v-if="currentRecord" class="assign-sub-info">
-          <span class="assign-info-item">关键词：<strong>{{ currentRecord.keyword || '—' }}</strong></span>
+          <span class="assign-info-item">
+            <template v-if="currentRecord.keyword_type === 'link'">
+              操作链接：<a-tag color="cyan" size="small"><LinkOutlined /> 已设置链接</a-tag>
+            </template>
+            <template v-else>
+              关键词：<strong>{{ currentRecord.keyword || '—' }}</strong>
+            </template>
+          </span>
           <span class="assign-info-item">排期：<strong>{{ currentRecord.scheduled_date || '—' }}</strong></span>
           <span class="assign-info-item">当前业务员：<strong>{{ currentRecord.staff_name || '未分配' }}</strong></span>
           <span v-if="currentRecord.buyer_name" class="assign-info-item">当前买手：<strong>{{ currentRecord.buyer_name }}</strong></span>
@@ -370,13 +389,47 @@
         </a-form>
       </div>
     </a-modal>
+
+    <!-- 关键词/链接编辑弹窗 -->
+    <a-modal
+      v-model:open="kwEditOpen"
+      title="修改关键词 / 链接"
+      @ok="saveKwEdit"
+      :confirm-loading="kwEditSaving"
+      ok-text="保存"
+      cancel-text="取消"
+      width="460px"
+    >
+      <div class="kw-edit-modal-body">
+        <div class="kw-edit-sub-no" v-if="kwEditRecord">子单号：{{ kwEditRecord.sub_order_number }}</div>
+        <div class="kw-edit-mode-row">
+          <span class="kw-edit-label">类型：</span>
+          <div class="kw-mode-toggle">
+            <span :class="['kw-mode-btn', kwEditMode === 'keyword' ? 'active' : '']" @click="kwEditMode = 'keyword'">关键词搜索</span>
+            <span :class="['kw-mode-btn', kwEditMode === 'link' ? 'active kw-mode-link' : '']" @click="kwEditMode = 'link'">操作链接</span>
+          </div>
+        </div>
+        <div class="kw-edit-input-row">
+          <span class="kw-edit-label">{{ kwEditMode === 'keyword' ? '关键词：' : '链接：' }}</span>
+          <a-input
+            v-model:value="kwEditValue"
+            :placeholder="kwEditMode === 'keyword' ? '输入搜索关键词' : '粘贴操作链接 (https://...)'"
+            allow-clear
+            style="flex:1"
+          />
+        </div>
+        <div v-if="kwEditMode === 'link' && kwEditValue" class="kw-link-preview">
+          <a :href="kwEditValue" target="_blank" rel="noopener noreferrer">预览链接</a>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { UserAddOutlined, ReloadOutlined, RightOutlined, SearchOutlined, CheckCircleOutlined } from '@ant-design/icons-vue'
+import { UserAddOutlined, ReloadOutlined, RightOutlined, SearchOutlined, CheckCircleOutlined, EditOutlined, LinkOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -404,6 +457,12 @@ const selectedBuyerId = ref('')
 const selectedBuyerName = ref('')
 const selectedBuyerNumber = ref('')
 let buyerSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+const kwEditOpen = ref(false)
+const kwEditRecord = ref<any>(null)
+const kwEditMode = ref<'keyword' | 'link'>('keyword')
+const kwEditValue = ref('')
+const kwEditSaving = ref(false)
 
 const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留评', '已完成', '已取消']
 const countries = ['美国', '德国', '英国', '加拿大']
@@ -547,6 +606,36 @@ function onBuyerSearch() {
       buyerSearchLoading.value = false
     }
   }, 300)
+}
+
+function openKwEdit(sub: any) {
+  kwEditRecord.value = sub
+  kwEditMode.value = (sub.keyword_type === 'link' ? 'link' : 'keyword') as 'keyword' | 'link'
+  kwEditValue.value = sub.keyword_type === 'link' ? (sub.search_link || '') : (sub.keyword || '')
+  kwEditOpen.value = true
+}
+
+async function saveKwEdit() {
+  if (!kwEditRecord.value) return
+  kwEditSaving.value = true
+  try {
+    const updates: Record<string, any> = {
+      keyword_type: kwEditMode.value,
+      keyword: kwEditMode.value === 'keyword' ? kwEditValue.value.trim() : '',
+      search_link: kwEditMode.value === 'link' ? kwEditValue.value.trim() : '',
+    }
+    const { error } = await supabase.from('sub_orders').update(updates).eq('id', kwEditRecord.value.id)
+    if (error) throw error
+    Object.assign(kwEditRecord.value, updates)
+    const sub = subOrders.value.find(s => s.id === kwEditRecord.value.id)
+    if (sub) Object.assign(sub, updates)
+    message.success('关键词/链接已更新')
+    kwEditOpen.value = false
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    kwEditSaving.value = false
+  }
 }
 
 function openSingleAssign(record: any) {
@@ -843,6 +932,53 @@ onMounted(() => { load(); loadStaff() })
   white-space: nowrap;
 }
 .variant-text { font-size: 11px; color: #6b7280; }
+.kw-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.kw-cell:hover .kw-edit-icon { opacity: 1; }
+.kw-edit-icon {
+  font-size: 11px;
+  color: #9ca3af;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.kw-empty { font-size: 11px; }
+.kw-mode-toggle {
+  display: flex;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.kw-mode-btn {
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #6b7280;
+  background: #f9fafb;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+.kw-mode-btn:first-child { border-right: 1px solid #d1d5db; }
+.kw-mode-btn.active { background: #2563eb; color: #fff; }
+.kw-mode-btn.active.kw-mode-link { background: #0891b2; }
+.kw-edit-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0;
+}
+.kw-edit-sub-no { font-size: 12px; color: #9ca3af; font-family: 'Courier New', monospace; }
+.kw-edit-mode-row, .kw-edit-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kw-edit-label { font-size: 13px; color: #374151; white-space: nowrap; min-width: 52px; }
+.kw-link-preview { font-size: 12px; color: #0891b2; padding-left: 62px; }
 .date-normal { font-size: 12px; color: #374151; }
 .date-overdue { font-size: 12px; color: #dc2626; font-weight: 600; }
 .price-main { font-size: 11px; font-weight: 600; color: #16a34a; }

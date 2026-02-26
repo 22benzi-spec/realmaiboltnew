@@ -1117,23 +1117,27 @@ async function generateSubOrders(record: any) {
 
     const { data: schedules } = await supabase
       .from('order_schedules')
-      .select('schedule_date, quantity, keywords')
+      .select('schedule_date, quantity, keywords, kw_entries')
       .eq('order_id', record.id)
       .order('schedule_date', { ascending: true })
 
-    const scheduleSlots: Array<{ date: string; keyword: string }> = []
+    interface KwEntrySlot { mode: 'keyword' | 'link'; value: string }
+    const scheduleSlots: Array<{ date: string; kwEntry: KwEntrySlot | null }> = []
     for (const s of (schedules || [])) {
-      const kws: string[] = (s.keywords || []).filter((k: string) => k.trim())
+      const entries: KwEntrySlot[] = Array.isArray(s.kw_entries) && s.kw_entries.length > 0
+        ? (s.kw_entries as KwEntrySlot[]).filter(e => e.value?.trim())
+        : (s.keywords || []).filter((k: string) => k.trim()).map((k: string) => ({ mode: 'keyword' as const, value: k }))
       for (let i = 0; i < (s.quantity || 1); i++) {
         scheduleSlots.push({
           date: s.schedule_date,
-          keyword: kws[i % kws.length] || kws[0] || '',
+          kwEntry: entries.length > 0 ? entries[i % entries.length] : null,
         })
       }
     }
 
     const rows = Array.from({ length: toCreate }, (_, i) => {
       const slot = scheduleSlots[existingTotal + i]
+      const kwEntry = slot?.kwEntry
       return {
         order_id: record.id,
         asin: record.asin,
@@ -1155,7 +1159,9 @@ async function generateSubOrders(record: any) {
         customer_id_str: record.customer_id_str,
         sales_person: record.sales_person,
         scheduled_date: slot?.date || null,
-        keyword: slot?.keyword || '',
+        keyword: kwEntry?.mode === 'keyword' ? kwEntry.value : '',
+        keyword_type: kwEntry?.mode || 'keyword',
+        search_link: kwEntry?.mode === 'link' ? kwEntry.value : '',
         status: '待分配',
       }
     })

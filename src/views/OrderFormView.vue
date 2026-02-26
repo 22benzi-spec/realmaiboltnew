@@ -1141,13 +1141,17 @@ async function doSubmit() {
 
     if (data && scheduleEntries.value.length > 0) {
       await supabase.from('order_schedules').insert(
-        scheduleEntries.value.map(e => ({
-          order_id: data.id,
-          schedule_date: e.date,
-          quantity: e.quantity,
-          keywords: e.keywords,
-          order_types: e.order_types,
-        }))
+        scheduleEntries.value.map(e => {
+          const allKwEntries = (e.typeDetails || []).flatMap(td => td.kwEntries || []).filter(en => en.value.trim())
+          return {
+            order_id: data.id,
+            schedule_date: e.date,
+            quantity: e.quantity,
+            keywords: e.keywords,
+            order_types: e.order_types,
+            kw_entries: allKwEntries,
+          }
+        })
       )
     }
 

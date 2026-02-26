@@ -67,6 +67,8 @@ export interface SubOrder {
   product_price: number
   unit_price: number
   keyword?: string
+  keyword_type?: 'keyword' | 'link'
+  search_link?: string
   product_image?: string
   product_name?: string
   brand_name?: string

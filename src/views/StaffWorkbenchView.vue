@@ -101,7 +101,12 @@
                 </div>
 
                 <div class="card-header-right">
-                  <div v-if="task.keyword" class="keyword-badge">🔍 {{ task.keyword }}</div>
+                  <template v-if="task.keyword_type === 'link' && task.search_link">
+                    <a :href="task.search_link" target="_blank" rel="noopener noreferrer" class="keyword-badge keyword-link-badge" @click.stop>
+                      链接操作
+                    </a>
+                  </template>
+                  <div v-else-if="task.keyword" class="keyword-badge">{{ task.keyword }}</div>
                   <div v-if="task.scheduled_date" :class="['date-badge', isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-ok']">
                     截止 {{ task.scheduled_date }}
                   </div>
@@ -1512,6 +1517,8 @@ onMounted(() => { loadStaff(); loadBuyers() })
 .text-gray { color: #9ca3af; }
 .card-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-left: 12px; }
 .keyword-badge { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.keyword-link-badge { background: #ecfeff; color: #0891b2; border-color: #a5f3fc; text-decoration: none; cursor: pointer; display: inline-block; }
+.keyword-link-badge:hover { background: #cffafe; color: #0e7490; }
 .date-badge { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
 .date-ok { background: #f0fdf4; color: #16a34a; }
 .date-overdue { background: #fef2f2; color: #dc2626; }
