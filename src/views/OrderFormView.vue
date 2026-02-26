@@ -77,19 +77,25 @@
                 </a-form-item>
               </a-col>
               <a-col :span="12">
-                <a-form-item label="下单类型" name="order_type">
-                  <a-select v-model:value="form.order_type" @change="recalc">
-                    <a-select-option value="免评">免评</a-select-option>
-                    <a-select-option value="文字评">文字评</a-select-option>
-                    <a-select-option value="图片评">图片评</a-select-option>
-                    <a-select-option value="视频评">视频评</a-select-option>
-                    <a-select-option value="Feedback">Feedback</a-select-option>
-                  </a-select>
+                <a-form-item label="下单数量（总量）" name="order_quantity">
+                  <a-input-number v-model:value="form.order_quantity" :min="1" style="width:100%" @change="recalc" />
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
-                <a-form-item label="下单数量" name="order_quantity">
-                  <a-input-number v-model:value="form.order_quantity" :min="1" style="width:100%" @change="recalc" />
+              <a-col :span="24">
+                <a-form-item label="下单类型（可多选）" name="order_types">
+                  <div class="order-type-selector">
+                    <div
+                      v-for="ot in orderTypeOptions"
+                      :key="ot.value"
+                      :class="['order-type-chip', form.order_types.includes(ot.value) ? 'selected' : '']"
+                      @click="toggleOrderType(ot.value)"
+                    >
+                      <span class="chip-icon">{{ ot.icon }}</span>
+                      <span class="chip-label">{{ ot.value }}</span>
+                      <CheckOutlined v-if="form.order_types.includes(ot.value)" class="chip-check" />
+                    </div>
+                  </div>
+                  <div v-if="form.order_types.length === 0" class="order-type-hint">请至少选择一种下单类型</div>
                 </a-form-item>
               </a-col>
             </a-row>
@@ -98,26 +104,39 @@
           <div class="card-panel">
             <h3 class="section-title">佣金设置</h3>
             <div class="price-table">
-              <div class="price-table-row" v-for="item in priceTableItems" :key="item.label">
+              <div class="price-table-row" v-for="item in priceTableItems" :key="item.label"
+                :class="{ 'price-active': form.order_types.includes(item.type) }">
                 <span class="price-table-label">{{ item.label }}</span>
-                <span class="price-table-value">¥{{ item.value }}</span>
+                <a-input-number
+                  v-model:value="item.modelRef.value"
+                  :min="0"
+                  :step="1"
+                  size="small"
+                  style="width:90px"
+                  @change="recalc"
+                  prefix="¥"
+                />
               </div>
             </div>
 
             <div class="bill-summary">
-              <h4 class="bill-title">账单计算</h4>
+              <h4 class="bill-title">账单计算（多类型汇总）</h4>
               <div class="bill-formula">
-                <span class="formula-text">产品价格 ${{ form.product_price || 0 }} × 汇率 {{ form.exchange_rate }} × 数量 {{ form.order_quantity }} + {{ form.order_type }}佣金 ¥{{ currentTypePrice }} × 数量 {{ form.order_quantity }}</span>
+                <span class="formula-text">
+                  产品回款 = ${{ form.product_price || 0 }} × {{ form.exchange_rate }} × {{ form.order_quantity }} 单
+                </span>
               </div>
               <div class="bill-rows">
                 <div class="bill-row">
                   <span>产品回款小计</span>
                   <span>¥{{ productSubtotal.toFixed(2) }}</span>
                 </div>
-                <div class="bill-row">
-                  <span>佣金小计 ({{ form.order_type }})</span>
-                  <span>¥{{ commissionSubtotal.toFixed(2) }}</span>
-                </div>
+                <template v-for="ot in form.order_types" :key="ot">
+                  <div class="bill-row">
+                    <span>{{ ot }} 佣金（{{ form.order_quantity }} 单 × ¥{{ priceMap[ot] || 0 }}）</span>
+                    <span>¥{{ ((priceMap[ot] || 0) * form.order_quantity).toFixed(2) }}</span>
+                  </div>
+                </template>
                 <div class="bill-divider"></div>
                 <div class="bill-row total-row">
                   <span>合计总金额</span>
@@ -162,11 +181,16 @@
                   @select="handleDateSelect"
                 >
                   <template #dateCellRender="{ current }">
-                    <div
-                      v-if="getScheduleForDate(current)"
-                      class="cal-dot"
-                    >
-                      {{ getScheduleForDate(current)!.quantity }}单
+                    <div v-if="getScheduleForDate(current)" class="cal-cell">
+                      <span class="cal-qty">{{ getScheduleForDate(current)!.quantity }}单</span>
+                      <div class="cal-types">
+                        <span
+                          v-for="t in getScheduleForDate(current)!.order_types"
+                          :key="t"
+                          class="cal-type-dot"
+                          :style="{ background: orderTypeColor(t) }"
+                        ></span>
+                      </div>
                     </div>
                   </template>
                 </a-calendar>
@@ -185,6 +209,22 @@
                       placeholder="输入数量"
                     />
                   </a-form-item>
+
+                  <a-form-item label="当天下单类型">
+                    <div class="schedule-type-chips">
+                      <div
+                        v-for="ot in orderTypeOptions"
+                        :key="ot.value"
+                        :class="['sched-type-chip', editingEntry.order_types.includes(ot.value) ? 'selected' : '',
+                          !form.order_types.includes(ot.value) ? 'disabled' : '']"
+                        @click="toggleScheduleType(ot.value)"
+                      >
+                        {{ ot.value }}
+                      </div>
+                    </div>
+                    <div class="sched-type-hint">仅可选择任务已配置的类型（高亮可选）</div>
+                  </a-form-item>
+
                   <a-form-item label="当天使用关键词">
                     <div v-for="(_, i) in editingEntry.keywords" :key="i" class="keyword-row">
                       <a-input
@@ -222,6 +262,12 @@
                 >
                   <span class="schedule-tag-date">{{ entry.date }}</span>
                   <span class="schedule-tag-qty">{{ entry.quantity }}单</span>
+                  <span
+                    v-for="t in entry.order_types"
+                    :key="t"
+                    class="schedule-tag-type"
+                    :style="{ background: orderTypeColor(t) + '22', color: orderTypeColor(t), borderColor: orderTypeColor(t) + '44' }"
+                  >{{ t }}</span>
                   <span v-if="entry.keywords.filter(k=>k.trim()).length" class="schedule-tag-kw">
                     {{ entry.keywords.filter(k=>k.trim()).join('、') }}
                   </span>
@@ -267,6 +313,22 @@
             </a-button>
           </div>
 
+          <div class="card-panel order-type-summary-card">
+            <h3 class="section-title">下单类型汇总</h3>
+            <div v-if="form.order_types.length === 0" class="no-type-hint">请先选择下单类型</div>
+            <template v-else>
+              <div v-for="ot in form.order_types" :key="ot" class="type-summary-row">
+                <span class="type-dot" :style="{ background: orderTypeColor(ot) }"></span>
+                <span class="type-name">{{ ot }}</span>
+                <span class="type-price">佣金 ¥{{ priceMap[ot] || 0 }}/单</span>
+              </div>
+              <div class="type-summary-total">
+                <span>共 {{ form.order_types.length }} 种类型</span>
+                <span class="type-total-qty">{{ form.order_quantity }} 单总量</span>
+              </div>
+            </template>
+          </div>
+
           <div class="form-actions">
             <a-button @click="resetForm">重置</a-button>
             <a-button type="primary" html-type="submit" :loading="submitting">
@@ -282,7 +344,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, DeleteOutlined, CheckOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
 
@@ -293,18 +355,40 @@ const currentOrderNumber = ref('')
 
 const countries = ['美国', '德国', '英国', '加拿大']
 
+const orderTypeOptions = [
+  { value: '免评', icon: '○', color: '#6b7280' },
+  { value: '文字评', icon: '✍', color: '#2563eb' },
+  { value: '图片评', icon: '🖼', color: '#7c3aed' },
+  { value: '视频评', icon: '▶', color: '#dc2626' },
+  { value: 'Feedback', icon: '★', color: '#d97706' },
+]
+
+const TYPE_COLORS: Record<string, string> = {
+  '免评': '#6b7280',
+  '文字评': '#2563eb',
+  '图片评': '#9333ea',
+  '视频评': '#dc2626',
+  'Feedback': '#d97706',
+}
+
+function orderTypeColor(t: string): string {
+  return TYPE_COLORS[t] || '#6b7280'
+}
+
 interface ScheduleEntry {
   date: string
   quantity: number
   keywords: string[]
+  order_types: string[]
 }
 
 const scheduleEntries = ref<ScheduleEntry[]>([])
 const calendarValue = ref<Dayjs>(dayjs())
 const selectedDateStr = ref('')
-const editingEntry = reactive<{ quantity: number; keywords: string[] }>({
+const editingEntry = reactive<{ quantity: number; keywords: string[]; order_types: string[] }>({
   quantity: 1,
   keywords: [''],
+  order_types: [],
 })
 
 const scheduleEntriesSorted = computed(() =>
@@ -333,10 +417,19 @@ function handleDateSelect(d: Dayjs) {
   if (existing) {
     editingEntry.quantity = existing.quantity
     editingEntry.keywords = [...existing.keywords]
+    editingEntry.order_types = [...existing.order_types]
   } else {
     editingEntry.quantity = 1
     editingEntry.keywords = ['']
+    editingEntry.order_types = [...form.order_types]
   }
+}
+
+function toggleScheduleType(val: string) {
+  if (!form.order_types.includes(val)) return
+  const idx = editingEntry.order_types.indexOf(val)
+  if (idx === -1) editingEntry.order_types.push(val)
+  else editingEntry.order_types.splice(idx, 1)
 }
 
 function addScheduleKeyword() {
@@ -370,6 +463,7 @@ function saveScheduleEntry() {
     date: selectedDateStr.value,
     quantity: editingEntry.quantity,
     keywords: editingEntry.keywords.filter(k => k.trim()),
+    order_types: [...editingEntry.order_types],
   }
   if (idx >= 0) {
     scheduleEntries.value[idx] = entry
@@ -391,8 +485,19 @@ function removeScheduleEntry() {
     scheduleEntries.value.splice(idx, 1)
     editingEntry.quantity = 1
     editingEntry.keywords = ['']
+    editingEntry.order_types = []
     message.success('排期已删除')
   }
+}
+
+function toggleOrderType(val: string) {
+  const idx = form.order_types.indexOf(val)
+  if (idx === -1) {
+    form.order_types.push(val)
+  } else {
+    form.order_types.splice(idx, 1)
+  }
+  recalc()
 }
 
 function generateOrderNumber(): string {
@@ -407,6 +512,28 @@ function generateOrderNumber(): string {
   return `ORD${y}${m}${d}${h}${min}${s}${rand}`
 }
 
+const priceNoReview = ref(25)
+const priceText = ref(88)
+const priceImage = ref(100)
+const priceVideo = ref(150)
+const priceFeedback = ref(20)
+
+const priceTableItems = computed(() => [
+  { label: '免评佣金', type: '免评', modelRef: priceNoReview },
+  { label: '文字评佣金', type: '文字评', modelRef: priceText },
+  { label: '图片评佣金', type: '图片评', modelRef: priceImage },
+  { label: '视频评佣金', type: '视频评', modelRef: priceVideo },
+  { label: 'Feedback佣金', type: 'Feedback', modelRef: priceFeedback },
+])
+
+const priceMap = computed<Record<string, number>>(() => ({
+  '免评': priceNoReview.value,
+  '文字评': priceText.value,
+  '图片评': priceImage.value,
+  '视频评': priceVideo.value,
+  'Feedback': priceFeedback.value,
+}))
+
 const defaultForm = () => ({
   asin: '',
   store_name: '',
@@ -418,7 +545,8 @@ const defaultForm = () => ({
   exchange_rate: 7.25,
   review_type: '普通测评' as const,
   review_mode: '免评模式' as const,
-  order_type: '免评' as const,
+  order_type: '免评',
+  order_types: [] as string[],
   order_quantity: 1,
   price_no_review: 25,
   price_text: 88,
@@ -453,35 +581,23 @@ const rules = {
   order_quantity: [{ required: true, message: '请输入下单数量' }],
 }
 
-const priceMap = computed<Record<string, number>>(() => ({
-  '免评': form.price_no_review,
-  '文字评': form.price_text,
-  '图片评': form.price_image,
-  '视频评': form.price_video,
-  'Feedback': form.price_feedback,
-}))
-
-const currentTypePrice = computed(() => priceMap.value[form.order_type] || 0)
-
-const priceTableItems = computed(() => [
-  { label: '免评佣金', value: form.price_no_review },
-  { label: '文字评佣金', value: form.price_text },
-  { label: '图片评佣金', value: form.price_image },
-  { label: '视频评佣金', value: form.price_video },
-  { label: 'Feedback佣金', value: form.price_feedback },
-])
-
 const productSubtotal = computed(() =>
   (form.product_price || 0) * form.exchange_rate * form.order_quantity
 )
 
 const commissionSubtotal = computed(() =>
-  currentTypePrice.value * form.order_quantity
+  form.order_types.reduce((sum, t) => sum + (priceMap.value[t] || 0) * form.order_quantity, 0)
 )
 
 function recalc() {
+  form.price_no_review = priceNoReview.value
+  form.price_text = priceText.value
+  form.price_image = priceImage.value
+  form.price_video = priceVideo.value
+  form.price_feedback = priceFeedback.value
   form.product_cost_cny = (form.product_price || 0) * form.exchange_rate
-  form.commission_fee = currentTypePrice.value
+  const firstType = form.order_types[0] || '免评'
+  form.commission_fee = priceMap.value[firstType] || 0
   form.unit_price = form.product_cost_cny + form.commission_fee
   form.total_amount = productSubtotal.value + commissionSubtotal.value
 }
@@ -494,6 +610,10 @@ function removeKeyword(i: number) {
 }
 
 async function handleSubmit() {
+  if (form.order_types.length === 0) {
+    message.warning('请至少选择一种下单类型')
+    return
+  }
   if (scheduleEntries.value.length > 0 && scheduledTotal.value < form.order_quantity) {
     Modal.confirm({
       title: '排期数量不足',
@@ -512,11 +632,14 @@ async function doSubmit() {
   try {
     recalc()
     const orderNumber = currentOrderNumber.value
-    const { data, error } = await supabase.from('erp_orders').insert([{
+    const submitData = {
       ...form,
       order_number: orderNumber,
       total_orders: form.order_quantity,
-    }]).select().single()
+      order_type: form.order_types[0] || '',
+      order_types: form.order_types,
+    }
+    const { data, error } = await supabase.from('erp_orders').insert([submitData]).select().single()
 
     if (error) throw error
 
@@ -533,6 +656,7 @@ async function doSubmit() {
           schedule_date: e.date,
           quantity: e.quantity,
           keywords: e.keywords,
+          order_types: e.order_types,
         }))
       )
     }
@@ -549,11 +673,17 @@ async function doSubmit() {
 
 function resetForm() {
   Object.assign(form, defaultForm())
+  priceNoReview.value = 25
+  priceText.value = 88
+  priceImage.value = 100
+  priceVideo.value = 150
+  priceFeedback.value = 20
   keywords.value = ['']
   scheduleEntries.value = []
   selectedDateStr.value = ''
   editingEntry.quantity = 1
   editingEntry.keywords = ['']
+  editingEntry.order_types = []
   formRef.value?.resetFields()
 }
 
@@ -613,6 +743,78 @@ onMounted(() => {
   padding-bottom: 8px;
   border-bottom: 1px solid #f0f0f0;
 }
+
+/* 下单类型多选 */
+.order-type-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.order-type-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1.5px solid #e5e7eb;
+  background: #f9fafb;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  transition: all 0.15s;
+  user-select: none;
+}
+.order-type-chip:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #2563eb;
+}
+.order-type-chip.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.chip-icon { font-size: 14px; }
+.chip-label { font-weight: 600; }
+.chip-check {
+  font-size: 11px;
+  color: #2563eb;
+  margin-left: 2px;
+}
+.order-type-hint {
+  font-size: 12px;
+  color: #f59e0b;
+  margin-top: 6px;
+}
+
+/* 价格表 */
+.price-table {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.price-table-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1.5px solid transparent;
+  transition: all 0.15s;
+}
+.price-table-row.price-active {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+.price-table-label {
+  color: #64748b;
+  white-space: nowrap;
+}
+
 .bill-summary {
   background: #f8fafc;
   border-radius: 10px;
@@ -663,28 +865,8 @@ onMounted(() => {
   color: #2563eb;
   font-weight: 700;
 }
-.price-table {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.price-table-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #f1f5f9;
-  border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 13px;
-}
-.price-table-label {
-  color: #64748b;
-}
-.price-table-value {
-  font-weight: 600;
-  color: #1e40af;
-}
+
+/* 排期 */
 .schedule-summary-bar {
   display: flex;
   align-items: center;
@@ -782,13 +964,74 @@ onMounted(() => {
   gap: 8px;
   margin-top: 4px;
 }
-.cal-dot {
+
+/* 排期类型芯片 */
+.schedule-type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.sched-type-chip {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1.5px solid #e5e7eb;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+  cursor: not-allowed;
+  background: #f9fafb;
+  transition: all 0.15s;
+}
+.sched-type-chip:not(.disabled) {
+  cursor: pointer;
+  color: #374151;
+  border-color: #d1d5db;
+}
+.sched-type-chip:not(.disabled):hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+.sched-type-chip.selected {
+  border-color: #2563eb !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  font-weight: 700;
+}
+.sched-type-hint {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+/* 日历格子 */
+.cal-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.cal-qty {
   font-size: 10px;
   color: #2563eb;
   font-weight: 600;
-  text-align: center;
-  line-height: 1.2;
+  line-height: 1;
 }
+.cal-types {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.cal-type-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* 排期标签 */
 .schedule-list {
   margin-top: 16px;
   border-top: 1px solid #f0f0f0;
@@ -808,7 +1051,7 @@ onMounted(() => {
 .schedule-tag {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
@@ -825,6 +1068,13 @@ onMounted(() => {
   border-radius: 4px;
   padding: 1px 6px;
   font-weight: 600;
+}
+.schedule-tag-type {
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
 }
 .schedule-tag-kw {
   color: #64748b;
@@ -844,5 +1094,51 @@ onMounted(() => {
   gap: 12px;
   justify-content: flex-end;
   margin-top: 8px;
+}
+
+/* 右侧类型汇总卡 */
+.order-type-summary-card {}
+.no-type-hint {
+  font-size: 13px;
+  color: #9ca3af;
+  padding: 8px 0;
+}
+.type-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+.type-summary-row:last-of-type { border-bottom: none; }
+.type-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.type-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+.type-price {
+  font-size: 12px;
+  color: #6b7280;
+}
+.type-summary-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f0;
+  font-size: 13px;
+  color: #6b7280;
+}
+.type-total-qty {
+  font-weight: 700;
+  color: #2563eb;
 }
 </style>

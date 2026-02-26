@@ -50,11 +50,12 @@
                 <a class="order-num-link">{{ record.order_number }}</a>
                 <a-tag :color="getStatusColor(record.status)" class="status-tag">{{ record.status }}</a-tag>
                 <a-tag color="default" class="info-tag">{{ record.country }}</a-tag>
-                <a-tag v-if="record.order_type === '免评'" color="green" class="info-tag">免评</a-tag>
-                <a-tag v-else-if="record.order_type === '文字评'" color="cyan" class="info-tag">文字评</a-tag>
-                <a-tag v-else-if="record.order_type === '图片评'" color="blue" class="info-tag">图片评</a-tag>
-                <a-tag v-else-if="record.order_type === '视频评'" color="geekblue" class="info-tag">视频评</a-tag>
-                <a-tag v-else-if="record.order_type" color="default" class="info-tag">{{ record.order_type }}</a-tag>
+                <template v-if="record.order_types && record.order_types.length">
+                  <a-tag v-for="ot in record.order_types" :key="ot" :color="getOrderTypeColor(ot)" class="info-tag">{{ ot }}</a-tag>
+                </template>
+                <template v-else-if="record.order_type">
+                  <a-tag :color="getOrderTypeColor(record.order_type)" class="info-tag">{{ record.order_type }}</a-tag>
+                </template>
                 <a-tag v-if="record.review_level" color="default" class="info-tag">{{ record.review_level }}</a-tag>
                 <a-tag v-if="record.review_type" color="default" class="info-tag">{{ record.review_type }}</a-tag>
               </div>
@@ -119,6 +120,34 @@
             <div class="sub-orders-header">
               <span class="sub-orders-title">子订单列表（{{ subOrdersMap[record.id]?.length || 0 }} / {{ record.order_quantity }} 单）</span>
             </div>
+
+            <!-- 排期一览 -->
+            <div v-if="schedulesMap[record.id]?.length" class="schedules-preview">
+              <div class="schedules-preview-title">排期一览</div>
+              <div class="schedules-preview-list">
+                <div
+                  v-for="s in schedulesMap[record.id]"
+                  :key="s.id"
+                  class="schedule-preview-card"
+                >
+                  <div class="spc-date">{{ s.schedule_date }}</div>
+                  <div class="spc-qty">{{ s.quantity }}单</div>
+                  <div class="spc-types">
+                    <span
+                      v-for="t in (s.order_types && s.order_types.length ? s.order_types : (s.keywords || []).slice(0,0))"
+                      :key="t"
+                      class="spc-type-badge"
+                      :style="{ background: getOrderTypeBg(t), color: getOrderTypeTextColor(t) }"
+                    >{{ t }}</span>
+                    <span v-if="!s.order_types || s.order_types.length === 0" class="spc-type-none">未指定类型</span>
+                  </div>
+                  <div v-if="s.keywords && s.keywords.length" class="spc-keywords">
+                    <span v-for="kw in s.keywords" :key="kw" class="spc-kw">{{ kw }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <a-table
               v-if="subOrdersMap[record.id]?.length"
               :columns="subColumns"
@@ -151,7 +180,8 @@
                   <a-tag :color="getSubStatusColor(sub.status)" size="small">{{ sub.status || '待分配' }}</a-tag>
                 </template>
                 <template v-if="column.key === 'sub_order_type'">
-                  <span style="font-size:12px">{{ sub.order_type || '—' }}</span>
+                  <a-tag v-if="sub.order_type" :color="getOrderTypeColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                  <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_review_type'">
                   <span style="font-size:12px">{{ sub.review_type || '—' }}</span>
@@ -812,6 +842,8 @@ const subColumns = [
   { title: '操作', key: 'sub_action', width: 100, fixed: 'right' },
 ]
 
+const schedulesMap = ref<Record<string, any[]>>({})
+
 function getStatusColor(status: string) {
   const map: Record<string, string> = { '待处理': 'default', '进行中': 'blue', '已完成': 'green', '已取消': 'red', '暂停': 'orange' }
   return map[status] || 'default'
@@ -820,6 +852,31 @@ function getStatusColor(status: string) {
 function getSubStatusColor(status: string) {
   const map: Record<string, string> = { '待分配': 'default', '已分配': 'cyan', '进行中': 'blue', '已下单': 'orange', '已留评': 'geekblue', '已完成': 'green', '已取消': 'red' }
   return map[status] || 'default'
+}
+
+function getOrderTypeColor(t: string) {
+  const map: Record<string, string> = { '免评': 'green', '文字评': 'cyan', '图片评': 'blue', '视频评': 'geekblue', 'Feedback': 'gold' }
+  return map[t] || 'default'
+}
+
+function getOrderTypeBg(t: string) {
+  const map: Record<string, string> = { '免评': '#f0fdf4', '文字评': '#eff6ff', '图片评': '#f5f3ff', '视频评': '#fef2f2', 'Feedback': '#fffbeb' }
+  return map[t] || '#f3f4f6'
+}
+
+function getOrderTypeTextColor(t: string) {
+  const map: Record<string, string> = { '免评': '#15803d', '文字评': '#1d4ed8', '图片评': '#7c3aed', '视频评': '#b91c1c', 'Feedback': '#b45309' }
+  return map[t] || '#374151'
+}
+
+async function loadSchedules(orderId: string) {
+  if (schedulesMap.value[orderId]) return
+  const { data } = await supabase
+    .from('order_schedules')
+    .select('id, schedule_date, quantity, keywords, order_types')
+    .eq('order_id', orderId)
+    .order('schedule_date', { ascending: true })
+  schedulesMap.value[orderId] = data || []
 }
 
 function onImgError(e: Event) {
@@ -961,7 +1018,7 @@ async function toggleExpand(record: any) {
     expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== record.id)
   } else {
     expandedRowKeys.value = [...expandedRowKeys.value, record.id]
-    await loadSubOrders(record.id)
+    await Promise.all([loadSubOrders(record.id), loadSchedules(record.id)])
   }
 }
 
@@ -1665,5 +1722,78 @@ onMounted(() => {
 
 .verify-no-result {
   padding: 40px;
+}
+
+/* ===== 排期一览 ===== */
+.schedules-preview {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+.schedules-preview-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+.schedules-preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.schedule-preview-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.spc-date {
+  font-weight: 700;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-family: monospace;
+}
+.spc-qty {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+  font-size: 11px;
+}
+.spc-types {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.spc-type-badge {
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.spc-type-none {
+  font-size: 11px;
+  color: #9ca3af;
+}
+.spc-keywords {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.spc-kw {
+  background: #f1f5f9;
+  color: #475569;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border: 1px solid #e2e8f0;
 }
 </style>
