@@ -36,12 +36,71 @@
                     :disabled="!form.customer_name && !form.customer_id_str"
                     @click="customerLocked = true"
                     class="lock-btn"
-                  >锁定客户信息</a-button>
-                  <span class="lock-hint">锁定后提交新ASIN订单时客户信息自动保留</span>
+                  >锁定客户</a-button>
+                  <span class="lock-hint">锁定后可连续为同一客户创建多个ASIN订单</span>
                 </template>
               </div>
             </div>
             <div v-if="!customerLocked" class="customer-fields">
+              <!-- 从客户库选择 -->
+              <div class="quick-select-bar">
+                <div class="quick-select-label"><ShopOutlined /> 从客户库快速选择</div>
+                <a-row :gutter="10" style="flex:1">
+                  <a-col :span="8">
+                    <a-select
+                      v-model:value="form.company_id"
+                      placeholder="选择客户公司"
+                      show-search
+                      :filter-option="(input: string, option: any) => option.label?.toLowerCase().includes(input.toLowerCase())"
+                      :loading="loadingCompanies"
+                      allow-clear
+                      style="width:100%"
+                      @change="onCompanyChange"
+                      @focus="!companyOptions.length && loadCompanies()"
+                    >
+                      <a-select-option
+                        v-for="c in companyOptions" :key="c.id" :value="c.id"
+                        :label="c.company_name"
+                      >
+                        <span>{{ c.company_name }}</span>
+                        <span v-if="c.org_id" style="color:#9ca3af;font-size:11px;margin-left:6px">{{ c.org_id }}</span>
+                      </a-select-option>
+                    </a-select>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-select
+                      v-model:value="form.store_id"
+                      placeholder="选择店铺"
+                      :disabled="!form.company_id"
+                      allow-clear
+                      style="width:100%"
+                      @change="onStoreChange"
+                    >
+                      <a-select-option v-for="s in storeOptions" :key="s.id" :value="s.id">
+                        {{ s.store_name }}
+                        <span v-if="s.country" style="color:#9ca3af;font-size:11px;margin-left:4px">{{ s.country }}</span>
+                      </a-select-option>
+                    </a-select>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-select
+                      placeholder="选择ASIN"
+                      :disabled="!form.store_id || !asinOptions.length"
+                      allow-clear
+                      style="width:100%"
+                      @change="onAsinSelect"
+                    >
+                      <a-select-option v-for="a in asinOptions" :key="a.id" :value="a.id">
+                        <div style="display:flex;align-items:center;gap:6px">
+                          <span style="font-family:monospace;font-weight:700">{{ a.asin }}</span>
+                          <span v-if="a.brand_name" style="color:#2563eb;font-size:11px">{{ a.brand_name }}</span>
+                        </div>
+                      </a-select-option>
+                    </a-select>
+                  </a-col>
+                </a-row>
+              </div>
+              <a-divider style="margin:10px 0"><span style="font-size:11px;color:#9ca3af">或手动填写</span></a-divider>
               <a-row :gutter="16">
                 <a-col :span="8">
                   <a-form-item label="客户名称" style="margin-bottom:0">
@@ -64,6 +123,19 @@
 
           <div class="card-panel">
             <h3 class="section-title">基本信息</h3>
+            <!-- 选中ASIN时显示产品预览 -->
+            <div v-if="form.asin && (form.product_name || form.product_image)" class="asin-preview-bar">
+              <img v-if="form.product_image" :src="form.product_image" class="asin-preview-img" />
+              <div class="asin-preview-info">
+                <div class="asin-preview-code">{{ form.asin }}</div>
+                <div v-if="form.product_name" class="asin-preview-name">{{ form.product_name }}</div>
+                <div class="asin-preview-meta">
+                  <span v-if="form.brand_name" class="asin-preview-brand">{{ form.brand_name }}</span>
+                  <span v-if="form.store_name" class="asin-preview-store"><ShopOutlined /> {{ form.store_name }}</span>
+                </div>
+              </div>
+              <a-button type="link" size="small" @click="form.asin = ''; form.product_name = ''; form.product_image = ''">清除</a-button>
+            </div>
             <a-row :gutter="16">
               <a-col :span="12">
                 <a-form-item label="ASIN" name="asin">
@@ -665,7 +737,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, DeleteOutlined, CheckOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, DeleteOutlined, CheckOutlined, ThunderboltOutlined, ShopOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
 
@@ -675,6 +747,91 @@ const keywords = ref<string[]>([''])
 const kwGroups = ref<KwGroup[]>([])
 const currentOrderNumber = ref('')
 const customerLocked = ref(false)
+
+const companyOptions = ref<any[]>([])
+const storeOptions = ref<any[]>([])
+const asinOptions = ref<any[]>([])
+const loadingCompanies = ref(false)
+
+async function loadCompanies() {
+  loadingCompanies.value = true
+  const { data } = await supabase
+    .from('client_companies')
+    .select('id, company_name, org_id')
+    .eq('status', '活跃')
+    .order('company_name')
+  companyOptions.value = data || []
+  loadingCompanies.value = false
+}
+
+async function onCompanyChange(companyId: string) {
+  form.store_id = ''
+  form.asin = ''
+  form.store_name = ''
+  form.brand_name = ''
+  form.product_name = ''
+  form.product_image = ''
+  form.product_price = 0
+  storeOptions.value = []
+  asinOptions.value = []
+
+  if (!companyId) {
+    form.customer_name = ''
+    form.customer_id_str = ''
+    return
+  }
+  const company = companyOptions.value.find(c => c.id === companyId)
+  if (company) {
+    form.customer_name = company.company_name
+    form.customer_id_str = company.org_id || ''
+  }
+
+  const { data } = await supabase
+    .from('client_stores')
+    .select('id, store_name, country, platform')
+    .eq('company_id', companyId)
+    .eq('status', '活跃')
+    .order('store_name')
+  storeOptions.value = data || []
+}
+
+async function onStoreChange(storeId: string) {
+  form.asin = ''
+  form.brand_name = ''
+  form.product_name = ''
+  form.product_image = ''
+  form.product_price = 0
+  asinOptions.value = []
+
+  if (!storeId) {
+    form.store_name = ''
+    return
+  }
+  const store = storeOptions.value.find(s => s.id === storeId)
+  if (store) {
+    form.store_name = store.store_name
+    form.country = store.country || form.country
+  }
+
+  const { data } = await supabase
+    .from('client_store_asins')
+    .select('*')
+    .eq('store_id', storeId)
+    .eq('is_active', true)
+    .order('asin')
+  asinOptions.value = data || []
+}
+
+function onAsinSelect(asinId: string) {
+  const asinItem = asinOptions.value.find(a => a.id === asinId)
+  if (!asinItem) return
+  form.asin = asinItem.asin
+  form.brand_name = asinItem.brand_name || ''
+  form.product_name = asinItem.product_name || ''
+  form.product_image = asinItem.product_image || ''
+  form.product_price = asinItem.product_price || 0
+  recalc()
+}
 
 const countries = ['美国', '德国', '英国', '加拿大']
 
@@ -1120,6 +1277,8 @@ const defaultForm = () => ({
   sales_person: '',
   status: '待处理',
   product_cost_cny: 0,
+  company_id: '' as string,
+  store_id: '' as string,
 })
 
 const form = reactive(defaultForm())
@@ -1220,6 +1379,8 @@ async function doSubmit() {
         customer_name: form.customer_name,
         customer_id_str: form.customer_id_str,
         sales_person: form.sales_person,
+        company_id: form.company_id,
+        store_id: form.store_id,
       }
       Modal.confirm({
         title: '继续为同一客户下单？',
@@ -1266,7 +1427,15 @@ function resetForm() {
   formRef.value?.resetFields()
 }
 
-function continueNextAsin(savedCustomer: { customer_name: string; customer_id_str: string; sales_person: string }) {
+function continueNextAsin(savedCustomer: {
+  customer_name: string
+  customer_id_str: string
+  sales_person: string
+  company_id: string
+  store_id: string
+}) {
+  const savedStoreOptions = [...storeOptions.value]
+  const savedAsinOptions = [...asinOptions.value]
   Object.assign(form, defaultForm())
   priceNoReview.value = 25
   priceText.value = 88
@@ -1286,6 +1455,10 @@ function continueNextAsin(savedCustomer: { customer_name: string; customer_id_st
   form.customer_name = savedCustomer.customer_name
   form.customer_id_str = savedCustomer.customer_id_str
   form.sales_person = savedCustomer.sales_person
+  form.company_id = savedCustomer.company_id
+  form.store_id = savedCustomer.store_id
+  storeOptions.value = savedStoreOptions
+  asinOptions.value = savedAsinOptions
   customerLocked.value = true
   currentOrderNumber.value = generateOrderNumber()
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -2085,6 +2258,58 @@ onMounted(() => {
 .customer-fields {
   padding-top: 4px;
 }
+
+/* 三级联动快速选择 */
+.quick-select-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #eff6ff;
+  border-radius: 8px;
+  border: 1px solid #bfdbfe;
+  margin-bottom: 4px;
+}
+.quick-select-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d4ed8;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ASIN 选中预览条 */
+.asin-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.asin-preview-img {
+  width: 48px; height: 48px;
+  border-radius: 6px; object-fit: cover;
+  border: 1px solid #d1fae5; flex-shrink: 0;
+}
+.asin-preview-info { flex: 1; min-width: 0; }
+.asin-preview-code {
+  font-family: monospace; font-size: 14px; font-weight: 700; color: #1f2937;
+}
+.asin-preview-name {
+  font-size: 12px; color: #374151;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.asin-preview-meta { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.asin-preview-brand {
+  font-size: 11px; padding: 0 6px; background: #eff6ff;
+  color: #1d4ed8; border-radius: 3px;
+}
+.asin-preview-store { font-size: 11px; color: #6b7280; display: flex; align-items: center; gap: 3px; }
 
 /* 多ASIN提示 */
 .multi-asin-tip {

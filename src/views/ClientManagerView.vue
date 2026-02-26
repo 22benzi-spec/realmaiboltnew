@@ -383,12 +383,13 @@
             </div>
           </div>
 
-          <div class="drawer-section">
-            <div class="section-title">ASIN 列表</div>
-            <div v-if="currentCompany.client_asins?.length" style="display:flex;flex-wrap:wrap;gap:6px">
-              <span v-for="asin in currentCompany.client_asins" :key="asin" class="asin-tag-lg">{{ asin }}</span>
-            </div>
-            <span v-else class="empty-val">暂未录入 ASIN</span>
+          <!-- 店铺 & ASIN 管理 -->
+          <div class="drawer-section" style="padding-bottom:0">
+            <ClientStoreManager
+              :company-id="currentCompany.id"
+              :contacts="currentCompany.client_contacts || []"
+              @updated="load"
+            />
           </div>
 
           <!-- 地址 -->
@@ -743,6 +744,7 @@ import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined, EnvironmentOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
+import ClientStoreManager from '../components/ClientStoreManager.vue'
 
 const loading = ref(false)
 const clients = ref<any[]>([])
