@@ -352,6 +352,23 @@
                       </div>
                     </div>
                     <div class="type-detail-keywords">
+                      <div class="kw-quick-actions">
+                        <a-button
+                          v-if="keywords.filter(k=>k.trim()).length > 0"
+                          size="small"
+                          type="link"
+                          style="padding:0;font-size:11px"
+                          @click="fillFromMainKeywords(ti)"
+                        >填入主关键词</a-button>
+                        <a-select
+                          v-if="scheduleEntries.length > 0"
+                          size="small"
+                          placeholder="从已排期复制"
+                          style="width:120px;font-size:11px"
+                          :options="copyFromDateOptions(td.type)"
+                          @select="(val: string) => copyKeywordsFromDate(ti, val)"
+                        />
+                      </div>
                       <div v-for="(_, ki) in td.keywords" :key="ki" class="keyword-row">
                         <a-input
                           v-model:value="td.keywords[ki]"
@@ -538,9 +555,6 @@ interface ScheduleEntry {
   typeDetails: TypeDetail[]
 }
 
-function makeTypeDetails(types: string[]): TypeDetail[] {
-  return types.map(t => ({ type: t, qty: 1, keywords: [''] }))
-}
 
 const scheduleEntries = ref<ScheduleEntry[]>([])
 const calendarValue = ref<Dayjs>(dayjs())
@@ -565,6 +579,27 @@ function addTypeKeyword(typeIdx: number) {
 }
 function removeTypeKeyword(typeIdx: number, kwIdx: number) {
   editingTypeDetails.value[typeIdx].keywords.splice(kwIdx, 1)
+}
+
+function fillFromMainKeywords(typeIdx: number) {
+  const kws = keywords.value.filter(k => k.trim())
+  if (!kws.length) return
+  editingTypeDetails.value[typeIdx].keywords = [...kws]
+}
+
+function copyFromDateOptions(typeName: string) {
+  return scheduleEntries.value
+    .filter(e => e.typeDetails?.some(td => td.type === typeName && td.keywords.some(k => k.trim())))
+    .map(e => ({ label: e.date, value: e.date }))
+}
+
+function copyKeywordsFromDate(typeIdx: number, dateStr: string) {
+  const entry = scheduleEntries.value.find(e => e.date === dateStr)
+  const td = entry?.typeDetails?.find(d => d.type === editingTypeDetails.value[typeIdx].type)
+  if (td) {
+    const kws = td.keywords.filter(k => k.trim())
+    if (kws.length) editingTypeDetails.value[typeIdx].keywords = [...kws]
+  }
 }
 
 const quickSchedule = reactive<{
@@ -682,20 +717,26 @@ function handleDateSelect(d: Dayjs) {
   const alreadyIdx = selectedDates.value.indexOf(dateStr)
   if (alreadyIdx >= 0) {
     selectedDates.value.splice(alreadyIdx, 1)
+    if (selectedDates.value.length === 0) {
+      editingTypeDetails.value = []
+    } else {
+      const lastDate = selectedDates.value[selectedDates.value.length - 1]
+      const lastExisting = scheduleEntries.value.find(e => e.date === lastDate)
+      if (lastExisting && lastExisting.typeDetails?.length) {
+        editingTypeDetails.value = lastExisting.typeDetails.map(td => ({
+          type: td.type, qty: td.qty, keywords: [...td.keywords],
+        }))
+      }
+    }
   } else {
     selectedDates.value.push(dateStr)
-  }
-
-  if (selectedDates.value.length === 1) {
-    const existing = getScheduleForDate(d)
+    const existing = scheduleEntries.value.find(e => e.date === dateStr)
     if (existing && existing.typeDetails?.length) {
       editingTypeDetails.value = existing.typeDetails.map(td => ({
-        type: td.type,
-        qty: td.qty,
-        keywords: [...td.keywords],
+        type: td.type, qty: td.qty, keywords: [...td.keywords],
       }))
-    } else {
-      editingTypeDetails.value = makeTypeDetails([...form.order_types])
+    } else if (selectedDates.value.length === 1) {
+      editingTypeDetails.value = []
     }
   }
 }
@@ -1443,6 +1484,13 @@ onMounted(() => {
 }
 .type-detail-keywords {
   padding-top: 4px;
+}
+.kw-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
 }
 .type-total-row {
   display: flex;
