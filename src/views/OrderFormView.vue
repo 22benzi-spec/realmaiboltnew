@@ -149,6 +149,107 @@
           <div class="card-panel">
             <h3 class="section-title">排期设置</h3>
 
+            <!-- 快速排期区域 -->
+            <div class="quick-schedule-box">
+              <div class="quick-schedule-header">
+                <span class="quick-schedule-title">快速排期</span>
+                <span class="quick-schedule-desc">适合每天任务相同的情况，一键批量生成</span>
+              </div>
+              <div class="quick-schedule-form">
+                <div class="qs-field">
+                  <label class="qs-label">开始日期</label>
+                  <a-date-picker
+                    v-model:value="quickSchedule.startDate"
+                    style="width:100%"
+                    placeholder="选择开始日期"
+                  />
+                </div>
+                <div class="qs-field">
+                  <label class="qs-label">持续天数</label>
+                  <a-input-number
+                    v-model:value="quickSchedule.days"
+                    :min="1"
+                    :max="60"
+                    style="width:100%"
+                    placeholder="天数"
+                    @change="updateQuickPreview"
+                  />
+                </div>
+                <div class="qs-field">
+                  <label class="qs-label">每天数量</label>
+                  <a-input-number
+                    v-model:value="quickSchedule.dailyQty"
+                    :min="1"
+                    style="width:100%"
+                    placeholder="单/天"
+                    @change="updateQuickPreview"
+                  />
+                </div>
+                <div class="qs-field qs-field-wide">
+                  <label class="qs-label">每天下单类型</label>
+                  <div class="schedule-type-chips">
+                    <div
+                      v-for="ot in orderTypeOptions"
+                      :key="ot.value"
+                      :class="['sched-type-chip', quickSchedule.order_types.includes(ot.value) ? 'selected' : '',
+                        !form.order_types.includes(ot.value) ? 'disabled' : '']"
+                      @click="toggleQuickType(ot.value)"
+                    >{{ ot.value }}</div>
+                  </div>
+                </div>
+                <div class="qs-field qs-field-wide">
+                  <label class="qs-label">每天关键词（可选）</label>
+                  <div v-for="(_, i) in quickSchedule.keywords" :key="i" class="keyword-row">
+                    <a-input
+                      v-model:value="quickSchedule.keywords[i]"
+                      placeholder="输入关键词"
+                      style="flex:1"
+                    />
+                    <a-button type="text" danger @click="quickSchedule.keywords.splice(i,1)">
+                      <DeleteOutlined />
+                    </a-button>
+                  </div>
+                  <a-button type="dashed" size="small" @click="quickSchedule.keywords.push('')" style="margin-top:4px">
+                    <PlusOutlined /> 添加关键词
+                  </a-button>
+                </div>
+              </div>
+
+              <!-- 预览 -->
+              <div v-if="quickPreviewDays.length" class="qs-preview">
+                <div class="qs-preview-info">
+                  <span>共 <strong>{{ quickPreviewDays.length }}</strong> 天</span>
+                  <span>合计 <strong>{{ quickPreviewDays.length * (quickSchedule.dailyQty || 0) }}</strong> 单</span>
+                  <span v-if="quickPreviewDays.length * (quickSchedule.dailyQty || 0) > form.order_quantity" class="qs-over">
+                    超出总量 {{ quickPreviewDays.length * (quickSchedule.dailyQty || 0) - form.order_quantity }} 单
+                  </span>
+                  <span v-else-if="quickPreviewDays.length * (quickSchedule.dailyQty || 0) === form.order_quantity" class="qs-ok">
+                    恰好排满
+                  </span>
+                </div>
+                <div class="qs-preview-dates">
+                  <span v-for="d in quickPreviewDays" :key="d" class="qs-date-chip">{{ d }}</span>
+                </div>
+              </div>
+
+              <div class="qs-actions">
+                <a-button
+                  type="primary"
+                  :disabled="!quickSchedule.startDate || !quickSchedule.days || !quickSchedule.dailyQty"
+                  @click="applyQuickSchedule"
+                >
+                  <ThunderboltOutlined /> 一键生成排期
+                </a-button>
+                <a-button @click="clearScheduleEntries" v-if="scheduleEntries.length">
+                  清空已排期
+                </a-button>
+              </div>
+            </div>
+
+            <div class="schedule-section-divider">
+              <span>或手动按日设置</span>
+            </div>
+
             <div class="schedule-summary-bar">
               <div class="summary-item">
                 <span class="summary-label">任务总订单量</span>
@@ -344,7 +445,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, DeleteOutlined, CheckOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, DeleteOutlined, CheckOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
 
@@ -390,6 +491,90 @@ const editingEntry = reactive<{ quantity: number; keywords: string[]; order_type
   keywords: [''],
   order_types: [],
 })
+
+const quickSchedule = reactive<{
+  startDate: Dayjs | null
+  days: number
+  dailyQty: number
+  order_types: string[]
+  keywords: string[]
+}>({
+  startDate: null,
+  days: 1,
+  dailyQty: 1,
+  order_types: [],
+  keywords: [],
+})
+
+const quickPreviewDays = computed<string[]>(() => {
+  if (!quickSchedule.startDate || !quickSchedule.days || quickSchedule.days < 1) return []
+  const result: string[] = []
+  for (let i = 0; i < quickSchedule.days; i++) {
+    result.push(quickSchedule.startDate.add(i, 'day').format('YYYY-MM-DD'))
+  }
+  return result
+})
+
+function updateQuickPreview() {}
+
+function toggleQuickType(val: string) {
+  if (!form.order_types.includes(val)) return
+  const idx = quickSchedule.order_types.indexOf(val)
+  if (idx === -1) quickSchedule.order_types.push(val)
+  else quickSchedule.order_types.splice(idx, 1)
+}
+
+function applyQuickSchedule() {
+  if (!quickSchedule.startDate || !quickSchedule.days || !quickSchedule.dailyQty) return
+  const dates = quickPreviewDays.value
+  const totalNew = dates.length * quickSchedule.dailyQty
+  const existingOutside = scheduleEntries.value
+    .filter(e => !dates.includes(e.date))
+    .reduce((s, e) => s + e.quantity, 0)
+  const newTotal = existingOutside + totalNew
+
+  const doApply = () => {
+    const cleanKws = quickSchedule.keywords.filter(k => k.trim())
+    dates.forEach(d => {
+      const idx = scheduleEntries.value.findIndex(e => e.date === d)
+      const entry: ScheduleEntry = {
+        date: d,
+        quantity: quickSchedule.dailyQty,
+        keywords: [...cleanKws],
+        order_types: [...quickSchedule.order_types],
+      }
+      if (idx >= 0) scheduleEntries.value[idx] = entry
+      else scheduleEntries.value.push(entry)
+    })
+    message.success(`已生成 ${dates.length} 天排期，合计 ${totalNew} 单`)
+  }
+
+  if (newTotal > form.order_quantity) {
+    Modal.confirm({
+      title: '排期数量超出',
+      content: `生成后总排期量将达 ${newTotal} 单，超出任务总量 ${newTotal - form.order_quantity} 单。是否继续？`,
+      okText: '继续生成',
+      cancelText: '取消',
+      onOk: doApply,
+    })
+  } else {
+    doApply()
+  }
+}
+
+function clearScheduleEntries() {
+  Modal.confirm({
+    title: '确认清空',
+    content: '将清空所有已排期数据，确定吗？',
+    okText: '清空',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => {
+      scheduleEntries.value = []
+      message.success('已清空排期')
+    },
+  })
+}
 
 const scheduleEntriesSorted = computed(() =>
   [...scheduleEntries.value].sort((a, b) => a.date.localeCompare(b.date))
@@ -684,6 +869,11 @@ function resetForm() {
   editingEntry.quantity = 1
   editingEntry.keywords = ['']
   editingEntry.order_types = []
+  quickSchedule.startDate = null
+  quickSchedule.days = 1
+  quickSchedule.dailyQty = 1
+  quickSchedule.order_types = []
+  quickSchedule.keywords = []
   formRef.value?.resetFields()
 }
 
@@ -864,6 +1054,115 @@ onMounted(() => {
   font-size: 18px;
   color: #2563eb;
   font-weight: 700;
+}
+
+/* 快速排期 */
+.quick-schedule-box {
+  background: linear-gradient(135deg, #f0f7ff 0%, #e8f4fd 100%);
+  border: 1.5px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+.quick-schedule-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.quick-schedule-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d4ed8;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.quick-schedule-title::before {
+  content: '⚡';
+  font-size: 14px;
+}
+.quick-schedule-desc {
+  font-size: 12px;
+  color: #64748b;
+}
+.quick-schedule-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.qs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.qs-field-wide {
+  grid-column: 1 / -1;
+}
+.qs-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+}
+.qs-preview {
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px dashed #93c5fd;
+}
+.qs-preview-info {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 8px;
+}
+.qs-preview-info strong {
+  color: #1d4ed8;
+}
+.qs-over {
+  color: #dc2626;
+  font-weight: 600;
+}
+.qs-ok {
+  color: #16a34a;
+  font-weight: 600;
+}
+.qs-preview-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.qs-date-chip {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: monospace;
+}
+.qs-actions {
+  display: flex;
+  gap: 8px;
+}
+.schedule-section-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 14px 0;
+  font-size: 12px;
+  color: #9ca3af;
+}
+.schedule-section-divider::before,
+.schedule-section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
 }
 
 /* 排期 */
