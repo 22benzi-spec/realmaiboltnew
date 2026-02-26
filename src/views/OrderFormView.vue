@@ -326,8 +326,7 @@
                     <div
                       v-for="ot in orderTypeOptions"
                       :key="ot.value"
-                      :class="['sched-type-chip', editingTypeDetails.some(d=>d.type===ot.value) ? 'selected' : '',
-                        !form.order_types.includes(ot.value) ? 'disabled' : '']"
+                      :class="['sched-type-chip', editingTypeDetails.some(d=>d.type===ot.value) ? 'selected' : '']"
                       @click="toggleManualType(ot.value)"
                     >{{ ot.value }}</div>
                   </div>
@@ -553,7 +552,6 @@ const editingQuantityTotal = computed(() =>
 )
 
 function toggleManualType(val: string) {
-  if (!form.order_types.includes(val)) return
   const idx = editingTypeDetails.value.findIndex(d => d.type === val)
   if (idx === -1) {
     editingTypeDetails.value.push({ type: val, qty: 1, keywords: [''] })
