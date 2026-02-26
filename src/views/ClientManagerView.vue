@@ -96,27 +96,35 @@
 
         <div class="card-sep" />
 
-        <!-- 对接人列表 -->
+        <!-- 员工列表 -->
         <div class="card-contacts">
-          <div class="section-label">对接人</div>
-          <div v-if="company.client_contacts?.length" class="contact-chips">
-            <div v-for="c in company.client_contacts.slice(0, 2)" :key="c.id" class="contact-chip">
+          <div class="section-label">员工</div>
+          <div v-if="company.client_contacts?.filter((c: any) => c.employment_status !== '离职').length" class="contact-chips">
+            <div v-for="c in company.client_contacts.filter((c: any) => c.employment_status !== '离职').slice(0, 2)" :key="c.id" class="contact-chip">
               <div class="chip-avatar">{{ c.name.charAt(0) }}</div>
               <div class="chip-info">
-                <div class="chip-name">
-                  {{ c.name }}
-                  <a-tag v-if="c.is_primary" color="blue" style="margin-left:4px;font-size:10px;line-height:16px;padding:0 4px">主</a-tag>
-                </div>
+                <div class="chip-name">{{ c.name }}</div>
                 <div class="chip-sub">
-                  <span v-if="c.wechat_account_id_str" class="chip-wechat">
-                    <WechatOutlined style="font-size:10px;color:#07c160" /> {{ c.wechat_account_id_str }}
+                  <span v-if="c.wechat" class="chip-wechat">
+                    <WechatOutlined style="font-size:10px;color:#07c160" /> {{ c.wechat }}
                   </span>
                 </div>
               </div>
             </div>
-            <div v-if="company.client_contacts.length > 2" class="contact-more">+{{ company.client_contacts.length - 2 }}人</div>
+            <div v-if="company.client_contacts.filter((c: any) => c.employment_status !== '离职').length > 2" class="contact-more">+{{ company.client_contacts.filter((c: any) => c.employment_status !== '离职').length - 2 }}人</div>
           </div>
-          <span v-else class="empty-val">暂无对接人</span>
+          <span v-else class="empty-val">暂无在职员工</span>
+        </div>
+
+        <div class="card-sep" />
+
+        <!-- 拜访状态 -->
+        <div class="card-visit">
+          <div class="section-label">拜访</div>
+          <div class="visit-status-badge" :class="'visit-' + (company.visit_status || '未接触').replace(/\s/g, '')">
+            <span class="visit-dot" />
+            <span>{{ company.visit_status || '未接触' }}</span>
+          </div>
         </div>
 
         <div class="card-sep" />
@@ -195,6 +203,100 @@
           <a-col :span="24">
             <a-form-item label="备注">
               <a-textarea v-model:value="form.notes" :rows="2" placeholder="备注信息" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">地址（选填，客户愿意提供时录入）</span></a-divider>
+
+        <a-row :gutter="16">
+          <a-col :span="8">
+            <a-form-item label="国家">
+              <a-input v-model:value="form.address_country" placeholder="如：中国" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="省/州">
+              <a-input v-model:value="form.address_province" placeholder="如：广东省" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="城市">
+              <a-input v-model:value="form.address_city" placeholder="如：深圳市" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="详细地址">
+              <a-input v-model:value="form.address_detail" placeholder="街道、楼号等详细地址" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">拜访意向</span></a-divider>
+        <a-row :gutter="16">
+          <a-col :span="8">
+            <a-form-item label="拜访状态">
+              <a-select v-model:value="form.visit_status">
+                <a-select-option value="未接触">未接触</a-select-option>
+                <a-select-option value="待拜访">待拜访</a-select-option>
+                <a-select-option value="已拜访">已拜访</a-select-option>
+                <a-select-option value="不接受拜访">不接受拜访</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+    </a-modal>
+
+    <!-- 添加拜访记录 Modal -->
+    <a-modal
+      v-model:open="visitModalOpen"
+      title="记录拜访"
+      @ok="handleAddVisit"
+      :confirm-loading="savingVisit"
+      ok-text="保存"
+      cancel-text="取消"
+      width="580px"
+    >
+      <a-form layout="vertical" style="margin-top:8px">
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="拜访日期" required>
+              <a-date-picker v-model:value="visitForm.visit_date" style="width:100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="拜访方式">
+              <a-select v-model:value="visitForm.visit_type">
+                <a-select-option value="上门拜访">上门拜访</a-select-option>
+                <a-select-option value="视频拜访">视频拜访</a-select-option>
+                <a-select-option value="电话拜访">电话拜访</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="拜访人（我方）" required>
+              <a-input v-model:value="visitForm.visitor_name" placeholder="我方负责人姓名" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="对接员工（客户方）">
+              <a-input v-model:value="visitForm.contact_names" placeholder="被拜访的员工姓名" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="拜访目的">
+              <a-input v-model:value="visitForm.purpose" placeholder="如：维护客情、了解需求" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="拜访小结">
+              <a-textarea v-model:value="visitForm.summary" :rows="3" placeholder="本次拜访情况记录" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="下次预约拜访日期">
+              <a-date-picker v-model:value="visitForm.next_visit_date" style="width:100%" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -289,6 +391,73 @@
             <span v-else class="empty-val">暂未录入 ASIN</span>
           </div>
 
+          <!-- 地址 -->
+          <div class="drawer-section">
+            <div class="section-title-row">
+              <span class="section-title" style="margin-bottom:0;border:none;padding:0">公司地址</span>
+              <a-button type="link" size="small" @click="openEditModal(currentCompany)">编辑</a-button>
+            </div>
+            <div v-if="currentCompany.address_city || currentCompany.address_detail" class="address-display">
+              <EnvironmentOutlined class="address-icon" />
+              <span>
+                {{ [currentCompany.address_country, currentCompany.address_province, currentCompany.address_city, currentCompany.address_detail].filter(Boolean).join(' · ') }}
+              </span>
+            </div>
+            <span v-else class="empty-val">未录入地址</span>
+          </div>
+
+          <!-- 拜访记录 -->
+          <div class="drawer-section">
+            <div class="section-title-row">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="section-title" style="margin-bottom:0;border:none;padding:0">拜访记录</span>
+                <a-tag :color="visitStatusColor[currentCompany.visit_status || '未接触']" style="font-size:11px">
+                  {{ currentCompany.visit_status || '未接触' }}
+                </a-tag>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <a-select
+                  :value="currentCompany.visit_status"
+                  size="small"
+                  style="width:120px"
+                  @change="(v: string) => updateVisitStatus(v)"
+                >
+                  <a-select-option value="未接触">未接触</a-select-option>
+                  <a-select-option value="待拜访">待拜访</a-select-option>
+                  <a-select-option value="已拜访">已拜访</a-select-option>
+                  <a-select-option value="不接受拜访">不接受拜访</a-select-option>
+                </a-select>
+                <a-button
+                  v-if="currentCompany.visit_status !== '不接受拜访'"
+                  type="primary"
+                  size="small"
+                  @click="openAddVisit"
+                ><PlusOutlined /> 记录拜访</a-button>
+              </div>
+            </div>
+            <div v-if="!visitRecords.length" class="empty-val" style="margin-top:8px">暂无拜访记录</div>
+            <div v-else class="visit-list">
+              <div v-for="v in visitRecords" :key="v.id" class="visit-row">
+                <div class="visit-date-col">
+                  <div class="visit-date">{{ v.visit_date }}</div>
+                  <div class="visit-type-tag">{{ v.visit_type }}</div>
+                </div>
+                <div class="visit-body">
+                  <div class="visit-header-row">
+                    <span class="visit-visitor"><UserOutlined /> {{ v.visitor_name }}</span>
+                    <span v-if="v.contact_names" class="visit-contacts">对接：{{ v.contact_names }}</span>
+                  </div>
+                  <div v-if="v.purpose" class="visit-purpose">目的：{{ v.purpose }}</div>
+                  <div v-if="v.summary" class="visit-summary">{{ v.summary }}</div>
+                  <div v-if="v.next_visit_date" class="visit-next">下次拜访：{{ v.next_visit_date }}</div>
+                </div>
+                <a-popconfirm title="确定删除该拜访记录？" @confirm="deleteVisit(v.id)">
+                  <a-button type="link" size="small" danger style="flex-shrink:0"><DeleteOutlined /></a-button>
+                </a-popconfirm>
+              </div>
+            </div>
+          </div>
+
           <div class="drawer-section">
             <div class="section-title-row">
               <span class="section-title" style="margin-bottom:0;border:none;padding:0">员工 / 对接人</span>
@@ -341,21 +510,6 @@
                   </div>
                   <div v-else-if="c.employment_status === '在职'" class="contact-scope-empty">未设置负责店铺/品牌</div>
 
-                  <!-- 对接关系 -->
-                  <div class="contact-binding">
-                    <div v-if="c.business_manager_name" class="binding-item manager-binding">
-                      <UserOutlined />
-                      <span>{{ c.business_manager_name }}</span>
-                    </div>
-                    <div v-if="c.wechat_account_id_str" class="binding-item wechat-binding">
-                      <WechatOutlined />
-                      <span>{{ c.wechat_account_id_str }}</span>
-                      <span v-if="c.wechat_nickname" class="wechat-nick">（{{ c.wechat_nickname }}）</span>
-                    </div>
-                    <div v-if="!c.business_manager_name && !c.wechat_account_id_str" class="binding-empty">
-                      暂未分配对接商务
-                    </div>
-                  </div>
                   <div v-if="c.monthly_budget_cny" class="contact-budget">月预算：¥{{ formatMoney(c.monthly_budget_cny) }}</div>
                 </div>
                 <div class="contact-row-actions">
@@ -415,7 +569,7 @@
       </div>
     </a-modal>
 
-    <!-- 添加/编辑对接人 Modal -->
+    <!-- 添加/编辑员工 Modal -->
     <a-modal
       v-model:open="contactModalOpen"
       :title="editingContactId ? '编辑员工' : '添加员工'"
@@ -423,7 +577,7 @@
       :confirm-loading="savingContact"
       ok-text="确定"
       cancel-text="取消"
-      width="660px"
+      width="620px"
     >
       <a-form layout="vertical" style="margin-top:8px">
         <a-row :gutter="12">
@@ -461,66 +615,6 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="是否主要对接人">
-              <a-switch v-model:checked="contactForm.is_primary" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">负责范围（属于公司，不随员工转移）</span></a-divider>
-
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="负责店铺">
-              <a-select v-model:value="contactForm.responsible_stores" mode="tags" placeholder="输入店铺名称后回车，可多个" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="负责品牌">
-              <a-select v-model:value="contactForm.responsible_brands" mode="tags" placeholder="输入品牌名称后回车，可多个" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">对接关系</span></a-divider>
-
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="负责商务经理">
-              <a-select
-                v-model:value="contactForm.business_manager_id"
-                placeholder="选择商务经理"
-                allow-clear
-                @change="onManagerChange"
-              >
-                <a-select-option v-for="m in managerOptions" :key="m.id" :value="m.id">{{ m.name }}</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="对接微信号">
-              <a-select
-                v-model:value="contactForm.wechat_account_id"
-                placeholder="选择商务微信号"
-                allow-clear
-                :disabled="!contactForm.business_manager_id"
-                @change="onWechatChange"
-              >
-                <a-select-option v-for="w in filteredWechatOptions" :key="w.id" :value="w.id">
-                  {{ w.wechat_id }}{{ w.wechat_nickname ? `（${w.wechat_nickname}）` : '' }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="月预算（元）">
-              <a-input-number v-model:value="contactForm.monthly_budget_cny" :min="0" style="width:100%" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
             <a-form-item label="微信状态">
               <a-select v-model:value="contactForm.contact_wechat_status">
                 <a-select-option value="活跃">活跃</a-select-option>
@@ -529,10 +623,64 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="24">
-            <a-form-item label="备注"><a-textarea v-model:value="contactForm.notes" :rows="2" /></a-form-item>
+          <a-col :span="12">
+            <a-form-item label="月预算（元）">
+              <a-input-number v-model:value="contactForm.monthly_budget_cny" :min="0" style="width:100%" />
+            </a-form-item>
           </a-col>
         </a-row>
+
+        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">负责范围（归属公司，不随员工变动）</span></a-divider>
+
+        <!-- 负责店铺 -->
+        <a-form-item label="负责店铺">
+          <div class="scope-input-area">
+            <div class="scope-tags-wrap">
+              <span
+                v-for="(s, i) in contactForm.responsible_stores"
+                :key="i"
+                class="scope-input-tag scope-store"
+              >
+                {{ s }}
+                <span class="scope-tag-del" @click="contactForm.responsible_stores.splice(i, 1)">×</span>
+              </span>
+              <a-input
+                v-model:value="storeInputVal"
+                class="scope-inline-input"
+                placeholder="输入店铺名称回车添加"
+                @keydown.enter.prevent="addStore"
+                @blur="addStore"
+              />
+            </div>
+          </div>
+        </a-form-item>
+
+        <!-- 负责品牌 -->
+        <a-form-item label="负责品牌">
+          <div class="scope-input-area">
+            <div class="scope-tags-wrap">
+              <span
+                v-for="(b, i) in contactForm.responsible_brands"
+                :key="i"
+                class="scope-input-tag scope-brand"
+              >
+                {{ b }}
+                <span class="scope-tag-del" @click="contactForm.responsible_brands.splice(i, 1)">×</span>
+              </span>
+              <a-input
+                v-model:value="brandInputVal"
+                class="scope-inline-input"
+                placeholder="输入品牌名称回车添加"
+                @keydown.enter.prevent="addBrand"
+                @blur="addBrand"
+              />
+            </div>
+          </div>
+        </a-form-item>
+
+        <a-form-item label="备注">
+          <a-textarea v-model:value="contactForm.notes" :rows="2" />
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -592,7 +740,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined, EnvironmentOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
 
@@ -618,6 +766,13 @@ const resignTarget = ref<any>(null)
 const resignNewContactId = ref<string>('')
 const resignDate = ref<Dayjs | null>(null)
 
+const visitModalOpen = ref(false)
+const savingVisit = ref(false)
+const visitRecords = ref<any[]>([])
+
+const storeInputVal = ref('')
+const brandInputVal = ref('')
+
 const managerOptions = ref<any[]>([])
 const wechatOptions = ref<any[]>([])
 
@@ -637,16 +792,23 @@ const levelBg: Record<string, string> = { S: '#d97706', A: '#059669', B: '#2563e
 const statusColor: Record<string, string> = { 活跃: 'green', 暂停: 'orange', 流失: 'red' }
 const contactStatusColor: Record<string, string> = { 活跃: 'green', 沉默: 'orange', 流失: 'red' }
 const employmentStatusColor: Record<string, string> = { 在职: 'green', 离职: 'default', 停止合作: 'red' }
+const visitStatusColor: Record<string, string> = { 未接触: 'default', 待拜访: 'orange', 已拜访: 'green', 不接受拜访: 'red' }
+
+const defaultVisitForm = () => ({
+  visit_date: dayjs() as Dayjs | null,
+  visit_type: '上门拜访',
+  visitor_name: '',
+  contact_names: '',
+  purpose: '',
+  summary: '',
+  next_visit_date: null as Dayjs | null,
+})
+const visitForm = reactive(defaultVisitForm())
 
 const filteredContacts = computed(() => {
   if (!currentCompany.value?.client_contacts) return []
   if (showResignedContacts.value) return currentCompany.value.client_contacts
   return currentCompany.value.client_contacts.filter((c: any) => c.employment_status !== '离职' && c.employment_status !== '停止合作')
-})
-
-const filteredWechatOptions = computed(() => {
-  if (!contactForm.business_manager_id) return []
-  return wechatOptions.value.filter(w => w.manager_id === contactForm.business_manager_id)
 })
 
 function formatMoney(val: any) {
@@ -666,6 +828,11 @@ const defaultForm = () => ({
   order_frequency: '',
   monthly_order_count: 0,
   notes: '',
+  address_country: '',
+  address_province: '',
+  address_city: '',
+  address_detail: '',
+  visit_status: '未接触',
 })
 const form = reactive(defaultForm())
 
@@ -674,7 +841,6 @@ const defaultContactForm = () => ({
   role: '联系人',
   phone: '',
   wechat: '',
-  whatsapp: '',
   is_primary: false,
   contact_wechat_status: '活跃',
   monthly_budget_cny: 0,
@@ -684,27 +850,8 @@ const defaultContactForm = () => ({
   responsible_brands: [] as string[],
   join_date: null as Dayjs | null,
   resigned_at: null as Dayjs | null,
-  business_manager_id: '' as string,
-  business_manager_name: '',
-  wechat_account_id: '' as string,
-  wechat_account_id_str: '',
-  wechat_nickname: '',
 })
 const contactForm = reactive(defaultContactForm())
-
-function onManagerChange(managerId: string) {
-  const mgr = managerOptions.value.find(m => m.id === managerId)
-  contactForm.business_manager_name = mgr?.name || ''
-  contactForm.wechat_account_id = ''
-  contactForm.wechat_account_id_str = ''
-  contactForm.wechat_nickname = ''
-}
-
-function onWechatChange(wechatId: string) {
-  const w = wechatOptions.value.find(x => x.id === wechatId)
-  contactForm.wechat_account_id_str = w?.wechat_id || ''
-  contactForm.wechat_nickname = w?.wechat_nickname || ''
-}
 
 async function loadManagerOptions() {
   const { data } = await supabase
@@ -760,6 +907,11 @@ function openEditModal(record: any) {
     ...record,
     brand_names: record.brand_names || [],
     client_asins: record.client_asins || [],
+    address_country: record.address_country || '',
+    address_province: record.address_province || '',
+    address_city: record.address_city || '',
+    address_detail: record.address_detail || '',
+    visit_status: record.visit_status || '未接触',
   })
   modalOpen.value = true
 }
@@ -767,6 +919,65 @@ function openEditModal(record: any) {
 function openDetail(record: any) {
   currentCompany.value = record
   detailOpen.value = true
+  loadVisitRecords(record.id)
+}
+
+async function loadVisitRecords(companyId: string) {
+  const { data } = await supabase
+    .from('client_visit_records')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('visit_date', { ascending: false })
+  visitRecords.value = data || []
+}
+
+function openAddVisit() {
+  Object.assign(visitForm, defaultVisitForm())
+  visitModalOpen.value = true
+}
+
+async function handleAddVisit() {
+  if (!visitForm.visit_date) { message.warning('请选择拜访日期'); return }
+  if (!visitForm.visitor_name.trim()) { message.warning('请填写拜访人'); return }
+  if (!currentCompany.value) return
+  savingVisit.value = true
+  try {
+    const { error } = await supabase.from('client_visit_records').insert([{
+      company_id: currentCompany.value.id,
+      visit_date: visitForm.visit_date.format('YYYY-MM-DD'),
+      visit_type: visitForm.visit_type,
+      visitor_name: visitForm.visitor_name,
+      contact_names: visitForm.contact_names,
+      purpose: visitForm.purpose,
+      summary: visitForm.summary,
+      next_visit_date: visitForm.next_visit_date ? visitForm.next_visit_date.format('YYYY-MM-DD') : null,
+    }])
+    if (error) throw error
+    await supabase.from('client_companies').update({ visit_status: '已拜访' }).eq('id', currentCompany.value.id)
+    message.success('拜访记录已保存')
+    visitModalOpen.value = false
+    loadVisitRecords(currentCompany.value.id)
+    load()
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    savingVisit.value = false
+  }
+}
+
+async function deleteVisit(id: string) {
+  const { error } = await supabase.from('client_visit_records').delete().eq('id', id)
+  if (error) { message.error('删除失败'); return }
+  message.success('已删除')
+  if (currentCompany.value) loadVisitRecords(currentCompany.value.id)
+}
+
+async function updateVisitStatus(status: string) {
+  if (!currentCompany.value) return
+  const { error } = await supabase.from('client_companies').update({ visit_status: status }).eq('id', currentCompany.value.id)
+  if (error) { message.error('更新失败'); return }
+  currentCompany.value.visit_status = status
+  load()
 }
 
 async function handleSubmit() {
@@ -784,6 +995,11 @@ async function handleSubmit() {
       order_frequency: form.order_frequency,
       monthly_order_count: form.monthly_order_count,
       notes: form.notes,
+      address_country: form.address_country,
+      address_province: form.address_province,
+      address_city: form.address_city,
+      address_detail: form.address_detail,
+      visit_status: form.visit_status,
     }
     if (editingId.value) {
       const { error } = await supabase.from('client_companies').update(payload).eq('id', editingId.value)
@@ -858,21 +1074,40 @@ async function handleAssignManager() {
   }
 }
 
+function addStore() {
+  const v = storeInputVal.value.trim()
+  if (v && !contactForm.responsible_stores.includes(v)) {
+    contactForm.responsible_stores.push(v)
+  }
+  storeInputVal.value = ''
+}
+
+function addBrand() {
+  const v = brandInputVal.value.trim()
+  if (v && !contactForm.responsible_brands.includes(v)) {
+    contactForm.responsible_brands.push(v)
+  }
+  brandInputVal.value = ''
+}
+
 function openAddContact() {
   editingContactId.value = ''
+  storeInputVal.value = ''
+  brandInputVal.value = ''
   Object.assign(contactForm, defaultContactForm())
   contactModalOpen.value = true
 }
 
 function openEditContact(contact: any) {
   editingContactId.value = contact.id
+  storeInputVal.value = ''
+  brandInputVal.value = ''
   Object.assign(contactForm, {
     ...defaultContactForm(),
     name: contact.name || '',
     role: contact.role || '联系人',
     phone: contact.phone || '',
     wechat: contact.wechat || '',
-    whatsapp: contact.whatsapp || '',
     is_primary: contact.is_primary || false,
     contact_wechat_status: contact.contact_wechat_status || '活跃',
     monthly_budget_cny: contact.monthly_budget_cny || 0,
@@ -882,11 +1117,6 @@ function openEditContact(contact: any) {
     responsible_brands: contact.responsible_brands || [],
     join_date: contact.join_date ? dayjs(contact.join_date) : null,
     resigned_at: contact.resigned_at ? dayjs(contact.resigned_at) : null,
-    business_manager_id: contact.business_manager_id || '',
-    business_manager_name: contact.business_manager_name || '',
-    wechat_account_id: contact.wechat_account_id || '',
-    wechat_account_id_str: contact.wechat_account_id_str || '',
-    wechat_nickname: contact.wechat_nickname || '',
   })
   contactModalOpen.value = true
 }
@@ -896,13 +1126,14 @@ async function handleAddContact() {
   if (!currentCompany.value) return
   savingContact.value = true
   try {
+    if (storeInputVal.value.trim()) addStore()
+    if (brandInputVal.value.trim()) addBrand()
     const payload: any = {
       company_id: currentCompany.value.id,
       name: contactForm.name,
       role: contactForm.role,
       phone: contactForm.phone,
       wechat: contactForm.wechat,
-      whatsapp: contactForm.whatsapp,
       is_primary: contactForm.is_primary,
       contact_wechat_status: contactForm.contact_wechat_status,
       monthly_budget_cny: contactForm.monthly_budget_cny,
@@ -912,12 +1143,7 @@ async function handleAddContact() {
       responsible_brands: contactForm.responsible_brands,
       join_date: contactForm.join_date ? contactForm.join_date.format('YYYY-MM-DD') : null,
       resigned_at: contactForm.resigned_at ? contactForm.resigned_at.format('YYYY-MM-DD') : null,
-      business_manager_name: contactForm.business_manager_name,
-      wechat_account_id_str: contactForm.wechat_account_id_str,
-      wechat_nickname: contactForm.wechat_nickname,
     }
-    if (contactForm.business_manager_id) payload.business_manager_id = contactForm.business_manager_id
-    if (contactForm.wechat_account_id) payload.wechat_account_id = contactForm.wechat_account_id
 
     if (editingContactId.value) {
       const { error } = await supabase.from('client_contacts').update(payload).eq('id', editingContactId.value)
@@ -1298,4 +1524,69 @@ onMounted(() => {
 .resign-scope-label {
   font-size: 12px; font-weight: 600; color: #92400e; margin-bottom: 4px;
 }
+
+/* 卡片拜访状态 */
+.card-visit { display: flex; flex-direction: column; gap: 6px; min-width: 72px; align-items: flex-start; }
+.visit-status-badge {
+  display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500;
+  padding: 2px 8px; border-radius: 20px; white-space: nowrap;
+}
+.visit-status-badge .visit-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.visit-未接触 { background: #f3f4f6; color: #6b7280; }
+.visit-未接触 .visit-dot { background: #9ca3af; }
+.visit-待拜访 { background: #fff7ed; color: #c2410c; }
+.visit-待拜访 .visit-dot { background: #f97316; }
+.visit-已拜访 { background: #f0fdf4; color: #15803d; }
+.visit-已拜访 .visit-dot { background: #22c55e; }
+.visit-不接受拜访 { background: #fef2f2; color: #b91c1c; }
+.visit-不接受拜访 .visit-dot { background: #ef4444; }
+
+/* 地址展示 */
+.address-display {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 13px; color: #374151; margin-top: 4px;
+}
+.address-icon { color: #6b7280; margin-top: 2px; flex-shrink: 0; }
+
+/* 拜访记录 */
+.visit-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.visit-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; background: #f8fafc;
+  border-radius: 8px; border: 1px solid #e5e7eb;
+}
+.visit-date-col { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 64px; flex-shrink: 0; }
+.visit-date { font-size: 12px; font-weight: 700; color: #1f2937; }
+.visit-type-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 4px;
+  background: #dbeafe; color: #1d4ed8; white-space: nowrap;
+}
+.visit-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.visit-header-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.visit-visitor { font-size: 12px; font-weight: 600; color: #1f2937; display: flex; align-items: center; gap: 4px; }
+.visit-contacts { font-size: 12px; color: #6b7280; }
+.visit-purpose { font-size: 12px; color: #6b7280; }
+.visit-summary { font-size: 12px; color: #374151; line-height: 1.5; }
+.visit-next { font-size: 11px; color: #f59e0b; font-weight: 500; }
+
+/* 标签输入框样式 */
+.scope-input-area {
+  border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 8px;
+  min-height: 36px; background: #fff; cursor: text;
+  transition: border-color 0.2s;
+}
+.scope-input-area:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.1); }
+.scope-tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.scope-input-tag {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;
+}
+.scope-input-tag .scope-tag-del {
+  cursor: pointer; font-size: 13px; line-height: 1; opacity: 0.6; margin-left: 2px;
+}
+.scope-input-tag .scope-tag-del:hover { opacity: 1; }
+.scope-inline-input { border: none !important; outline: none; box-shadow: none !important; padding: 0 4px; height: 24px; min-width: 100px; flex: 1; font-size: 12px; }
+.scope-inline-input:focus { box-shadow: none !important; }
 </style>
