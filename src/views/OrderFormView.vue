@@ -16,6 +16,52 @@
     >
       <a-row :gutter="24">
         <a-col :span="16">
+          <!-- 客户信息（锁定区域） -->
+          <div class="card-panel customer-panel" :class="{ 'customer-locked': customerLocked }">
+            <div class="customer-panel-header">
+              <h3 class="section-title" style="margin-bottom:0;border-bottom:none">客户信息</h3>
+              <div class="customer-lock-area">
+                <template v-if="customerLocked">
+                  <div class="customer-locked-info">
+                    <span class="locked-name">{{ form.customer_name || '客户' }}</span>
+                    <span v-if="form.customer_id_str" class="locked-id">ID: {{ form.customer_id_str }}</span>
+                    <span v-if="form.sales_person" class="locked-sales">销售: {{ form.sales_person }}</span>
+                  </div>
+                  <a-button size="small" @click="customerLocked = false" class="unlock-btn">修改客户</a-button>
+                </template>
+                <template v-else>
+                  <a-button
+                    size="small"
+                    type="primary"
+                    :disabled="!form.customer_name && !form.customer_id_str"
+                    @click="customerLocked = true"
+                    class="lock-btn"
+                  >锁定客户信息</a-button>
+                  <span class="lock-hint">锁定后提交新ASIN订单时客户信息自动保留</span>
+                </template>
+              </div>
+            </div>
+            <div v-if="!customerLocked" class="customer-fields">
+              <a-row :gutter="16">
+                <a-col :span="8">
+                  <a-form-item label="客户名称" style="margin-bottom:0">
+                    <a-input v-model:value="form.customer_name" placeholder="客户名称（选填）" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="客户ID" style="margin-bottom:0">
+                    <a-input v-model:value="form.customer_id_str" placeholder="客户ID（选填）" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="销售人员" style="margin-bottom:0">
+                    <a-input v-model:value="form.sales_person" placeholder="销售人员（选填）" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </div>
+          </div>
+
           <div class="card-panel">
             <h3 class="section-title">基本信息</h3>
             <a-row :gutter="16">
@@ -128,18 +174,33 @@
               </div>
               <div class="bill-rows">
                 <div class="bill-row">
-                  <span>产品回款小计</span>
+                  <span class="bill-row-label">产品回款小计</span>
                   <span>¥{{ productSubtotal.toFixed(2) }}</span>
                 </div>
-                <template v-for="ot in form.order_types" :key="ot">
-                  <div class="bill-row">
-                    <span>{{ ot }} 佣金（{{ form.order_quantity }} 单 × ¥{{ priceMap[ot] || 0 }}）</span>
-                    <span>¥{{ ((priceMap[ot] || 0) * form.order_quantity).toFixed(2) }}</span>
-                  </div>
-                </template>
                 <div class="bill-divider"></div>
+                <template v-if="form.order_types.length > 0">
+                  <div class="bill-section-label">佣金明细</div>
+                  <template v-for="ot in form.order_types" :key="ot">
+                    <div class="bill-row bill-row-commission">
+                      <span class="bill-row-label">
+                        <span class="bill-type-dot" :style="{ background: orderTypeColor(ot) }"></span>
+                        {{ ot }}（{{ form.order_quantity }} 单 × ¥{{ priceMap[ot] || 0 }}/单）
+                      </span>
+                      <span class="commission-val">¥{{ ((priceMap[ot] || 0) * form.order_quantity).toFixed(2) }}</span>
+                    </div>
+                  </template>
+                  <div class="bill-row bill-row-commission-sub">
+                    <span class="bill-row-label">佣金小计</span>
+                    <span class="commission-val">¥{{ commissionSubtotal.toFixed(2) }}</span>
+                  </div>
+                  <div class="bill-divider"></div>
+                </template>
                 <div class="bill-row total-row">
-                  <span>合计总金额</span>
+                  <span>合计总金额
+                    <span v-if="form.order_types.length > 0" class="total-formula-hint">
+                      （产品回款 ¥{{ productSubtotal.toFixed(2) }} + 佣金 ¥{{ commissionSubtotal.toFixed(2) }}）
+                    </span>
+                  </span>
                   <strong class="total-amount">¥{{ form.total_amount.toFixed(2) }}</strong>
                 </div>
               </div>
@@ -542,16 +603,7 @@
 
         <a-col :span="8">
           <div class="card-panel">
-            <h3 class="section-title">客户信息</h3>
-            <a-form-item label="客户名称">
-              <a-input v-model:value="form.customer_name" placeholder="客户名称（选填）" />
-            </a-form-item>
-            <a-form-item label="客户ID">
-              <a-input v-model:value="form.customer_id_str" placeholder="客户ID（选填）" />
-            </a-form-item>
-            <a-form-item label="销售人员">
-              <a-input v-model:value="form.sales_person" placeholder="销售人员（选填）" />
-            </a-form-item>
+            <h3 class="section-title">其他信息</h3>
             <a-form-item label="Seller">
               <a-input v-model:value="form.seller" placeholder="Seller（选填）" />
             </a-form-item>
@@ -592,8 +644,14 @@
             </template>
           </div>
 
+          <div v-if="customerLocked" class="multi-asin-tip">
+            <span class="multi-asin-icon">&#x1F4CB;</span>
+            <span>客户已锁定：<strong>{{ form.customer_name || form.customer_id_str }}</strong></span>
+            <span class="multi-asin-sub">提交后可一键切换下一个ASIN</span>
+          </div>
+
           <div class="form-actions">
-            <a-button @click="resetForm">重置</a-button>
+            <a-button @click="resetForm">重置全部</a-button>
             <a-button type="primary" html-type="submit" :loading="submitting">
               提交订单
             </a-button>
@@ -616,6 +674,7 @@ const submitting = ref(false)
 const keywords = ref<string[]>([''])
 const kwGroups = ref<KwGroup[]>([])
 const currentOrderNumber = ref('')
+const customerLocked = ref(false)
 
 const countries = ['美国', '德国', '英国', '加拿大']
 
@@ -1156,8 +1215,30 @@ async function doSubmit() {
     }
 
     message.success(`订单 ${orderNumber} 创建成功！`)
-    resetForm()
-    currentOrderNumber.value = generateOrderNumber()
+    if (customerLocked.value) {
+      const savedCustomer = {
+        customer_name: form.customer_name,
+        customer_id_str: form.customer_id_str,
+        sales_person: form.sales_person,
+      }
+      Modal.confirm({
+        title: '继续为同一客户下单？',
+        content: `客户「${savedCustomer.customer_name || savedCustomer.customer_id_str}」还有其他ASIN需要下单吗？`,
+        okText: '继续下一个ASIN',
+        cancelText: '完成下单',
+        onOk: () => {
+          continueNextAsin(savedCustomer)
+        },
+        onCancel: () => {
+          customerLocked.value = false
+          resetForm()
+          currentOrderNumber.value = generateOrderNumber()
+        },
+      })
+    } else {
+      resetForm()
+      currentOrderNumber.value = generateOrderNumber()
+    }
   } catch (e: any) {
     message.error('创建失败：' + e.message)
   } finally {
@@ -1166,6 +1247,7 @@ async function doSubmit() {
 }
 
 function resetForm() {
+  customerLocked.value = false
   Object.assign(form, defaultForm())
   priceNoReview.value = 25
   priceText.value = 88
@@ -1182,6 +1264,31 @@ function resetForm() {
   quickSchedule.order_types = []
   quickSchedule.keywords = []
   formRef.value?.resetFields()
+}
+
+function continueNextAsin(savedCustomer: { customer_name: string; customer_id_str: string; sales_person: string }) {
+  Object.assign(form, defaultForm())
+  priceNoReview.value = 25
+  priceText.value = 88
+  priceImage.value = 100
+  priceVideo.value = 150
+  priceFeedback.value = 20
+  keywords.value = ['']
+  scheduleEntries.value = []
+  selectedDates.value = []
+  editingTypeDetails.value = []
+  quickSchedule.startDate = null
+  quickSchedule.days = 1
+  quickSchedule.dailyQty = 1
+  quickSchedule.order_types = []
+  quickSchedule.keywords = []
+  formRef.value?.resetFields()
+  form.customer_name = savedCustomer.customer_name
+  form.customer_id_str = savedCustomer.customer_id_str
+  form.sales_person = savedCustomer.sales_person
+  customerLocked.value = true
+  currentOrderNumber.value = generateOrderNumber()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 onMounted(() => {
@@ -1921,6 +2028,124 @@ onMounted(() => {
   gap: 12px;
   justify-content: flex-end;
   margin-top: 8px;
+}
+
+/* 客户信息面板 */
+.customer-panel {
+  border: 1.5px solid #e5e7eb;
+  transition: border-color 0.2s;
+}
+.customer-panel.customer-locked {
+  border-color: #16a34a;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+}
+.customer-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.customer-panel-header .section-title {
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.customer-lock-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  justify-content: flex-end;
+}
+.customer-locked-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.locked-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #15803d;
+}
+.locked-id, .locked-sales {
+  font-size: 12px;
+  color: #16a34a;
+  background: #dcfce7;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.lock-hint {
+  font-size: 11px;
+  color: #9ca3af;
+}
+.lock-btn {}
+.unlock-btn {}
+.customer-fields {
+  padding-top: 4px;
+}
+
+/* 多ASIN提示 */
+.multi-asin-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #15803d;
+}
+.multi-asin-icon { font-size: 15px; }
+.multi-asin-sub {
+  font-size: 11px;
+  color: #4ade80;
+  margin-left: auto;
+}
+
+/* 账单明细增强 */
+.bill-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 4px 0 2px 0;
+}
+.bill-row-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bill-type-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.bill-row-commission {
+  padding-left: 4px;
+  font-size: 12px;
+  color: #4b5563;
+}
+.bill-row-commission-sub {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  background: #f1f5f9;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.commission-val { color: #d97706; font-weight: 600; }
+.total-formula-hint {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 400;
+  margin-left: 4px;
 }
 
 /* 右侧类型汇总卡 */
