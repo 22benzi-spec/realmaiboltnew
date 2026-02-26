@@ -310,30 +310,35 @@
                   </div>
                 </div>
                 <div class="kw-group-items">
-                  <div class="kw-group-col-labels">
-                    <span class="kw-col-label kw-col-kw">关键词</span>
-                    <span class="kw-col-label kw-col-link">操作链接（选填）</span>
-                  </div>
                   <div v-for="(item, ii) in group.items" :key="ii" class="kw-group-item-row">
+                    <div class="kw-mode-toggle">
+                      <span
+                        :class="['kw-mode-btn', item.mode === 'keyword' ? 'active' : '']"
+                        @click="item.mode = 'keyword'"
+                      >关键词</span>
+                      <span
+                        :class="['kw-mode-btn', item.mode === 'link' ? 'active' : '']"
+                        @click="item.mode = 'link'"
+                      >链接</span>
+                    </div>
                     <a-input
-                      v-model:value="item.keyword"
+                      v-model:value="item.value"
                       size="small"
-                      placeholder="输入关键词"
-                      class="kw-col-kw"
-                    />
-                    <a-input
-                      v-model:value="item.link"
-                      size="small"
-                      placeholder="操作链接（选填）"
-                      class="kw-col-link"
+                      :placeholder="item.mode === 'keyword' ? '输入搜索关键词' : '粘贴操作链接'"
+                      style="flex:1"
                     />
                     <a-button type="text" danger size="small" @click="removeKwGroupItem(gi, ii)" style="flex-shrink:0">
                       <DeleteOutlined />
                     </a-button>
                   </div>
-                  <a-button type="dashed" size="small" @click="addKwGroupItem(gi)" style="margin-top:4px">
-                    <PlusOutlined /> 添加一行
-                  </a-button>
+                  <div class="kw-group-add-btns">
+                    <a-button type="dashed" size="small" @click="() => { kwGroups[gi].items.push({ mode: 'keyword', value: '' }) }">
+                      <PlusOutlined /> 添加关键词行
+                    </a-button>
+                    <a-button type="dashed" size="small" @click="() => { kwGroups[gi].items.push({ mode: 'link', value: '' }) }">
+                      <PlusOutlined /> 添加链接行
+                    </a-button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -438,31 +443,35 @@
                           @select="(val: string) => copyKeywordsFromDate(ti, val)"
                         />
                       </div>
-                      <!-- 列标题 -->
-                      <div v-if="td.kwEntries && td.kwEntries.length > 0" class="kw-group-col-labels" style="margin-top:6px">
-                        <span class="kw-col-label kw-col-kw">关键词</span>
-                        <span class="kw-col-label kw-col-link">操作链接（选填）</span>
-                      </div>
-                      <div v-for="(entry, ei) in td.kwEntries" :key="ei" class="kw-group-item-row">
+                      <div v-for="(entry, ei) in td.kwEntries" :key="ei" class="kw-group-item-row" style="margin-top:4px">
+                        <div class="kw-mode-toggle">
+                          <span
+                            :class="['kw-mode-btn', entry.mode === 'keyword' ? 'active' : '']"
+                            @click="entry.mode = 'keyword'"
+                          >关键词</span>
+                          <span
+                            :class="['kw-mode-btn', entry.mode === 'link' ? 'active kw-mode-link' : '']"
+                            @click="entry.mode = 'link'"
+                          >链接</span>
+                        </div>
                         <a-input
-                          v-model:value="entry.keyword"
-                          placeholder="输入关键词"
+                          v-model:value="entry.value"
+                          :placeholder="entry.mode === 'keyword' ? '输入搜索关键词' : '粘贴操作链接'"
                           size="small"
-                          class="kw-col-kw"
-                        />
-                        <a-input
-                          v-model:value="entry.link"
-                          placeholder="操作链接（选填）"
-                          size="small"
-                          class="kw-col-link"
+                          style="flex:1"
                         />
                         <a-button type="text" danger size="small" @click="removeTypeKwEntry(ti, ei)" style="flex-shrink:0">
                           <DeleteOutlined />
                         </a-button>
                       </div>
-                      <a-button type="dashed" size="small" @click="addTypeKwEntry(ti)" style="margin-top:4px;width:100%">
-                        <PlusOutlined /> 添加关键词/链接行
-                      </a-button>
+                      <div class="kw-group-add-btns" style="margin-top:6px">
+                        <a-button type="dashed" size="small" @click="() => editingTypeDetails[ti].kwEntries.push({ mode: 'keyword', value: '' })">
+                          <PlusOutlined /> 关键词行
+                        </a-button>
+                        <a-button type="dashed" size="small" @click="() => editingTypeDetails[ti].kwEntries.push({ mode: 'link', value: '' })">
+                          <PlusOutlined /> 链接行
+                        </a-button>
+                      </div>
                     </div>
                   </div>
 
@@ -631,8 +640,8 @@ function orderTypeColor(t: string): string {
 }
 
 interface KwEntry {
-  keyword: string
-  link: string
+  mode: 'keyword' | 'link'
+  value: string
 }
 
 interface KwGroup {
@@ -668,22 +677,18 @@ const editingQuantityTotal = computed(() =>
 function toggleManualType(val: string) {
   const idx = editingTypeDetails.value.findIndex(d => d.type === val)
   if (idx === -1) {
-    editingTypeDetails.value.push({ type: val, qty: 1, keywords: [], kwEntries: [{ keyword: '', link: '' }] })
+    editingTypeDetails.value.push({ type: val, qty: 1, keywords: [], kwEntries: [{ mode: 'keyword', value: '' }] })
   } else {
     editingTypeDetails.value.splice(idx, 1)
   }
 }
 
 function addKwGroup() {
-  kwGroups.value.push({ name: `关键词组 ${kwGroups.value.length + 1}`, items: [{ keyword: '', link: '' }] })
+  kwGroups.value.push({ name: `关键词组 ${kwGroups.value.length + 1}`, items: [{ mode: 'keyword', value: '' }] })
 }
 
 function removeKwGroup(gi: number) {
   kwGroups.value.splice(gi, 1)
-}
-
-function addKwGroupItem(gi: number) {
-  kwGroups.value[gi].items.push({ keyword: '', link: '' })
 }
 
 function removeKwGroupItem(gi: number, ii: number) {
@@ -692,25 +697,21 @@ function removeKwGroupItem(gi: number, ii: number) {
 
 function fillFromGroup(typeIdx: number, gi: number) {
   const group = kwGroups.value[gi]
-  const entries = group.items.filter(it => it.keyword.trim() || it.link.trim())
+  const entries = group.items.filter(it => it.value.trim())
   if (!entries.length) return
-  editingTypeDetails.value[typeIdx].kwEntries = entries.map(it => ({ keyword: it.keyword, link: it.link }))
-  editingTypeDetails.value[typeIdx].keywords = entries.map(it => it.keyword).filter(k => k.trim())
+  editingTypeDetails.value[typeIdx].kwEntries = entries.map(it => ({ mode: it.mode, value: it.value }))
+  editingTypeDetails.value[typeIdx].keywords = entries.filter(it => it.mode === 'keyword').map(it => it.value)
 }
 
 function applyGroupToAll(gi: number) {
   const group = kwGroups.value[gi]
-  const entries = group.items.filter(it => it.keyword.trim() || it.link.trim())
+  const entries = group.items.filter(it => it.value.trim())
   if (!entries.length) return
   editingTypeDetails.value.forEach(td => {
-    td.kwEntries = entries.map(it => ({ keyword: it.keyword, link: it.link }))
-    td.keywords = entries.map(it => it.keyword).filter(k => k.trim())
+    td.kwEntries = entries.map(it => ({ mode: it.mode, value: it.value }))
+    td.keywords = entries.filter(it => it.mode === 'keyword').map(it => it.value)
   })
   message.success(`"${group.name}" 已填入所有类型`)
-}
-
-function addTypeKwEntry(typeIdx: number) {
-  editingTypeDetails.value[typeIdx].kwEntries.push({ keyword: '', link: '' })
 }
 
 function removeTypeKwEntry(typeIdx: number, ei: number) {
@@ -719,7 +720,7 @@ function removeTypeKwEntry(typeIdx: number, ei: number) {
 
 function copyFromDateOptions(typeName: string) {
   return scheduleEntries.value
-    .filter(e => e.typeDetails?.some(td => td.type === typeName && (td.kwEntries?.some(e => e.keyword.trim() || e.link.trim()) || td.keywords.some(k => k.trim()))))
+    .filter(e => e.typeDetails?.some(td => td.type === typeName && (td.kwEntries?.some(e => e.value.trim()) || td.keywords.some(k => k.trim()))))
     .map(e => ({ label: e.date, value: e.date }))
 }
 
@@ -729,9 +730,9 @@ function copyKeywordsFromDate(typeIdx: number, dateStr: string) {
   if (td) {
     if (td.kwEntries?.length) {
       editingTypeDetails.value[typeIdx].kwEntries = td.kwEntries.map(e => ({ ...e }))
-      editingTypeDetails.value[typeIdx].keywords = td.kwEntries.map(e => e.keyword).filter(k => k.trim())
+      editingTypeDetails.value[typeIdx].keywords = td.kwEntries.filter(e => e.mode === 'keyword').map(e => e.value).filter(v => v.trim())
     } else if (td.keywords?.length) {
-      editingTypeDetails.value[typeIdx].kwEntries = td.keywords.map(k => ({ keyword: k, link: '' }))
+      editingTypeDetails.value[typeIdx].kwEntries = td.keywords.map(k => ({ mode: 'keyword' as const, value: k }))
       editingTypeDetails.value[typeIdx].keywords = [...td.keywords]
     }
   }
@@ -791,7 +792,7 @@ function applyQuickSchedule() {
           type: t,
           qty: quickSchedule.dailyQty,
           keywords: [...cleanKws],
-          kwEntries: cleanKws.map(k => ({ keyword: k, link: '' })),
+          kwEntries: cleanKws.map(k => ({ mode: 'keyword' as const, value: k })),
         })),
       }
       if (idx >= 0) scheduleEntries.value[idx] = entry
@@ -853,7 +854,7 @@ function loadTypeDetailsFromEntry(entry: ScheduleEntry) {
     keywords: [...(td.keywords || [])],
     kwEntries: td.kwEntries?.length
       ? td.kwEntries.map(e => ({ ...e }))
-      : (td.keywords || []).map(k => ({ keyword: k, link: '' })),
+      : (td.keywords || []).map(k => ({ mode: 'keyword' as const, value: k })),
   }))
 }
 
@@ -915,8 +916,8 @@ function saveScheduleEntry() {
     const details: TypeDetail[] = editingTypeDetails.value.map(td => ({
       type: td.type,
       qty: td.qty,
-      keywords: (td.kwEntries || []).map(e => e.keyword).filter(k => k.trim()),
-      kwEntries: (td.kwEntries || []).filter(e => e.keyword.trim() || e.link.trim()).map(e => ({ ...e })),
+      keywords: (td.kwEntries || []).filter(e => e.mode === 'keyword').map(e => e.value).filter(v => v.trim()),
+      kwEntries: (td.kwEntries || []).filter(e => e.value.trim()).map(e => ({ ...e })),
     }))
     selectedDates.value.forEach(dateStr => {
       const idx = scheduleEntries.value.findIndex(e => e.date === dateStr)
@@ -1701,26 +1702,41 @@ onMounted(() => {
   flex-direction: column;
   gap: 4px;
 }
-.kw-group-col-labels {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 2px;
-  padding-right: 32px;
-}
-.kw-col-label {
-  font-size: 11px;
-  color: #94a3b8;
-  font-weight: 500;
-}
-.kw-col-kw {
-  flex: 1;
-}
-.kw-col-link {
-  flex: 1.2;
-}
 .kw-group-item-row {
   display: flex;
   align-items: center;
+  gap: 6px;
+}
+.kw-mode-toggle {
+  display: flex;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.kw-mode-btn {
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 22px;
+  cursor: pointer;
+  color: #6b7280;
+  background: #f9fafb;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+.kw-mode-btn:first-child {
+  border-right: 1px solid #d1d5db;
+}
+.kw-mode-btn.active {
+  background: #2563eb;
+  color: #fff;
+}
+.kw-mode-btn.active.kw-mode-link {
+  background: #0891b2;
+}
+.kw-group-add-btns {
+  display: flex;
   gap: 6px;
 }
 .no-date-placeholder {
