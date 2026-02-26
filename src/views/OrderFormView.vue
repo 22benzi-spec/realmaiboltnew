@@ -282,72 +282,112 @@
                   @select="handleDateSelect"
                 >
                   <template #dateCellRender="{ current }">
-                    <div v-if="getScheduleForDate(current)" class="cal-cell">
-                      <span class="cal-qty">{{ getScheduleForDate(current)!.quantity }}单</span>
-                      <div class="cal-types">
-                        <span
-                          v-for="t in getScheduleForDate(current)!.order_types"
-                          :key="t"
-                          class="cal-type-dot"
-                          :style="{ background: orderTypeColor(t) }"
-                        ></span>
+                    <div
+                      :class="['cal-cell-wrap', selectedDates.includes(current.format('YYYY-MM-DD')) ? 'cal-selected' : '']"
+                    >
+                      <div v-if="getScheduleForDate(current)" class="cal-cell">
+                        <span class="cal-qty">{{ getScheduleForDate(current)!.quantity }}单</span>
+                        <div class="cal-types">
+                          <span
+                            v-for="t in getScheduleForDate(current)!.order_types"
+                            :key="t"
+                            class="cal-type-dot"
+                            :style="{ background: orderTypeColor(t) }"
+                          ></span>
+                        </div>
                       </div>
                     </div>
                   </template>
                 </a-calendar>
               </div>
               <div class="schedule-form-area">
+                <!-- 已选日期展示 -->
                 <div class="selected-date-header">
                   <span class="selected-date-label">已选日期</span>
-                  <span class="selected-date-value">{{ selectedDateStr || '请点击日历选择日期' }}</span>
+                  <div v-if="selectedDates.length" class="selected-dates-list">
+                    <span
+                      v-for="d in [...selectedDates].sort()" :key="d"
+                      class="selected-date-chip"
+                      :class="{ 'has-schedule': scheduleEntries.some(e=>e.date===d) }"
+                    >{{ d }}</span>
+                    <a-button type="text" size="small" @click="clearDateSelection" style="color:#9ca3af;font-size:11px">清除</a-button>
+                  </div>
+                  <span v-else class="selected-date-value">点击日历选择，可多选</span>
                 </div>
-                <template v-if="selectedDateStr">
-                  <a-form-item label="当天订单数量" style="margin-top:12px">
-                    <a-input-number
-                      v-model:value="editingEntry.quantity"
-                      :min="1"
-                      style="width:100%"
-                      placeholder="输入数量"
-                    />
-                  </a-form-item>
 
-                  <a-form-item label="当天下单类型">
-                    <div class="schedule-type-chips">
-                      <div
-                        v-for="ot in orderTypeOptions"
-                        :key="ot.value"
-                        :class="['sched-type-chip', editingEntry.order_types.includes(ot.value) ? 'selected' : '',
-                          !form.order_types.includes(ot.value) ? 'disabled' : '']"
-                        @click="toggleScheduleType(ot.value)"
-                      >
-                        {{ ot.value }}
+                <template v-if="selectedDates.length > 0">
+                  <div v-if="selectedDates.length > 1" class="multi-day-tip">
+                    已选 <strong>{{ selectedDates.length }}</strong> 天，以下设置将应用到所有选中日期
+                  </div>
+
+                  <!-- 类型选择 -->
+                  <div class="type-select-label">选择下单类型（点击添加/移除）</div>
+                  <div class="schedule-type-chips" style="margin-bottom:12px">
+                    <div
+                      v-for="ot in orderTypeOptions"
+                      :key="ot.value"
+                      :class="['sched-type-chip', editingTypeDetails.some(d=>d.type===ot.value) ? 'selected' : '',
+                        !form.order_types.includes(ot.value) ? 'disabled' : '']"
+                      @click="toggleManualType(ot.value)"
+                    >{{ ot.value }}</div>
+                  </div>
+
+                  <!-- 每个类型的数量+关键词 -->
+                  <div
+                    v-for="(td, ti) in editingTypeDetails"
+                    :key="td.type"
+                    class="type-detail-block"
+                    :style="{ borderLeftColor: orderTypeColor(td.type) }"
+                  >
+                    <div class="type-detail-header">
+                      <span class="type-detail-name" :style="{ color: orderTypeColor(td.type) }">{{ td.type }}</span>
+                      <div class="type-detail-qty-row">
+                        <span class="type-detail-qty-label">数量</span>
+                        <a-input-number
+                          v-model:value="td.qty"
+                          :min="1"
+                          size="small"
+                          style="width:72px"
+                        />
+                        <span class="type-detail-qty-unit">单</span>
                       </div>
                     </div>
-                    <div class="sched-type-hint">仅可选择任务已配置的类型（高亮可选）</div>
-                  </a-form-item>
-
-                  <a-form-item label="当天使用关键词">
-                    <div v-for="(_, i) in editingEntry.keywords" :key="i" class="keyword-row">
-                      <a-input
-                        v-model:value="editingEntry.keywords[i]"
-                        placeholder="输入关键词"
-                        style="flex:1"
-                      />
-                      <a-button type="text" danger @click="removeScheduleKeyword(i)">
-                        <DeleteOutlined />
+                    <div class="type-detail-keywords">
+                      <div v-for="(_, ki) in td.keywords" :key="ki" class="keyword-row">
+                        <a-input
+                          v-model:value="td.keywords[ki]"
+                          placeholder="关键词（选填）"
+                          size="small"
+                          style="flex:1"
+                        />
+                        <a-button type="text" danger size="small" @click="removeTypeKeyword(ti, ki)">
+                          <DeleteOutlined />
+                        </a-button>
+                      </div>
+                      <a-button type="dashed" size="small" @click="addTypeKeyword(ti)" style="margin-top:4px;width:100%">
+                        <PlusOutlined /> 添加关键词
                       </a-button>
                     </div>
-                    <a-button type="dashed" block @click="addScheduleKeyword" style="margin-top:6px">
-                      <PlusOutlined /> 添加关键词
-                    </a-button>
-                  </a-form-item>
+                  </div>
+
+                  <!-- 合计 -->
+                  <div v-if="editingTypeDetails.length" class="type-total-row">
+                    <span>每天合计</span>
+                    <strong>{{ editingQuantityTotal }} 单</strong>
+                    <span v-if="selectedDates.length > 1" class="type-total-sub">× {{ selectedDates.length }} 天 = {{ editingQuantityTotal * selectedDates.length }} 单</span>
+                  </div>
+
                   <div class="schedule-actions">
-                    <a-button type="primary" @click="saveScheduleEntry">保存排期</a-button>
                     <a-button
-                      v-if="getScheduleForDate(calendarValue)"
+                      type="primary"
+                      :disabled="editingTypeDetails.length === 0"
+                      @click="saveScheduleEntry"
+                    >保存排期</a-button>
+                    <a-button
                       danger
-                      @click="removeScheduleEntry"
-                    >删除</a-button>
+                      v-if="selectedDates.some(d => scheduleEntries.some(e=>e.date===d))"
+                      @click="removeScheduleEntries"
+                    >删除所选</a-button>
                   </div>
                 </template>
               </div>
@@ -360,18 +400,27 @@
                   v-for="entry in scheduleEntriesSorted"
                   :key="entry.date"
                   class="schedule-tag"
+                  :class="{ 'is-selected': selectedDates.includes(entry.date) }"
+                  @click="handleDateSelect(dayjs(entry.date))"
                 >
                   <span class="schedule-tag-date">{{ entry.date }}</span>
                   <span class="schedule-tag-qty">{{ entry.quantity }}单</span>
-                  <span
-                    v-for="t in entry.order_types"
-                    :key="t"
-                    class="schedule-tag-type"
-                    :style="{ background: orderTypeColor(t) + '22', color: orderTypeColor(t), borderColor: orderTypeColor(t) + '44' }"
-                  >{{ t }}</span>
-                  <span v-if="entry.keywords.filter(k=>k.trim()).length" class="schedule-tag-kw">
-                    {{ entry.keywords.filter(k=>k.trim()).join('、') }}
-                  </span>
+                  <template v-if="entry.typeDetails?.length">
+                    <span
+                      v-for="td in entry.typeDetails"
+                      :key="td.type"
+                      class="schedule-tag-type"
+                      :style="{ background: orderTypeColor(td.type) + '22', color: orderTypeColor(td.type), borderColor: orderTypeColor(td.type) + '44' }"
+                    >{{ td.type }}×{{ td.qty }}<template v-if="td.keywords.filter(k=>k).length"> ({{ td.keywords.filter(k=>k).join('·') }})</template></span>
+                  </template>
+                  <template v-else>
+                    <span
+                      v-for="t in entry.order_types"
+                      :key="t"
+                      class="schedule-tag-type"
+                      :style="{ background: orderTypeColor(t) + '22', color: orderTypeColor(t), borderColor: orderTypeColor(t) + '44' }"
+                    >{{ t }}</span>
+                  </template>
                 </div>
               </div>
             </div>
@@ -476,21 +525,49 @@ function orderTypeColor(t: string): string {
   return TYPE_COLORS[t] || '#6b7280'
 }
 
+interface TypeDetail {
+  type: string
+  qty: number
+  keywords: string[]
+}
+
 interface ScheduleEntry {
   date: string
   quantity: number
   keywords: string[]
   order_types: string[]
+  typeDetails: TypeDetail[]
+}
+
+function makeTypeDetails(types: string[]): TypeDetail[] {
+  return types.map(t => ({ type: t, qty: 1, keywords: [''] }))
 }
 
 const scheduleEntries = ref<ScheduleEntry[]>([])
 const calendarValue = ref<Dayjs>(dayjs())
-const selectedDateStr = ref('')
-const editingEntry = reactive<{ quantity: number; keywords: string[]; order_types: string[] }>({
-  quantity: 1,
-  keywords: [''],
-  order_types: [],
-})
+const selectedDates = ref<string[]>([])
+const editingTypeDetails = ref<TypeDetail[]>([])
+
+const editingQuantityTotal = computed(() =>
+  editingTypeDetails.value.reduce((s, d) => s + (d.qty || 0), 0)
+)
+
+function toggleManualType(val: string) {
+  if (!form.order_types.includes(val)) return
+  const idx = editingTypeDetails.value.findIndex(d => d.type === val)
+  if (idx === -1) {
+    editingTypeDetails.value.push({ type: val, qty: 1, keywords: [''] })
+  } else {
+    editingTypeDetails.value.splice(idx, 1)
+  }
+}
+
+function addTypeKeyword(typeIdx: number) {
+  editingTypeDetails.value[typeIdx].keywords.push('')
+}
+function removeTypeKeyword(typeIdx: number, kwIdx: number) {
+  editingTypeDetails.value[typeIdx].keywords.splice(kwIdx, 1)
+}
 
 const quickSchedule = reactive<{
   startDate: Dayjs | null
@@ -542,6 +619,11 @@ function applyQuickSchedule() {
         quantity: quickSchedule.dailyQty,
         keywords: [...cleanKws],
         order_types: [...quickSchedule.order_types],
+        typeDetails: quickSchedule.order_types.map(t => ({
+          type: t,
+          qty: quickSchedule.dailyQty,
+          keywords: [...cleanKws],
+        })),
       }
       if (idx >= 0) scheduleEntries.value[idx] = entry
       else scheduleEntries.value.push(entry)
@@ -596,84 +678,114 @@ function getScheduleForDate(d: Dayjs): ScheduleEntry | undefined {
 }
 
 function handleDateSelect(d: Dayjs) {
+  const dateStr = d.format('YYYY-MM-DD')
   calendarValue.value = d
-  selectedDateStr.value = d.format('YYYY-MM-DD')
-  const existing = getScheduleForDate(d)
-  if (existing) {
-    editingEntry.quantity = existing.quantity
-    editingEntry.keywords = [...existing.keywords]
-    editingEntry.order_types = [...existing.order_types]
+
+  const alreadyIdx = selectedDates.value.indexOf(dateStr)
+  if (alreadyIdx >= 0) {
+    selectedDates.value.splice(alreadyIdx, 1)
   } else {
-    editingEntry.quantity = 1
-    editingEntry.keywords = ['']
-    editingEntry.order_types = [...form.order_types]
+    selectedDates.value.push(dateStr)
+  }
+
+  if (selectedDates.value.length === 1) {
+    const existing = getScheduleForDate(d)
+    if (existing && existing.typeDetails?.length) {
+      editingTypeDetails.value = existing.typeDetails.map(td => ({
+        type: td.type,
+        qty: td.qty,
+        keywords: [...td.keywords],
+      }))
+    } else {
+      editingTypeDetails.value = makeTypeDetails([...form.order_types])
+    }
   }
 }
 
-function toggleScheduleType(val: string) {
-  if (!form.order_types.includes(val)) return
-  const idx = editingEntry.order_types.indexOf(val)
-  if (idx === -1) editingEntry.order_types.push(val)
-  else editingEntry.order_types.splice(idx, 1)
-}
-
-function addScheduleKeyword() {
-  editingEntry.keywords.push('')
-}
-function removeScheduleKeyword(i: number) {
-  editingEntry.keywords.splice(i, 1)
+function clearDateSelection() {
+  selectedDates.value = []
+  editingTypeDetails.value = []
 }
 
 function saveScheduleEntry() {
-  if (!editingEntry.quantity || editingEntry.quantity < 1) {
-    message.warning('请输入有效的订单数量')
+  if (selectedDates.value.length === 0) {
+    message.warning('请先在日历上选择日期')
+    return
+  }
+  if (editingTypeDetails.value.length === 0) {
+    message.warning('请至少选择一种下单类型')
+    return
+  }
+  const dayQty = editingQuantityTotal.value
+  if (dayQty < 1) {
+    message.warning('每天总订单数量不能为 0')
     return
   }
 
-  const idx = scheduleEntries.value.findIndex(e => e.date === selectedDateStr.value)
-  const prevQty = idx >= 0 ? scheduleEntries.value[idx].quantity : 0
-  const newTotal = scheduledTotal.value - prevQty + editingEntry.quantity
+  const datesCount = selectedDates.value.length
+  const outsideQty = scheduleEntries.value
+    .filter(e => !selectedDates.value.includes(e.date))
+    .reduce((s, e) => s + e.quantity, 0)
+  const newTotal = outsideQty + datesCount * dayQty
   const total = form.order_quantity
 
-  if (newTotal > total) {
-    Modal.warning({
-      title: '排期数量超出',
-      content: `当前任务总订单量为 ${total} 单，保存后已排数量将达 ${newTotal} 单，超出 ${newTotal - total} 单。请调整后重新保存。`,
-      okText: '知道了',
+  const doSave = () => {
+    const details: TypeDetail[] = editingTypeDetails.value.map(td => ({
+      type: td.type,
+      qty: td.qty,
+      keywords: td.keywords.filter(k => k.trim()),
+    }))
+    selectedDates.value.forEach(dateStr => {
+      const idx = scheduleEntries.value.findIndex(e => e.date === dateStr)
+      const entry: ScheduleEntry = {
+        date: dateStr,
+        quantity: dayQty,
+        keywords: details.flatMap(d => d.keywords),
+        order_types: details.map(d => d.type),
+        typeDetails: details,
+      }
+      if (idx >= 0) scheduleEntries.value[idx] = entry
+      else scheduleEntries.value.push(entry)
     })
+    const remaining = total - newTotal
+    if (datesCount > 1) {
+      message.success(`已保存 ${datesCount} 天排期，每天 ${dayQty} 单`)
+    } else if (remaining > 0) {
+      message.success(`${selectedDates.value[0]} 排期已保存，剩余未排 ${remaining} 单`)
+    } else {
+      message.success(`排期已保存，全部订单已排期完毕！`)
+    }
+    selectedDates.value = []
+    editingTypeDetails.value = []
+  }
+
+  if (newTotal > total) {
+    Modal.confirm({
+      title: '排期数量超出',
+      content: `保存后总排期量将达 ${newTotal} 单，超出任务总量 ${newTotal - total} 单。是否继续？`,
+      okText: '继续保存',
+      cancelText: '取消',
+      onOk: doSave,
+    })
+  } else {
+    doSave()
+  }
+}
+
+function removeScheduleEntries() {
+  const toRemove = selectedDates.value.filter(d =>
+    scheduleEntries.value.some(e => e.date === d)
+  )
+  if (toRemove.length === 0) {
+    message.warning('所选日期没有排期数据')
     return
   }
-
-  const entry: ScheduleEntry = {
-    date: selectedDateStr.value,
-    quantity: editingEntry.quantity,
-    keywords: editingEntry.keywords.filter(k => k.trim()),
-    order_types: [...editingEntry.order_types],
-  }
-  if (idx >= 0) {
-    scheduleEntries.value[idx] = entry
-  } else {
-    scheduleEntries.value.push(entry)
-  }
-
-  const remaining = total - newTotal
-  if (remaining > 0) {
-    message.success(`${selectedDateStr.value} 排期已保存，剩余未排 ${remaining} 单`)
-  } else {
-    message.success(`${selectedDateStr.value} 排期已保存，全部订单已排期完毕！`)
-  }
+  scheduleEntries.value = scheduleEntries.value.filter(e => !toRemove.includes(e.date))
+  message.success(`已删除 ${toRemove.length} 天排期`)
+  selectedDates.value = []
+  editingTypeDetails.value = []
 }
 
-function removeScheduleEntry() {
-  const idx = scheduleEntries.value.findIndex(e => e.date === selectedDateStr.value)
-  if (idx >= 0) {
-    scheduleEntries.value.splice(idx, 1)
-    editingEntry.quantity = 1
-    editingEntry.keywords = ['']
-    editingEntry.order_types = []
-    message.success('排期已删除')
-  }
-}
 
 function toggleOrderType(val: string) {
   const idx = form.order_types.indexOf(val)
@@ -865,10 +977,8 @@ function resetForm() {
   priceFeedback.value = 20
   keywords.value = ['']
   scheduleEntries.value = []
-  selectedDateStr.value = ''
-  editingEntry.quantity = 1
-  editingEntry.keywords = ['']
-  editingEntry.order_types = []
+  selectedDates.value = []
+  editingTypeDetails.value = []
   quickSchedule.startDate = null
   quickSchedule.days = 1
   quickSchedule.dailyQty = 1
@@ -1241,17 +1351,128 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
 }
+.cal-cell-wrap {
+  min-height: 22px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.cal-cell-wrap.cal-selected {
+  background: #dbeafe;
+  border-radius: 4px;
+}
 .selected-date-header {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 8px;
   background: #f1f5f9;
   border-radius: 8px;
   padding: 10px 14px;
+  flex-wrap: wrap;
+  min-height: 38px;
+}
+.selected-dates-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  align-items: center;
+}
+.selected-date-chip {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-family: monospace;
+  font-weight: 600;
+  border: 1px solid #bfdbfe;
+}
+.selected-date-chip.has-schedule {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #bbf7d0;
 }
 .selected-date-label {
   font-size: 12px;
   color: #64748b;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.multi-day-tip {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #1d4ed8;
+  margin-bottom: 10px;
+}
+.type-select-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+.type-detail-block {
+  border-left: 3px solid #e5e7eb;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: #f9fafb;
+  border-radius: 0 8px 8px 0;
+}
+.type-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.type-detail-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+.type-detail-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.type-detail-qty-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+.type-detail-qty-unit {
+  font-size: 12px;
+  color: #6b7280;
+}
+.type-detail-keywords {
+  padding-top: 4px;
+}
+.type-total-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f0fdf4;
+  border-radius: 6px;
+  border: 1px solid #bbf7d0;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #374151;
+}
+.type-total-row strong {
+  font-size: 15px;
+  color: #15803d;
+}
+.type-total-sub {
+  color: #6b7280;
+  font-size: 12px;
+}
+.schedule-tag.is-selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  cursor: pointer;
+}
+.schedule-tag {
+  cursor: pointer;
 }
 .selected-date-value {
   font-size: 14px;
