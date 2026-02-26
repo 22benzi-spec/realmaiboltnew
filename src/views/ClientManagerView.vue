@@ -291,25 +291,56 @@
 
           <div class="drawer-section">
             <div class="section-title-row">
-              <span class="section-title" style="margin-bottom:0;border:none;padding:0">对接人</span>
-              <a-button type="primary" size="small" @click="openAddContact"><PlusOutlined /> 添加对接人</a-button>
+              <span class="section-title" style="margin-bottom:0;border:none;padding:0">员工 / 对接人</span>
+              <div style="display:flex;gap:6px;align-items:center">
+                <a-switch
+                  v-model:checked="showResignedContacts"
+                  size="small"
+                  checked-children="含离职"
+                  un-checked-children="仅在职"
+                />
+                <a-button type="primary" size="small" @click="openAddContact"><PlusOutlined /> 添加员工</a-button>
+              </div>
             </div>
-            <div v-if="!currentCompany.client_contacts?.length" class="empty-val" style="margin-top:8px">暂无对接人</div>
+            <div v-if="!filteredContacts.length" class="empty-val" style="margin-top:8px">
+              {{ showResignedContacts ? '暂无员工' : '暂无在职员工' }}
+            </div>
             <div v-else class="contact-list">
-              <div v-for="c in currentCompany.client_contacts" :key="c.id" class="contact-row">
-                <div class="contact-avatar-sm">{{ c.name.charAt(0) }}</div>
+              <div
+                v-for="c in filteredContacts"
+                :key="c.id"
+                class="contact-row"
+                :class="{ 'contact-resigned': c.employment_status === '离职' || c.employment_status === '停止合作' }"
+              >
+                <div class="contact-avatar-sm" :class="{ 'avatar-resigned': c.employment_status !== '在职' }">
+                  {{ c.name.charAt(0) }}
+                </div>
                 <div class="contact-detail">
                   <div class="contact-name-row">
                     <span class="contact-name">{{ c.name }}</span>
-                    <a-tag v-if="c.is_primary" color="blue" style="font-size:10px;margin:0;padding:0 4px">主要</a-tag>
-                    <span class="contact-client-id">{{ c.client_id || '—' }}</span>
-                    <a-tag :color="contactStatusColor[c.contact_wechat_status || '活跃']" style="font-size:10px;margin:0;padding:0 4px">{{ c.contact_wechat_status || '活跃' }}</a-tag>
+                    <a-tag v-if="c.is_primary && c.employment_status === '在职'" color="blue" style="font-size:10px;margin:0;padding:0 4px">主要</a-tag>
+                    <a-tag
+                      :color="employmentStatusColor[c.employment_status || '在职']"
+                      style="font-size:10px;margin:0;padding:0 4px"
+                    >{{ c.employment_status || '在职' }}</a-tag>
+                    <a-tag :color="contactStatusColor[c.contact_wechat_status || '活跃']" style="font-size:10px;margin:0;padding:0 4px">微信{{ c.contact_wechat_status || '活跃' }}</a-tag>
                   </div>
                   <div class="contact-meta">
                     <span v-if="c.role" class="meta-item"><TeamOutlined /> {{ c.role }}</span>
                     <span v-if="c.phone" class="meta-item"><PhoneOutlined /> {{ c.phone }}</span>
-                    <span v-if="c.wechat" class="meta-item">微信: {{ c.wechat }}</span>
+                    <span v-if="c.wechat" class="meta-item"><WechatOutlined style="color:#07c160" /> {{ c.wechat }}</span>
+                    <span v-if="c.join_date" class="meta-item">入职: {{ c.join_date }}</span>
+                    <span v-if="c.resigned_at" class="meta-item resigned-date">离职: {{ c.resigned_at }}</span>
                   </div>
+
+                  <!-- 负责店铺/品牌 -->
+                  <div v-if="c.responsible_stores?.length || c.responsible_brands?.length" class="contact-scope">
+                    <span class="scope-label">负责范围：</span>
+                    <span v-for="s in c.responsible_stores" :key="s" class="scope-tag scope-store">{{ s }}</span>
+                    <span v-for="b in c.responsible_brands" :key="b" class="scope-tag scope-brand">{{ b }}</span>
+                  </div>
+                  <div v-else-if="c.employment_status === '在职'" class="contact-scope-empty">未设置负责店铺/品牌</div>
+
                   <!-- 对接关系 -->
                   <div class="contact-binding">
                     <div v-if="c.business_manager_name" class="binding-item manager-binding">
@@ -327,7 +358,19 @@
                   </div>
                   <div v-if="c.monthly_budget_cny" class="contact-budget">月预算：¥{{ formatMoney(c.monthly_budget_cny) }}</div>
                 </div>
-                <a-button type="link" size="small" danger @click="deleteContact(c)"><DeleteOutlined /></a-button>
+                <div class="contact-row-actions">
+                  <a-button type="link" size="small" @click="openEditContact(c)"><EditOutlined /></a-button>
+                  <a-button
+                    v-if="c.employment_status === '在职'"
+                    type="link"
+                    size="small"
+                    style="color:#f59e0b"
+                    @click="openResignModal(c)"
+                  >离职</a-button>
+                  <a-popconfirm title="确定删除该员工记录？" @confirm="deleteContact(c)">
+                    <a-button type="link" size="small" danger><DeleteOutlined /></a-button>
+                  </a-popconfirm>
+                </div>
               </div>
             </div>
           </div>
@@ -372,25 +415,74 @@
       </div>
     </a-modal>
 
-    <!-- 添加对接人 Modal -->
-    <a-modal v-model:open="contactModalOpen" title="添加对接人" @ok="handleAddContact" :confirm-loading="savingContact" ok-text="确定" cancel-text="取消" width="600px">
+    <!-- 添加/编辑对接人 Modal -->
+    <a-modal
+      v-model:open="contactModalOpen"
+      :title="editingContactId ? '编辑员工' : '添加员工'"
+      @ok="handleAddContact"
+      :confirm-loading="savingContact"
+      ok-text="确定"
+      cancel-text="取消"
+      width="660px"
+    >
       <a-form layout="vertical" style="margin-top:8px">
         <a-row :gutter="12">
           <a-col :span="12">
-            <a-form-item label="姓名" required><a-input v-model:value="contactForm.name" placeholder="对接人姓名" /></a-form-item>
+            <a-form-item label="姓名" required><a-input v-model:value="contactForm.name" placeholder="员工姓名" /></a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="角色"><a-input v-model:value="contactForm.role" placeholder="如：采购经理、运营" /></a-form-item>
+            <a-form-item label="职位/角色"><a-input v-model:value="contactForm.role" placeholder="如：采购经理、运营" /></a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="手机"><a-input v-model:value="contactForm.phone" /></a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="客户微信号"><a-input v-model:value="contactForm.wechat" placeholder="客户本人微信号" /></a-form-item>
+            <a-form-item label="微信号">
+              <a-input v-model:value="contactForm.wechat" placeholder="员工本人微信号" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="在职状态">
+              <a-select v-model:value="contactForm.employment_status">
+                <a-select-option value="在职">在职</a-select-option>
+                <a-select-option value="离职">离职</a-select-option>
+                <a-select-option value="停止合作">停止合作</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="开始对接日期">
+              <a-date-picker v-model:value="contactForm.join_date" style="width:100%" placeholder="选择日期" />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="contactForm.employment_status === '离职'" :span="12">
+            <a-form-item label="离职日期">
+              <a-date-picker v-model:value="contactForm.resigned_at" style="width:100%" placeholder="选择离职日期" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="是否主要对接人">
+              <a-switch v-model:checked="contactForm.is_primary" />
+            </a-form-item>
           </a-col>
         </a-row>
 
-        <a-divider style="margin:12px 0"><span style="font-size:12px;color:#6b7280">对接关系</span></a-divider>
+        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">负责范围（属于公司，不随员工转移）</span></a-divider>
+
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="负责店铺">
+              <a-select v-model:value="contactForm.responsible_stores" mode="tags" placeholder="输入店铺名称后回车，可多个" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="负责品牌">
+              <a-select v-model:value="contactForm.responsible_brands" mode="tags" placeholder="输入品牌名称后回车，可多个" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">对接关系</span></a-divider>
 
         <a-row :gutter="12">
           <a-col :span="12">
@@ -437,16 +529,62 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="是否主要对接人">
-              <a-switch v-model:checked="contactForm.is_primary" />
-            </a-form-item>
-          </a-col>
           <a-col :span="24">
             <a-form-item label="备注"><a-textarea v-model:value="contactForm.notes" :rows="2" /></a-form-item>
           </a-col>
         </a-row>
       </a-form>
+    </a-modal>
+
+    <!-- 离职转交 Modal -->
+    <a-modal
+      v-model:open="resignModalOpen"
+      title="员工离职 — 转交店铺/品牌"
+      @ok="handleResign"
+      :confirm-loading="resigning"
+      ok-text="确认离职并转交"
+      cancel-text="取消"
+      width="540px"
+    >
+      <div v-if="resignTarget" style="padding:8px 0">
+        <div class="resign-employee-info">
+          <div class="resign-avatar">{{ (resignTarget.name || '?').charAt(0) }}</div>
+          <div>
+            <div style="font-weight:700;font-size:15px">{{ resignTarget.name }}</div>
+            <div style="font-size:12px;color:#6b7280">{{ resignTarget.role }}</div>
+          </div>
+        </div>
+
+        <div v-if="resignTarget.responsible_stores?.length || resignTarget.responsible_brands?.length" class="resign-scope-box">
+          <div class="resign-scope-label">该员工负责的范围（将转交给新对接人）</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+            <a-tag v-for="s in resignTarget.responsible_stores" :key="s" color="blue">{{ s }}</a-tag>
+            <a-tag v-for="b in resignTarget.responsible_brands" :key="b" color="geekblue">{{ b }}</a-tag>
+          </div>
+        </div>
+        <div v-else class="resign-scope-box" style="color:#9ca3af">该员工未设置负责店铺/品牌</div>
+
+        <a-divider style="margin:14px 0" />
+
+        <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#374151">选择新对接人（接手店铺/品牌）</div>
+        <a-select
+          v-model:value="resignNewContactId"
+          placeholder="选择本公司其他在职员工（可不选）"
+          style="width:100%"
+          allow-clear
+        >
+          <a-select-option
+            v-for="c in currentCompany?.client_contacts?.filter((c: any) => c.id !== resignTarget.id && c.employment_status !== '离职')"
+            :key="c.id"
+            :value="c.id"
+          >
+            {{ c.name }}{{ c.role ? `（${c.role}）` : '' }}
+          </a-select-option>
+        </a-select>
+
+        <div style="margin-top:12px;font-size:13px;font-weight:600;color:#374151">离职日期</div>
+        <a-date-picker v-model:value="resignDate" style="width:100%;margin-top:6px" placeholder="选择离职日期" />
+      </div>
     </a-modal>
   </div>
 </template>
@@ -456,6 +594,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
+import dayjs, { type Dayjs } from 'dayjs'
 
 const loading = ref(false)
 const clients = ref<any[]>([])
@@ -468,8 +607,16 @@ const contactModalOpen = ref(false)
 const submitting = ref(false)
 const savingContact = ref(false)
 const editingId = ref('')
+const editingContactId = ref('')
 const currentCompany = ref<any>(null)
+const showResignedContacts = ref(false)
 const pagination = ref({ current: 1, pageSize: 15, total: 0 })
+
+const resignModalOpen = ref(false)
+const resigning = ref(false)
+const resignTarget = ref<any>(null)
+const resignNewContactId = ref<string>('')
+const resignDate = ref<Dayjs | null>(null)
 
 const managerOptions = ref<any[]>([])
 const wechatOptions = ref<any[]>([])
@@ -489,6 +636,13 @@ const levelColor: Record<string, string> = { S: 'gold', A: 'green', B: 'blue', C
 const levelBg: Record<string, string> = { S: '#d97706', A: '#059669', B: '#2563eb', C: '#6b7280' }
 const statusColor: Record<string, string> = { 活跃: 'green', 暂停: 'orange', 流失: 'red' }
 const contactStatusColor: Record<string, string> = { 活跃: 'green', 沉默: 'orange', 流失: 'red' }
+const employmentStatusColor: Record<string, string> = { 在职: 'green', 离职: 'default', 停止合作: 'red' }
+
+const filteredContacts = computed(() => {
+  if (!currentCompany.value?.client_contacts) return []
+  if (showResignedContacts.value) return currentCompany.value.client_contacts
+  return currentCompany.value.client_contacts.filter((c: any) => c.employment_status !== '离职' && c.employment_status !== '停止合作')
+})
 
 const filteredWechatOptions = computed(() => {
   if (!contactForm.business_manager_id) return []
@@ -525,6 +679,11 @@ const defaultContactForm = () => ({
   contact_wechat_status: '活跃',
   monthly_budget_cny: 0,
   notes: '',
+  employment_status: '在职',
+  responsible_stores: [] as string[],
+  responsible_brands: [] as string[],
+  join_date: null as Dayjs | null,
+  resigned_at: null as Dayjs | null,
   business_manager_id: '' as string,
   business_manager_name: '',
   wechat_account_id: '' as string,
@@ -700,7 +859,35 @@ async function handleAssignManager() {
 }
 
 function openAddContact() {
+  editingContactId.value = ''
   Object.assign(contactForm, defaultContactForm())
+  contactModalOpen.value = true
+}
+
+function openEditContact(contact: any) {
+  editingContactId.value = contact.id
+  Object.assign(contactForm, {
+    ...defaultContactForm(),
+    name: contact.name || '',
+    role: contact.role || '联系人',
+    phone: contact.phone || '',
+    wechat: contact.wechat || '',
+    whatsapp: contact.whatsapp || '',
+    is_primary: contact.is_primary || false,
+    contact_wechat_status: contact.contact_wechat_status || '活跃',
+    monthly_budget_cny: contact.monthly_budget_cny || 0,
+    notes: contact.notes || '',
+    employment_status: contact.employment_status || '在职',
+    responsible_stores: contact.responsible_stores || [],
+    responsible_brands: contact.responsible_brands || [],
+    join_date: contact.join_date ? dayjs(contact.join_date) : null,
+    resigned_at: contact.resigned_at ? dayjs(contact.resigned_at) : null,
+    business_manager_id: contact.business_manager_id || '',
+    business_manager_name: contact.business_manager_name || '',
+    wechat_account_id: contact.wechat_account_id || '',
+    wechat_account_id_str: contact.wechat_account_id_str || '',
+    wechat_nickname: contact.wechat_nickname || '',
+  })
   contactModalOpen.value = true
 }
 
@@ -709,9 +896,7 @@ async function handleAddContact() {
   if (!currentCompany.value) return
   savingContact.value = true
   try {
-    const clientId = 'CLI-' + Math.random().toString(36).substring(2, 8).toUpperCase()
     const payload: any = {
-      client_id: clientId,
       company_id: currentCompany.value.id,
       name: contactForm.name,
       role: contactForm.role,
@@ -722,6 +907,11 @@ async function handleAddContact() {
       contact_wechat_status: contactForm.contact_wechat_status,
       monthly_budget_cny: contactForm.monthly_budget_cny,
       notes: contactForm.notes,
+      employment_status: contactForm.employment_status,
+      responsible_stores: contactForm.responsible_stores,
+      responsible_brands: contactForm.responsible_brands,
+      join_date: contactForm.join_date ? contactForm.join_date.format('YYYY-MM-DD') : null,
+      resigned_at: contactForm.resigned_at ? contactForm.resigned_at.format('YYYY-MM-DD') : null,
       business_manager_name: contactForm.business_manager_name,
       wechat_account_id_str: contactForm.wechat_account_id_str,
       wechat_nickname: contactForm.wechat_nickname,
@@ -729,21 +919,72 @@ async function handleAddContact() {
     if (contactForm.business_manager_id) payload.business_manager_id = contactForm.business_manager_id
     if (contactForm.wechat_account_id) payload.wechat_account_id = contactForm.wechat_account_id
 
-    const { error } = await supabase.from('client_contacts').insert([payload])
-    if (error) throw error
-    message.success('对接人已添加')
+    if (editingContactId.value) {
+      const { error } = await supabase.from('client_contacts').update(payload).eq('id', editingContactId.value)
+      if (error) throw error
+      message.success('员工信息已更新')
+    } else {
+      payload.client_id = 'CLI-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+      const { error } = await supabase.from('client_contacts').insert([payload])
+      if (error) throw error
+      message.success('员工已添加')
+    }
     contactModalOpen.value = false
     load()
   } catch (e: any) {
-    message.error('添加失败：' + e.message)
+    message.error('操作失败：' + e.message)
   } finally {
     savingContact.value = false
   }
 }
 
+function openResignModal(contact: any) {
+  resignTarget.value = contact
+  resignNewContactId.value = ''
+  resignDate.value = dayjs()
+  resignModalOpen.value = true
+}
+
+async function handleResign() {
+  if (!resignTarget.value) return
+  resigning.value = true
+  try {
+    const dateStr = resignDate.value ? resignDate.value.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
+    await supabase
+      .from('client_contacts')
+      .update({
+        employment_status: '离职',
+        resigned_at: dateStr,
+        is_primary: false,
+      })
+      .eq('id', resignTarget.value.id)
+
+    if (resignNewContactId.value && (resignTarget.value.responsible_stores?.length || resignTarget.value.responsible_brands?.length)) {
+      const newContact = currentCompany.value?.client_contacts?.find((c: any) => c.id === resignNewContactId.value)
+      if (newContact) {
+        const mergedStores = [...new Set([...(newContact.responsible_stores || []), ...(resignTarget.value.responsible_stores || [])])]
+        const mergedBrands = [...new Set([...(newContact.responsible_brands || []), ...(resignTarget.value.responsible_brands || [])])]
+        await supabase
+          .from('client_contacts')
+          .update({ responsible_stores: mergedStores, responsible_brands: mergedBrands })
+          .eq('id', resignNewContactId.value)
+      }
+    }
+
+    message.success(`${resignTarget.value.name} 已标记为离职`)
+    resignModalOpen.value = false
+    load()
+  } catch (e: any) {
+    message.error('操作失败：' + e.message)
+  } finally {
+    resigning.value = false
+  }
+}
+
 function deleteContact(contact: any) {
   Modal.confirm({
-    title: `确定删除对接人「${contact.name}」？`,
+    title: `确定删除员工「${contact.name}」的记录？`,
+    content: '删除后无法恢复。建议离职员工使用「离职」标记代替删除。',
     okText: '确定删除',
     okType: 'danger',
     cancelText: '取消',
@@ -982,6 +1223,12 @@ onMounted(() => {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 12px 14px; background: #f8fafc;
   border-radius: 8px; border: 1px solid #e5e7eb;
+  transition: opacity 0.2s;
+}
+.contact-row.contact-resigned {
+  background: #f9fafb;
+  opacity: 0.75;
+  border-color: #e5e7eb;
 }
 .contact-avatar-sm {
   width: 34px; height: 34px; border-radius: 50%;
@@ -989,12 +1236,34 @@ onMounted(() => {
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700; flex-shrink: 0; margin-top: 2px;
 }
+.contact-avatar-sm.avatar-resigned {
+  background: #9ca3af;
+}
 .contact-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .contact-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .contact-name { font-size: 14px; font-weight: 600; color: #1f2937; }
 .contact-client-id { font-size: 11px; color: #9ca3af; font-family: monospace; }
 .contact-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .meta-item { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 4px; }
+.resigned-date { color: #f59e0b; }
+
+/* 负责范围 */
+.contact-scope {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  padding: 5px 8px; background: #eff6ff; border-radius: 5px;
+  border: 1px solid #bfdbfe;
+}
+.scope-label { font-size: 11px; color: #6b7280; white-space: nowrap; }
+.scope-tag {
+  font-size: 11px; padding: 1px 7px; border-radius: 4px; font-weight: 500;
+}
+.scope-store { background: #dbeafe; color: #1d4ed8; }
+.scope-brand { background: #ede9fe; color: #5b21b6; }
+.contact-scope-empty { font-size: 11px; color: #d1d5db; }
+
+.contact-row-actions {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0;
+}
 
 .contact-binding {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -1010,4 +1279,23 @@ onMounted(() => {
 .wechat-nick { color: #9ca3af; font-weight: 400; }
 .binding-empty { font-size: 12px; color: #9ca3af; }
 .contact-budget { font-size: 11px; color: #059669; }
+
+/* 离职转交 Modal */
+.resign-employee-info {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 12px;
+}
+.resign-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #f59e0b; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; flex-shrink: 0;
+}
+.resign-scope-box {
+  padding: 10px 12px; background: #fefce8; border: 1px solid #fde68a;
+  border-radius: 8px; font-size: 12px;
+}
+.resign-scope-label {
+  font-size: 12px; font-weight: 600; color: #92400e; margin-bottom: 4px;
+}
 </style>
