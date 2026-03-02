@@ -34,9 +34,8 @@
               <a-tag :color="levelColor[company.level || 'C']" style="margin:0;font-size:11px">{{ company.level || 'C' }}级</a-tag>
               <a-tag :color="statusColor[company.status || '活跃']" style="margin:0;font-size:11px">{{ company.status || '活跃' }}</a-tag>
             </div>
-            <div v-if="company.brand_names?.length" class="org-brands">
-              <TagOutlined style="font-size:11px;color:#9ca3af" />
-              <span class="brand-text">{{ company.brand_names.slice(0, 3).join('  /  ') }}{{ company.brand_names.length > 3 ? ' ...' : '' }}</span>
+            <div v-if="company.source_channel" class="org-source">
+              <span class="source-badge">{{ company.source_channel }}{{ company.source_referrer ? '：' + company.source_referrer : '' }}{{ company.source_exhibition ? '：' + company.source_exhibition : '' }}{{ company.source_channel_name ? '：' + company.source_channel_name : '' }}</span>
             </div>
           </div>
         </div>
@@ -160,100 +159,207 @@
     </div>
 
     <!-- 添加/编辑 Modal -->
-    <a-modal v-model:open="modalOpen" :title="editingId ? '编辑客户' : '添加客户'" @ok="handleSubmit" :confirm-loading="submitting" ok-text="确定" cancel-text="取消" width="720px">
+    <a-modal v-model:open="modalOpen" :title="editingId ? '编辑客户' : '添加客户'" @ok="handleSubmit" :confirm-loading="submitting" ok-text="确定" cancel-text="取消" :width="editingId ? 720 : 560">
       <a-form layout="vertical" style="margin-top:8px">
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="公司名称" required>
-              <a-input v-model:value="form.company_name" placeholder="请输入公司名称" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item label="客户等级">
-              <a-select v-model:value="form.level">
-                <a-select-option v-for="l in ['S','A','B','C']" :key="l" :value="l">{{ l }}级</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item label="状态">
-              <a-select v-model:value="form.status">
-                <a-select-option value="活跃">活跃</a-select-option>
-                <a-select-option value="暂停">暂停</a-select-option>
-                <a-select-option value="流失">流失</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="国家/地区">
-              <a-input v-model:value="form.country" placeholder="如：中国、美国" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="欠款金额（元）">
-              <a-input-number v-model:value="form.debt_amount_cny" :min="0" style="width:100%" placeholder="当前欠款" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="预存金额（元）">
-              <a-input-number v-model:value="form.prepaid_amount_cny" :min="0" style="width:100%" placeholder="预先存入资金" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="24">
-            <a-form-item label="品牌名称（多个）">
-              <a-select v-model:value="form.brand_names" mode="tags" placeholder="输入品牌名称后回车" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="24">
-            <a-form-item label="ASIN 列表（多个）">
-              <a-select v-model:value="form.client_asins" mode="tags" placeholder="输入ASIN后回车，支持多个" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="24">
-            <a-form-item label="备注">
-              <a-textarea v-model:value="form.notes" :rows="2" placeholder="备注信息" />
-            </a-form-item>
-          </a-col>
-        </a-row>
 
-        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">地址（选填，客户愿意提供时录入）</span></a-divider>
+        <!-- 新增时：简洁模式 -->
+        <template v-if="!editingId">
+          <a-row :gutter="16">
+            <a-col :span="24">
+              <a-form-item label="公司名称" required>
+                <a-input v-model:value="form.company_name" placeholder="请输入客户公司名称" size="large" />
+              </a-form-item>
+            </a-col>
+          </a-row>
 
-        <a-row :gutter="16">
-          <a-col :span="8">
-            <a-form-item label="国家">
-              <a-input v-model:value="form.address_country" placeholder="如：中国" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="省/州">
-              <a-input v-model:value="form.address_province" placeholder="如：广东省" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="城市">
-              <a-input v-model:value="form.address_city" placeholder="如：深圳市" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="24">
-            <a-form-item label="详细地址">
-              <a-input v-model:value="form.address_detail" placeholder="街道、楼号等详细地址" />
-            </a-form-item>
-          </a-col>
-        </a-row>
+          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">来源渠道</span></a-divider>
 
-        <a-divider style="margin:10px 0"><span style="font-size:12px;color:#6b7280">拜访意向</span></a-divider>
-        <a-row :gutter="16">
-          <a-col :span="8">
-            <a-form-item label="拜访状态">
-              <a-select v-model:value="form.visit_status">
-                <a-select-option value="未接触">未接触</a-select-option>
-                <a-select-option value="待拜访">待拜访</a-select-option>
-                <a-select-option value="已拜访">已拜访</a-select-option>
-                <a-select-option value="不接受拜访">不接受拜访</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
+          <a-row :gutter="16">
+            <a-col :span="24">
+              <a-form-item label="来源方式" required>
+                <div class="source-channel-options">
+                  <div
+                    v-for="opt in sourceChannelOptions"
+                    :key="opt.value"
+                    :class="['channel-opt', { active: form.source_channel === opt.value }]"
+                    @click="form.source_channel = opt.value; form.source_referrer = ''; form.source_exhibition = ''; form.source_channel_name = ''"
+                  >
+                    <span class="channel-opt-icon">{{ opt.icon }}</span>
+                    <span class="channel-opt-label">{{ opt.label }}</span>
+                  </div>
+                </div>
+              </a-form-item>
+            </a-col>
+
+            <a-col v-if="form.source_channel === '老客介绍'" :span="24">
+              <a-form-item label="介绍人（老客名称）">
+                <a-input v-model:value="form.source_referrer" placeholder="填写是哪位老客户介绍的" />
+              </a-form-item>
+            </a-col>
+
+            <a-col v-if="form.source_channel === '展会'" :span="24">
+              <a-form-item label="展会名称">
+                <a-input v-model:value="form.source_exhibition" placeholder="如：广交会2024、亚马逊峰会" />
+              </a-form-item>
+            </a-col>
+
+            <a-col v-if="form.source_channel === '渠道推荐'" :span="24">
+              <a-form-item label="渠道名称">
+                <a-input v-model:value="form.source_channel_name" placeholder="填写是哪个渠道推荐的" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">对接员工</span></a-divider>
+
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="员工姓名">
+                <a-input v-model:value="form.contact_name" placeholder="对接员工的姓名" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="员工微信号">
+                <a-input v-model:value="form.contact_wechat" placeholder="微信号" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="24">
+              <a-form-item label="备注">
+                <a-textarea v-model:value="form.notes" :rows="2" placeholder="其他备注信息（选填）" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </template>
+
+        <!-- 编辑时：完整模式 -->
+        <template v-else>
+          <a-row :gutter="16">
+            <a-col :span="14">
+              <a-form-item label="公司名称" required>
+                <a-input v-model:value="form.company_name" placeholder="请输入公司名称" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="5">
+              <a-form-item label="客户等级">
+                <a-select v-model:value="form.level">
+                  <a-select-option v-for="l in ['S','A','B','C']" :key="l" :value="l">{{ l }}级</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="5">
+              <a-form-item label="状态">
+                <a-select v-model:value="form.status">
+                  <a-select-option value="活跃">活跃</a-select-option>
+                  <a-select-option value="暂停">暂停</a-select-option>
+                  <a-select-option value="流失">流失</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+
+            <a-col :span="8">
+              <a-form-item label="国家/地区">
+                <a-input v-model:value="form.country" placeholder="如：中国、美国" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="欠款金额（元）">
+                <a-input-number v-model:value="form.debt_amount_cny" :min="0" style="width:100%" placeholder="当前欠款" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="预存金额（元）">
+                <a-input-number v-model:value="form.prepaid_amount_cny" :min="0" style="width:100%" placeholder="预先存入资金" />
+              </a-form-item>
+            </a-col>
+
+            <a-col :span="24">
+              <a-form-item label="备注">
+                <a-textarea v-model:value="form.notes" :rows="2" placeholder="备注信息（店铺/ASIN/品牌通过下单自动积累，无需手动填写）" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">来源渠道</span></a-divider>
+          <a-row :gutter="16">
+            <a-col :span="10">
+              <a-form-item label="来源方式">
+                <a-select v-model:value="form.source_channel" allow-clear placeholder="选择来源渠道">
+                  <a-select-option value="老客介绍">老客介绍</a-select-option>
+                  <a-select-option value="展会">展会</a-select-option>
+                  <a-select-option value="渠道推荐">渠道推荐</a-select-option>
+                  <a-select-option value="其他">其他</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col v-if="form.source_channel === '老客介绍'" :span="14">
+              <a-form-item label="介绍人">
+                <a-input v-model:value="form.source_referrer" placeholder="老客名称" />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="form.source_channel === '展会'" :span="14">
+              <a-form-item label="展会名称">
+                <a-input v-model:value="form.source_exhibition" placeholder="如：广交会2024" />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="form.source_channel === '渠道推荐'" :span="14">
+              <a-form-item label="渠道名称">
+                <a-input v-model:value="form.source_channel_name" placeholder="渠道名称" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">对接员工</span></a-divider>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="员工姓名">
+                <a-input v-model:value="form.contact_name" placeholder="对接员工姓名" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="员工微信号">
+                <a-input v-model:value="form.contact_wechat" placeholder="微信号" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">地址（选填）</span></a-divider>
+          <a-row :gutter="16">
+            <a-col :span="8">
+              <a-form-item label="国家">
+                <a-input v-model:value="form.address_country" placeholder="如：中国" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="省/州">
+                <a-input v-model:value="form.address_province" placeholder="如：广东省" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="城市">
+                <a-input v-model:value="form.address_city" placeholder="如：深圳市" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="24">
+              <a-form-item label="详细地址">
+                <a-input v-model:value="form.address_detail" placeholder="街道、楼号等详细地址" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">拜访意向</span></a-divider>
+          <a-row :gutter="16">
+            <a-col :span="8">
+              <a-form-item label="拜访状态">
+                <a-select v-model:value="form.visit_status">
+                  <a-select-option value="未接触">未接触</a-select-option>
+                  <a-select-option value="待拜访">待拜访</a-select-option>
+                  <a-select-option value="已拜访">已拜访</a-select-option>
+                  <a-select-option value="不接受拜访">不接受拜访</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </template>
       </a-form>
     </a-modal>
 
@@ -777,7 +883,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined, EnvironmentOutlined, ShopOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined, EnvironmentOutlined, ShopOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
 import ClientStoreManager from '../components/ClientStoreManager.vue'
@@ -855,6 +961,13 @@ function formatMoney(val: any) {
   return n.toFixed(0)
 }
 
+const sourceChannelOptions = [
+  { value: '老客介绍', label: '老客介绍', icon: '🤝' },
+  { value: '展会', label: '展会添加', icon: '🏛️' },
+  { value: '渠道推荐', label: '渠道推荐', icon: '📢' },
+  { value: '其他', label: '其他', icon: '📝' },
+]
+
 const defaultForm = () => ({
   company_name: '',
   country: '',
@@ -870,6 +983,12 @@ const defaultForm = () => ({
   visit_status: '未接触',
   debt_amount_cny: 0,
   prepaid_amount_cny: 0,
+  source_channel: '',
+  source_referrer: '',
+  source_exhibition: '',
+  source_channel_name: '',
+  contact_name: '',
+  contact_wechat: '',
 })
 const form = reactive(defaultForm())
 
@@ -992,6 +1111,12 @@ function openEditModal(record: any) {
     visit_status: record.visit_status || '未接触',
     debt_amount_cny: record.debt_amount_cny || 0,
     prepaid_amount_cny: record.prepaid_amount_cny || 0,
+    source_channel: record.source_channel || '',
+    source_referrer: record.source_referrer || '',
+    source_exhibition: record.source_exhibition || '',
+    source_channel_name: record.source_channel_name || '',
+    contact_name: record.contact_name || '',
+    contact_wechat: record.contact_wechat || '',
   })
   modalOpen.value = true
 }
@@ -1079,6 +1204,12 @@ async function handleSubmit() {
       visit_status: form.visit_status,
       debt_amount_cny: form.debt_amount_cny || 0,
       prepaid_amount_cny: form.prepaid_amount_cny || 0,
+      source_channel: form.source_channel,
+      source_referrer: form.source_referrer,
+      source_exhibition: form.source_exhibition,
+      source_channel_name: form.source_channel_name,
+      contact_name: form.contact_name,
+      contact_wechat: form.contact_wechat,
     }
     if (editingId.value) {
       const { error } = await supabase.from('client_companies').update(payload).eq('id', editingId.value)
@@ -1491,6 +1622,44 @@ onMounted(() => {
 
 /* 分页 */
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 20px; }
+
+/* 来源渠道选择 */
+.source-channel-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.channel-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 8px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: #fff;
+}
+.channel-opt:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+.channel-opt.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+.channel-opt-icon { font-size: 20px; line-height: 1; }
+.channel-opt-label { font-size: 12px; font-weight: 500; color: #374151; text-align: center; }
+
+.org-source { margin-top: 3px; }
+.source-badge {
+  font-size: 11px; color: #92400e;
+  background: #fef3c7; border: 1px solid #fde68a;
+  padding: 1px 7px; border-radius: 8px;
+  display: inline-block; max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* Drawer */
 .drawer-header {
