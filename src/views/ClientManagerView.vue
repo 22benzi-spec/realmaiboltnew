@@ -43,14 +43,28 @@
 
         <div class="card-sep" />
 
-        <!-- ASIN 区域 -->
-        <div class="card-asins">
-          <div class="section-label">ASIN</div>
-          <div v-if="company.client_asins?.length" class="asin-list">
-            <span v-for="asin in company.client_asins.slice(0, 4)" :key="asin" class="asin-tag">{{ asin }}</span>
-            <span v-if="company.client_asins.length > 4" class="asin-more">+{{ company.client_asins.length - 4 }}</span>
+        <!-- 店铺/ASIN/品牌/类目概况 -->
+        <div class="card-store-summary">
+          <div class="section-label">店铺 · ASIN · 品牌</div>
+          <div class="store-summary-content">
+            <div v-if="company.client_stores_summary?.length" class="store-pills">
+              <div v-for="s in company.client_stores_summary.slice(0, 2)" :key="s.id" class="store-pill">
+                <ShopOutlined class="store-pill-icon" />
+                <span class="store-pill-name">{{ s.store_name }}</span>
+                <span v-if="s.asin_count" class="store-pill-count">{{ s.asin_count }}个ASIN</span>
+              </div>
+              <span v-if="company.client_stores_summary.length > 2" class="store-more">+{{ company.client_stores_summary.length - 2 }}家店</span>
+            </div>
+            <div v-else-if="company.brand_names?.length" class="brand-pills">
+              <span v-for="b in company.brand_names.slice(0, 2)" :key="b" class="brand-pill">{{ b }}</span>
+              <span v-if="company.brand_names.length > 2" class="store-more">+{{ company.brand_names.length - 2 }}</span>
+            </div>
+            <span v-else class="empty-val">暂无店铺数据</span>
           </div>
-          <span v-else class="empty-val">暂未录入</span>
+          <div v-if="company.client_asins?.length" class="asin-mini-row">
+            <span v-for="asin in company.client_asins.slice(0, 3)" :key="asin" class="asin-tag">{{ asin }}</span>
+            <span v-if="company.client_asins.length > 3" class="asin-more">+{{ company.client_asins.length - 3 }}</span>
+          </div>
         </div>
 
         <div class="card-sep" />
@@ -68,13 +82,13 @@
           </div>
           <div class="stat-sep" />
           <div class="stat-block">
-            <div class="stat-num orange">{{ company.monthly_order_count || 0 }}</div>
-            <div class="stat-lbl">月均单量</div>
+            <div :class="['stat-num', (company.debt_amount_cny || 0) > 0 ? 'red' : 'gray']">¥{{ formatMoney(company.debt_amount_cny) }}</div>
+            <div class="stat-lbl">欠款</div>
           </div>
           <div class="stat-sep" />
           <div class="stat-block">
-            <div class="stat-num teal">{{ company.client_contacts?.length || 0 }}</div>
-            <div class="stat-lbl">对接人数</div>
+            <div :class="['stat-num', (company.prepaid_amount_cny || 0) > 0 ? 'teal' : 'gray']">¥{{ formatMoney(company.prepaid_amount_cny) }}</div>
+            <div class="stat-lbl">预存</div>
           </div>
         </div>
 
@@ -170,24 +184,19 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :span="8">
             <a-form-item label="国家/地区">
-              <a-input v-model:value="form.country" placeholder="如：美国、德国" />
+              <a-input v-model:value="form.country" placeholder="如：中国、美国" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="行业">
-              <a-input v-model:value="form.industry" placeholder="如：3C、服装" />
+          <a-col :span="8">
+            <a-form-item label="欠款金额（元）">
+              <a-input-number v-model:value="form.debt_amount_cny" :min="0" style="width:100%" placeholder="当前欠款" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="月均下单量">
-              <a-input-number v-model:value="form.monthly_order_count" :min="0" style="width:100%" placeholder="月均下单次数" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="下单频次">
-              <a-input v-model:value="form.order_frequency" placeholder="如：每周、每月、不定期" />
+          <a-col :span="8">
+            <a-form-item label="预存金额（元）">
+              <a-input-number v-model:value="form.prepaid_amount_cny" :min="0" style="width:100%" placeholder="预先存入资金" />
             </a-form-item>
           </a-col>
           <a-col :span="24">
@@ -358,18 +367,32 @@
               <div class="dstat-lbl">累计金额</div>
             </div>
             <div class="dstat-card">
-              <div class="dstat-num orange">{{ currentCompany.monthly_order_count || 0 }}</div>
-              <div class="dstat-lbl">月均单量</div>
+              <div :class="['dstat-num', (currentCompany.debt_amount_cny || 0) > 0 ? 'red' : 'gray']">¥{{ formatMoney(currentCompany.debt_amount_cny) }}</div>
+              <div class="dstat-lbl">公司欠款</div>
+            </div>
+            <div class="dstat-card">
+              <div :class="['dstat-num', (currentCompany.prepaid_amount_cny || 0) > 0 ? 'teal' : 'gray']">¥{{ formatMoney(currentCompany.prepaid_amount_cny) }}</div>
+              <div class="dstat-lbl">公司预存</div>
             </div>
           </div>
 
           <div class="drawer-section">
             <div class="section-title">基本信息</div>
             <div class="info-grid">
-              <div class="info-item"><span class="info-lbl">国家</span><span class="info-val">{{ currentCompany.country || '—' }}</span></div>
-              <div class="info-item"><span class="info-lbl">行业</span><span class="info-val">{{ currentCompany.industry || '—' }}</span></div>
-              <div class="info-item"><span class="info-lbl">下单频次</span><span class="info-val">{{ currentCompany.order_frequency || '—' }}</span></div>
+              <div class="info-item"><span class="info-lbl">国家/地区</span><span class="info-val">{{ currentCompany.country || '—' }}</span></div>
               <div class="info-item"><span class="info-lbl">最近下单</span><span class="info-val">{{ currentCompany.last_order_date || '—' }}</span></div>
+              <div class="info-item">
+                <span class="info-lbl">公司欠款</span>
+                <span :class="['info-val', 'info-financial', (currentCompany.debt_amount_cny || 0) > 0 ? 'debt' : '']">
+                  ¥{{ Number(currentCompany.debt_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+                </span>
+              </div>
+              <div class="info-item">
+                <span class="info-lbl">公司预存</span>
+                <span :class="['info-val', 'info-financial', (currentCompany.prepaid_amount_cny || 0) > 0 ? 'prepaid' : '']">
+                  ¥{{ Number(currentCompany.prepaid_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+                </span>
+              </div>
             </div>
             <div v-if="currentCompany.brand_names?.length" style="margin-top:10px">
               <div class="info-lbl" style="margin-bottom:6px">品牌</div>
@@ -511,7 +534,15 @@
                   </div>
                   <div v-else-if="c.employment_status === '在职'" class="contact-scope-empty">未设置负责店铺/品牌</div>
 
-                  <div v-if="c.monthly_budget_cny" class="contact-budget">月预算：¥{{ formatMoney(c.monthly_budget_cny) }}</div>
+                  <!-- 资金情况 -->
+                  <div v-if="(c.debt_amount_cny || 0) > 0 || (c.prepaid_amount_cny || 0) > 0" class="contact-financial">
+                    <div v-if="(c.debt_amount_cny || 0) > 0" class="fin-badge debt-badge">
+                      欠款 ¥{{ Number(c.debt_amount_cny).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }}
+                    </div>
+                    <div v-if="(c.prepaid_amount_cny || 0) > 0" class="fin-badge prepaid-badge">
+                      预存 ¥{{ Number(c.prepaid_amount_cny).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }}
+                    </div>
+                  </div>
                 </div>
                 <div class="contact-row-actions">
                   <a-button type="link" size="small" @click="openEditContact(c)"><EditOutlined /></a-button>
@@ -625,8 +656,13 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="月预算（元）">
-              <a-input-number v-model:value="contactForm.monthly_budget_cny" :min="0" style="width:100%" />
+            <a-form-item label="欠款金额（元）">
+              <a-input-number v-model:value="contactForm.debt_amount_cny" :min="0" style="width:100%" placeholder="该对接人欠款" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="预存金额（元）">
+              <a-input-number v-model:value="contactForm.prepaid_amount_cny" :min="0" style="width:100%" placeholder="该对接人预存" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -741,7 +777,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined, EnvironmentOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, TagOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined, EnvironmentOutlined, ShopOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
 import ClientStoreManager from '../components/ClientStoreManager.vue'
@@ -822,19 +858,18 @@ function formatMoney(val: any) {
 const defaultForm = () => ({
   company_name: '',
   country: '',
-  industry: '',
   level: 'B',
   status: '活跃',
   brand_names: [] as string[],
   client_asins: [] as string[],
-  order_frequency: '',
-  monthly_order_count: 0,
   notes: '',
   address_country: '',
   address_province: '',
   address_city: '',
   address_detail: '',
   visit_status: '未接触',
+  debt_amount_cny: 0,
+  prepaid_amount_cny: 0,
 })
 const form = reactive(defaultForm())
 
@@ -845,7 +880,8 @@ const defaultContactForm = () => ({
   wechat: '',
   is_primary: false,
   contact_wechat_status: '活跃',
-  monthly_budget_cny: 0,
+  debt_amount_cny: 0,
+  prepaid_amount_cny: 0,
   notes: '',
   employment_status: '在职',
   responsible_stores: [] as string[],
@@ -886,7 +922,47 @@ async function load() {
     query = query.range(from, from + pagination.value.pageSize - 1)
     const { data, count, error } = await query
     if (error) throw error
-    clients.value = data || []
+    const companies = data || []
+
+    if (companies.length) {
+      const companyIds = companies.map((c: any) => c.id)
+      const { data: storeData } = await supabase
+        .from('client_stores')
+        .select('id, company_id, store_name, status')
+        .in('company_id', companyIds)
+        .eq('status', '活跃')
+      const { data: asinData } = await supabase
+        .from('client_store_asins')
+        .select('store_id, asin, brand_name, category')
+        .in('store_id', (storeData || []).map((s: any) => s.id))
+      const asinByStore: Record<string, any[]> = {}
+      for (const a of asinData || []) {
+        if (!asinByStore[a.store_id]) asinByStore[a.store_id] = []
+        asinByStore[a.store_id].push(a)
+      }
+      const storeSummaryByCompany: Record<string, any[]> = {}
+      for (const s of storeData || []) {
+        if (!storeSummaryByCompany[s.company_id]) storeSummaryByCompany[s.company_id] = []
+        const asins = asinByStore[s.id] || []
+        const brands = [...new Set(asins.map((a: any) => a.brand_name).filter(Boolean))]
+        const categories = [...new Set(asins.map((a: any) => a.category).filter(Boolean))]
+        storeSummaryByCompany[s.company_id].push({
+          id: s.id,
+          store_name: s.store_name,
+          asin_count: asins.length,
+          brands,
+          categories,
+          asins: asins.map((a: any) => a.asin),
+        })
+      }
+      for (const c of companies) {
+        c.client_stores_summary = storeSummaryByCompany[c.id] || []
+        const allAsins = (c.client_stores_summary as any[]).flatMap((s: any) => s.asins)
+        if (allAsins.length > 0) c.client_asins = [...new Set(allAsins)]
+      }
+    }
+
+    clients.value = companies
     pagination.value.total = count || 0
     if (currentCompany.value) {
       currentCompany.value = clients.value.find(c => c.id === currentCompany.value.id) || currentCompany.value
@@ -914,6 +990,8 @@ function openEditModal(record: any) {
     address_city: record.address_city || '',
     address_detail: record.address_detail || '',
     visit_status: record.visit_status || '未接触',
+    debt_amount_cny: record.debt_amount_cny || 0,
+    prepaid_amount_cny: record.prepaid_amount_cny || 0,
   })
   modalOpen.value = true
 }
@@ -989,19 +1067,18 @@ async function handleSubmit() {
     const payload: any = {
       company_name: form.company_name.trim(),
       country: form.country,
-      industry: form.industry,
       level: form.level,
       status: form.status,
       brand_names: form.brand_names,
       client_asins: form.client_asins,
-      order_frequency: form.order_frequency,
-      monthly_order_count: form.monthly_order_count,
       notes: form.notes,
       address_country: form.address_country,
       address_province: form.address_province,
       address_city: form.address_city,
       address_detail: form.address_detail,
       visit_status: form.visit_status,
+      debt_amount_cny: form.debt_amount_cny || 0,
+      prepaid_amount_cny: form.prepaid_amount_cny || 0,
     }
     if (editingId.value) {
       const { error } = await supabase.from('client_companies').update(payload).eq('id', editingId.value)
@@ -1112,7 +1189,8 @@ function openEditContact(contact: any) {
     wechat: contact.wechat || '',
     is_primary: contact.is_primary || false,
     contact_wechat_status: contact.contact_wechat_status || '活跃',
-    monthly_budget_cny: contact.monthly_budget_cny || 0,
+    debt_amount_cny: contact.debt_amount_cny || 0,
+    prepaid_amount_cny: contact.prepaid_amount_cny || 0,
     notes: contact.notes || '',
     employment_status: contact.employment_status || '在职',
     responsible_stores: contact.responsible_stores || [],
@@ -1138,7 +1216,8 @@ async function handleAddContact() {
       wechat: contactForm.wechat,
       is_primary: contactForm.is_primary,
       contact_wechat_status: contactForm.contact_wechat_status,
-      monthly_budget_cny: contactForm.monthly_budget_cny,
+      debt_amount_cny: contactForm.debt_amount_cny || 0,
+      prepaid_amount_cny: contactForm.prepaid_amount_cny || 0,
       notes: contactForm.notes,
       employment_status: contactForm.employment_status,
       responsible_stores: contactForm.responsible_stores,
@@ -1287,13 +1366,29 @@ onMounted(() => {
 .org-brands { display: flex; align-items: center; gap: 4px; }
 .brand-text { font-size: 11px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 
-/* ASIN */
-.card-asins { min-width: 150px; max-width: 170px; flex-shrink: 0; }
+/* 店铺/ASIN/品牌概况区域 */
+.card-store-summary { min-width: 180px; max-width: 220px; flex-shrink: 0; }
 .section-label { font-size: 11px; color: #9ca3af; margin-bottom: 5px; }
-.asin-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.store-summary-content { display: flex; flex-direction: column; gap: 3px; }
+.store-pills { display: flex; flex-direction: column; gap: 3px; }
+.store-pill {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: #374151;
+}
+.store-pill-icon { font-size: 10px; color: #2563eb; flex-shrink: 0; }
+.store-pill-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
+.store-pill-count { color: #9ca3af; white-space: nowrap; }
+.store-more { font-size: 11px; color: #9ca3af; }
+.brand-pills { display: flex; flex-wrap: wrap; gap: 3px; }
+.brand-pill {
+  font-size: 11px; background: #eff6ff; color: #2563eb;
+  padding: 1px 6px; border-radius: 4px; border: 1px solid #bfdbfe;
+  white-space: nowrap;
+}
+.asin-mini-row { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
 .asin-tag {
-  font-size: 11px; font-family: monospace; background: #eff6ff;
-  color: #2563eb; padding: 1px 6px; border-radius: 4px; border: 1px solid #bfdbfe;
+  font-size: 10px; font-family: monospace; background: #f0fdf4;
+  color: #059669; padding: 1px 5px; border-radius: 3px; border: 1px solid #bbf7d0;
   white-space: nowrap;
 }
 .asin-more { font-size: 11px; color: #6b7280; }
@@ -1306,6 +1401,8 @@ onMounted(() => {
 .stat-num.green { color: #059669; }
 .stat-num.orange { color: #d97706; }
 .stat-num.teal { color: #0891b2; }
+.stat-num.red { color: #dc2626; }
+.stat-num.gray { color: #9ca3af; }
 .stat-lbl { font-size: 11px; color: #9ca3af; margin-top: 2px; }
 .stat-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 8px; flex-shrink: 0; }
 
@@ -1422,6 +1519,9 @@ onMounted(() => {
 .dstat-num.blue { color: #2563eb; }
 .dstat-num.green { color: #059669; }
 .dstat-num.orange { color: #d97706; }
+.dstat-num.teal { color: #0891b2; }
+.dstat-num.red { color: #dc2626; }
+.dstat-num.gray { color: #9ca3af; }
 .dstat-lbl { font-size: 12px; color: #6b7280; margin-top: 4px; }
 
 .drawer-section { }
@@ -1591,4 +1691,21 @@ onMounted(() => {
 .scope-input-tag .scope-tag-del:hover { opacity: 1; }
 .scope-inline-input { border: none !important; outline: none; box-shadow: none !important; padding: 0 4px; height: 24px; min-width: 100px; flex: 1; font-size: 12px; }
 .scope-inline-input:focus { box-shadow: none !important; }
+
+/* 财务信息 */
+.info-financial { font-weight: 700; }
+.info-financial.debt { color: #dc2626; }
+.info-financial.prepaid { color: #0891b2; }
+
+.contact-financial {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 2px;
+}
+.fin-badge {
+  font-size: 11px; font-weight: 600;
+  padding: 1px 8px; border-radius: 4px;
+  white-space: nowrap;
+}
+.debt-badge { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+.prepaid-badge { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; }
 </style>
