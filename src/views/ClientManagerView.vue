@@ -466,7 +466,11 @@
           <div class="drawer-stats-row">
             <div class="dstat-card">
               <div class="dstat-num blue">{{ currentCompany.total_order_count || 0 }}</div>
-              <div class="dstat-lbl">累计下单</div>
+              <div class="dstat-lbl">累计下单次</div>
+            </div>
+            <div class="dstat-card">
+              <div class="dstat-num blue2">{{ currentCompany.total_order_quantity || 0 }}</div>
+              <div class="dstat-lbl">累计单量</div>
             </div>
             <div class="dstat-card">
               <div class="dstat-num green">¥{{ formatMoney(currentCompany.total_order_amount_cny) }}</div>
@@ -628,9 +632,29 @@
                     <span v-if="c.role" class="meta-item"><TeamOutlined /> {{ c.role }}</span>
                     <span v-if="c.phone" class="meta-item"><PhoneOutlined /> {{ c.phone }}</span>
                     <span v-if="c.wechat" class="meta-item"><WechatOutlined style="color:#07c160" /> {{ c.wechat }}</span>
-                    <span v-if="c.join_date" class="meta-item">入职: {{ c.join_date }}</span>
+                    <span v-if="contactOrderStats[c.client_id]?.first_order_date" class="meta-item">首次下单: {{ contactOrderStats[c.client_id].first_order_date }}</span>
+                    <span v-else-if="c.join_date" class="meta-item">入职: {{ c.join_date }}</span>
                     <span v-if="c.resigned_at" class="meta-item resigned-date">离职: {{ c.resigned_at }}</span>
                   </div>
+
+                  <!-- 下单统计 -->
+                  <div v-if="contactOrderStats[c.client_id]" class="contact-order-stats">
+                    <div class="cos-item">
+                      <span class="cos-num blue">{{ contactOrderStats[c.client_id].order_count }}</span>
+                      <span class="cos-lbl">下单次数</span>
+                    </div>
+                    <div class="cos-sep"></div>
+                    <div class="cos-item">
+                      <span class="cos-num teal">{{ contactOrderStats[c.client_id].order_quantity }}</span>
+                      <span class="cos-lbl">下单单量</span>
+                    </div>
+                    <div class="cos-sep"></div>
+                    <div class="cos-item">
+                      <span class="cos-num green">¥{{ formatMoney(contactOrderStats[c.client_id].order_amount) }}</span>
+                      <span class="cos-lbl">下单金额</span>
+                    </div>
+                  </div>
+                  <div v-else class="contact-order-stats-empty">暂无下单记录</div>
 
                   <!-- 负责店铺/品牌 -->
                   <div v-if="c.responsible_stores?.length || c.responsible_brands?.length" class="contact-scope">
@@ -1125,6 +1149,47 @@ function openDetail(record: any) {
   currentCompany.value = record
   detailOpen.value = true
   loadVisitRecords(record.id)
+  loadContactOrderStats(record)
+}
+
+const contactOrderStats = ref<Record<string, { order_count: number; order_quantity: number; order_amount: number; first_order_date: string | null }>>({})
+
+async function loadContactOrderStats(company: any) {
+  const contacts = company.client_contacts || []
+  if (!contacts.length) { contactOrderStats.value = {}; return }
+  const clientIdStrs = contacts.map((c: any) => c.client_id).filter(Boolean)
+  if (!clientIdStrs.length) { contactOrderStats.value = {}; return }
+
+  const { data } = await supabase
+    .from('erp_orders')
+    .select('customer_id_str, total_orders, total_amount, created_at')
+    .in('customer_id_str', clientIdStrs)
+
+  const map: Record<string, { order_count: number; order_quantity: number; order_amount: number; first_order_date: string | null }> = {}
+  for (const row of data || []) {
+    const key = row.customer_id_str
+    if (!map[key]) map[key] = { order_count: 0, order_quantity: 0, order_amount: 0, first_order_date: null }
+    map[key].order_count += 1
+    map[key].order_quantity += Number(row.total_orders || 0)
+    map[key].order_amount += Number(row.total_amount || 0)
+    const d = row.created_at ? row.created_at.slice(0, 10) : null
+    if (d && (!map[key].first_order_date || d < map[key].first_order_date!)) {
+      map[key].first_order_date = d
+    }
+  }
+  contactOrderStats.value = map
+
+  const totalOrderCount = Object.values(map).reduce((s, v) => s + v.order_count, 0)
+  const totalOrderQty = Object.values(map).reduce((s, v) => s + v.order_quantity, 0)
+  const totalOrderAmt = Object.values(map).reduce((s, v) => s + v.order_amount, 0)
+  if (currentCompany.value?.id === company.id) {
+    currentCompany.value = {
+      ...currentCompany.value,
+      total_order_count: totalOrderCount,
+      total_order_quantity: totalOrderQty,
+      total_order_amount_cny: totalOrderAmt,
+    }
+  }
 }
 
 async function loadVisitRecords(companyId: string) {
@@ -1877,4 +1942,31 @@ onMounted(() => {
 }
 .debt-badge { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
 .prepaid-badge { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; }
+
+.contact-order-stats {
+  display: flex; align-items: center; gap: 0;
+  margin-top: 6px; margin-bottom: 2px;
+  background: #f8fafc; border: 1px solid #e5e7eb;
+  border-radius: 8px; overflow: hidden;
+}
+.cos-item {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 5px 14px; flex: 1;
+}
+.cos-sep {
+  width: 1px; background: #e5e7eb; align-self: stretch;
+}
+.cos-num {
+  font-size: 15px; font-weight: 700; line-height: 1.2;
+}
+.cos-num.blue { color: #2563eb; }
+.cos-num.teal { color: #0891b2; }
+.cos-num.green { color: #059669; }
+.cos-lbl {
+  font-size: 10px; color: #9ca3af; margin-top: 1px; white-space: nowrap;
+}
+.contact-order-stats-empty {
+  font-size: 11px; color: #d1d5db; margin-top: 4px;
+}
+.dstat-num.blue2 { color: #0891b2; font-size: 20px; font-weight: 700; }
 </style>
