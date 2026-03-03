@@ -31,6 +31,34 @@
         </div>
       </div>
 
+      <!-- 汇总信息行 -->
+      <div class="summary-info-row">
+        <div class="summary-info-item">
+          <span class="si-lbl">店铺</span>
+          <span class="si-val">{{ stores.length }} 家</span>
+        </div>
+        <div class="summary-info-sep"></div>
+        <div class="summary-info-item">
+          <span class="si-lbl">ASIN</span>
+          <span class="si-val">{{ totalAsinCount }} 个</span>
+        </div>
+        <div class="summary-info-sep"></div>
+        <div class="summary-info-item">
+          <span class="si-lbl">品牌</span>
+          <span class="si-val">{{ brandSummary.length }} 个</span>
+        </div>
+        <div class="summary-info-sep"></div>
+        <div class="summary-info-item">
+          <span class="si-lbl">类目</span>
+          <span class="si-val">{{ allCategories.length > 0 ? allCategories.slice(0, 2).join('、') + (allCategories.length > 2 ? `等${allCategories.length}个` : '') : '—' }}</span>
+        </div>
+        <div v-if="allContactNames.length" class="summary-info-sep"></div>
+        <div v-if="allContactNames.length" class="summary-info-item">
+          <span class="si-lbl">负责人</span>
+          <span class="si-val">{{ allContactNames.join('、') }}</span>
+        </div>
+      </div>
+
       <!-- ASIN 视图 -->
       <div v-if="viewMode === 'asin'" class="asin-view">
         <div v-for="asinGroup in asinGroups" :key="asinGroup.asin" class="asin-card">
@@ -190,6 +218,22 @@ const brandSummary = computed(() => {
   return Object.entries(map).map(([brand, asinCount]) => ({ brand, asinCount })).sort((a, b) => b.asinCount - a.asinCount)
 })
 
+const allCategories = computed(() => {
+  const cats = new Set<string>()
+  for (const g of asinGroups.value) {
+    if (g.category) cats.add(g.category)
+  }
+  return [...cats]
+})
+
+const allContactNames = computed(() => {
+  const names = new Set<string>()
+  for (const s of stores.value) {
+    if (s.contact_name) names.add(s.contact_name)
+  }
+  return [...names]
+})
+
 async function loadStores() {
   if (!props.companyId) return
   loading.value = true
@@ -295,6 +339,22 @@ defineExpose({ loadStores })
 }
 .brand-chip-name { font-weight: 600; }
 .brand-chip-count { color: #6b7280; }
+
+.summary-info-row {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 0; margin-bottom: 10px;
+  background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px;
+  padding: 8px 14px;
+}
+.summary-info-item {
+  display: flex; align-items: center; gap: 5px; padding: 0 10px;
+}
+.summary-info-item:first-child { padding-left: 0; }
+.summary-info-sep {
+  width: 1px; height: 14px; background: #e5e7eb; flex-shrink: 0;
+}
+.si-lbl { font-size: 11px; color: #9ca3af; }
+.si-val { font-size: 12px; font-weight: 600; color: #374151; }
 
 /* ASIN 视图 */
 .asin-view { display: flex; flex-direction: column; gap: 6px; }

@@ -627,13 +627,14 @@
               <div
                 v-for="c in filteredContacts"
                 :key="c.id"
-                class="contact-row"
+                class="contact-row contact-row-clickable"
                 :class="{ 'contact-resigned': c.employment_status === '离职' || c.employment_status === '停止合作' }"
+                @click.self="openContactDetail(c)"
               >
-                <div class="contact-avatar-sm" :class="{ 'avatar-resigned': c.employment_status !== '在职' }">
+                <div class="contact-avatar-sm" :class="{ 'avatar-resigned': c.employment_status !== '在职' }" @click="openContactDetail(c)">
                   {{ c.name.charAt(0) }}
                 </div>
-                <div class="contact-detail">
+                <div class="contact-detail" @click="openContactDetail(c)" style="cursor:pointer">
                   <div class="contact-name-row">
                     <span class="contact-name">{{ c.name }}</span>
                     <a-tag v-if="c.is_primary && c.employment_status === '在职'" color="blue" style="font-size:10px;margin:0;padding:0 4px">主要</a-tag>
@@ -701,6 +702,122 @@
                   <a-popconfirm title="确定删除该员工记录？" @confirm="deleteContact(c)">
                     <a-button type="link" size="small" danger><DeleteOutlined /></a-button>
                   </a-popconfirm>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </a-drawer>
+
+    <!-- 员工详情抽屉 -->
+    <a-drawer
+      v-model:open="contactDetailOpen"
+      :title="null"
+      placement="right"
+      width="520"
+      :body-style="{ padding: 0 }"
+    >
+      <template v-if="contactDetailTarget">
+        <div class="contact-detail-header">
+          <div class="contact-detail-avatar" :class="{ 'avatar-resigned': contactDetailTarget.employment_status !== '在职' }">
+            {{ contactDetailTarget.name.charAt(0) }}
+          </div>
+          <div class="contact-detail-title">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span class="contact-detail-name">{{ contactDetailTarget.name }}</span>
+              <a-tag :color="employmentStatusColor[contactDetailTarget.employment_status || '在职']" style="margin:0">{{ contactDetailTarget.employment_status || '在职' }}</a-tag>
+              <a-tag :color="contactStatusColor[contactDetailTarget.contact_wechat_status || '活跃']" style="margin:0">微信{{ contactDetailTarget.contact_wechat_status || '活跃' }}</a-tag>
+            </div>
+            <div class="contact-detail-meta">
+              <span v-if="contactDetailTarget.role"><TeamOutlined /> {{ contactDetailTarget.role }}</span>
+              <span v-if="contactDetailTarget.wechat"><WechatOutlined style="color:#07c160" /> {{ contactDetailTarget.wechat }}</span>
+              <span v-if="contactDetailTarget.phone"><PhoneOutlined /> {{ contactDetailTarget.phone }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="contact-detail-body">
+          <!-- 下单统计 -->
+          <div class="cd-section">
+            <div class="cd-section-title">下单统计</div>
+            <div v-if="contactOrderStats[contactDetailTarget.client_id]" class="contact-order-stats" style="margin:0">
+              <div class="cos-item">
+                <span class="cos-num blue">{{ contactOrderStats[contactDetailTarget.client_id].order_count }}</span>
+                <span class="cos-lbl">下单次数</span>
+              </div>
+              <div class="cos-sep"></div>
+              <div class="cos-item">
+                <span class="cos-num teal">{{ contactOrderStats[contactDetailTarget.client_id].order_quantity }}</span>
+                <span class="cos-lbl">下单单量</span>
+              </div>
+              <div class="cos-sep"></div>
+              <div class="cos-item">
+                <span class="cos-num green">¥{{ formatMoney(contactOrderStats[contactDetailTarget.client_id].order_amount) }}</span>
+                <span class="cos-lbl">下单金额</span>
+              </div>
+              <div class="cos-sep"></div>
+              <div class="cos-item">
+                <span class="cos-num gray">{{ contactOrderStats[contactDetailTarget.client_id].first_order_date || '—' }}</span>
+                <span class="cos-lbl">首次下单</span>
+              </div>
+            </div>
+            <div v-else class="empty-val">暂无下单记录</div>
+          </div>
+
+          <!-- 负责店铺/ASIN/品牌/类目 -->
+          <div class="cd-section">
+            <div class="cd-section-title">负责范围</div>
+            <div v-if="contactDetailStores.length" class="cd-store-list">
+              <div v-for="store in contactDetailStores" :key="store.id" class="cd-store-card">
+                <div class="cd-store-header">
+                  <div class="cd-store-icon"><ShopOutlined /></div>
+                  <div>
+                    <div class="cd-store-name">{{ store.store_name }}</div>
+                    <div class="cd-store-meta">
+                      <span v-if="store.platform">{{ store.platform }}</span>
+                      <span v-if="store.country">· {{ store.country }}</span>
+                    </div>
+                  </div>
+                  <a-tag :color="store.status === '活跃' ? 'green' : 'default'" style="margin-left:auto;font-size:10px">{{ store.status }}</a-tag>
+                </div>
+                <div v-if="(contactDetailAsinMap[store.id] || []).length" class="cd-asin-list">
+                  <div v-for="asin in contactDetailAsinMap[store.id]" :key="asin.id" class="cd-asin-row">
+                    <span class="cd-asin-code">{{ asin.asin }}</span>
+                    <span v-if="asin.brand_name" class="cd-asin-brand">{{ asin.brand_name }}</span>
+                    <span v-if="asin.category" class="cd-asin-cat">{{ asin.category }}</span>
+                    <span v-if="asin.product_name" class="cd-asin-pname">{{ asin.product_name }}</span>
+                  </div>
+                </div>
+                <div v-else class="cd-asin-empty">暂无ASIN</div>
+              </div>
+            </div>
+            <div v-else-if="contactDetailTarget.responsible_stores?.length || contactDetailTarget.responsible_brands?.length" class="cd-scope-tags">
+              <a-tag v-for="s in contactDetailTarget.responsible_stores" :key="s" color="blue">{{ s }}</a-tag>
+              <a-tag v-for="b in contactDetailTarget.responsible_brands" :key="b" color="geekblue">{{ b }}</a-tag>
+            </div>
+            <div v-else class="empty-val">未设置负责店铺/品牌</div>
+          </div>
+
+          <!-- 下单记录 -->
+          <div class="cd-section">
+            <div class="cd-section-title">下单记录</div>
+            <div v-if="contactDetailOrdersLoading" style="text-align:center;padding:16px"><a-spin size="small" /></div>
+            <div v-else-if="!contactDetailOrders.length" class="empty-val">暂无下单记录</div>
+            <div v-else class="cd-order-list">
+              <div v-for="o in contactDetailOrders" :key="o.id" class="cd-order-row">
+                <div class="cd-order-left">
+                  <div class="cd-order-num">{{ o.order_number }}</div>
+                  <div class="cd-order-info">
+                    <span v-if="o.store_name">{{ o.store_name }}</span>
+                    <span v-if="o.asin" class="cd-order-asin">{{ o.asin }}</span>
+                    <span v-if="o.brand_name">{{ o.brand_name }}</span>
+                  </div>
+                </div>
+                <div class="cd-order-right">
+                  <div class="cd-order-qty">×{{ o.total_orders || 0 }}</div>
+                  <div class="cd-order-amt">¥{{ formatMoney(o.total_amount) }}</div>
+                  <div class="cd-order-date">{{ o.created_at ? o.created_at.slice(0, 10) : '' }}</div>
                 </div>
               </div>
             </div>
@@ -1170,6 +1287,54 @@ function openDetail(record: any) {
 const contactOrderStats = ref<Record<string, { order_count: number; order_quantity: number; order_amount: number; first_order_date: string | null }>>({})
 const companyBuyerStats = ref({ buyer_count: 0, drop_rate: 0 })
 const companyFirstOrderDate = ref<string | null>(null)
+
+const contactDetailOpen = ref(false)
+const contactDetailTarget = ref<any>(null)
+const contactDetailStores = ref<any[]>([])
+const contactDetailAsinMap = ref<Record<string, any[]>>({})
+const contactDetailOrders = ref<any[]>([])
+const contactDetailOrdersLoading = ref(false)
+
+async function openContactDetail(contact: any) {
+  contactDetailTarget.value = contact
+  contactDetailOpen.value = true
+  contactDetailStores.value = []
+  contactDetailAsinMap.value = {}
+  contactDetailOrders.value = []
+  contactDetailOrdersLoading.value = true
+
+  try {
+    const storeNames = contact.responsible_stores || []
+    const companyId = currentCompany.value?.id
+
+    const [storeRes, orderRes] = await Promise.all([
+      companyId && storeNames.length
+        ? supabase.from('client_stores').select('*').eq('company_id', companyId).in('store_name', storeNames)
+        : Promise.resolve({ data: [] }),
+      contact.client_id
+        ? supabase.from('erp_orders').select('id, order_number, asin, store_name, brand_name, total_orders, total_amount, created_at').eq('customer_id_str', contact.client_id).order('created_at', { ascending: false }).limit(50)
+        : Promise.resolve({ data: [] }),
+    ])
+
+    const stores = storeRes.data || []
+    contactDetailStores.value = stores
+
+    if (stores.length) {
+      const storeIds = stores.map((s: any) => s.id)
+      const { data: asinData } = await supabase.from('client_store_asins').select('*').in('store_id', storeIds)
+      const map: Record<string, any[]> = {}
+      for (const a of asinData || []) {
+        if (!map[a.store_id]) map[a.store_id] = []
+        map[a.store_id].push(a)
+      }
+      contactDetailAsinMap.value = map
+    }
+
+    contactDetailOrders.value = orderRes.data || []
+  } finally {
+    contactDetailOrdersLoading.value = false
+  }
+}
 
 async function loadContactOrderStats(company: any) {
   const contacts = company.client_contacts || []
@@ -2005,6 +2170,78 @@ onMounted(() => {
 .contact-order-stats-empty {
   font-size: 11px; color: #d1d5db; margin-top: 4px;
 }
+.contact-row-clickable { transition: box-shadow 0.15s; }
+.contact-row-clickable:hover { box-shadow: 0 2px 8px rgba(37,99,235,0.10); border-color: #93c5fd !important; }
+
+.contact-detail-header {
+  display: flex; align-items: center; gap: 16px;
+  padding: 20px 24px 16px; border-bottom: 1px solid #f0f0f0;
+  background: #f8fafc;
+}
+.contact-detail-avatar {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: #2563eb; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700; flex-shrink: 0;
+}
+.contact-detail-avatar.avatar-resigned { background: #9ca3af; }
+.contact-detail-title { flex: 1; min-width: 0; }
+.contact-detail-name { font-size: 18px; font-weight: 700; color: #111827; }
+.contact-detail-meta {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 6px; font-size: 12px; color: #6b7280; flex-wrap: wrap;
+}
+.contact-detail-body { padding: 16px 24px; display: flex; flex-direction: column; gap: 16px; }
+.cd-section { display: flex; flex-direction: column; gap: 8px; }
+.cd-section-title {
+  font-size: 12px; font-weight: 700; color: #6b7280;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding-bottom: 4px; border-bottom: 1px solid #f0f0f0;
+}
+.cd-store-list { display: flex; flex-direction: column; gap: 8px; }
+.cd-store-card {
+  border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background: #fff;
+}
+.cd-store-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: #f8fafc;
+}
+.cd-store-icon {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: #dbeafe; color: #1d4ed8;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+}
+.cd-store-name { font-size: 13px; font-weight: 600; color: #1f2937; }
+.cd-store-meta { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+.cd-asin-list { padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 4px; }
+.cd-asin-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; background: #f9fafb;
+  border: 1px solid #f0f0f0; border-radius: 6px; font-size: 12px;
+}
+.cd-asin-code { font-family: monospace; font-weight: 700; color: #1f2937; min-width: 80px; }
+.cd-asin-brand { padding: 1px 6px; background: #eff6ff; color: #1d4ed8; border-radius: 4px; font-size: 11px; }
+.cd-asin-cat { padding: 1px 6px; background: #f0fdf4; color: #15803d; border-radius: 4px; font-size: 11px; }
+.cd-asin-pname { flex: 1; color: #6b7280; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-asin-empty { text-align: center; padding: 8px; color: #9ca3af; font-size: 12px; }
+.cd-scope-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.cd-order-list { display: flex; flex-direction: column; gap: 6px; }
+.cd-order-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; background: #f8fafc;
+  border: 1px solid #e5e7eb; border-radius: 8px;
+}
+.cd-order-left { flex: 1; min-width: 0; }
+.cd-order-num { font-size: 12px; font-weight: 700; color: #1f2937; font-family: monospace; }
+.cd-order-info { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 11px; color: #6b7280; flex-wrap: wrap; }
+.cd-order-asin { font-family: monospace; color: #374151; font-weight: 600; }
+.cd-order-right { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: 2px; }
+.cd-order-qty { font-size: 12px; color: #6b7280; }
+.cd-order-amt { font-size: 13px; font-weight: 700; color: #059669; }
+.cd-order-date { font-size: 11px; color: #9ca3af; }
+.cos-num.gray { color: #6b7280; font-size: 12px; }
 .dstat-num.blue2 { color: #0891b2; font-size: 20px; font-weight: 700; }
 
 .company-metrics-row {
