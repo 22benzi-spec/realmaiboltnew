@@ -470,39 +470,54 @@
             </div>
             <div class="dstat-card">
               <div class="dstat-num blue2">{{ currentCompany.total_order_quantity || 0 }}</div>
-              <div class="dstat-lbl">累计单量</div>
+              <div class="dstat-lbl">累计下单数量</div>
             </div>
             <div class="dstat-card">
               <div class="dstat-num green">¥{{ formatMoney(currentCompany.total_order_amount_cny) }}</div>
               <div class="dstat-lbl">累计金额</div>
             </div>
-            <div class="dstat-card">
-              <div :class="['dstat-num', (currentCompany.debt_amount_cny || 0) > 0 ? 'red' : 'gray']">¥{{ formatMoney(currentCompany.debt_amount_cny) }}</div>
-              <div class="dstat-lbl">公司欠款</div>
+          </div>
+
+          <!-- 公司资金情况 + 买手库 + 掉评率 -->
+          <div class="company-metrics-row">
+            <div class="metrics-block finance-block">
+              <div class="metrics-block-title">公司资金情况</div>
+              <div class="metrics-finance-row">
+                <div class="finance-item">
+                  <span class="finance-lbl">欠款</span>
+                  <span :class="['finance-val', (currentCompany.debt_amount_cny || 0) > 0 ? 'debt' : 'zero']">
+                    ¥{{ Number(currentCompany.debt_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+                  </span>
+                </div>
+                <div class="finance-sep"></div>
+                <div class="finance-item">
+                  <span class="finance-lbl">预存</span>
+                  <span :class="['finance-val', (currentCompany.prepaid_amount_cny || 0) > 0 ? 'prepaid' : 'zero']">
+                    ¥{{ Number(currentCompany.prepaid_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div class="dstat-card">
-              <div :class="['dstat-num', (currentCompany.prepaid_amount_cny || 0) > 0 ? 'teal' : 'gray']">¥{{ formatMoney(currentCompany.prepaid_amount_cny) }}</div>
-              <div class="dstat-lbl">公司预存</div>
+            <div class="metrics-block clickable-block" @click="$router.push('/buyers')">
+              <div class="metrics-block-title">外部买手库</div>
+              <div class="metrics-big-num blue">{{ companyBuyerStats.buyer_count }}</div>
+              <div class="metrics-sub">可用买手数 <span class="jump-hint">查看详情 ›</span></div>
+            </div>
+            <div class="metrics-block clickable-block" @click="$router.push('/buyers')">
+              <div class="metrics-block-title">掉评率</div>
+              <div :class="['metrics-big-num', companyBuyerStats.drop_rate > 15 ? 'red' : companyBuyerStats.drop_rate > 8 ? 'orange' : 'green']">
+                {{ companyBuyerStats.drop_rate.toFixed(1) }}%
+              </div>
+              <div class="metrics-sub">近期订单 <span class="jump-hint">评论监控 ›</span></div>
             </div>
           </div>
 
           <div class="drawer-section">
             <div class="section-title">基本信息</div>
             <div class="info-grid">
-              <div class="info-item"><span class="info-lbl">国家/地区</span><span class="info-val">{{ currentCompany.country || '—' }}</span></div>
+              <div class="info-item"><span class="info-lbl">首次下单时间</span><span class="info-val">{{ companyFirstOrderDate || '—' }}</span></div>
               <div class="info-item"><span class="info-lbl">最近下单</span><span class="info-val">{{ currentCompany.last_order_date || '—' }}</span></div>
-              <div class="info-item">
-                <span class="info-lbl">公司欠款</span>
-                <span :class="['info-val', 'info-financial', (currentCompany.debt_amount_cny || 0) > 0 ? 'debt' : '']">
-                  ¥{{ Number(currentCompany.debt_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-                </span>
-              </div>
-              <div class="info-item">
-                <span class="info-lbl">公司预存</span>
-                <span :class="['info-val', 'info-financial', (currentCompany.prepaid_amount_cny || 0) > 0 ? 'prepaid' : '']">
-                  ¥{{ Number(currentCompany.prepaid_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-                </span>
-              </div>
+              <div class="info-item"><span class="info-lbl">国家/地区</span><span class="info-val">{{ currentCompany.country || '—' }}</span></div>
             </div>
             <div v-if="currentCompany.brand_names?.length" style="margin-top:10px">
               <div class="info-lbl" style="margin-bottom:6px">品牌</div>
@@ -1153,20 +1168,28 @@ function openDetail(record: any) {
 }
 
 const contactOrderStats = ref<Record<string, { order_count: number; order_quantity: number; order_amount: number; first_order_date: string | null }>>({})
+const companyBuyerStats = ref({ buyer_count: 0, drop_rate: 0 })
+const companyFirstOrderDate = ref<string | null>(null)
 
 async function loadContactOrderStats(company: any) {
   const contacts = company.client_contacts || []
-  if (!contacts.length) { contactOrderStats.value = {}; return }
-  const clientIdStrs = contacts.map((c: any) => c.client_id).filter(Boolean)
-  if (!clientIdStrs.length) { contactOrderStats.value = {}; return }
+  contactOrderStats.value = {}
+  companyFirstOrderDate.value = null
+  companyBuyerStats.value = { buyer_count: 0, drop_rate: 0 }
 
-  const { data } = await supabase
-    .from('erp_orders')
-    .select('customer_id_str, total_orders, total_amount, created_at')
-    .in('customer_id_str', clientIdStrs)
+  if (!contacts.length) return
+  const clientIdStrs = contacts.map((c: any) => c.client_id).filter(Boolean)
+  if (!clientIdStrs.length) return
+
+  const [{ data: orderData }, { data: subOrderData }, buyerCountResult] = await Promise.all([
+    supabase.from('erp_orders').select('customer_id_str, total_orders, total_amount, created_at, id').in('customer_id_str', clientIdStrs),
+    supabase.from('sub_orders').select('order_id, refund_status, status').eq('status', '已完成'),
+    supabase.from('erp_buyers').select('*', { count: 'exact', head: true }).eq('status', '活跃'),
+  ])
 
   const map: Record<string, { order_count: number; order_quantity: number; order_amount: number; first_order_date: string | null }> = {}
-  for (const row of data || []) {
+  const orderIds: string[] = []
+  for (const row of orderData || []) {
     const key = row.customer_id_str
     if (!map[key]) map[key] = { order_count: 0, order_quantity: 0, order_amount: 0, first_order_date: null }
     map[key].order_count += 1
@@ -1176,8 +1199,12 @@ async function loadContactOrderStats(company: any) {
     if (d && (!map[key].first_order_date || d < map[key].first_order_date!)) {
       map[key].first_order_date = d
     }
+    orderIds.push(row.id)
   }
   contactOrderStats.value = map
+
+  const allDates = Object.values(map).map(v => v.first_order_date).filter(Boolean) as string[]
+  companyFirstOrderDate.value = allDates.length ? allDates.sort()[0] : null
 
   const totalOrderCount = Object.values(map).reduce((s, v) => s + v.order_count, 0)
   const totalOrderQty = Object.values(map).reduce((s, v) => s + v.order_quantity, 0)
@@ -1189,6 +1216,16 @@ async function loadContactOrderStats(company: any) {
       total_order_quantity: totalOrderQty,
       total_order_amount_cny: totalOrderAmt,
     }
+  }
+
+  const relevantSubs = (subOrderData || []).filter(s => orderIds.includes(s.order_id))
+  const totalCompleted = relevantSubs.length
+  const refunded = relevantSubs.filter(s => s.refund_status === '已退款').length
+  const dropRate = totalCompleted > 0 ? (refunded / totalCompleted) * 100 : 0
+
+  companyBuyerStats.value = {
+    buyer_count: buyerCountResult.count ?? 0,
+    drop_rate: dropRate,
   }
 }
 
@@ -1969,4 +2006,46 @@ onMounted(() => {
   font-size: 11px; color: #d1d5db; margin-top: 4px;
 }
 .dstat-num.blue2 { color: #0891b2; font-size: 20px; font-weight: 700; }
+
+.company-metrics-row {
+  display: flex; gap: 8px; margin: 0 20px 4px; flex-wrap: wrap;
+}
+.metrics-block {
+  flex: 1; min-width: 120px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+  padding: 10px 14px;
+}
+.clickable-block {
+  cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s;
+}
+.clickable-block:hover { border-color: #2563eb; box-shadow: 0 1px 6px rgba(37,99,235,0.12); }
+.metrics-block-title {
+  font-size: 11px; color: #9ca3af; font-weight: 500; margin-bottom: 6px;
+}
+.metrics-finance-row {
+  display: flex; align-items: center; gap: 0;
+}
+.finance-item {
+  display: flex; flex-direction: column; flex: 1;
+}
+.finance-lbl { font-size: 10px; color: #9ca3af; }
+.finance-val { font-size: 14px; font-weight: 700; margin-top: 2px; }
+.finance-val.debt { color: #dc2626; }
+.finance-val.prepaid { color: #0891b2; }
+.finance-val.zero { color: #6b7280; }
+.finance-sep { width: 1px; background: #e5e7eb; margin: 0 10px; align-self: stretch; }
+.metrics-big-num {
+  font-size: 22px; font-weight: 700; line-height: 1.2;
+}
+.metrics-big-num.blue { color: #2563eb; }
+.metrics-big-num.green { color: #059669; }
+.metrics-big-num.orange { color: #d97706; }
+.metrics-big-num.red { color: #dc2626; }
+.metrics-sub {
+  font-size: 10px; color: #9ca3af; margin-top: 2px;
+  display: flex; align-items: center; gap: 4px;
+}
+.jump-hint {
+  color: #2563eb; font-weight: 500; font-size: 10px;
+}
 </style>
