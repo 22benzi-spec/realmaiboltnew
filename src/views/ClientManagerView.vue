@@ -81,13 +81,10 @@
           </div>
           <div class="stat-sep" />
           <div class="stat-block">
-            <div :class="['stat-num', (company.debt_amount_cny || 0) > 0 ? 'red' : 'gray']">¥{{ formatMoney(company.debt_amount_cny) }}</div>
-            <div class="stat-lbl">欠款</div>
-          </div>
-          <div class="stat-sep" />
-          <div class="stat-block">
-            <div :class="['stat-num', (company.prepaid_amount_cny || 0) > 0 ? 'teal' : 'gray']">¥{{ formatMoney(company.prepaid_amount_cny) }}</div>
-            <div class="stat-lbl">预存</div>
+            <div :class="['stat-num', ((company.prepaid_amount_cny || 0) - (company.debt_amount_cny || 0)) < 0 ? 'red' : ((company.prepaid_amount_cny || 0) - (company.debt_amount_cny || 0)) > 0 ? 'teal' : 'gray']">
+              ¥{{ formatMoney((company.prepaid_amount_cny || 0) - (company.debt_amount_cny || 0)) }}
+            </div>
+            <div class="stat-lbl">余额</div>
           </div>
         </div>
 
@@ -98,7 +95,10 @@
           <div class="section-label">负责商务</div>
           <div v-if="company.business_owner_name" class="manager-assigned" @click="openAssignManager(company)">
             <div class="manager-dot" />
-            <span class="manager-name">{{ company.business_owner_name }}</span>
+            <div class="manager-info">
+              <span class="manager-name">{{ company.business_owner_name }}</span>
+              <span v-if="company.business_wechat_name" class="manager-wechat">{{ company.business_wechat_name }}</span>
+            </div>
             <EditOutlined class="manager-edit-icon" />
           </div>
           <div v-else class="manager-unassigned" @click="openAssignManager(company)">
@@ -468,6 +468,7 @@
                 <div class="assign-btn-body">
                   <div class="assign-btn-label">负责商务</div>
                   <div class="assign-btn-name">{{ currentCompany.business_owner_name }}</div>
+                  <div v-if="currentCompany.business_wechat_name" class="assign-btn-wechat">微信: {{ currentCompany.business_wechat_name }}</div>
                 </div>
                 <EditOutlined class="assign-btn-edit" />
               </div>
@@ -523,7 +524,7 @@
                 </div>
                 <div class="finance-sep"></div>
                 <div class="finance-item">
-                  <span class="finance-lbl">预存</span>
+                  <span class="finance-lbl">溢款</span>
                   <span :class="['finance-val', (currentCompany.prepaid_amount_cny || 0) > 0 ? 'prepaid' : 'zero']">
                     ¥{{ Number(currentCompany.prepaid_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
                   </span>
@@ -669,6 +670,7 @@
                 <div class="contact-detail" @click="openContactDetail(c)" style="cursor:pointer">
                   <div class="contact-name-row">
                     <span class="contact-name">{{ c.name }}</span>
+                    <span v-if="c.client_id" class="contact-id-badge">ID: {{ c.client_id }}</span>
                     <a-tag v-if="c.is_primary && c.employment_status === '在职'" color="blue" style="font-size:10px;margin:0;padding:0 4px">主要</a-tag>
                     <a-tag
                       :color="employmentStatusColor[c.employment_status || '在职']"
@@ -713,12 +715,12 @@
                   <div v-else-if="c.employment_status === '在职'" class="contact-scope-empty">未设置负责店铺/品牌</div>
 
                   <!-- 资金情况 -->
-                  <div v-if="(c.debt_amount_cny || 0) > 0 || (c.prepaid_amount_cny || 0) > 0" class="contact-financial">
-                    <div v-if="(c.debt_amount_cny || 0) > 0" class="fin-badge debt-badge">
-                      欠款 ¥{{ Number(c.debt_amount_cny).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }}
+                  <div class="contact-financial">
+                    <div :class="['fin-badge', (c.debt_amount_cny || 0) > 0 ? 'debt-badge' : 'zero-badge']">
+                      欠款 ¥{{ Number(c.debt_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }}
                     </div>
-                    <div v-if="(c.prepaid_amount_cny || 0) > 0" class="fin-badge prepaid-badge">
-                      预存 ¥{{ Number(c.prepaid_amount_cny).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }}
+                    <div :class="['fin-badge', (c.prepaid_amount_cny || 0) > 0 ? 'prepaid-badge' : 'zero-badge']">
+                      溢款 ¥{{ Number(c.prepaid_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }}
                     </div>
                   </div>
                 </div>
@@ -1558,9 +1560,11 @@ async function handleAssignManager() {
   assigning.value = true
   try {
     const mgr = managerOptions.value.find(m => m.id === assignManagerId.value)
+    const wSelected = assignWechatId.value ? wechatOptions.value.find(x => x.id === assignWechatId.value) : null
     const payload: any = {
       business_owner_id: assignManagerId.value || null,
       business_owner_name: mgr?.name || null,
+      business_wechat_name: wSelected?.wechat_id || '',
     }
     const { error } = await supabase
       .from('client_companies')
@@ -1569,7 +1573,7 @@ async function handleAssignManager() {
     if (error) throw error
 
     if (assignWechatId.value) {
-      const w = wechatOptions.value.find(x => x.id === assignWechatId.value)
+      const w = wSelected
       await supabase
         .from('client_contacts')
         .update({
@@ -1874,6 +1878,7 @@ onMounted(() => {
 .assign-btn-name { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .assigned .assign-btn-name { color: #15803d; }
 .unassigned .assign-btn-name { color: #9ca3af; }
+.assign-btn-wechat { font-size: 10px; color: #4b9e6e; white-space: nowrap; line-height: 1.2; }
 .assign-btn-edit { font-size: 11px; flex-shrink: 0; }
 .assigned .assign-btn-edit { color: #4ade80; }
 .unassigned .assign-btn-edit { color: #d1d5db; }
@@ -1891,7 +1896,9 @@ onMounted(() => {
   width: 7px; height: 7px; border-radius: 50%;
   background: #16a34a; flex-shrink: 0;
 }
+.manager-info { display: flex; flex-direction: column; gap: 1px; }
 .manager-name { font-size: 13px; font-weight: 600; color: #15803d; white-space: nowrap; }
+.manager-wechat { font-size: 10px; color: #4b9e6e; white-space: nowrap; }
 .manager-edit-icon { font-size: 10px; color: #86efac; margin-left: 2px; }
 .manager-unassigned {
   display: flex; align-items: center; gap: 4px;
@@ -2048,6 +2055,7 @@ onMounted(() => {
 .contact-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .contact-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .contact-name { font-size: 14px; font-weight: 600; color: #1f2937; }
+.contact-id-badge { font-size: 10px; color: #9ca3af; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; padding: 0 5px; font-family: monospace; }
 .contact-client-id { font-size: 11px; color: #9ca3af; font-family: monospace; }
 .contact-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .meta-item { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 4px; }
@@ -2186,6 +2194,7 @@ onMounted(() => {
 }
 .debt-badge { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
 .prepaid-badge { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; }
+.zero-badge { background: #f9fafb; color: #9ca3af; border: 1px solid #e5e7eb; }
 
 .contact-order-stats {
   display: flex; align-items: center; gap: 0;
