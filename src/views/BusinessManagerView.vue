@@ -159,62 +159,68 @@
 
           <div v-if="clientLoading" style="text-align:center;padding:32px"><a-spin /></div>
           <div v-else-if="!clientList.length" class="wechat-empty">暂无客户数据</div>
-          <div v-else class="client-card-list">
-            <div
-              v-for="c in clientList"
-              :key="c.id"
-              class="client-card"
-              @click="openClientDetail(c)"
-            >
-              <div class="client-card-top">
-                <div class="client-avatar">{{ c.client_name.charAt(0) }}</div>
-                <div class="client-card-info">
-                  <div class="client-card-name-row">
-                    <span class="client-card-name">{{ c.client_name }}</span>
+          <div v-else class="client-table-wrap">
+            <table class="client-table">
+              <thead>
+                <tr>
+                  <th class="ct-th">客户姓名</th>
+                  <th class="ct-th">客户ID</th>
+                  <th class="ct-th">归属公司</th>
+                  <th class="ct-th">公司ID</th>
+                  <th class="ct-th ct-center">状态</th>
+                  <th class="ct-th ct-center">累计下单</th>
+                  <th class="ct-th ct-center">累计退单</th>
+                  <th class="ct-th ct-center">资金余额</th>
+                  <th class="ct-th ct-center">待结任务</th>
+                  <th class="ct-th ct-center">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="c in clientList"
+                  :key="c.id"
+                  :class="['ct-row', { 'ct-row-debt': (clientFinanceMap[c.client_name]?.balance || 0) < 0 }]"
+                  @click="openClientDetail(c)"
+                >
+                  <td class="ct-td">
+                    <div class="ct-name-cell">
+                      <div class="ct-avatar-sm">{{ c.client_name.charAt(0) }}</div>
+                      <span class="ct-name-text">{{ c.client_name }}</span>
+                    </div>
+                  </td>
+                  <td class="ct-td"><span class="ct-mono">{{ clientOrderStatsMap[c.client_name]?.client_id || '—' }}</span></td>
+                  <td class="ct-td"><span class="ct-company-text">{{ c.company_name || '—' }}</span></td>
+                  <td class="ct-td"><span class="ct-mono">{{ clientOrderStatsMap[c.client_name]?.company_id || '—' }}</span></td>
+                  <td class="ct-td ct-center">
                     <a-tag :color="c.status === '活跃' ? 'green' : c.status === '沉默' ? 'orange' : 'default'" style="margin:0;font-size:11px">{{ c.status }}</a-tag>
-                    <a-tag :color="c.feedback_type === '群聊' ? 'blue' : 'default'" style="margin:0;font-size:11px">{{ c.feedback_type || '私发' }}</a-tag>
-                  </div>
-                  <div class="client-card-meta">
-                    <span v-if="c.company_name" class="client-meta-company"><BankOutlined style="font-size:10px" /> {{ c.company_name }}</span>
-                    <span v-if="c.client_wechat" class="client-meta-wechat">微信: {{ c.client_wechat }}</span>
-                    <span v-if="c.remark" class="client-meta-remark">{{ c.remark }}</span>
-                  </div>
-                  <!-- 资金余额 -->
-                  <div class="client-finance-row">
-                    <span :class="['cf-badge', (clientFinanceMap[c.client_name]?.balance || 0) < 0 ? 'cf-debt' : (clientFinanceMap[c.client_name]?.balance || 0) > 0 ? 'cf-prepaid' : 'cf-zero']">
-                      余额 ¥{{ formatMoney(clientFinanceMap[c.client_name]?.balance || 0) }}
+                  </td>
+                  <td class="ct-td ct-center">
+                    <span class="ct-stat-num ct-blue">{{ clientOrderStatsMap[c.client_name]?.order_quantity || 0 }}</span>
+                  </td>
+                  <td class="ct-td ct-center">
+                    <span :class="['ct-stat-num', (clientOrderStatsMap[c.client_name]?.refund_count || 0) > 0 ? 'ct-orange' : 'ct-gray']">
+                      {{ clientOrderStatsMap[c.client_name]?.refund_count || 0 }}
                     </span>
-                    <span v-if="(clientFinanceMap[c.client_name]?.debt || 0) > 0" class="cf-badge cf-debt-sm">
-                      欠款 ¥{{ formatMoney(clientFinanceMap[c.client_name]?.debt) }}
+                  </td>
+                  <td class="ct-td ct-center">
+                    <span :class="['ct-balance-num', (clientFinanceMap[c.client_name]?.balance || 0) < 0 ? 'ct-red' : (clientFinanceMap[c.client_name]?.balance || 0) > 0 ? 'ct-teal' : 'ct-gray']">
+                      ¥{{ formatMoney(clientFinanceMap[c.client_name]?.balance || 0) }}
                     </span>
-                    <span v-if="(clientFinanceMap[c.client_name]?.prepaid || 0) > 0" class="cf-badge cf-prepaid-sm">
-                      溢款 ¥{{ formatMoney(clientFinanceMap[c.client_name]?.prepaid) }}
+                  </td>
+                  <td class="ct-td ct-center">
+                    <span :class="['ct-stat-num', (clientOrderStatsMap[c.client_name]?.pending_count || 0) > 0 ? 'ct-blue' : 'ct-gray']">
+                      {{ clientOrderStatsMap[c.client_name]?.pending_count || 0 }}
                     </span>
-                  </div>
-                </div>
-                <div class="client-card-actions">
-                  <a-button type="link" size="small" danger @click.stop="confirmDeleteClient(c)"><DeleteOutlined /></a-button>
-                </div>
-              </div>
-
-              <!-- 下单统计 -->
-              <div class="client-order-stats">
-                <div class="cos-item">
-                  <span class="cos-num blue">{{ clientOrderStatsMap[c.client_name]?.order_count || 0 }}</span>
-                  <span class="cos-lbl">下单次数</span>
-                </div>
-                <div class="cos-sep"></div>
-                <div class="cos-item">
-                  <span class="cos-num teal">{{ clientOrderStatsMap[c.client_name]?.order_quantity || 0 }}</span>
-                  <span class="cos-lbl">下单单量</span>
-                </div>
-                <div class="cos-sep"></div>
-                <div class="cos-item">
-                  <span class="cos-num green">¥{{ formatMoney(clientOrderStatsMap[c.client_name]?.order_amount) }}</span>
-                  <span class="cos-lbl">下单金额</span>
-                </div>
-              </div>
-            </div>
+                  </td>
+                  <td class="ct-td ct-center" @click.stop>
+                    <div class="ct-action-btns">
+                      <a-button type="primary" size="small" ghost style="font-size:11px;height:22px;padding:0 7px" @click.stop="openGenerateBill(c)">账单</a-button>
+                      <a-button type="link" size="small" danger style="padding:0" @click.stop="confirmDeleteClient(c)"><DeleteOutlined /></a-button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </template>
@@ -572,10 +578,10 @@ const managerForm = reactive({ name: '', phone: '', email: '', join_date: null a
 const wechatForm = reactive({ wechat_id: '', wechat_nickname: '', status: '在用', notes: '', manager_id: '' as string })
 const clientForm = reactive({ client_name: '', client_wechat: '', company_name: '', feedback_type: '私发', remark: '', status: '活跃', notes: '' })
 
-const clientOrderStatsMap = ref<Record<string, { order_count: number; order_quantity: number; order_amount: number }>>({})
+const clientOrderStatsMap = ref<Record<string, { order_count: number; order_quantity: number; order_amount: number; refund_count: number; pending_count: number; client_id: string; company_id: string }>>({})
 const clientOrderStats = ref({ total_order_count: 0, total_order_quantity: 0, total_order_amount: 0 })
 const clientFinanceMap = ref<Record<string, { debt: number; prepaid: number; balance: number }>>({})
-const clientContactInfo = ref<Record<string, { client_id: string; company_name: string }>>({})
+const clientContactInfo = ref<Record<string, { client_id: string; company_name: string; company_id: string }>>({})
 
 const filteredWechatList = computed(() => {
   const q = searchText.value.trim().toLowerCase()
@@ -688,12 +694,12 @@ async function loadAllFinance() {
     .in('name', allClientNames)
 
   const finMap: Record<string, { debt: number; prepaid: number; balance: number }> = {}
-  const infoMap: Record<string, { client_id: string; company_name: string }> = {}
+  const infoMap: Record<string, { client_id: string; company_name: string; company_id: string }> = {}
   for (const ct of contacts || []) {
     const debt = Number(ct.debt_amount_cny || 0)
     const prepaid = Number(ct.prepaid_amount_cny || 0)
     finMap[ct.name] = { debt, prepaid, balance: prepaid - debt }
-    infoMap[ct.name] = { client_id: ct.client_id || '', company_name: '' }
+    infoMap[ct.name] = { client_id: ct.client_id || '', company_name: '', company_id: ct.company_id || '' }
   }
   clientFinanceMap.value = finMap
   clientContactInfo.value = infoMap
@@ -857,45 +863,90 @@ async function loadClients(wechatAccountId: string) {
 
     if (clientList.value.length) {
       const names = clientList.value.map((c: any) => c.client_name).filter(Boolean)
+
       const { data: contactData } = await supabase
         .from('client_contacts')
-        .select('name, client_id')
+        .select('name, client_id, company_id')
         .in('name', names)
 
       const clientIdToName: Record<string, string> = {}
+      const nameToClientId: Record<string, string> = {}
+      const nameToCompanyId: Record<string, string> = {}
       for (const ct of contactData || []) {
-        if (ct.client_id) clientIdToName[ct.client_id] = ct.name
+        if (ct.client_id) {
+          clientIdToName[ct.client_id] = ct.name
+          nameToClientId[ct.name] = ct.client_id
+        }
+        if (ct.company_id) nameToCompanyId[ct.name] = ct.company_id
+      }
+
+      const companyIds = [...new Set(Object.values(nameToCompanyId).filter(Boolean))]
+      const companyIdToOrgId: Record<string, string> = {}
+      if (companyIds.length) {
+        const { data: compData } = await supabase
+          .from('client_companies')
+          .select('id, org_id')
+          .in('id', companyIds)
+        for (const comp of compData || []) {
+          companyIdToOrgId[comp.id] = comp.org_id || comp.id
+        }
+      }
+
+      type StatsEntry = { order_count: number; order_quantity: number; order_amount: number; refund_count: number; pending_count: number; client_id: string; company_id: string }
+      const statsMap: Record<string, StatsEntry> = {}
+      for (const name of names) {
+        const cid = nameToCompanyId[name] || ''
+        statsMap[name] = {
+          order_count: 0, order_quantity: 0, order_amount: 0,
+          refund_count: 0, pending_count: 0,
+          client_id: nameToClientId[name] || '',
+          company_id: cid ? (companyIdToOrgId[cid] || cid) : '',
+        }
       }
 
       const clientIds = Object.keys(clientIdToName)
       if (clientIds.length) {
-        const { data: orderData } = await supabase
-          .from('erp_orders')
-          .select('customer_id_str, total_orders, total_amount')
-          .in('customer_id_str', clientIds)
-
-        const statsMap: Record<string, { order_count: number; order_quantity: number; order_amount: number }> = {}
+        const [{ data: orderData }, { data: subOrderData }] = await Promise.all([
+          supabase.from('erp_orders').select('customer_id_str, total_orders, total_amount').in('customer_id_str', clientIds),
+          supabase.from('sub_orders').select('customer_id_str, refund_status, status').in('customer_id_str', clientIds),
+        ])
         for (const o of orderData || []) {
           const name = clientIdToName[o.customer_id_str]
-          if (!name) continue
-          if (!statsMap[name]) statsMap[name] = { order_count: 0, order_quantity: 0, order_amount: 0 }
+          if (!name || !statsMap[name]) continue
           statsMap[name].order_count += 1
           statsMap[name].order_quantity += Number(o.total_orders || 0)
           statsMap[name].order_amount += Number(o.total_amount || 0)
         }
-        clientOrderStatsMap.value = statsMap
-
-        const totals = Object.values(statsMap)
-        clientOrderStats.value = {
-          total_order_count: totals.reduce((s, v) => s + v.order_count, 0),
-          total_order_quantity: totals.reduce((s, v) => s + v.order_quantity, 0),
-          total_order_amount: totals.reduce((s, v) => s + v.order_amount, 0),
+        const pendingStatuses = ['待接单', '已接单', '已下单', '待确认', '进行中']
+        for (const so of subOrderData || []) {
+          const name = clientIdToName[so.customer_id_str]
+          if (!name || !statsMap[name]) continue
+          if (so.refund_status && so.refund_status !== '') statsMap[name].refund_count += 1
+          if (pendingStatuses.includes(so.status)) statsMap[name].pending_count += 1
         }
+      }
+
+      clientOrderStatsMap.value = statsMap
+      const totals = Object.values(statsMap)
+      clientOrderStats.value = {
+        total_order_count: totals.reduce((s, v) => s + v.order_count, 0),
+        total_order_quantity: totals.reduce((s, v) => s + v.order_quantity, 0),
+        total_order_amount: totals.reduce((s, v) => s + v.order_amount, 0),
       }
     }
   } finally {
     clientLoading.value = false
   }
+}
+
+function openGenerateBill(c: any) {
+  const balance = clientFinanceMap.value[c.client_name]?.balance || 0
+  const stats = clientOrderStatsMap.value[c.client_name]
+  Modal.info({
+    title: `账单生成 — ${c.client_name}`,
+    content: `客户ID：${stats?.client_id || '未关联'}\n归属公司：${c.company_name || '—'}\n资金余额：¥${formatMoney(balance)}\n累计下单：${stats?.order_quantity || 0} 单\n待结任务：${stats?.pending_count || 0} 个`,
+    okText: '确定',
+  })
 }
 
 function openAddClient() {
@@ -1082,7 +1133,43 @@ onMounted(load)
 .wsum-lbl { font-size: 10px; color: #9ca3af; margin-top: 2px; }
 .wsum-sep { width: 1px; height: 30px; background: #e5e7eb; flex-shrink: 0; }
 
-.wechat-drawer-body { padding: 16px 24px; }
+.wechat-drawer-body { padding: 16px 16px; }
+
+/* 客户列表表格 */
+.client-table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+.client-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.ct-th {
+  background: #f8fafc; padding: 8px 10px;
+  text-align: left; font-size: 11px; font-weight: 600; color: #6b7280;
+  border-bottom: 1px solid #e5e7eb;
+}
+.ct-th.ct-center { text-align: center; }
+.ct-td { padding: 9px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+.ct-td.ct-center { text-align: center; }
+.ct-row { cursor: pointer; transition: background 0.12s; }
+.ct-row:last-child .ct-td { border-bottom: none; }
+.ct-row:hover { background: #f0f9ff; }
+.ct-row-debt { background: #fff5f5; }
+.ct-row-debt:hover { background: #fee2e2; }
+.ct-name-cell { display: flex; align-items: center; gap: 7px; }
+.ct-avatar-sm {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #2563eb; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0;
+}
+.ct-row-debt .ct-avatar-sm { background: #dc2626; }
+.ct-name-text { font-size: 13px; font-weight: 600; color: #111827; }
+.ct-mono { font-family: monospace; font-size: 11px; color: #6b7280; }
+.ct-company-text { font-size: 12px; color: #374151; }
+.ct-stat-num { font-size: 13px; font-weight: 700; }
+.ct-blue { color: #2563eb; }
+.ct-orange { color: #d97706; }
+.ct-gray { color: #9ca3af; }
+.ct-red { color: #dc2626; }
+.ct-teal { color: #0e7490; }
+.ct-balance-num { font-size: 13px; font-weight: 700; }
+.ct-action-btns { display: flex; align-items: center; gap: 4px; justify-content: center; }
 .wechat-drawer-toolbar {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 12px;
