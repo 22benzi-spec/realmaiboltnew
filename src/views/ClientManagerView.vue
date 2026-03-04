@@ -210,9 +210,31 @@
             </a-col>
           </a-row>
 
-          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">对接员工</span></a-divider>
+          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">对接信息</span></a-divider>
 
           <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="反馈方式">
+                <a-select v-model:value="form.feedback_type" placeholder="选择反馈方式">
+                  <a-select-option value="私聊">私聊</a-select-option>
+                  <a-select-option value="群聊">群聊</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="对接商务微信">
+                <a-select v-model:value="form.business_wechat_name" placeholder="选择商务微信号" allow-clear show-search :filter-option="(input: string, opt: any) => opt?.label?.toLowerCase().includes(input.toLowerCase())">
+                  <a-select-option
+                    v-for="w in wechatOptions"
+                    :key="w.id"
+                    :value="w.wechat_id"
+                    :label="w.wechat_id + (w.wechat_nickname ? ` (${w.wechat_nickname})` : '')"
+                  >
+                    {{ w.wechat_id }}<span v-if="w.wechat_nickname" style="color:#9ca3af;font-size:11px"> ({{ w.wechat_nickname }})</span>
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
             <a-col :span="12">
               <a-form-item label="员工姓名">
                 <a-input v-model:value="form.contact_name" placeholder="对接员工的姓名" />
@@ -475,6 +497,16 @@
             <div class="dstat-card">
               <div class="dstat-num green">¥{{ formatMoney(currentCompany.total_order_amount_cny) }}</div>
               <div class="dstat-lbl">累计金额</div>
+            </div>
+            <div class="dstat-card">
+              <div :class="['dstat-num', (currentCompany.total_refund_count || 0) > 0 ? 'red' : 'gray']">{{ currentCompany.total_refund_count || 0 }}</div>
+              <div class="dstat-lbl">退单量</div>
+            </div>
+            <div class="dstat-card">
+              <div :class="['dstat-num', (currentCompany.total_refund_rate || 0) > 15 ? 'red' : (currentCompany.total_refund_rate || 0) > 8 ? 'orange' : 'green']">
+                {{ (currentCompany.total_refund_rate || 0).toFixed(1) }}%
+              </div>
+              <div class="dstat-lbl">退单率</div>
             </div>
           </div>
 
@@ -1145,6 +1177,8 @@ const defaultForm = () => ({
   source_channel_name: '',
   contact_name: '',
   contact_wechat: '',
+  feedback_type: '私聊',
+  business_wechat_name: '',
 })
 const form = reactive(defaultForm())
 
@@ -1387,6 +1421,14 @@ async function loadContactOrderStats(company: any) {
   const totalCompleted = relevantSubs.length
   const refunded = relevantSubs.filter(s => s.refund_status === '已退款').length
   const dropRate = totalCompleted > 0 ? (refunded / totalCompleted) * 100 : 0
+
+  if (currentCompany.value?.id === company.id) {
+    currentCompany.value = {
+      ...currentCompany.value,
+      total_refund_count: refunded,
+      total_refund_rate: dropRate,
+    }
+  }
 
   companyBuyerStats.value = {
     buyer_count: buyerCountResult.count ?? 0,
