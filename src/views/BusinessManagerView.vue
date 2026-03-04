@@ -198,37 +198,111 @@
       </a-form>
     </a-modal>
 
-    <!-- 管理客户 Modal -->
-    <a-modal
+    <!-- 微信号客户管理抽屉 -->
+    <a-drawer
       v-model:open="clientModalOpen"
-      :title="`微信号「${currentWechat?.wechat_id}」客户管理`"
-      :footer="null"
-      width="700px"
+      :title="null"
+      placement="right"
+      width="680"
+      :body-style="{ padding: 0 }"
     >
-      <div class="client-toolbar">
-        <a-button type="primary" size="small" @click="openAddClient"><PlusOutlined /> 添加客户</a-button>
-      </div>
-      <a-table
-        :columns="clientColumns"
-        :data-source="clientList"
-        :loading="clientLoading"
-        row-key="id"
-        size="small"
-        :pagination="{ pageSize: 8 }"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'status'">
-            <a-tag :color="record.status === '活跃' ? 'green' : 'default'">{{ record.status }}</a-tag>
-          </template>
-          <template v-if="column.key === 'action'">
-            <a-button type="link" size="small" danger @click="confirmDeleteClient(record)"><DeleteOutlined /></a-button>
-          </template>
-        </template>
-      </a-table>
-    </a-modal>
+      <template v-if="currentWechat">
+        <div class="wechat-drawer-header">
+          <div class="wechat-drawer-icon">微</div>
+          <div class="wechat-drawer-title-block">
+            <div class="wechat-drawer-id">{{ currentWechat.wechat_id }}</div>
+            <div class="wechat-drawer-nick">{{ currentWechat.wechat_nickname || '未设置昵称' }}</div>
+          </div>
+          <div class="wechat-drawer-tags">
+            <a-tag :color="currentWechat.status === '在用' ? 'green' : currentWechat.status === '停用' ? 'orange' : 'red'">{{ currentWechat.status }}</a-tag>
+          </div>
+        </div>
+
+        <!-- 汇总统计行 -->
+        <div class="wechat-summary-row">
+          <div class="wsum-item">
+            <div class="wsum-num blue">{{ clientList.length }}</div>
+            <div class="wsum-lbl">管理客户</div>
+          </div>
+          <div class="wsum-sep"></div>
+          <div class="wsum-item">
+            <div class="wsum-num green">{{ clientList.filter(c => c.status === '活跃').length }}</div>
+            <div class="wsum-lbl">活跃客户</div>
+          </div>
+          <div class="wsum-sep"></div>
+          <div class="wsum-item">
+            <div class="wsum-num teal">{{ clientOrderStats.total_order_count }}</div>
+            <div class="wsum-lbl">累计下单次</div>
+          </div>
+          <div class="wsum-sep"></div>
+          <div class="wsum-item">
+            <div class="wsum-num orange">{{ clientOrderStats.total_order_quantity }}</div>
+            <div class="wsum-lbl">累计单量</div>
+          </div>
+          <div class="wsum-sep"></div>
+          <div class="wsum-item">
+            <div class="wsum-num green">¥{{ formatMoney(clientOrderStats.total_order_amount) }}</div>
+            <div class="wsum-lbl">累计金额</div>
+          </div>
+        </div>
+
+        <div class="wechat-drawer-body">
+          <div class="wechat-drawer-toolbar">
+            <span class="client-count-tip">共 {{ clientList.length }} 位客户</span>
+            <a-button type="primary" size="small" @click="openAddClient"><PlusOutlined /> 添加客户</a-button>
+          </div>
+
+          <div v-if="clientLoading" style="text-align:center;padding:32px"><a-spin /></div>
+          <div v-else-if="!clientList.length" class="wechat-empty">暂无客户数据</div>
+          <div v-else class="client-card-list">
+            <div v-for="c in clientList" :key="c.id" class="client-card">
+              <div class="client-card-top">
+                <div class="client-avatar">{{ c.client_name.charAt(0) }}</div>
+                <div class="client-card-info">
+                  <div class="client-card-name-row">
+                    <span class="client-card-name">{{ c.client_name }}</span>
+                    <a-tag :color="c.status === '活跃' ? 'green' : c.status === '沉默' ? 'orange' : 'default'" style="margin:0;font-size:11px">{{ c.status }}</a-tag>
+                    <a-tag
+                      :color="c.feedback_type === '群聊' ? 'blue' : 'default'"
+                      style="margin:0;font-size:11px"
+                    >{{ c.feedback_type || '私发' }}</a-tag>
+                  </div>
+                  <div class="client-card-meta">
+                    <span v-if="c.company_name" class="client-meta-company">{{ c.company_name }}</span>
+                    <span v-if="c.client_wechat" class="client-meta-wechat">微信: {{ c.client_wechat }}</span>
+                    <span v-if="c.remark" class="client-meta-remark">{{ c.remark }}</span>
+                  </div>
+                </div>
+                <div class="client-card-actions">
+                  <a-button type="link" size="small" danger @click="confirmDeleteClient(c)"><DeleteOutlined /></a-button>
+                </div>
+              </div>
+
+              <!-- 下单统计 -->
+              <div class="client-order-stats">
+                <div class="cos-item">
+                  <span class="cos-num blue">{{ clientOrderStatsMap[c.client_name]?.order_count || 0 }}</span>
+                  <span class="cos-lbl">下单次数</span>
+                </div>
+                <div class="cos-sep"></div>
+                <div class="cos-item">
+                  <span class="cos-num teal">{{ clientOrderStatsMap[c.client_name]?.order_quantity || 0 }}</span>
+                  <span class="cos-lbl">下单单量</span>
+                </div>
+                <div class="cos-sep"></div>
+                <div class="cos-item">
+                  <span class="cos-num green">¥{{ formatMoney(clientOrderStatsMap[c.client_name]?.order_amount) }}</span>
+                  <span class="cos-lbl">下单金额</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </a-drawer>
 
     <!-- 添加客户 Modal -->
-    <a-modal v-model:open="addClientModalOpen" title="添加客户" @ok="handleAddClient" :confirm-loading="submitting" ok-text="确定" cancel-text="取消">
+    <a-modal v-model:open="addClientModalOpen" title="添加客户" @ok="handleAddClient" :confirm-loading="submitting" ok-text="确定" cancel-text="取消" width="520px">
       <a-form layout="vertical" style="margin-top:8px">
         <a-row :gutter="12">
           <a-col :span="12">
@@ -236,6 +310,19 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="客户微信号"><a-input v-model:value="clientForm.client_wechat" placeholder="请输入客户微信号" /></a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="归属公司"><a-input v-model:value="clientForm.company_name" placeholder="请输入归属公司名称" /></a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="反馈方式">
+              <a-select v-model:value="clientForm.feedback_type">
+                <a-select-option value="私发">私发</a-select-option>
+                <a-select-option value="群聊">群聊</a-select-option>
+              </a-select>
+            </a-form-item>
           </a-col>
         </a-row>
         <a-form-item label="备注标记"><a-input v-model:value="clientForm.remark" placeholder="如：高价值客户、长期合作等" /></a-form-item>
@@ -278,15 +365,15 @@ const clientList = ref<any[]>([])
 
 const managerForm = reactive({ name: '', phone: '', email: '', join_date: null as any, notes: '' })
 const wechatForm = reactive({ wechat_id: '', wechat_nickname: '', status: '在用', notes: '' })
-const clientForm = reactive({ client_name: '', client_wechat: '', remark: '', status: '活跃', notes: '' })
+const clientForm = reactive({ client_name: '', client_wechat: '', company_name: '', feedback_type: '私发', remark: '', status: '活跃', notes: '' })
 
-const clientColumns = [
-  { title: '客户名称', dataIndex: 'client_name', key: 'client_name', width: 130 },
-  { title: '客户微信', dataIndex: 'client_wechat', key: 'client_wechat', width: 130 },
-  { title: '备注标记', dataIndex: 'remark', key: 'remark' },
-  { title: '状态', key: 'status', width: 80 },
-  { title: '操作', key: 'action', width: 70 },
-]
+const clientOrderStatsMap = ref<Record<string, { order_count: number; order_quantity: number; order_amount: number }>>({})
+const clientOrderStats = ref({ total_order_count: 0, total_order_quantity: 0, total_order_amount: 0 })
+
+function formatMoney(n: any): string {
+  const num = Number(n || 0)
+  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
 function getTotalClients(record: any): number {
   return (record.business_wechat_accounts || []).reduce((sum: number, acc: any) => {
@@ -431,6 +518,8 @@ async function openClientModal(acc: any) {
 
 async function loadClients(wechatAccountId: string) {
   clientLoading.value = true
+  clientOrderStatsMap.value = {}
+  clientOrderStats.value = { total_order_count: 0, total_order_quantity: 0, total_order_amount: 0 }
   try {
     const { data, error } = await supabase
       .from('wechat_clients')
@@ -439,13 +528,52 @@ async function loadClients(wechatAccountId: string) {
       .order('created_at', { ascending: false })
     if (error) throw error
     clientList.value = data || []
+
+    if (clientList.value.length) {
+      const names = clientList.value.map((c: any) => c.client_name).filter(Boolean)
+      const { data: contactData } = await supabase
+        .from('client_contacts')
+        .select('name, client_id')
+        .in('name', names)
+
+      const clientIdToName: Record<string, string> = {}
+      for (const ct of contactData || []) {
+        if (ct.client_id) clientIdToName[ct.client_id] = ct.name
+      }
+
+      const clientIds = Object.keys(clientIdToName)
+      if (clientIds.length) {
+        const { data: orderData } = await supabase
+          .from('erp_orders')
+          .select('customer_id_str, total_orders, total_amount')
+          .in('customer_id_str', clientIds)
+
+        const statsMap: Record<string, { order_count: number; order_quantity: number; order_amount: number }> = {}
+        for (const o of orderData || []) {
+          const name = clientIdToName[o.customer_id_str]
+          if (!name) continue
+          if (!statsMap[name]) statsMap[name] = { order_count: 0, order_quantity: 0, order_amount: 0 }
+          statsMap[name].order_count += 1
+          statsMap[name].order_quantity += Number(o.total_orders || 0)
+          statsMap[name].order_amount += Number(o.total_amount || 0)
+        }
+        clientOrderStatsMap.value = statsMap
+
+        const totals = Object.values(statsMap)
+        clientOrderStats.value = {
+          total_order_count: totals.reduce((s, v) => s + v.order_count, 0),
+          total_order_quantity: totals.reduce((s, v) => s + v.order_quantity, 0),
+          total_order_amount: totals.reduce((s, v) => s + v.order_amount, 0),
+        }
+      }
+    }
   } finally {
     clientLoading.value = false
   }
 }
 
 function openAddClient() {
-  Object.assign(clientForm, { client_name: '', client_wechat: '', remark: '', status: '活跃', notes: '' })
+  Object.assign(clientForm, { client_name: '', client_wechat: '', company_name: '', feedback_type: '私发', remark: '', status: '活跃', notes: '' })
   addClientModalOpen.value = true
 }
 
@@ -583,6 +711,89 @@ onMounted(load)
 .card-actions { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
 
 .client-toolbar { margin-bottom: 12px; }
+
+/* 微信号客户抽屉 */
+.wechat-drawer-header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 20px 24px 16px; border-bottom: 1px solid #f0f0f0;
+  background: #f8fafc;
+}
+.wechat-drawer-icon {
+  width: 44px; height: 44px; border-radius: 10px;
+  background: #07c160; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; flex-shrink: 0;
+}
+.wechat-drawer-title-block { flex: 1; }
+.wechat-drawer-id { font-size: 16px; font-weight: 700; color: #111827; }
+.wechat-drawer-nick { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+.wechat-drawer-tags { flex-shrink: 0; }
+
+.wechat-summary-row {
+  display: flex; align-items: center;
+  padding: 12px 24px; background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  flex-wrap: wrap; gap: 0;
+}
+.wsum-item { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 70px; }
+.wsum-num { font-size: 18px; font-weight: 700; line-height: 1.2; }
+.wsum-num.blue { color: #2563eb; }
+.wsum-num.green { color: #059669; }
+.wsum-num.teal { color: #0891b2; }
+.wsum-num.orange { color: #d97706; }
+.wsum-lbl { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+.wsum-sep { width: 1px; height: 30px; background: #e5e7eb; flex-shrink: 0; }
+
+.wechat-drawer-body { padding: 16px 24px; }
+.wechat-drawer-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.client-count-tip { font-size: 12px; color: #9ca3af; }
+.wechat-empty { text-align: center; padding: 32px; color: #9ca3af; font-size: 13px; }
+
+.client-card-list { display: flex; flex-direction: column; gap: 10px; }
+.client-card {
+  border: 1px solid #e5e7eb; border-radius: 10px;
+  background: #fff; overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+.client-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+
+.client-card-top {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+}
+.client-avatar {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: #2563eb; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; flex-shrink: 0;
+}
+.client-card-info { flex: 1; min-width: 0; }
+.client-card-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.client-card-name { font-size: 14px; font-weight: 700; color: #111827; }
+.client-card-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.client-meta-company { font-size: 12px; color: #374151; font-weight: 500; }
+.client-meta-wechat { font-size: 12px; color: #6b7280; }
+.client-meta-remark {
+  font-size: 11px; color: #9ca3af;
+  padding: 1px 6px; background: #f3f4f6; border-radius: 4px;
+}
+.client-card-actions { flex-shrink: 0; }
+
+.client-order-stats {
+  display: flex; align-items: center;
+  padding: 8px 14px; background: #f8fafc;
+  border-top: 1px solid #f0f0f0;
+}
+.cos-item { display: flex; flex-direction: column; align-items: center; flex: 1; }
+.cos-num { font-size: 15px; font-weight: 700; line-height: 1.2; }
+.cos-num.blue { color: #2563eb; }
+.cos-num.teal { color: #0891b2; }
+.cos-num.green { color: #059669; }
+.cos-lbl { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+.cos-sep { width: 1px; height: 24px; background: #e5e7eb; flex-shrink: 0; margin: 0 4px; }
 
 /* Drawer */
 .drawer-header {
