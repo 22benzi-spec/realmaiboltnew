@@ -21,15 +21,27 @@
         <div class="mgr-tab-avatar" :style="{ background: mgr.avatar_color || '#2563eb' }">{{ mgr.name.charAt(0) }}</div>
         <div class="mgr-tab-body">
           <div class="mgr-tab-name">{{ mgr.name }}</div>
-          <div class="mgr-tab-stats">
-            <span class="mgr-stat-num blue">{{ getMgrWechatCount(mgr) }}</span><span class="mgr-stat-lbl">微信</span>
-            <span class="mgr-stat-sep">·</span>
-            <span class="mgr-stat-num green">{{ getMgrClientCount(mgr) }}</span><span class="mgr-stat-lbl">客户</span>
-          </div>
-          <div class="mgr-tab-finance">
-            <span :class="['mf-item', getMgrBalance(mgr) < 0 ? 'red' : getMgrBalance(mgr) > 0 ? 'teal' : 'gray']">
-              余额 ¥{{ formatMoney(getMgrBalance(mgr)) }}
-            </span>
+          <div class="mgr-kpi-grid">
+            <div class="mgr-kpi-item">
+              <span class="mgr-kpi-val blue">¥{{ formatMoneyShort(getMgrMonthAmount(mgr)) }}</span>
+              <span class="mgr-kpi-lbl">本月业绩</span>
+            </div>
+            <div class="mgr-kpi-item">
+              <span class="mgr-kpi-val teal">{{ getMgrMonthOrders(mgr) }}</span>
+              <span class="mgr-kpi-lbl">本月下单</span>
+            </div>
+            <div class="mgr-kpi-item">
+              <span :class="['mgr-kpi-val', getMgrRefundRate(mgr) > 10 ? 'red' : 'green']">{{ getMgrRefundRate(mgr) }}%</span>
+              <span class="mgr-kpi-lbl">退单率</span>
+            </div>
+            <div class="mgr-kpi-item">
+              <span :class="['mgr-kpi-val', getMgrDebt(mgr) > 0 ? 'red' : 'gray']">¥{{ formatMoneyShort(getMgrDebt(mgr)) }}</span>
+              <span class="mgr-kpi-lbl">总欠款</span>
+            </div>
+            <div class="mgr-kpi-item">
+              <span class="mgr-kpi-val orange">{{ getMgrNewClients(mgr) }}</span>
+              <span class="mgr-kpi-lbl">本月新客</span>
+            </div>
           </div>
         </div>
         <a-button type="link" size="small" @click.stop="openManagerDetail(mgr)" class="mgr-tab-edit"><EllipsisOutlined /></a-button>
@@ -83,8 +95,13 @@
           </div>
           <div class="wmc-stat-sep"></div>
           <div class="wmc-stat-item">
+            <span class="wmc-stat-num orange">{{ getWechatNewClients(acc) }}</span>
+            <span class="wmc-stat-lbl">本月新增</span>
+          </div>
+          <div class="wmc-stat-sep"></div>
+          <div class="wmc-stat-item">
             <span :class="['wmc-stat-num', getWechatBalance(acc) < 0 ? 'red' : getWechatBalance(acc) > 0 ? 'teal' : 'gray']">
-              ¥{{ formatMoney(getWechatBalance(acc)) }}
+              ¥{{ formatMoneyShort(getWechatBalance(acc)) }}
             </span>
             <span class="wmc-stat-lbl">余额</span>
           </div>
@@ -97,7 +114,7 @@
       v-model:open="wechatDrawerOpen"
       :title="null"
       placement="right"
-      width="680"
+      width="840"
       :body-style="{ padding: 0 }"
     >
       <template v-if="currentWechat">
@@ -136,6 +153,11 @@
           </div>
           <div class="wsum-sep"></div>
           <div class="wsum-item">
+            <div class="wsum-num orange">{{ getDrawerNewClients() }}</div>
+            <div class="wsum-lbl">本月新增</div>
+          </div>
+          <div class="wsum-sep"></div>
+          <div class="wsum-item">
             <div class="wsum-num teal">{{ clientOrderStats.total_order_count }}</div>
             <div class="wsum-lbl">累计下单次</div>
           </div>
@@ -159,169 +181,151 @@
 
           <div v-if="clientLoading" style="text-align:center;padding:32px"><a-spin /></div>
           <div v-else-if="!clientList.length" class="wechat-empty">暂无客户数据</div>
-          <div v-else class="client-table-wrap">
-            <table class="client-table">
-              <thead>
-                <tr>
-                  <th class="ct-th">客户姓名</th>
-                  <th class="ct-th">客户ID</th>
-                  <th class="ct-th">归属公司</th>
-                  <th class="ct-th">公司ID</th>
-                  <th class="ct-th ct-center">状态</th>
-                  <th class="ct-th ct-center">累计下单</th>
-                  <th class="ct-th ct-center">累计退单</th>
-                  <th class="ct-th ct-center">资金余额</th>
-                  <th class="ct-th ct-center">待结任务</th>
-                  <th class="ct-th ct-center">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="c in clientList"
-                  :key="c.id"
-                  :class="['ct-row', { 'ct-row-debt': (clientFinanceMap[c.client_name]?.balance || 0) < 0 }]"
-                  @click="openClientDetail(c)"
-                >
-                  <td class="ct-td">
-                    <div class="ct-name-cell">
-                      <div class="ct-avatar-sm">{{ c.client_name.charAt(0) }}</div>
-                      <span class="ct-name-text">{{ c.client_name }}</span>
+          <div v-else class="client-expand-list">
+            <div
+              v-for="c in clientList"
+              :key="c.id"
+              :class="['client-expand-item', { 'is-expanded': expandedClientId === c.id, 'is-debt': (clientFinanceMap[c.client_name]?.balance || 0) < 0 }]"
+            >
+              <!-- 客户行 -->
+              <div class="cei-row" @click="toggleClientExpand(c)">
+                <div class="cei-avatar">{{ c.client_name.charAt(0) }}</div>
+                <div class="cei-main">
+                  <div class="cei-name-line">
+                    <span class="cei-name">{{ c.client_name }}</span>
+                    <a-tag :color="c.status === '活跃' ? 'green' : c.status === '沉默' ? 'orange' : 'default'" style="margin:0;font-size:10px;line-height:18px;padding:0 5px">{{ c.status }}</a-tag>
+                    <span v-if="c.feedback_type" class="cei-feedback-tag">{{ c.feedback_type }}</span>
+                  </div>
+                  <div class="cei-sub-line">
+                    <span v-if="c.company_name" class="cei-company"><BankOutlined style="font-size:10px" /> {{ c.company_name }}</span>
+                    <span v-if="c.client_wechat" class="cei-wechat">{{ c.client_wechat }}</span>
+                    <span v-if="c.remark" class="cei-remark">{{ c.remark }}</span>
+                  </div>
+                </div>
+                <div class="cei-stats">
+                  <div class="cei-stat">
+                    <span class="cei-stat-val blue">{{ clientOrderStatsMap[c.client_name]?.order_quantity || 0 }}</span>
+                    <span class="cei-stat-lbl">下单量</span>
+                  </div>
+                  <div class="cei-stat">
+                    <span :class="['cei-stat-val', (clientOrderStatsMap[c.client_name]?.refund_count || 0) > 0 ? 'orange' : 'gray']">{{ clientOrderStatsMap[c.client_name]?.refund_count || 0 }}</span>
+                    <span class="cei-stat-lbl">退单</span>
+                  </div>
+                  <div class="cei-stat">
+                    <span :class="['cei-stat-val', (clientFinanceMap[c.client_name]?.balance || 0) < 0 ? 'red' : (clientFinanceMap[c.client_name]?.balance || 0) > 0 ? 'teal' : 'gray']">
+                      ¥{{ formatMoneyShort(clientFinanceMap[c.client_name]?.balance || 0) }}
+                    </span>
+                    <span class="cei-stat-lbl">余额</span>
+                  </div>
+                </div>
+                <div class="cei-actions" @click.stop>
+                  <a-button type="primary" size="small" ghost style="font-size:11px;height:24px;padding:0 8px" @click.stop="openGenerateBill(c)">账单</a-button>
+                  <a-button type="link" size="small" danger style="padding:0;height:24px" @click.stop="confirmDeleteClient(c)"><DeleteOutlined /></a-button>
+                </div>
+                <div class="cei-expand-arrow" :class="{ rotated: expandedClientId === c.id }">
+                  <DownOutlined style="font-size:11px;color:#9ca3af" />
+                </div>
+              </div>
+
+              <!-- 展开详情 -->
+              <div v-if="expandedClientId === c.id" class="cei-detail">
+                <div class="cei-detail-grid">
+                  <!-- 资金情况 -->
+                  <div class="ced-block">
+                    <div class="ced-block-title">资金情况</div>
+                    <div class="ced-finance-row">
+                      <div class="ced-fin-item">
+                        <div :class="['ced-fin-val', (clientFinanceMap[c.client_name]?.balance || 0) < 0 ? 'red' : (clientFinanceMap[c.client_name]?.balance || 0) > 0 ? 'teal' : 'gray']">
+                          ¥{{ formatMoney(clientFinanceMap[c.client_name]?.balance || 0) }}
+                        </div>
+                        <div class="ced-fin-lbl">余额</div>
+                      </div>
+                      <div class="ced-fin-sep"></div>
+                      <div class="ced-fin-item">
+                        <div :class="['ced-fin-val', (clientFinanceMap[c.client_name]?.debt || 0) > 0 ? 'red' : 'gray']">
+                          ¥{{ formatMoney(clientFinanceMap[c.client_name]?.debt || 0) }}
+                        </div>
+                        <div class="ced-fin-lbl">欠款</div>
+                      </div>
+                      <div class="ced-fin-sep"></div>
+                      <div class="ced-fin-item">
+                        <div :class="['ced-fin-val', (clientFinanceMap[c.client_name]?.prepaid || 0) > 0 ? 'teal' : 'gray']">
+                          ¥{{ formatMoney(clientFinanceMap[c.client_name]?.prepaid || 0) }}
+                        </div>
+                        <div class="ced-fin-lbl">溢款</div>
+                      </div>
                     </div>
-                  </td>
-                  <td class="ct-td"><span class="ct-mono">{{ clientOrderStatsMap[c.client_name]?.client_id || '—' }}</span></td>
-                  <td class="ct-td"><span class="ct-company-text">{{ c.company_name || '—' }}</span></td>
-                  <td class="ct-td"><span class="ct-mono">{{ clientOrderStatsMap[c.client_name]?.company_id || '—' }}</span></td>
-                  <td class="ct-td ct-center">
-                    <a-tag :color="c.status === '活跃' ? 'green' : c.status === '沉默' ? 'orange' : 'default'" style="margin:0;font-size:11px">{{ c.status }}</a-tag>
-                  </td>
-                  <td class="ct-td ct-center">
-                    <span class="ct-stat-num ct-blue">{{ clientOrderStatsMap[c.client_name]?.order_quantity || 0 }}</span>
-                  </td>
-                  <td class="ct-td ct-center">
-                    <span :class="['ct-stat-num', (clientOrderStatsMap[c.client_name]?.refund_count || 0) > 0 ? 'ct-orange' : 'ct-gray']">
-                      {{ clientOrderStatsMap[c.client_name]?.refund_count || 0 }}
-                    </span>
-                  </td>
-                  <td class="ct-td ct-center">
-                    <span :class="['ct-balance-num', (clientFinanceMap[c.client_name]?.balance || 0) < 0 ? 'ct-red' : (clientFinanceMap[c.client_name]?.balance || 0) > 0 ? 'ct-teal' : 'ct-gray']">
-                      ¥{{ formatMoney(clientFinanceMap[c.client_name]?.balance || 0) }}
-                    </span>
-                  </td>
-                  <td class="ct-td ct-center">
-                    <span :class="['ct-stat-num', (clientOrderStatsMap[c.client_name]?.pending_count || 0) > 0 ? 'ct-blue' : 'ct-gray']">
-                      {{ clientOrderStatsMap[c.client_name]?.pending_count || 0 }}
-                    </span>
-                  </td>
-                  <td class="ct-td ct-center" @click.stop>
-                    <div class="ct-action-btns">
-                      <a-button type="primary" size="small" ghost style="font-size:11px;height:22px;padding:0 7px" @click.stop="openGenerateBill(c)">账单</a-button>
-                      <a-button type="link" size="small" danger style="padding:0" @click.stop="confirmDeleteClient(c)"><DeleteOutlined /></a-button>
+                  </div>
+
+                  <!-- 基本信息 -->
+                  <div class="ced-block">
+                    <div class="ced-block-title">基本信息</div>
+                    <div class="ced-info-grid">
+                      <div class="ced-info-item">
+                        <span class="ced-info-lbl">公司归属</span>
+                        <span class="ced-info-val">{{ c.company_name || '—' }}</span>
+                      </div>
+                      <div class="ced-info-item">
+                        <span class="ced-info-lbl">微信号</span>
+                        <span class="ced-info-val">{{ c.client_wechat || '—' }}</span>
+                      </div>
+                      <div class="ced-info-item">
+                        <span class="ced-info-lbl">反馈方式</span>
+                        <span class="ced-info-val">{{ c.feedback_type || '私发' }}</span>
+                      </div>
+                      <div class="ced-info-item">
+                        <span class="ced-info-lbl">客户ID</span>
+                        <span class="ced-info-val mono">{{ clientOrderStatsMap[c.client_name]?.client_id || '—' }}</span>
+                      </div>
+                      <div class="ced-info-item">
+                        <span class="ced-info-lbl">公司ID</span>
+                        <span class="ced-info-val mono">{{ clientOrderStatsMap[c.client_name]?.company_id || '—' }}</span>
+                      </div>
+                      <div class="ced-info-item">
+                        <span class="ced-info-lbl">备注标记</span>
+                        <span class="ced-info-val">{{ c.remark || '—' }}</span>
+                      </div>
                     </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </template>
-    </a-drawer>
+                  </div>
 
-    <!-- 客户详情抽屉 -->
-    <a-drawer
-      v-model:open="clientDetailOpen"
-      :title="null"
-      placement="right"
-      width="520"
-      :body-style="{ padding: 0 }"
-    >
-      <template v-if="currentClient">
-        <div class="client-detail-header">
-          <div class="client-detail-avatar">{{ currentClient.client_name.charAt(0) }}</div>
-          <div class="client-detail-title-block">
-            <div class="client-detail-name">{{ currentClient.client_name }}</div>
-            <div class="client-detail-sub">
-              <a-tag :color="currentClient.status === '活跃' ? 'green' : currentClient.status === '沉默' ? 'orange' : 'default'">{{ currentClient.status }}</a-tag>
-              <span v-if="currentClient.company_name" class="client-detail-company"><BankOutlined /> {{ currentClient.company_name }}</span>
-            </div>
-          </div>
-        </div>
+                  <!-- 下单统计 -->
+                  <div class="ced-block ced-block-full">
+                    <div class="ced-block-title">下单统计</div>
+                    <div class="ced-order-stats">
+                      <div class="ced-os-item">
+                        <div class="ced-os-val blue">{{ clientOrderStatsMap[c.client_name]?.order_count || 0 }}</div>
+                        <div class="ced-os-lbl">下单次数</div>
+                      </div>
+                      <div class="ced-os-sep"></div>
+                      <div class="ced-os-item">
+                        <div class="ced-os-val teal">{{ clientOrderStatsMap[c.client_name]?.order_quantity || 0 }}</div>
+                        <div class="ced-os-lbl">下单单量</div>
+                      </div>
+                      <div class="ced-os-sep"></div>
+                      <div class="ced-os-item">
+                        <div class="ced-os-val green">¥{{ formatMoney(clientOrderStatsMap[c.client_name]?.order_amount) }}</div>
+                        <div class="ced-os-lbl">下单金额</div>
+                      </div>
+                      <div class="ced-os-sep"></div>
+                      <div class="ced-os-item">
+                        <div :class="['ced-os-val', (clientOrderStatsMap[c.client_name]?.refund_count || 0) > 0 ? 'orange' : 'gray']">{{ clientOrderStatsMap[c.client_name]?.refund_count || 0 }}</div>
+                        <div class="ced-os-lbl">退单次数</div>
+                      </div>
+                      <div class="ced-os-sep"></div>
+                      <div class="ced-os-item">
+                        <div :class="['ced-os-val', (clientOrderStatsMap[c.client_name]?.pending_count || 0) > 0 ? 'blue' : 'gray']">{{ clientOrderStatsMap[c.client_name]?.pending_count || 0 }}</div>
+                        <div class="ced-os-lbl">待结任务</div>
+                      </div>
+                    </div>
+                  </div>
 
-        <div class="client-detail-body">
-          <!-- 资金情况 -->
-          <div class="cdb-section">
-            <div class="cdb-section-title">资金情况</div>
-            <div class="cdb-finance-row">
-              <div class="cdf-item">
-                <div :class="['cdf-num', (clientFinanceMap[currentClient.client_name]?.balance || 0) < 0 ? 'red' : (clientFinanceMap[currentClient.client_name]?.balance || 0) > 0 ? 'teal' : 'gray']">
-                  ¥{{ formatMoney(clientFinanceMap[currentClient.client_name]?.balance || 0) }}
+                  <div v-if="c.notes" class="ced-block ced-block-full">
+                    <div class="ced-block-title">备注</div>
+                    <div class="ced-notes">{{ c.notes }}</div>
+                  </div>
                 </div>
-                <div class="cdf-lbl">余额</div>
-              </div>
-              <div class="cdf-sep"></div>
-              <div class="cdf-item">
-                <div :class="['cdf-num', (clientFinanceMap[currentClient.client_name]?.debt || 0) > 0 ? 'red' : 'gray']">
-                  ¥{{ formatMoney(clientFinanceMap[currentClient.client_name]?.debt || 0) }}
-                </div>
-                <div class="cdf-lbl">欠款</div>
-              </div>
-              <div class="cdf-sep"></div>
-              <div class="cdf-item">
-                <div :class="['cdf-num', (clientFinanceMap[currentClient.client_name]?.prepaid || 0) > 0 ? 'teal' : 'gray']">
-                  ¥{{ formatMoney(clientFinanceMap[currentClient.client_name]?.prepaid || 0) }}
-                </div>
-                <div class="cdf-lbl">溢款</div>
               </div>
             </div>
-          </div>
-
-          <!-- 基本信息 -->
-          <div class="cdb-section">
-            <div class="cdb-section-title">基本信息</div>
-            <div class="cdb-info-grid">
-              <div class="cdb-info-item">
-                <span class="cdb-info-lbl">公司归属</span>
-                <span class="cdb-info-val">{{ currentClient.company_name || '—' }}</span>
-              </div>
-              <div class="cdb-info-item">
-                <span class="cdb-info-lbl">微信号</span>
-                <span class="cdb-info-val">{{ currentClient.client_wechat || '—' }}</span>
-              </div>
-              <div class="cdb-info-item">
-                <span class="cdb-info-lbl">反馈方式</span>
-                <span class="cdb-info-val">{{ currentClient.feedback_type || '私发' }}</span>
-              </div>
-              <div class="cdb-info-item" v-if="clientContactInfo[currentClient.client_name]?.client_id">
-                <span class="cdb-info-lbl">客户ID</span>
-                <span class="cdb-info-val mono">{{ clientContactInfo[currentClient.client_name]?.client_id }}</span>
-              </div>
-            </div>
-            <div v-if="currentClient.remark" class="cdb-remark">{{ currentClient.remark }}</div>
-          </div>
-
-          <!-- 下单统计 -->
-          <div class="cdb-section">
-            <div class="cdb-section-title">下单统计</div>
-            <div class="cdb-order-stats">
-              <div class="cds-item">
-                <div class="cds-num blue">{{ clientOrderStatsMap[currentClient.client_name]?.order_count || 0 }}</div>
-                <div class="cds-lbl">下单次数</div>
-              </div>
-              <div class="cds-sep"></div>
-              <div class="cds-item">
-                <div class="cds-num teal">{{ clientOrderStatsMap[currentClient.client_name]?.order_quantity || 0 }}</div>
-                <div class="cds-lbl">下单单量</div>
-              </div>
-              <div class="cds-sep"></div>
-              <div class="cds-item">
-                <div class="cds-num green">¥{{ formatMoney(clientOrderStatsMap[currentClient.client_name]?.order_amount) }}</div>
-                <div class="cds-lbl">下单金额</div>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="currentClient.notes" class="cdb-section">
-            <div class="cdb-section-title">备注</div>
-            <div class="cdb-notes">{{ currentClient.notes }}</div>
           </div>
         </div>
       </template>
@@ -546,7 +550,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserAddOutlined, UserOutlined, BankOutlined, EllipsisOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserAddOutlined, UserOutlined, BankOutlined, EllipsisOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs from 'dayjs'
 
@@ -564,15 +568,14 @@ const submitting = ref(false)
 const clientLoading = ref(false)
 const wechatDrawerOpen = ref(false)
 const managerDetailOpen = ref(false)
-const clientDetailOpen = ref(false)
 
 const detailManager = ref<any>(null)
 const currentManager = ref<any>(null)
 const currentWechat = ref<any>(null)
-const currentClient = ref<any>(null)
 const changeManagerTarget = ref<any>(null)
 const changeManagerId = ref<string>('')
 const clientList = ref<any[]>([])
+const expandedClientId = ref<string | null>(null)
 
 const managerForm = reactive({ name: '', phone: '', email: '', join_date: null as any, notes: '' })
 const wechatForm = reactive({ wechat_id: '', wechat_nickname: '', status: '在用', notes: '', manager_id: '' as string })
@@ -582,6 +585,10 @@ const clientOrderStatsMap = ref<Record<string, { order_count: number; order_quan
 const clientOrderStats = ref({ total_order_count: 0, total_order_quantity: 0, total_order_amount: 0 })
 const clientFinanceMap = ref<Record<string, { debt: number; prepaid: number; balance: number }>>({})
 const clientContactInfo = ref<Record<string, { client_id: string; company_name: string; company_id: string }>>({})
+const mgrMonthStats = ref<Record<string, { amount: number; orders: number; refunds: number; newClients: number }>>({})
+
+const thisMonthStart = dayjs().startOf('month').format('YYYY-MM-DD')
+const thisMonthEnd = dayjs().endOf('month').format('YYYY-MM-DD') + ' 23:59:59'
 
 const filteredWechatList = computed(() => {
   const q = searchText.value.trim().toLowerCase()
@@ -600,6 +607,14 @@ const filteredWechatList = computed(() => {
 function formatMoney(n: any): string {
   const num = Number(n || 0)
   return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function formatMoneyShort(n: any): string {
+  const num = Number(n || 0)
+  const abs = Math.abs(num)
+  const sign = num < 0 ? '-' : ''
+  if (abs >= 10000) return sign + (abs / 10000).toFixed(1) + 'w'
+  return sign + abs.toFixed(0)
 }
 
 function formatDate(d: string) {
@@ -642,6 +657,29 @@ function getMgrBalance(mgr: any): number {
   return getMgrPrepaid(mgr) - getMgrDebt(mgr)
 }
 
+function getMgrMonthAmount(mgr: any): number {
+  return mgrMonthStats.value[mgr.id]?.amount || 0
+}
+
+function getMgrMonthOrders(mgr: any): number {
+  return mgrMonthStats.value[mgr.id]?.orders || 0
+}
+
+function getMgrRefundRate(mgr: any): number {
+  const s = mgrMonthStats.value[mgr.id]
+  if (!s || !s.orders) return 0
+  return Math.round((s.refunds / s.orders) * 100)
+}
+
+function getMgrNewClients(mgr: any): number {
+  return getMgrWechats(mgr).reduce((s, acc) => {
+    return s + (acc.wechat_clients || []).filter((c: any) => {
+      if (!c.created_at) return false
+      return dayjs(c.created_at).isAfter(dayjs().startOf('month'))
+    }).length
+  }, 0)
+}
+
 function getWechatActiveClients(acc: any): number {
   return (acc.wechat_clients || []).filter((c: any) => c.status === '活跃').length
 }
@@ -650,6 +688,24 @@ function getWechatBalance(acc: any): number {
   return (acc.wechat_clients || []).reduce((s: number, c: any) => {
     return s + (clientFinanceMap.value[c.client_name]?.balance || 0)
   }, 0)
+}
+
+function getWechatNewClients(acc: any): number {
+  return (acc.wechat_clients || []).filter((c: any) => {
+    if (!c.created_at) return false
+    return dayjs(c.created_at).isAfter(dayjs().startOf('month'))
+  }).length
+}
+
+function getDrawerNewClients(): number {
+  return clientList.value.filter(c => {
+    if (!c.created_at) return false
+    return dayjs(c.created_at).isAfter(dayjs().startOf('month'))
+  }).length
+}
+
+function toggleClientExpand(c: any) {
+  expandedClientId.value = expandedClientId.value === c.id ? null : c.id
 }
 
 async function load() {
@@ -667,7 +723,7 @@ async function load() {
       manager_name: acc.manager_id ? mgrMap[acc.manager_id] || '' : '',
     }))
 
-    await loadAllFinance()
+    await Promise.all([loadAllFinance(), loadMgrMonthStats()])
 
     if (detailManager.value) {
       detailManager.value = managerList.value.find(m => m.id === detailManager.value.id) || null
@@ -705,20 +761,86 @@ async function loadAllFinance() {
   clientContactInfo.value = infoMap
 }
 
+async function loadMgrMonthStats() {
+  const statsMap: Record<string, { amount: number; orders: number; refunds: number; newClients: number }> = {}
+  for (const mgr of managerList.value) {
+    statsMap[mgr.id] = { amount: 0, orders: 0, refunds: 0, newClients: 0 }
+  }
+
+  const allClientNames: string[] = []
+  for (const acc of wechatList.value) {
+    for (const c of acc.wechat_clients || []) {
+      if (c.client_name && !allClientNames.includes(c.client_name)) {
+        allClientNames.push(c.client_name)
+      }
+    }
+  }
+  if (!allClientNames.length) {
+    mgrMonthStats.value = statsMap
+    return
+  }
+
+  const { data: contacts } = await supabase
+    .from('client_contacts')
+    .select('name, client_id')
+    .in('name', allClientNames)
+
+  const nameToClientId: Record<string, string> = {}
+  for (const ct of contacts || []) {
+    if (ct.client_id) nameToClientId[ct.name] = ct.client_id
+  }
+
+  const clientIds = Object.values(nameToClientId).filter(Boolean)
+  if (!clientIds.length) {
+    mgrMonthStats.value = statsMap
+    return
+  }
+
+  const [{ data: orderData }, { data: subOrderData }] = await Promise.all([
+    supabase.from('erp_orders').select('customer_id_str, total_amount, total_orders').in('customer_id_str', clientIds).gte('created_at', thisMonthStart).lte('created_at', thisMonthEnd),
+    supabase.from('sub_orders').select('customer_id_str, refund_status').in('customer_id_str', clientIds).gte('created_at', thisMonthStart).lte('created_at', thisMonthEnd),
+  ])
+
+  const clientIdToName: Record<string, string> = {}
+  for (const [name, cid] of Object.entries(nameToClientId)) {
+    clientIdToName[cid] = name
+  }
+
+  const clientNameToMgrId: Record<string, string> = {}
+  for (const acc of wechatList.value) {
+    if (!acc.manager_id) continue
+    for (const c of acc.wechat_clients || []) {
+      if (c.client_name) clientNameToMgrId[c.client_name] = acc.manager_id
+    }
+  }
+
+  for (const o of orderData || []) {
+    const name = clientIdToName[o.customer_id_str]
+    const mgrId = name ? clientNameToMgrId[name] : null
+    if (!mgrId || !statsMap[mgrId]) continue
+    statsMap[mgrId].amount += Number(o.total_amount || 0)
+    statsMap[mgrId].orders += Number(o.total_orders || 0)
+  }
+  for (const so of subOrderData || []) {
+    const name = clientIdToName[so.customer_id_str]
+    const mgrId = name ? clientNameToMgrId[name] : null
+    if (!mgrId || !statsMap[mgrId]) continue
+    if (so.refund_status && so.refund_status !== '') statsMap[mgrId].refunds += 1
+  }
+
+  mgrMonthStats.value = statsMap
+}
+
 function openWechatDrawer(acc: any) {
   currentWechat.value = acc
   wechatDrawerOpen.value = true
+  expandedClientId.value = null
   loadClients(acc.id)
 }
 
 function openManagerDetail(mgr: any) {
   detailManager.value = mgr
   managerDetailOpen.value = true
-}
-
-function openClientDetail(c: any) {
-  currentClient.value = c
-  clientDetailOpen.value = true
 }
 
 function openAddManager() {
@@ -1017,12 +1139,12 @@ onMounted(load)
   border: 1px solid #e5e7eb;
 }
 .mgr-tab {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px; border-radius: 10px;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; border-radius: 10px;
   border: 1.5px solid #e5e7eb;
   background: #fff; cursor: pointer;
   transition: all 0.15s;
-  min-width: 160px;
+  min-width: 220px;
 }
 .mgr-tab:hover { border-color: #93c5fd; background: #eff6ff; }
 .mgr-tab.active { border-color: #2563eb; background: #eff6ff; }
@@ -1030,22 +1152,28 @@ onMounted(load)
   width: 36px; height: 36px; border-radius: 50%;
   color: #fff; font-weight: 700; font-size: 14px;
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
+  flex-shrink: 0; margin-top: 2px;
 }
 .mgr-tab-body { flex: 1; min-width: 0; }
-.mgr-tab-name { font-size: 13px; font-weight: 700; color: #111827; }
-.mgr-tab-stats { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
-.mgr-stat-num { font-size: 12px; font-weight: 700; }
-.mgr-stat-num.blue { color: #2563eb; }
-.mgr-stat-num.green { color: #059669; }
-.mgr-stat-lbl { font-size: 11px; color: #9ca3af; }
-.mgr-stat-sep { color: #d1d5db; font-size: 11px; }
-.mgr-tab-finance { margin-top: 2px; }
-.mf-item { font-size: 11px; font-weight: 600; }
-.mf-item.red { color: #dc2626; }
-.mf-item.teal { color: #0e7490; }
-.mf-item.gray { color: #9ca3af; }
-.mgr-tab-edit { padding: 0; height: auto; flex-shrink: 0; }
+.mgr-tab-name { font-size: 13px; font-weight: 700; color: #111827; margin-bottom: 8px; }
+.mgr-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+.mgr-kpi-item {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 4px 2px; background: #f8fafc; border-radius: 6px;
+}
+.mgr-kpi-val { font-size: 12px; font-weight: 700; line-height: 1.3; }
+.mgr-kpi-val.blue { color: #2563eb; }
+.mgr-kpi-val.teal { color: #0891b2; }
+.mgr-kpi-val.green { color: #059669; }
+.mgr-kpi-val.red { color: #dc2626; }
+.mgr-kpi-val.orange { color: #d97706; }
+.mgr-kpi-val.gray { color: #9ca3af; }
+.mgr-kpi-lbl { font-size: 9px; color: #9ca3af; margin-top: 1px; white-space: nowrap; }
+.mgr-tab-edit { padding: 0; height: auto; flex-shrink: 0; margin-top: 2px; }
 
 /* 微信号主网格 */
 .wechat-main-grid {
@@ -1084,6 +1212,7 @@ onMounted(load)
 .wmc-stat-num { font-size: 16px; font-weight: 700; line-height: 1.2; }
 .wmc-stat-num.blue { color: #2563eb; }
 .wmc-stat-num.green { color: #059669; }
+.wmc-stat-num.orange { color: #d97706; }
 .wmc-stat-num.teal { color: #0e7490; }
 .wmc-stat-num.red { color: #dc2626; }
 .wmc-stat-num.gray { color: #9ca3af; }
@@ -1133,43 +1262,8 @@ onMounted(load)
 .wsum-lbl { font-size: 10px; color: #9ca3af; margin-top: 2px; }
 .wsum-sep { width: 1px; height: 30px; background: #e5e7eb; flex-shrink: 0; }
 
-.wechat-drawer-body { padding: 16px 16px; }
+.wechat-drawer-body { padding: 16px; }
 
-/* 客户列表表格 */
-.client-table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
-.client-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
-.ct-th {
-  background: #f8fafc; padding: 8px 10px;
-  text-align: left; font-size: 11px; font-weight: 600; color: #6b7280;
-  border-bottom: 1px solid #e5e7eb;
-}
-.ct-th.ct-center { text-align: center; }
-.ct-td { padding: 9px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-.ct-td.ct-center { text-align: center; }
-.ct-row { cursor: pointer; transition: background 0.12s; }
-.ct-row:last-child .ct-td { border-bottom: none; }
-.ct-row:hover { background: #f0f9ff; }
-.ct-row-debt { background: #fff5f5; }
-.ct-row-debt:hover { background: #fee2e2; }
-.ct-name-cell { display: flex; align-items: center; gap: 7px; }
-.ct-avatar-sm {
-  width: 26px; height: 26px; border-radius: 50%;
-  background: #2563eb; color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700; flex-shrink: 0;
-}
-.ct-row-debt .ct-avatar-sm { background: #dc2626; }
-.ct-name-text { font-size: 13px; font-weight: 600; color: #111827; }
-.ct-mono { font-family: monospace; font-size: 11px; color: #6b7280; }
-.ct-company-text { font-size: 12px; color: #374151; }
-.ct-stat-num { font-size: 13px; font-weight: 700; }
-.ct-blue { color: #2563eb; }
-.ct-orange { color: #d97706; }
-.ct-gray { color: #9ca3af; }
-.ct-red { color: #dc2626; }
-.ct-teal { color: #0e7490; }
-.ct-balance-num { font-size: 13px; font-weight: 700; }
-.ct-action-btns { display: flex; align-items: center; gap: 4px; justify-content: center; }
 .wechat-drawer-toolbar {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 12px;
@@ -1177,102 +1271,116 @@ onMounted(load)
 .client-count-tip { font-size: 12px; color: #9ca3af; }
 .wechat-empty { text-align: center; padding: 32px; color: #9ca3af; font-size: 13px; }
 
-.client-card-list { display: flex; flex-direction: column; gap: 10px; }
-.client-card {
-  border: 1px solid #e5e7eb; border-radius: 10px;
-  background: #fff; overflow: hidden;
-  transition: box-shadow 0.15s;
-  cursor: pointer;
+/* 客户展开列表 */
+.client-expand-list { display: flex; flex-direction: column; gap: 6px; }
+.client-expand-item {
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+  background: #fff;
 }
-.client-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.07); border-color: #93c5fd; }
-.client-card-top {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 12px 14px;
+.client-expand-item.is-debt { border-color: #fca5a5; background: #fff5f5; }
+.client-expand-item.is-expanded { border-color: #93c5fd; }
+
+.cei-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; cursor: pointer;
+  transition: background 0.12s;
 }
-.client-avatar {
-  width: 38px; height: 38px; border-radius: 50%;
+.cei-row:hover { background: #f8fafc; }
+.client-expand-item.is-debt .cei-row:hover { background: #fff1f1; }
+
+.cei-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
   background: #2563eb; color: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 15px; font-weight: 700; flex-shrink: 0;
+  font-size: 13px; font-weight: 700; flex-shrink: 0;
 }
-.client-card-info { flex: 1; min-width: 0; }
-.client-card-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
-.client-card-name { font-size: 14px; font-weight: 700; color: #111827; }
-.client-card-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
-.client-meta-company { font-size: 12px; color: #374151; font-weight: 500; }
-.client-meta-wechat { font-size: 12px; color: #6b7280; }
-.client-meta-remark {
-  font-size: 11px; color: #9ca3af;
-  padding: 1px 6px; background: #f3f4f6; border-radius: 4px;
-}
-.client-finance-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.cf-badge {
-  font-size: 11px; font-weight: 600; padding: 1px 7px;
-  border-radius: 4px; white-space: nowrap;
-}
-.cf-debt { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
-.cf-prepaid { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; }
-.cf-zero { background: #f9fafb; color: #9ca3af; border: 1px solid #e5e7eb; }
-.cf-debt-sm { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; font-size: 10px; }
-.cf-prepaid-sm { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; font-size: 10px; }
-.client-card-actions { flex-shrink: 0; }
+.client-expand-item.is-debt .cei-avatar { background: #dc2626; }
 
-.client-order-stats {
-  display: flex; align-items: center;
-  padding: 8px 14px; background: #f8fafc;
-  border-top: 1px solid #f0f0f0;
+.cei-main { flex: 1; min-width: 0; }
+.cei-name-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 3px; }
+.cei-name { font-size: 13px; font-weight: 700; color: #111827; }
+.cei-feedback-tag {
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  background: #f0f9ff; color: #0891b2; border: 1px solid #bae6fd;
 }
-.cos-item { display: flex; flex-direction: column; align-items: center; flex: 1; }
-.cos-num { font-size: 15px; font-weight: 700; line-height: 1.2; }
-.cos-num.blue { color: #2563eb; }
-.cos-num.teal { color: #0891b2; }
-.cos-num.green { color: #059669; }
-.cos-lbl { font-size: 10px; color: #9ca3af; margin-top: 2px; }
-.cos-sep { width: 1px; height: 24px; background: #e5e7eb; flex-shrink: 0; margin: 0 4px; }
+.cei-sub-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cei-company { font-size: 11px; color: #6b7280; }
+.cei-wechat { font-size: 11px; color: #9ca3af; }
+.cei-remark {
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  background: #fffbeb; color: #92400e; border: 1px solid #fde68a;
+}
 
-/* 客户详情抽屉 */
-.client-detail-header {
-  display: flex; align-items: center; gap: 14px;
-  padding: 24px 24px 20px; border-bottom: 1px solid #f0f0f0;
+.cei-stats { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.cei-stat { display: flex; flex-direction: column; align-items: center; min-width: 36px; }
+.cei-stat-val { font-size: 14px; font-weight: 700; line-height: 1.2; }
+.cei-stat-val.blue { color: #2563eb; }
+.cei-stat-val.orange { color: #d97706; }
+.cei-stat-val.red { color: #dc2626; }
+.cei-stat-val.teal { color: #0e7490; }
+.cei-stat-val.gray { color: #9ca3af; }
+.cei-stat-lbl { font-size: 9px; color: #9ca3af; margin-top: 1px; }
+
+.cei-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.cei-expand-arrow { flex-shrink: 0; transition: transform 0.2s; display: flex; align-items: center; }
+.cei-expand-arrow.rotated { transform: rotate(180deg); }
+
+/* 展开详情 */
+.cei-detail {
+  border-top: 1px solid #e5e7eb;
+  padding: 16px 14px;
   background: #fafbfc;
+  animation: slideDown 0.15s ease;
 }
-.client-detail-avatar {
-  width: 52px; height: 52px; border-radius: 50%;
-  background: #2563eb; color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; font-weight: 700; flex-shrink: 0;
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-.client-detail-title-block { flex: 1; }
-.client-detail-name { font-size: 18px; font-weight: 700; color: #111827; }
-.client-detail-sub { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
-.client-detail-company { font-size: 12px; color: #6b7280; }
 
-.client-detail-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
-.cdb-section {}
-.cdb-section-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid #f3f4f6; }
-.cdb-finance-row { display: flex; align-items: center; padding: 16px; background: #f8fafc; border-radius: 10px; border: 1px solid #e5e7eb; }
-.cdf-item { flex: 1; text-align: center; }
-.cdf-num { font-size: 20px; font-weight: 700; line-height: 1.2; }
-.cdf-num.red { color: #dc2626; }
-.cdf-num.teal { color: #0e7490; }
-.cdf-num.gray { color: #9ca3af; }
-.cdf-lbl { font-size: 11px; color: #9ca3af; margin-top: 4px; }
-.cdf-sep { width: 1px; height: 36px; background: #e5e7eb; flex-shrink: 0; }
-.cdb-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.cdb-info-item { display: flex; flex-direction: column; gap: 2px; }
-.cdb-info-lbl { font-size: 11px; color: #9ca3af; }
-.cdb-info-val { font-size: 13px; color: #1f2937; font-weight: 500; }
-.cdb-info-val.mono { font-family: monospace; }
-.cdb-remark { font-size: 12px; color: #6b7280; margin-top: 8px; padding: 8px 12px; background: #fffbeb; border-radius: 6px; border-left: 3px solid #fbbf24; }
-.cdb-order-stats { display: flex; align-items: center; padding: 16px; background: #f8fafc; border-radius: 10px; border: 1px solid #e5e7eb; }
-.cds-item { flex: 1; text-align: center; }
-.cds-num { font-size: 20px; font-weight: 700; line-height: 1.2; }
-.cds-num.blue { color: #2563eb; }
-.cds-num.teal { color: #0891b2; }
-.cds-num.green { color: #059669; }
-.cds-lbl { font-size: 11px; color: #9ca3af; margin-top: 4px; }
-.cds-sep { width: 1px; height: 36px; background: #e5e7eb; flex-shrink: 0; }
-.cdb-notes { font-size: 13px; color: #374151; line-height: 1.6; }
+.cei-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.ced-block {}
+.ced-block-full { grid-column: 1 / -1; }
+.ced-block-title {
+  font-size: 11px; font-weight: 600; color: #6b7280;
+  margin-bottom: 8px; padding-bottom: 4px;
+  border-bottom: 1px solid #e5e7eb;
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+
+.ced-finance-row { display: flex; align-items: center; padding: 10px; background: #fff; border-radius: 8px; border: 1px solid #e5e7eb; }
+.ced-fin-item { flex: 1; text-align: center; }
+.ced-fin-val { font-size: 15px; font-weight: 700; }
+.ced-fin-val.red { color: #dc2626; }
+.ced-fin-val.teal { color: #0e7490; }
+.ced-fin-val.gray { color: #9ca3af; }
+.ced-fin-lbl { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+.ced-fin-sep { width: 1px; height: 28px; background: #e5e7eb; flex-shrink: 0; }
+
+.ced-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ced-info-item { display: flex; flex-direction: column; gap: 2px; }
+.ced-info-lbl { font-size: 10px; color: #9ca3af; }
+.ced-info-val { font-size: 12px; color: #1f2937; font-weight: 500; }
+.ced-info-val.mono { font-family: monospace; font-size: 11px; }
+
+.ced-order-stats { display: flex; align-items: center; padding: 10px 14px; background: #fff; border-radius: 8px; border: 1px solid #e5e7eb; }
+.ced-os-item { flex: 1; text-align: center; }
+.ced-os-val { font-size: 16px; font-weight: 700; }
+.ced-os-val.blue { color: #2563eb; }
+.ced-os-val.teal { color: #0891b2; }
+.ced-os-val.green { color: #059669; }
+.ced-os-val.orange { color: #d97706; }
+.ced-os-val.gray { color: #9ca3af; }
+.ced-os-lbl { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+.ced-os-sep { width: 1px; height: 28px; background: #e5e7eb; flex-shrink: 0; }
+
+.ced-notes { font-size: 12px; color: #374151; line-height: 1.6; padding: 8px 10px; background: #fff; border-radius: 6px; border: 1px solid #e5e7eb; }
 
 /* 经理详情抽屉 */
 .drawer-header {
