@@ -291,10 +291,10 @@ const singleForm = reactive({
 const specColumns = [
   { title: '国家', dataIndex: 'country', key: 'country', width: 80 },
   { title: '面值', dataIndex: 'face_value_usd', key: 'face_value_usd', width: 90, customRender: ({ text, record }: any) => `${text} ${currencySymbol(record.country)}` },
-  { title: '总库存', dataIndex: 'total_count', key: 'total_count', width: 90 },
-  { title: '可用', key: 'available_count', dataIndex: 'available_count', width: 90 },
+  { title: '库存（可用）', key: 'available_count', dataIndex: 'available_count', width: 110 },
   { title: '已使用', key: 'used_count', dataIndex: 'used_count', width: 90 },
   { title: '已作废', dataIndex: 'voided_count', key: 'voided_count', width: 90 },
+  { title: '平均汇率', dataIndex: 'avg_exchange_rate', key: 'avg_exchange_rate', width: 90 },
   { title: '操作', key: 'action', width: 100 },
 ]
 
@@ -348,7 +348,7 @@ async function loadStats() {
 async function loadSpecs() {
   specsLoading.value = true
   try {
-    let query = supabase.from('gift_cards').select('id, country, face_value_usd, status')
+    let query = supabase.from('gift_cards').select('id, country, face_value_usd, status, exchange_rate')
     if (filterCountry.value) query = query.eq('country', filterCountry.value)
     const { data, error } = await query
     if (error) throw error
@@ -356,12 +356,16 @@ async function loadSpecs() {
     for (const card of (data || [])) {
       const key = `${card.country}_${card.face_value_usd}`
       if (!map[key]) {
-        map[key] = { spec_key: key, country: card.country, face_value_usd: card.face_value_usd, total_count: 0, available_count: 0, used_count: 0, voided_count: 0 }
+        map[key] = { spec_key: key, country: card.country, face_value_usd: card.face_value_usd, total_count: 0, available_count: 0, used_count: 0, voided_count: 0, rate_sum: 0, rate_count: 0 }
       }
       map[key].total_count++
       if (card.status === '未使用') map[key].available_count++
       if (card.status === '已使用') map[key].used_count++
       if (card.status === '已作废') map[key].voided_count++
+      if (card.exchange_rate) { map[key].rate_sum += Number(card.exchange_rate); map[key].rate_count++ }
+    }
+    for (const item of Object.values(map)) {
+      item.avg_exchange_rate = item.rate_count > 0 ? (item.rate_sum / item.rate_count).toFixed(4) : '-'
     }
     let result = Object.values(map).sort((a, b) => {
       if (a.country !== b.country) return a.country.localeCompare(b.country)
