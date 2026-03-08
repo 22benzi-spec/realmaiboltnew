@@ -40,7 +40,7 @@
         row-key="id"
         size="middle"
         @change="handleTableChange"
-        :scroll="{ x: 1200 }"
+        :scroll="{ x: 1280 }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'buyer_number'">
@@ -77,6 +77,10 @@
           </template>
           <template v-if="column.key === 'chat_account'">
             <span class="text-mono">{{ record.chat_account || '—' }}</span>
+          </template>
+          <template v-if="column.key === 'facebook_link'">
+            <a v-if="record.facebook_link" :href="record.facebook_link" target="_blank" class="profile-link" @click.stop>FB</a>
+            <span v-else class="text-empty">—</span>
           </template>
           <template v-if="column.key === 'amazon_profile'">
             <a v-if="record.amazon_profile" :href="record.amazon_profile" target="_blank" class="profile-link" @click.stop>查看</a>
@@ -256,16 +260,13 @@
                 <a-form-item label="对接平台"><a-input v-model:value="editForm.contact_platform" placeholder="如 Amazon / FB" /></a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="Facebook 名"><a-input v-model:value="editForm.facebook_name" /></a-form-item>
-              </a-col>
-              <a-col :span="8">
                 <a-form-item label="邮箱"><a-input v-model:value="editForm.email" /></a-form-item>
               </a-col>
               <a-col :span="8">
                 <a-form-item label="手机号"><a-input v-model:value="editForm.phone" /></a-form-item>
               </a-col>
-              <a-col :span="16">
-                <a-form-item label="Amazon 账号（平台账号）"><a-input v-model:value="editForm.platform_account" /></a-form-item>
+              <a-col :span="24">
+                <a-form-item label="Amazon Profile 链接"><a-input v-model:value="editForm.amazon_profile" placeholder="https://www.amazon.com/gp/profile/..." /></a-form-item>
               </a-col>
 
               <!-- 备用联系方式 -->
@@ -291,25 +292,24 @@
 
         <!-- Tab 购买记录 -->
         <a-tab-pane key="purchase" tab="购买记录">
-          <a-form :model="editForm" layout="vertical" style="padding-top:8px">
-            <a-row :gutter="14">
-              <a-col :span="12">
-                <a-form-item label="已购 ASIN" extra="多个用逗号分隔">
-                  <a-textarea v-model:value="editForm.purchased_asins" :rows="3" placeholder="B0XXXXXXXX, B0YYYYYYYY" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="已购店铺" extra="多个用逗号分隔">
-                  <a-textarea v-model:value="editForm.purchased_stores" :rows="3" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="24">
-                <a-form-item label="Amazon Profile 链接">
-                  <a-input v-model:value="editForm.amazon_profile" placeholder="https://www.amazon.com/gp/profile/..." />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </a-form>
+          <div style="padding: 12px 0; color: #6b7280; font-size: 13px;">
+            <a-alert type="info" show-icon message="已购 ASIN 和已购店铺由系统从订单记录自动汇总，无需手动填写。" style="margin-bottom: 14px;" />
+            <div v-if="editOrderStats.asins.length">
+              <div class="purchase-section-title">已购 ASIN（{{ editOrderStats.asins.length }} 个）</div>
+              <div class="asin-tags" style="margin-bottom:14px">
+                <span v-for="asin in editOrderStats.asins" :key="asin" class="asin-tag">{{ asin }}</span>
+              </div>
+            </div>
+            <div v-if="editOrderStats.stores.length">
+              <div class="purchase-section-title">已购店铺（{{ editOrderStats.stores.length }} 个）</div>
+              <div class="store-tags">
+                <span v-for="store in editOrderStats.stores" :key="store" class="store-tag">{{ store }}</span>
+              </div>
+            </div>
+            <div v-if="!editOrderStats.asins.length && !editOrderStats.stores.length" class="ds-empty" style="padding: 24px 0; text-align:center">
+              暂无订单记录
+            </div>
+          </div>
         </a-tab-pane>
       </a-tabs>
     </a-modal>
@@ -394,11 +394,14 @@
             <div class="drawer-section">
               <div class="ds-title">联系方式</div>
               <div class="ds-grid">
-                <div class="ds-item"><span class="ds-label">Facebook 名</span><span class="text-mono">{{ drawerBuyer.facebook_name || '—' }}</span></div>
                 <div class="ds-item"><span class="ds-label">邮箱</span><span class="text-mono small">{{ drawerBuyer.email || '—' }}</span></div>
                 <div class="ds-item"><span class="ds-label">手机号</span><span>{{ drawerBuyer.phone || '—' }}</span></div>
                 <div class="ds-item"><span class="ds-label">生日</span><span>{{ drawerBuyer.birthday || '—' }}</span></div>
-                <div class="ds-item" style="grid-column:1/-1"><span class="ds-label">Amazon 账号</span><span class="text-mono">{{ drawerBuyer.platform_account || '—' }}</span></div>
+                <div class="ds-item">
+                  <span class="ds-label">Amazon Profile</span>
+                  <a v-if="drawerBuyer.amazon_profile" :href="drawerBuyer.amazon_profile" target="_blank" class="link-text">查看 Profile</a>
+                  <span v-else>—</span>
+                </div>
               </div>
               <!-- 备用联系方式 -->
               <div v-if="parsedBackupContacts(drawerBuyer.backup_contacts).length" class="bc-list">
@@ -412,24 +415,20 @@
 
             <!-- 购买记录 -->
             <div class="drawer-section">
-              <div class="ds-title">购买记录</div>
-              <div v-if="drawerBuyer.purchased_asins" class="ds-block">
-                <div class="ds-label-full">已购 ASIN（{{ asinCount(drawerBuyer.purchased_asins) }} 个）</div>
+              <div class="ds-title">购买记录（来自订单）</div>
+              <div v-if="drawerOrderStats.asins.length" class="ds-block">
+                <div class="ds-label-full">已购 ASIN（{{ drawerOrderStats.asins.length }} 个）</div>
                 <div class="asin-tags">
-                  <span v-for="asin in splitValues(drawerBuyer.purchased_asins)" :key="asin" class="asin-tag">{{ asin }}</span>
+                  <span v-for="asin in drawerOrderStats.asins" :key="asin" class="asin-tag">{{ asin }}</span>
                 </div>
               </div>
-              <div v-if="drawerBuyer.purchased_stores" class="ds-block">
+              <div v-if="drawerOrderStats.stores.length" class="ds-block">
                 <div class="ds-label-full">已购店铺</div>
                 <div class="store-tags">
-                  <span v-for="store in splitValues(drawerBuyer.purchased_stores)" :key="store" class="store-tag">{{ store }}</span>
+                  <span v-for="store in drawerOrderStats.stores" :key="store" class="store-tag">{{ store }}</span>
                 </div>
               </div>
-              <div v-if="drawerBuyer.amazon_profile" style="margin-top:8px">
-                <span class="ds-label">Profile</span>
-                <a :href="drawerBuyer.amazon_profile" target="_blank" class="link-text" style="margin-left:6px">查看 Profile</a>
-              </div>
-              <div v-if="!drawerBuyer.purchased_asins && !drawerBuyer.purchased_stores" class="ds-empty">暂无购买记录</div>
+              <div v-if="!drawerOrderStats.asins.length && !drawerOrderStats.stores.length" class="ds-empty">暂无订单记录</div>
             </div>
 
             <!-- 拉黑 / 备注 -->
@@ -490,6 +489,8 @@ const pagination = ref({ current: 1, pageSize: 20, total: 0, showSizeChanger: tr
 const staffList = ref<any[]>([])
 const allCounts = ref({ all: 0, active: 0, paused: 0, blacklist: 0, today: 0 })
 const backupContacts = ref<{ type: string; value: string }[]>([])
+const editOrderStats = ref<{ asins: string[]; stores: string[] }>({ asins: [], stores: [] })
+const drawerOrderStats = ref<{ asins: string[]; stores: string[] }>({ asins: [], stores: [] })
 
 const countries = ['美国', '德国', '英国', '加拿大', '澳大利亚', '法国', '日本']
 const tagPresets = [...BUYER_TAG_PRESETS]
@@ -532,9 +533,9 @@ const defaultEditForm = () => ({
   chat_account: '', notes: '',
   status: '活跃', staff_id: null as string | null, staff_name: '',
   tags: [] as string[], blacklist_reason: '', after_sale_rate: 0 as number | null,
-  facebook_name: '', email: '', phone: '', platform_account: '',
+  email: '', phone: '', platform_account: '',
   cooperation_level: '', birthday: '', region: '', contact_platform: '',
-  purchased_asins: '', purchased_stores: '', amazon_profile: '',
+  amazon_profile: '',
   backup_contacts: '[]',
 })
 
@@ -551,6 +552,7 @@ const columns = [
   { title: '来源渠道', key: 'source_info', width: 140 },
   { title: 'Prime', key: 'is_prime_member', width: 65, align: 'center' as const },
   { title: '聊单号', key: 'chat_account', width: 120 },
+  { title: 'Facebook', key: 'facebook_link', width: 80 },
   { title: 'Profile', key: 'amazon_profile', width: 72 },
   { title: '入库时间', key: 'created_at', width: 100 },
   { title: '操作', key: 'action', width: 155, fixed: 'right' },
@@ -627,18 +629,46 @@ function openAddModal() {
   addModalOpen.value = true
 }
 
+async function loadEditOrderStats(buyerId: string) {
+  editOrderStats.value = { asins: [], stores: [] }
+  const { data } = await supabase
+    .from('sub_orders')
+    .select('asin, store_name')
+    .eq('buyer_id', buyerId)
+  if (data) {
+    const asins = [...new Set(data.map((r: any) => r.asin).filter(Boolean))]
+    const stores = [...new Set(data.map((r: any) => r.store_name).filter(Boolean))]
+    editOrderStats.value = { asins, stores }
+  }
+}
+
 function openEditModal(record: any) {
   editingId.value = record.id
   editTab.value = 'basic'
   Object.assign(editForm, defaultEditForm(), record)
   backupContacts.value = parsedBackupContacts(record.backup_contacts)
   editModalOpen.value = true
+  loadEditOrderStats(record.id)
+}
+
+async function loadDrawerOrderStats(buyerId: string) {
+  drawerOrderStats.value = { asins: [], stores: [] }
+  const { data } = await supabase
+    .from('sub_orders')
+    .select('asin, store_name')
+    .eq('buyer_id', buyerId)
+  if (data) {
+    const asins = [...new Set(data.map((r: any) => r.asin).filter(Boolean))]
+    const stores = [...new Set(data.map((r: any) => r.store_name).filter(Boolean))]
+    drawerOrderStats.value = { asins, stores }
+  }
 }
 
 function openDetail(record: any) {
   drawerBuyer.value = record
   drawerTab.value = 'info'
   drawerOpen.value = true
+  loadDrawerOrderStats(record.id)
 }
 
 function addBackupContact() {
@@ -725,12 +755,6 @@ function formatDate(d: string) {
   return d ? dayjs(d).format('MM-DD HH:mm') : '—'
 }
 
-function asinCount(str: string) { return splitValues(str).length }
-
-function splitValues(str: string) {
-  if (!str) return []
-  return str.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean)
-}
 
 onMounted(async () => {
   await Promise.all([loadStaff(), loadCounts()])
@@ -814,6 +838,7 @@ onMounted(async () => {
 .bc-type-badge { font-size: 11px; background: #f0f4ff; color: #2563eb; padding: 1px 7px; border-radius: 5px; border: 1px solid #c7d2fe; white-space: nowrap; }
 .bc-value { font-size: 12px; font-family: monospace; color: #374151; }
 
+.purchase-section-title { font-size: 11px; color: #9ca3af; margin-bottom: 6px; }
 .asin-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .asin-tag { font-family: monospace; font-size: 11px; background: #eff6ff; color: #2563eb; padding: 2px 7px; border-radius: 5px; border: 1px solid #bfdbfe; }
 .store-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
