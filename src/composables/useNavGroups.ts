@@ -3,7 +3,7 @@ import {
   ApartmentOutlined, InboxOutlined, UnorderedListOutlined, AppstoreOutlined,
   UserAddOutlined, DesktopOutlined, ThunderboltOutlined, UserOutlined,
   StopOutlined, CreditCardOutlined, BankOutlined, SendOutlined, MessageOutlined,
-  FileTextOutlined,
+  FileTextOutlined, WifiOutlined, CloudServerOutlined, CommentOutlined,
 } from '@ant-design/icons-vue'
 import type { StaffRole } from '../types'
 
@@ -77,6 +77,17 @@ export const allNavGroups: NavGroup[] = [
     items: [
       { id: 'clients', label: '客户库', icon: ApartmentOutlined },
       { id: 'business', label: '商务管理', icon: MessageOutlined },
+    ],
+  },
+  {
+    id: 'assets',
+    label: '资产管理',
+    icon: CloudServerOutlined,
+    roles: ['管理员'],
+    items: [
+      { id: 'chat-accounts', label: '聊单号管理', icon: CommentOutlined },
+      { id: 'ip-resources', label: 'IP 资源库', icon: WifiOutlined },
+      { id: 'servers', label: '服务器管理', icon: CloudServerOutlined },
     ],
   },
 ]
