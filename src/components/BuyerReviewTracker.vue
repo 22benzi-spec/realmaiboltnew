@@ -39,6 +39,9 @@
       <a-button size="small" @click="syncCompanyOrders" :loading="syncing">
         同步公司订单
       </a-button>
+      <a-button size="small" @click="openBatchImport">
+        批量导入
+      </a-button>
       <a-button size="small" type="primary" @click="openAdd">
         添加留评
       </a-button>
@@ -95,6 +98,68 @@
         </div>
       </div>
     </div>
+
+    <!-- 批量导入弹窗 -->
+    <a-modal v-model:open="batchModalOpen" title="批量导入留评" width="680px" :footer="null">
+      <div class="batch-import-body">
+        <a-alert type="info" show-icon style="margin-bottom:14px">
+          <template #message>
+            <span>请上传 CSV 文件，表头需包含：<b>ASIN</b>、<b>留评日期</b>（YYYY-MM-DD）、<b>评论类型</b>、<b>星级</b>、<b>产品名称</b>、<b>店铺名称</b>（均可选）。</span>
+          </template>
+        </a-alert>
+        <div class="template-hint">
+          <span>表头格式参考：</span>
+          <code>ASIN,留评日期,评论类型,星级,评论状态,产品名称,店铺名称,评论链接,备注</code>
+          <a-button type="link" size="small" @click="downloadTemplate">下载模板</a-button>
+        </div>
+        <div class="file-upload-area" @click="triggerFileInput" @dragover.prevent @drop.prevent="onFileDrop">
+          <input ref="fileInputRef" type="file" accept=".csv" style="display:none" @change="onFileSelected" />
+          <div v-if="!batchPreview.length" class="upload-placeholder">
+            <div style="font-size:32px; color:#d1d5db; margin-bottom:8px">&#8679;</div>
+            <div style="color:#6b7280; font-size:13px">点击或拖拽 CSV 文件到此处</div>
+          </div>
+          <div v-else class="preview-area">
+            <div class="preview-header">
+              <span class="preview-count">已解析 {{ batchPreview.length }} 条记录</span>
+              <a-button type="link" size="small" @click.stop="clearBatch">重新上传</a-button>
+            </div>
+            <div class="preview-table-wrap">
+              <table class="preview-table">
+                <thead>
+                  <tr>
+                    <th>ASIN</th><th>日期</th><th>类型</th><th>星级</th><th>状态</th><th>产品</th><th>店铺</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, i) in batchPreview.slice(0, 10)" :key="i" :class="{ 'row-error': row._error }">
+                    <td>{{ row.asin || '—' }}</td>
+                    <td>{{ row.review_date || '—' }}</td>
+                    <td>{{ row.review_type || '—' }}</td>
+                    <td>{{ row.star_rating || '—' }}</td>
+                    <td>{{ row.review_status || '存活' }}</td>
+                    <td class="td-ellipsis">{{ row.product_name || '—' }}</td>
+                    <td class="td-ellipsis">{{ row.store_name || '—' }}</td>
+                  </tr>
+                  <tr v-if="batchPreview.length > 10">
+                    <td colspan="7" style="text-align:center; color:#9ca3af; font-size:11px">还有 {{ batchPreview.length - 10 }} 条...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="batch-errors" v-if="batchErrors.length">
+              <div class="batch-err-title">以下行有问题（ASIN为空，已跳过）：</div>
+              <div v-for="e in batchErrors" :key="e" class="batch-err-row">{{ e }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="batch-footer">
+          <a-button @click="batchModalOpen = false">取消</a-button>
+          <a-button type="primary" :disabled="!batchPreview.length" :loading="batchSaving" @click="saveBatch">
+            导入 {{ batchPreview.length }} 条
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
 
     <!-- 添加/编辑留评弹窗 -->
     <a-modal v-model:open="reviewModalOpen" :title="editReviewId ? '编辑留评' : '添加留评'" @ok="saveReview" :confirm-loading="saving" width="520px">
@@ -189,6 +254,12 @@ const syncing = ref(false)
 const saving = ref(false)
 const reviewModalOpen = ref(false)
 const editReviewId = ref<string | null>(null)
+
+const batchModalOpen = ref(false)
+const batchPreview = ref<any[]>([])
+const batchErrors = ref<string[]>([])
+const batchSaving = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const reviewTypes = ['文字评', '图片评', '视频评', '直评', 'VP评', 'Feedback']
 const reviewStatusColor: Record<string, string> = { '存活': 'green', '掉评': 'red', '删评': 'default' }
@@ -333,6 +404,136 @@ async function syncCompanyOrders() {
   } finally { syncing.value = false }
 }
 
+function openBatchImport() {
+  batchPreview.value = []
+  batchErrors.value = []
+  batchModalOpen.value = true
+}
+
+function triggerFileInput() {
+  if (batchPreview.value.length) return
+  fileInputRef.value?.click()
+}
+
+function onFileDrop(e: DragEvent) {
+  const file = e.dataTransfer?.files?.[0]
+  if (file) parseCSVFile(file)
+}
+
+function onFileSelected(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (file) parseCSVFile(file)
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+function clearBatch() {
+  batchPreview.value = []
+  batchErrors.value = []
+}
+
+function parseCSVFile(file: File) {
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const text = e.target?.result as string
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length < 2) { message.error('文件内容为空或格式错误'); return }
+
+    const headers = parseCSVLine(lines[0]).map(h => h.trim())
+    const colMap: Record<string, number> = {}
+    const aliases: Record<string, string[]> = {
+      asin: ['asin', 'ASIN'],
+      review_date: ['留评日期', '日期', 'review_date', 'date'],
+      review_type: ['评论类型', '类型', 'review_type', 'type'],
+      star_rating: ['星级', '星数', 'star_rating', 'stars', 'rating'],
+      review_status: ['评论状态', '状态', 'review_status', 'status'],
+      product_name: ['产品名称', '产品', 'product_name', 'product'],
+      store_name: ['店铺名称', '店铺', 'store_name', 'store'],
+      review_url: ['评论链接', 'review_url', 'url'],
+      notes: ['备注', 'notes'],
+    }
+    for (const [field, aliasList] of Object.entries(aliases)) {
+      for (const alias of aliasList) {
+        const idx = headers.findIndex(h => h === alias)
+        if (idx !== -1) { colMap[field] = idx; break }
+      }
+    }
+
+    const rows: any[] = []
+    const errors: string[] = []
+    for (let i = 1; i < lines.length; i++) {
+      const cells = parseCSVLine(lines[i])
+      const asin = colMap.asin !== undefined ? cells[colMap.asin]?.trim() : ''
+      if (!asin) { errors.push(`第 ${i + 1} 行：ASIN 为空，已跳过`); continue }
+      const starRaw = colMap.star_rating !== undefined ? cells[colMap.star_rating]?.trim() : '5'
+      rows.push({
+        asin,
+        review_date: colMap.review_date !== undefined ? cells[colMap.review_date]?.trim() : dayjs().format('YYYY-MM-DD'),
+        review_type: colMap.review_type !== undefined ? cells[colMap.review_type]?.trim() || '文字评' : '文字评',
+        star_rating: parseInt(starRaw) || 5,
+        review_status: colMap.review_status !== undefined ? cells[colMap.review_status]?.trim() || '存活' : '存活',
+        product_name: colMap.product_name !== undefined ? cells[colMap.product_name]?.trim() : '',
+        store_name: colMap.store_name !== undefined ? cells[colMap.store_name]?.trim() : '',
+        review_url: colMap.review_url !== undefined ? cells[colMap.review_url]?.trim() : '',
+        notes: colMap.notes !== undefined ? cells[colMap.notes]?.trim() : '',
+        is_company_order: false,
+      })
+    }
+    batchPreview.value = rows
+    batchErrors.value = errors
+  }
+  reader.readAsText(file, 'UTF-8')
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = []
+  let cur = ''
+  let inQuote = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuote && line[i + 1] === '"') { cur += '"'; i++ }
+      else inQuote = !inQuote
+    } else if (ch === ',' && !inQuote) {
+      result.push(cur); cur = ''
+    } else {
+      cur += ch
+    }
+  }
+  result.push(cur)
+  return result
+}
+
+async function saveBatch() {
+  if (!batchPreview.value.length) return
+  batchSaving.value = true
+  try {
+    const payload = batchPreview.value.map(r => ({
+      ...r,
+      buyer_id: props.buyerId,
+      updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase.from('buyer_reviews').insert(payload)
+    if (error) throw error
+    message.success(`成功导入 ${payload.length} 条留评记录`)
+    batchModalOpen.value = false
+    loadReviews()
+  } catch (e: any) {
+    message.error('导入失败：' + (e.message || e))
+  } finally {
+    batchSaving.value = false
+  }
+}
+
+function downloadTemplate() {
+  const header = 'ASIN,留评日期,评论类型,星级,评论状态,产品名称,店铺名称,评论链接,备注'
+  const sample = 'B0XXXXXXXX,2024-03-01,文字评,5,存活,产品示例,店铺示例,https://...,备注示例'
+  const blob = new Blob(['\uFEFF' + header + '\n' + sample], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = '留评批量导入模板.csv'
+  a.click(); URL.revokeObjectURL(url)
+}
+
 function mapOrderTypeToReviewType(orderType: string): string {
   if (orderType.includes('视频')) return '视频评'
   if (orderType.includes('图片') || orderType.includes('图评')) return '图片评'
@@ -381,4 +582,25 @@ function mapOrderTypeToReviewType(orderType: string): string {
 .rc-val.mono { font-family: monospace; }
 
 .rc-actions { display: flex; gap: 6px; align-items: center; border-top: 1px solid #f5f5f5; padding-top: 6px; }
+
+.batch-import-body { padding: 4px 0; }
+.template-hint { font-size: 12px; color: #6b7280; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.template-hint code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #374151; }
+.file-upload-area { border: 2px dashed #d1d5db; border-radius: 8px; min-height: 140px; cursor: pointer; transition: border-color .2s; }
+.file-upload-area:hover { border-color: #2563eb; }
+.upload-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; }
+.preview-area { padding: 12px 14px; cursor: default; }
+.preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.preview-count { font-size: 13px; font-weight: 600; color: #059669; }
+.preview-table-wrap { max-height: 220px; overflow-y: auto; border-radius: 6px; border: 1px solid #e5e7eb; }
+.preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.preview-table th { background: #f9fafb; padding: 6px 8px; text-align: left; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+.preview-table td { padding: 5px 8px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+.preview-table tr:last-child td { border-bottom: none; }
+.preview-table tr.row-error td { background: #fef2f2; color: #dc2626; }
+.td-ellipsis { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-errors { margin-top: 10px; background: #fef2f2; border-radius: 6px; padding: 8px 12px; }
+.batch-err-title { font-size: 12px; font-weight: 600; color: #dc2626; margin-bottom: 4px; }
+.batch-err-row { font-size: 11px; color: #b91c1c; }
+.batch-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
 </style>

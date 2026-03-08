@@ -40,7 +40,7 @@
         row-key="id"
         size="middle"
         @change="handleTableChange"
-        :scroll="{ x: 1280 }"
+        :scroll="{ x: 1200 }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'buyer_number'">
@@ -51,7 +51,10 @@
               <div class="buyer-avatar" :style="{ background: avatarColor(record.name) }">{{ record.name?.[0] || '?' }}</div>
               <div>
                 <div class="buyer-name">{{ record.name }}</div>
-                <div class="buyer-sub">{{ record.country }}{{ record.region ? ' · ' + record.region : '' }}</div>
+                <div class="buyer-sub">
+                  {{ record.country }}{{ record.region ? ' · ' + record.region : '' }}
+                  <a v-if="record.facebook_link" :href="record.facebook_link" target="_blank" class="fb-inline-link" @click.stop>FB</a>
+                </div>
               </div>
             </div>
           </template>
@@ -77,10 +80,6 @@
           </template>
           <template v-if="column.key === 'chat_account'">
             <span class="text-mono">{{ record.chat_account || '—' }}</span>
-          </template>
-          <template v-if="column.key === 'facebook_link'">
-            <a v-if="record.facebook_link" :href="record.facebook_link" target="_blank" class="profile-link" @click.stop>FB</a>
-            <span v-else class="text-empty">—</span>
           </template>
           <template v-if="column.key === 'amazon_profile'">
             <a v-if="record.amazon_profile" :href="record.amazon_profile" target="_blank" class="profile-link" @click.stop>查看</a>
@@ -344,7 +343,19 @@
             <div class="kpi-row">
               <div class="kpi-card">
                 <div class="kpi-num">{{ drawerBuyer.total_completed || 0 }}</div>
-                <div class="kpi-label">已完成单数</div>
+                <div class="kpi-label">已完成合计</div>
+              </div>
+              <div class="kpi-card kpi-card-sm">
+                <div class="kpi-num blue">{{ drawerOrderBreakdown.review }}</div>
+                <div class="kpi-label">测评单</div>
+              </div>
+              <div class="kpi-card kpi-card-sm">
+                <div class="kpi-num teal">{{ drawerOrderBreakdown.free }}</div>
+                <div class="kpi-label">免评单</div>
+              </div>
+              <div class="kpi-card kpi-card-sm">
+                <div class="kpi-num gold">{{ drawerOrderBreakdown.feedback }}</div>
+                <div class="kpi-label">Feedback</div>
               </div>
               <div class="kpi-card">
                 <div class="kpi-num" :class="{ 'kpi-warn': (drawerBuyer.after_sale_rate || 0) > 10 }">
@@ -355,10 +366,6 @@
               <div class="kpi-card">
                 <div class="kpi-num small">{{ drawerBuyer.staff_name || '—' }}</div>
                 <div class="kpi-label">业务员</div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-num small">{{ formatDate(drawerBuyer.created_at) }}</div>
-                <div class="kpi-label">入库时间</div>
               </div>
             </div>
 
@@ -491,6 +498,7 @@ const allCounts = ref({ all: 0, active: 0, paused: 0, blacklist: 0, today: 0 })
 const backupContacts = ref<{ type: string; value: string }[]>([])
 const editOrderStats = ref<{ asins: string[]; stores: string[] }>({ asins: [], stores: [] })
 const drawerOrderStats = ref<{ asins: string[]; stores: string[] }>({ asins: [], stores: [] })
+const drawerOrderBreakdown = ref({ review: 0, free: 0, feedback: 0 })
 
 const countries = ['美国', '德国', '英国', '加拿大', '澳大利亚', '法国', '日本']
 const tagPresets = [...BUYER_TAG_PRESETS]
@@ -552,7 +560,6 @@ const columns = [
   { title: '来源渠道', key: 'source_info', width: 140 },
   { title: 'Prime', key: 'is_prime_member', width: 65, align: 'center' as const },
   { title: '聊单号', key: 'chat_account', width: 120 },
-  { title: 'Facebook', key: 'facebook_link', width: 80 },
   { title: 'Profile', key: 'amazon_profile', width: 72 },
   { title: '入库时间', key: 'created_at', width: 100 },
   { title: '操作', key: 'action', width: 155, fixed: 'right' },
@@ -653,14 +660,24 @@ function openEditModal(record: any) {
 
 async function loadDrawerOrderStats(buyerId: string) {
   drawerOrderStats.value = { asins: [], stores: [] }
+  drawerOrderBreakdown.value = { review: 0, free: 0, feedback: 0 }
   const { data } = await supabase
     .from('sub_orders')
-    .select('asin, store_name')
+    .select('asin, store_name, order_type')
     .eq('buyer_id', buyerId)
+    .in('status', ['已完成', '已留评'])
   if (data) {
     const asins = [...new Set(data.map((r: any) => r.asin).filter(Boolean))]
     const stores = [...new Set(data.map((r: any) => r.store_name).filter(Boolean))]
     drawerOrderStats.value = { asins, stores }
+    let review = 0, free = 0, feedback = 0
+    for (const r of data) {
+      const t = (r.order_type || '').toLowerCase()
+      if (t.includes('feedback')) feedback++
+      else if (t.includes('免评')) free++
+      else review++
+    }
+    drawerOrderBreakdown.value = { review, free, feedback }
   }
 }
 
@@ -787,7 +804,9 @@ onMounted(async () => {
 .buyer-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; flex-shrink: 0; }
 .buyer-name { font-weight: 600; color: #1a1a2e; font-size: 13px; }
 .buyer-name:hover { color: #2563eb; }
-.buyer-sub { font-size: 11px; color: #9ca3af; }
+.buyer-sub { font-size: 11px; color: #9ca3af; display: flex; align-items: center; gap: 4px; }
+.fb-inline-link { font-size: 10px; padding: 1px 5px; background: #1877f2; color: #fff !important; border-radius: 3px; line-height: 1.4; text-decoration: none; font-weight: 600; flex-shrink: 0; }
+.fb-inline-link:hover { background: #0c5de8; }
 .num-badge { font-weight: 700; font-size: 14px; color: #1a1a2e; }
 .rate-badge { font-weight: 600; font-size: 13px; color: #059669; }
 .source-cell { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -819,6 +838,10 @@ onMounted(async () => {
 .kpi-num { font-size: 20px; font-weight: 700; color: #1a1a2e; line-height: 1.2; }
 .kpi-num.small { font-size: 13px; font-weight: 600; }
 .kpi-num.kpi-warn { color: #dc2626; }
+.kpi-card-sm { min-width: 60px; }
+.kpi-num.blue { color: #2563eb; }
+.kpi-num.teal { color: #0891b2; }
+.kpi-num.gold { color: #d97706; }
 .kpi-label { font-size: 11px; color: #8c8c8c; margin-top: 3px; }
 
 .drawer-section { padding: 14px 20px; border-bottom: 1px solid #f0f0f0; }
