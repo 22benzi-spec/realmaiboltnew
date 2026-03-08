@@ -93,6 +93,9 @@
           <template v-if="column.key === 'life_days'">
             <LifeDaysCell :started-at="record.started_at" :died-at="record.died_at" />
           </template>
+          <template v-if="column.key === 'notes'">
+            <span class="notes-preview">{{ record.notes || '-' }}</span>
+          </template>
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="openDetail(record)">详情</a-button>
@@ -154,7 +157,7 @@
             <DetailRow label="累计退款" :value="`$${Number(activeRecord.total_refunded_usd || 0).toFixed(2)}`" />
             <DetailRow label="退款次数" :value="`${activeRecord.refund_count || 0} 次`" />
             <DetailRow label="开始使用" :value="activeRecord.started_at || '-'" />
-            <DetailRow label="挂掉日期" :value="activeRecord.died_at || '-'" />
+            <DetailRow v-if="activeRecord.status === '已关闭'" label="挂掉日期" :value="activeRecord.died_at || '-'" />
             <DetailRow label="存货天数">
               <LifeDaysCell :started-at="activeRecord.started_at" :died-at="activeRecord.died_at" show-text />
             </DetailRow>
@@ -428,7 +431,7 @@ async function loadAccounts() {
   loading.value = true
   try {
     let q = supabase.from('paypal_accounts')
-      .select('id,email,account_alias,owner_name,status,risk_level,total_refunded_usd,refund_count,started_at,died_at,import_batch', { count: 'exact' })
+      .select('id,email,account_alias,owner_name,status,risk_level,total_refunded_usd,refund_count,started_at,died_at,import_batch,server_ip,bank_name,notes', { count: 'exact' })
       .order('created_at', { ascending: false })
     if (search.value) q = q.or(`email.ilike.%${search.value}%,owner_name.ilike.%${search.value}%,account_alias.ilike.%${search.value}%`)
     if (filterStatus.value) q = q.eq('status', filterStatus.value)
@@ -566,10 +569,12 @@ const columns = [
   { title: '邮箱 / 批次', key: 'email', width: 220 },
   { title: '持有人 / 别名', key: 'owner', width: 140 },
   { title: '状态', key: 'status', width: 90 },
+  { title: '服务器 IP', dataIndex: 'server_ip', key: 'server_ip', width: 130 },
+  { title: '绑定银行', dataIndex: 'bank_name', key: 'bank_name', width: 110 },
   { title: '累计退款', key: 'refund', width: 130 },
   { title: '存货天数', key: 'life_days', width: 110 },
   { title: '开始使用', dataIndex: 'started_at', key: 'started_at', width: 100 },
-  { title: '挂掉日期', dataIndex: 'died_at', key: 'died_at', width: 100 },
+  { title: '备注', key: 'notes', width: 140 },
   { title: '操作', key: 'action', width: 150, fixed: 'right' as const },
 ]
 
@@ -618,4 +623,5 @@ onMounted(() => { loadAccounts(); loadStats(); loadBatchOptions() })
 .batch-tag { background: #e6f4ff; color: #1677ff; border: 1px solid #91caff; border-radius: 4px; padding: 1px 8px; font-size: 12px; font-family: monospace; }
 .import-preview { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: #389e0d; }
 .text-muted { color: #bbb; }
+.notes-preview { font-size: 12px; color: #666; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 </style>
