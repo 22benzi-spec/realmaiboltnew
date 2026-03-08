@@ -205,7 +205,7 @@
     </a-modal>
 
     <!-- 详情抽屉 -->
-    <a-drawer v-model:open="drawerOpen" title="买手详情" width="520" :body-style="{ padding: '0' }">
+    <a-drawer v-model:open="drawerOpen" title="买手详情" width="580" :body-style="{ padding: '0' }">
       <div v-if="drawerBuyer" class="drawer-body">
         <div class="drawer-header-card">
           <div class="drawer-avatar" :style="{ background: avatarColor(drawerBuyer.name) }">{{ drawerBuyer.name?.[0] || '?' }}</div>
@@ -222,58 +222,66 @@
           </div>
         </div>
 
-        <div class="drawer-section">
-          <div class="ds-title">基本信息</div>
-          <div class="ds-grid">
-            <div class="ds-item"><span class="ds-label">业务员</span><span>{{ drawerBuyer.staff_name || '—' }}</span></div>
-            <div class="ds-item"><span class="ds-label">入库时间</span><span>{{ formatDate(drawerBuyer.created_at) }}</span></div>
-            <div class="ds-item"><span class="ds-label">已完成单数</span><span class="ds-value-num">{{ drawerBuyer.total_completed }}</span></div>
-            <div class="ds-item"><span class="ds-label">成功率</span><span class="ds-value-num">{{ drawerBuyer.success_rate ? drawerBuyer.success_rate + '%' : '—' }}</span></div>
-          </div>
-        </div>
-
-        <div class="drawer-section">
-          <div class="ds-title">联系方式</div>
-          <div class="ds-grid">
-            <div class="ds-item"><span class="ds-label">Facebook名</span><span class="text-mono">{{ drawerBuyer.facebook_name || '—' }}</span></div>
-            <div class="ds-item"><span class="ds-label">聊单号</span><span class="text-mono">{{ drawerBuyer.chat_account || '—' }}</span></div>
-            <div class="ds-item"><span class="ds-label">贝宝邮箱</span><span class="text-mono small">{{ drawerBuyer.paypal_email || '—' }}</span></div>
-            <div class="ds-item"><span class="ds-label">手机号</span><span>{{ drawerBuyer.phone || '—' }}</span></div>
-            <div class="ds-item"><span class="ds-label">邮箱</span><span class="text-mono small">{{ drawerBuyer.email || '—' }}</span></div>
-            <div class="ds-item"><span class="ds-label">平台账号</span><span>{{ drawerBuyer.platform_account || '—' }}</span></div>
-          </div>
-        </div>
-
-        <div class="drawer-section">
-          <div class="ds-title">购买记录</div>
-          <div v-if="drawerBuyer.purchased_asins" class="ds-block">
-            <div class="ds-label-full">已购ASIN（{{ asinCount(drawerBuyer.purchased_asins) }} 个）</div>
-            <div class="asin-tags">
-              <span v-for="asin in splitValues(drawerBuyer.purchased_asins)" :key="asin" class="asin-tag">{{ asin }}</span>
+        <a-tabs v-model:activeKey="drawerTab" style="padding: 0 16px;" size="small">
+          <a-tab-pane key="info" tab="基本信息">
+            <div class="drawer-section">
+              <div class="ds-title">基本信息</div>
+              <div class="ds-grid">
+                <div class="ds-item"><span class="ds-label">业务员</span><span>{{ drawerBuyer.staff_name || '—' }}</span></div>
+                <div class="ds-item"><span class="ds-label">入库时间</span><span>{{ formatDate(drawerBuyer.created_at) }}</span></div>
+                <div class="ds-item"><span class="ds-label">已完成单数</span><span class="ds-value-num">{{ drawerBuyer.total_completed }}</span></div>
+                <div class="ds-item"><span class="ds-label">成功率</span><span class="ds-value-num">{{ drawerBuyer.success_rate ? drawerBuyer.success_rate + '%' : '—' }}</span></div>
+              </div>
             </div>
-          </div>
-          <div v-if="drawerBuyer.purchased_stores" class="ds-block">
-            <div class="ds-label-full">已购店铺</div>
-            <div class="store-tags">
-              <span v-for="store in splitValues(drawerBuyer.purchased_stores)" :key="store" class="store-tag">{{ store }}</span>
+
+            <div class="drawer-section">
+              <div class="ds-title">联系方式</div>
+              <div class="ds-grid">
+                <div class="ds-item"><span class="ds-label">Facebook名</span><span class="text-mono">{{ drawerBuyer.facebook_name || '—' }}</span></div>
+                <div class="ds-item"><span class="ds-label">聊单号</span><span class="text-mono">{{ drawerBuyer.chat_account || '—' }}</span></div>
+                <div class="ds-item"><span class="ds-label">贝宝邮箱</span><span class="text-mono small">{{ drawerBuyer.paypal_email || '—' }}</span></div>
+                <div class="ds-item"><span class="ds-label">手机号</span><span>{{ drawerBuyer.phone || '—' }}</span></div>
+                <div class="ds-item"><span class="ds-label">邮箱</span><span class="text-mono small">{{ drawerBuyer.email || '—' }}</span></div>
+                <div class="ds-item"><span class="ds-label">平台账号</span><span>{{ drawerBuyer.platform_account || '—' }}</span></div>
+              </div>
             </div>
-          </div>
-          <div v-if="drawerBuyer.amazon_profile" class="ds-item" style="grid-column: 1/-1">
-            <span class="ds-label">Profile</span>
-            <a :href="drawerBuyer.amazon_profile" target="_blank" class="profile-link-full">{{ drawerBuyer.amazon_profile }}</a>
-          </div>
-          <div v-if="!drawerBuyer.purchased_asins && !drawerBuyer.purchased_stores && !drawerBuyer.amazon_profile" class="ds-empty">暂无购买记录</div>
-        </div>
 
-        <div v-if="drawerBuyer.blacklist_reason" class="drawer-section blacklist-section">
-          <div class="ds-title">拉黑原因</div>
-          <div class="blacklist-reason">{{ drawerBuyer.blacklist_reason }}</div>
-        </div>
+            <div class="drawer-section">
+              <div class="ds-title">购买记录</div>
+              <div v-if="drawerBuyer.purchased_asins" class="ds-block">
+                <div class="ds-label-full">已购ASIN（{{ asinCount(drawerBuyer.purchased_asins) }} 个）</div>
+                <div class="asin-tags">
+                  <span v-for="asin in splitValues(drawerBuyer.purchased_asins)" :key="asin" class="asin-tag">{{ asin }}</span>
+                </div>
+              </div>
+              <div v-if="drawerBuyer.purchased_stores" class="ds-block">
+                <div class="ds-label-full">已购店铺</div>
+                <div class="store-tags">
+                  <span v-for="store in splitValues(drawerBuyer.purchased_stores)" :key="store" class="store-tag">{{ store }}</span>
+                </div>
+              </div>
+              <div v-if="drawerBuyer.amazon_profile" class="ds-item" style="grid-column: 1/-1">
+                <span class="ds-label">Profile</span>
+                <a :href="drawerBuyer.amazon_profile" target="_blank" class="profile-link-full">{{ drawerBuyer.amazon_profile }}</a>
+              </div>
+              <div v-if="!drawerBuyer.purchased_asins && !drawerBuyer.purchased_stores && !drawerBuyer.amazon_profile" class="ds-empty">暂无购买记录</div>
+            </div>
 
-        <div v-if="drawerBuyer.notes" class="drawer-section">
-          <div class="ds-title">备注</div>
-          <div class="drawer-notes">{{ drawerBuyer.notes }}</div>
-        </div>
+            <div v-if="drawerBuyer.blacklist_reason" class="drawer-section blacklist-section">
+              <div class="ds-title">拉黑原因</div>
+              <div class="blacklist-reason">{{ drawerBuyer.blacklist_reason }}</div>
+            </div>
+
+            <div v-if="drawerBuyer.notes" class="drawer-section">
+              <div class="ds-title">备注</div>
+              <div class="drawer-notes">{{ drawerBuyer.notes }}</div>
+            </div>
+          </a-tab-pane>
+
+          <a-tab-pane key="reviews" tab="留评轨迹">
+            <BuyerReviewTracker :buyer-id="drawerBuyer.id" />
+          </a-tab-pane>
+        </a-tabs>
 
         <div class="drawer-actions">
           <a-button type="primary" @click="openModal(drawerBuyer); drawerOpen = false">编辑</a-button>
@@ -291,6 +299,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
+import BuyerReviewTracker from '../components/BuyerReviewTracker.vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import { BUYER_TAG_PRESETS } from '../types'
@@ -305,6 +314,7 @@ const activeTab = ref('all')
 const modalOpen = ref(false)
 const drawerOpen = ref(false)
 const drawerBuyer = ref<any>(null)
+const drawerTab = ref('info')
 const submitting = ref(false)
 const editingId = ref('')
 const formRef = ref()
@@ -436,6 +446,7 @@ function openModal(record?: any) {
 
 function openDetail(record: any) {
   drawerBuyer.value = record
+  drawerTab.value = 'info'
   drawerOpen.value = true
 }
 
