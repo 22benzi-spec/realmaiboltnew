@@ -202,6 +202,26 @@
               <a-input v-model:value="form.cloud_phone" placeholder="云手机标识 / 编号" />
             </a-form-item>
           </a-col>
+          <template v-if="form.physical_device">
+            <a-col :span="24">
+              <a-divider style="margin:4px 0 10px;font-size:13px;color:#6b7280">实体机 SIM 卡</a-divider>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="SIM 卡号">
+                <a-input v-model:value="form.sim_card_number" placeholder="绑定的手机卡号码" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="SIM 卡到期日">
+                <a-date-picker
+                  v-model:value="simCardExpireDayjs"
+                  placeholder="选择到期日期"
+                  style="width:100%"
+                  @change="onSimExpireChange"
+                />
+              </a-form-item>
+            </a-col>
+          </template>
 
           <a-col :span="24">
             <a-form-item label="备注">
@@ -215,9 +235,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabase'
+import dayjs, { type Dayjs } from 'dayjs'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -236,9 +257,18 @@ const emptyForm = () => ({
   account_no: '', owner_name: '', account_role: '主号',
   phone_type: '个人', phone_number: '', pingme_number: '', email: '',
   ads_power_id: '', local_browser: '', physical_device: '', cloud_phone: '',
+  sim_card_number: '', sim_card_expire: '' as string,
   status: '在用', notes: '',
 })
 const form = reactive(emptyForm())
+
+const simCardExpireDayjs = computed({
+  get: () => form.sim_card_expire ? dayjs(form.sim_card_expire) : null,
+  set: (v: Dayjs | null) => { form.sim_card_expire = v ? v.format('YYYY-MM-DD') : '' },
+})
+function onSimExpireChange(v: Dayjs | null) {
+  form.sim_card_expire = v ? v.format('YYYY-MM-DD') : ''
+}
 
 const roleColor: Record<string, string> = { '主号': 'blue', '次用号': 'orange', '备用号': 'default' }
 
@@ -306,6 +336,8 @@ function openEdit(row: any) {
     local_browser: row.local_browser || '',
     physical_device: row.physical_device || '',
     cloud_phone: row.cloud_phone || '',
+    sim_card_number: row.sim_card_number || '',
+    sim_card_expire: row.sim_card_expire || '',
     status: row.status || '在用',
     notes: row.notes || '',
   })
@@ -317,6 +349,7 @@ async function handleSave() {
   saving.value = true
   try {
     const payload: any = { ...form, updated_at: new Date().toISOString() }
+    if (!payload.sim_card_expire) payload.sim_card_expire = null
     if (editId.value) {
       await supabase.from('chat_accounts').update(payload).eq('id', editId.value)
       message.success('已更新')

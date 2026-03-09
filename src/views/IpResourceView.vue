@@ -99,13 +99,24 @@
               <a-space size="small" :wrap="false">
                 <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
                 <a-button type="link" size="small" @click="quickRenew(record)">续费</a-button>
-                <a-button type="link" size="small" @click="openReplace(record)">替换</a-button>
-                <a-button type="link" size="small" @click="openHistory(record)">记录</a-button>
-                <a-button v-if="!record.do_not_renew" type="link" size="small" danger @click="markNoRenew(record)">不续费</a-button>
-                <a-button v-else type="link" size="small" @click="unmarkNoRenew(record)">恢复</a-button>
-                <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)">
-                  <a-button type="link" size="small" danger>删除</a-button>
-                </a-popconfirm>
+                <a-dropdown :trigger="['click']">
+                  <a-button type="link" size="small">更多</a-button>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item @click="openReplace(record)">替换 IP</a-menu-item>
+                      <a-menu-item @click="openHistory(record)">替换记录</a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item v-if="!record.do_not_renew" @click="markNoRenew(record)" style="color:#dc2626">标记不续费</a-menu-item>
+                      <a-menu-item v-else @click="unmarkNoRenew(record)">取消不续费</a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item>
+                        <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)" placement="left">
+                          <span style="color:#ff4d4f">删除</span>
+                        </a-popconfirm>
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
               </a-space>
             </template>
           </template>
@@ -172,13 +183,24 @@
               <a-space size="small" :wrap="false">
                 <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
                 <a-button type="link" size="small" @click="quickRenew(record)">续费</a-button>
-                <a-button type="link" size="small" @click="openReplace(record)">替换</a-button>
-                <a-button type="link" size="small" @click="openHistory(record)">记录</a-button>
-                <a-button v-if="!record.do_not_renew" type="link" size="small" danger @click="markNoRenew(record)">不续费</a-button>
-                <a-button v-else type="link" size="small" @click="unmarkNoRenew(record)">恢复</a-button>
-                <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)">
-                  <a-button type="link" size="small" danger>删除</a-button>
-                </a-popconfirm>
+                <a-dropdown :trigger="['click']">
+                  <a-button type="link" size="small">更多</a-button>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item @click="openReplace(record)">替换 IP</a-menu-item>
+                      <a-menu-item @click="openHistory(record)">替换记录</a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item v-if="!record.do_not_renew" @click="markNoRenew(record)" style="color:#dc2626">标记不续费</a-menu-item>
+                      <a-menu-item v-else @click="unmarkNoRenew(record)">取消不续费</a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item>
+                        <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)" placement="left">
+                          <span style="color:#ff4d4f">删除</span>
+                        </a-popconfirm>
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
               </a-space>
             </template>
           </template>
@@ -467,7 +489,7 @@ const buyerColumns = [
   { title: '续费', key: 'renew', width: 100 },
   { title: '下次到期', key: 'next_renew_at', width: 110 },
   { title: '备注', dataIndex: 'notes', key: 'notes', width: 110, ellipsis: true },
-  { title: '操作', key: 'action', width: 260, fixed: 'right' as const },
+  { title: '操作', key: 'action', width: 140, fixed: 'right' as const },
 ]
 
 const serverColumns = [
@@ -479,7 +501,7 @@ const serverColumns = [
   { title: '续费', key: 'renew', width: 100 },
   { title: '下次到期', key: 'next_renew_at', width: 110 },
   { title: '备注', dataIndex: 'notes', key: 'notes', width: 110, ellipsis: true },
-  { title: '操作', key: 'action', width: 260, fixed: 'right' as const },
+  { title: '操作', key: 'action', width: 140, fixed: 'right' as const },
 ]
 
 function getRenewClass(date: string) {
