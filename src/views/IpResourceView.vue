@@ -7,29 +7,33 @@
 
     <!-- KPI -->
     <div class="kpi-row">
-      <div class="kpi-card">
+      <div class="kpi-card kpi-total">
         <div class="kpi-val">{{ stats.total }}</div>
         <div class="kpi-label">总数</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-active">
         <div class="kpi-val green">{{ stats.active }}</div>
         <div class="kpi-label">使用中</div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-val orange">{{ stats.pending }}</div>
-        <div class="kpi-label">待续费</div>
+      <div class="kpi-card kpi-expire7 clickable" @click="filterByExpire(7)" :class="{ active: expireFilter === 7 }">
+        <div class="kpi-val red">{{ stats.expire7 }}</div>
+        <div class="kpi-label">7 天内到期</div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-val red">{{ stats.expiringSoon }}</div>
-        <div class="kpi-label">7天内到期</div>
+      <div class="kpi-card kpi-expire15 clickable" @click="filterByExpire(15)" :class="{ active: expireFilter === 15 }">
+        <div class="kpi-val orange">{{ stats.expire15 }}</div>
+        <div class="kpi-label">15 天内到期</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-expire30 clickable" @click="filterByExpire(30)" :class="{ active: expireFilter === 30 }">
+        <div class="kpi-val warn2">{{ stats.expire30 }}</div>
+        <div class="kpi-label">30 天内到期</div>
+      </div>
+      <div class="kpi-card kpi-donotrenew">
         <div class="kpi-val warn">{{ stats.doNotRenew }}</div>
         <div class="kpi-label">标记不续费</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-disabled">
         <div class="kpi-val gray">{{ stats.disabled }}</div>
-        <div class="kpi-label">已停用</div>
+        <div class="kpi-label">已停用 / 已替换</div>
       </div>
     </div>
 
@@ -236,10 +240,10 @@
         </a-table>
       </a-tab-pane>
 
-      <!-- ===== Pingme 号码 ===== -->
-      <a-tab-pane key="pingme" tab="Pingme 号码">
+      <!-- ===== Pingme 账号 ===== -->
+      <a-tab-pane key="pingme" tab="Pingme 账号">
         <div class="filter-bar">
-          <a-input v-model:value="search" placeholder="搜索号码 / 聊单号 / 业务员" style="width:280px" allow-clear @change="loadData" />
+          <a-input v-model:value="search" placeholder="搜索账号名称 / 号码 / 聊单号 / 业务员" style="width:300px" allow-clear @change="loadData" />
           <a-select v-model:value="filterStatus" placeholder="状态" style="width:120px" allow-clear @change="loadData">
             <a-select-option value="使用中">使用中</a-select-option>
             <a-select-option value="已停用">已停用</a-select-option>
@@ -253,10 +257,10 @@
           row-key="id" size="middle" :scroll="{ x: 1100 }" @change="onTableChange"
           :row-class-name="(r: any) => r.do_not_renew ? 'row-no-renew' : ''">
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'phone_number'">
-              <div class="ip-cell">
-                <span class="ip-addr">{{ record.phone_number }}</span>
-                <a-tag v-if="record.do_not_renew" color="red" size="small">不续费</a-tag>
+            <template v-if="column.key === 'account_name'">
+              <div class="account-name-cell">
+                <span class="account-name-text">{{ record.account_name || '—' }}</span>
+                <div v-if="record.phone_number" class="account-sub-num">{{ record.phone_number }}</div>
               </div>
             </template>
             <template v-if="column.key === 'region'">
@@ -275,9 +279,12 @@
               <span v-else class="text-empty">—</span>
             </template>
             <template v-if="column.key === 'balance'">
-              <span :class="Number(record.balance) < 10 ? 'balance-low' : 'balance-ok'">
-                ¥{{ Number(record.balance || 0).toFixed(2) }}
-              </span>
+              <div class="balance-cell">
+                <span :class="Number(record.balance) < 10 ? 'balance-low' : 'balance-ok'">
+                  ¥{{ Number(record.balance || 0).toFixed(2) }}
+                </span>
+                <span class="balance-hint">账号余额</span>
+              </div>
             </template>
             <template v-if="column.key === 'status'">
               <a-badge :status="statusBadge[record.status] || 'default'" :text="record.status" />
@@ -550,8 +557,13 @@
       <a-form v-else-if="activeTab === 'pingme'" :model="pingmeForm" layout="vertical" style="margin-top:8px">
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="Pingme 号码" required>
-              <a-input v-model:value="pingmeForm.phone_number" placeholder="号码" />
+            <a-form-item label="Pingme 账号名称" required>
+              <a-input v-model:value="pingmeForm.account_name" placeholder="账号名称（如 PM001）" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="Pingme 号码">
+              <a-input v-model:value="pingmeForm.phone_number" placeholder="该账号下的号码（可选）" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -572,7 +584,7 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="当前余额（¥）">
+            <a-form-item label="账号当前余额（¥）">
               <a-input-number v-model:value="pingmeForm.balance" :min="0" :precision="2" style="width:100%" />
             </a-form-item>
           </a-col>
@@ -614,10 +626,13 @@
     </a-modal>
 
     <!-- Pingme 充值弹窗 -->
-    <a-modal v-model:open="rechargeOpen" title="Pingme 充值" width="440px" @ok="handleRecharge" :confirm-loading="saving">
+    <a-modal v-model:open="rechargeOpen" title="Pingme 账号充值" width="440px" @ok="handleRecharge" :confirm-loading="saving">
       <div class="recharge-header">
-        <span class="ip-addr">{{ rechargeTarget?.phone_number }}</span>
-        <span class="recharge-balance">当前余额：<strong>¥{{ Number(rechargeTarget?.balance || 0).toFixed(2) }}</strong></span>
+        <div>
+          <div class="ip-addr">{{ rechargeTarget?.account_name || rechargeTarget?.phone_number }}</div>
+          <div v-if="rechargeTarget?.phone_number && rechargeTarget?.account_name" class="recharge-sub-num">{{ rechargeTarget?.phone_number }}</div>
+        </div>
+        <span class="recharge-balance">账号余额：<strong>¥{{ Number(rechargeTarget?.balance || 0).toFixed(2) }}</strong></span>
       </div>
       <a-form layout="vertical" style="margin-top:12px">
         <a-row :gutter="14">
@@ -766,7 +781,8 @@ const filterUsage = ref<string | undefined>(undefined)
 const activeTab = ref<TabKey>('buyer')
 
 const regionOptions = ['美国', '日本', '英国', '德国', '加拿大', '澳大利亚', '法国', '意大利', '西班牙', '墨西哥', '印度', '新加坡', '其他']
-const stats = reactive({ total: 0, active: 0, pending: 0, expiringSoon: 0, disabled: 0, doNotRenew: 0 })
+const stats = reactive({ total: 0, active: 0, expire7: 0, expire15: 0, expire30: 0, disabled: 0, doNotRenew: 0 })
+const expireFilter = ref<number | null>(null)
 
 const modalOpen = ref(false)
 const editId = ref<string | null>(null)
@@ -814,16 +830,16 @@ const simForm = reactive({
 })
 
 const pingmeForm = reactive({
-  phone_number: '', region: '', chat_account: '', staff_name: '',
+  account_name: '', phone_number: '', region: '', chat_account: '', staff_name: '',
   balance: 0, status: '使用中', do_not_renew: false, notes: '',
 })
 
 const addBtnLabel = computed(() => {
-  const map: Record<TabKey, string> = { buyer: '新增 IP', server: '新增服务器', sim: '新增 SIM 卡', pingme: '新增 Pingme 号码' }
+  const map: Record<TabKey, string> = { buyer: '新增 IP', server: '新增服务器', sim: '新增 SIM 卡', pingme: '新增 Pingme 账号' }
   return map[activeTab.value]
 })
 const modalTitle = computed(() => {
-  const map: Record<TabKey, string> = { buyer: 'IP', server: '服务器', sim: 'SIM 卡', pingme: 'Pingme 号码' }
+  const map: Record<TabKey, string> = { buyer: 'IP', server: '服务器', sim: 'SIM 卡', pingme: 'Pingme 账号' }
   return map[activeTab.value]
 })
 
@@ -873,11 +889,11 @@ const simColumns = [
 ]
 
 const pingmeColumns = [
-  { title: 'Pingme 号码', key: 'phone_number', width: 160 },
+  { title: 'Pingme 账号', key: 'account_name', width: 180 },
   { title: '地区', key: 'region', width: 90 },
   { title: '绑定聊单号', key: 'chat_account', width: 150 },
   { title: '业务员', key: 'staff_name', width: 90 },
-  { title: '当前余额', key: 'balance', width: 110 },
+  { title: '账号余额', key: 'balance', width: 120 },
   { title: '状态', key: 'status', width: 90 },
   { title: '备注', dataIndex: 'notes', key: 'notes', width: 150, ellipsis: true },
   { title: '操作', key: 'action', width: 150, fixed: 'right' as const },
@@ -921,7 +937,7 @@ async function loadData() {
       if (filterDoNotRenew.value !== undefined && filterDoNotRenew.value !== null) q = q.eq('do_not_renew', filterDoNotRenew.value)
     } else {
       q = supabase.from(tbl).select('*', { count: 'exact' }).order('created_at', { ascending: false })
-      if (search.value) q = q.or(`phone_number.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%`)
+      if (search.value) q = q.or(`account_name.ilike.%${search.value}%,phone_number.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%`)
       if (filterStatus.value) q = q.eq('status', filterStatus.value)
       if (filterRegion.value) q = q.eq('region', filterRegion.value)
     }
@@ -941,14 +957,42 @@ async function loadStats() {
   const rows = data || []
   stats.total = rows.length
   stats.active = rows.filter((r: any) => r.status === '使用中').length
-  stats.pending = rows.filter((r: any) => r.status === '待续费' || r.status === '待激活').length
   stats.disabled = rows.filter((r: any) => r.status === '已停用' || r.status === '已替换').length
   stats.doNotRenew = rows.filter((r: any) => r.do_not_renew).length
-  stats.expiringSoon = rows.filter((r: any) => {
+  stats.expire7 = rows.filter((r: any) => {
     if (!r.next_renew_at) return false
     const d = dayjs(r.next_renew_at).diff(dayjs(), 'day')
     return d >= 0 && d <= 7
   }).length
+  stats.expire15 = rows.filter((r: any) => {
+    if (!r.next_renew_at) return false
+    const d = dayjs(r.next_renew_at).diff(dayjs(), 'day')
+    return d > 7 && d <= 15
+  }).length
+  stats.expire30 = rows.filter((r: any) => {
+    if (!r.next_renew_at) return false
+    const d = dayjs(r.next_renew_at).diff(dayjs(), 'day')
+    return d > 15 && d <= 30
+  }).length
+}
+
+function filterByExpire(days: number) {
+  if (expireFilter.value === days) {
+    expireFilter.value = null
+    loadData()
+    return
+  }
+  expireFilter.value = days
+  const today = dayjs()
+  const filtered = list.value.filter(r => {
+    if (!r.next_renew_at) return false
+    const d = dayjs(r.next_renew_at).diff(today, 'day')
+    if (days === 7) return d >= 0 && d <= 7
+    if (days === 15) return d > 7 && d <= 15
+    if (days === 30) return d > 15 && d <= 30
+    return false
+  })
+  list.value = filtered
 }
 
 function onTabChange() {
@@ -958,6 +1002,7 @@ function onTabChange() {
   filterRegion.value = undefined
   filterDoNotRenew.value = undefined
   filterUsage.value = undefined
+  expireFilter.value = null
   loadData()
   loadStats()
 }
@@ -972,7 +1017,7 @@ function resetForms() {
   Object.assign(buyerForm, { ip_address: '', ip_type: '买手IP', region: '', supplier: '', phone_number: '', chat_account: '', staff_name: '', renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '', status: '使用中', assigned_to: '', notes: '', do_not_renew: false })
   Object.assign(serverForm, { server_ip: '', supplier: '', renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '', status: '使用中', usage_type: 'PayPal专用', notes: '' })
   Object.assign(simForm, { phone_number: '', purchase_account: '', region: '', supplier: '', chat_account: '', staff_name: '', device_info: '', status: '使用中', renew_price: 0, renew_cycle: '年付', last_renewed_at: '', next_renew_at: '', do_not_renew: false, notes: '' })
-  Object.assign(pingmeForm, { phone_number: '', region: '', chat_account: '', staff_name: '', balance: 0, status: '使用中', do_not_renew: false, notes: '' })
+  Object.assign(pingmeForm, { account_name: '', phone_number: '', region: '', chat_account: '', staff_name: '', balance: 0, status: '使用中', do_not_renew: false, notes: '' })
 }
 
 function openAdd() {
@@ -990,7 +1035,7 @@ function openEdit(row: any) {
   } else if (activeTab.value === 'sim') {
     Object.assign(simForm, { phone_number: row.phone_number || '', purchase_account: row.purchase_account || '', region: row.region || '', supplier: row.supplier || '', chat_account: row.chat_account || '', staff_name: row.staff_name || '', device_info: row.device_info || '', status: row.status || '使用中', renew_price: row.renew_price || 0, renew_cycle: row.renew_cycle || '年付', last_renewed_at: row.last_renewed_at || '', next_renew_at: row.next_renew_at || '', do_not_renew: row.do_not_renew || false, notes: row.notes || '' })
   } else {
-    Object.assign(pingmeForm, { phone_number: row.phone_number || '', region: row.region || '', chat_account: row.chat_account || '', staff_name: row.staff_name || '', balance: row.balance || 0, status: row.status || '使用中', do_not_renew: row.do_not_renew || false, notes: row.notes || '' })
+    Object.assign(pingmeForm, { account_name: row.account_name || '', phone_number: row.phone_number || '', region: row.region || '', chat_account: row.chat_account || '', staff_name: row.staff_name || '', balance: row.balance || 0, status: row.status || '使用中', do_not_renew: row.do_not_renew || false, notes: row.notes || '' })
   }
   modalOpen.value = true
 }
@@ -1017,7 +1062,7 @@ async function handleSave() {
       if (!payload.last_renewed_at) payload.last_renewed_at = null
       if (!payload.next_renew_at) payload.next_renew_at = null
     } else {
-      if (!pingmeForm.phone_number.trim()) { message.error('号码不能为空'); saving.value = false; return }
+      if (!pingmeForm.account_name.trim()) { message.error('账号名称不能为空'); saving.value = false; return }
       payload = { ...pingmeForm, updated_at: new Date().toISOString() }
     }
 
@@ -1165,14 +1210,21 @@ onMounted(() => { loadData(); loadStats() })
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 0; }
 
-.kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 20px; }
-.kpi-card { background: #fff; border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.06); border: 1px solid #f0f0f0; }
+.kpi-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 20px; }
+.kpi-card { background: #fff; border-radius: 10px; padding: 14px 10px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.06); border: 1px solid #f0f0f0; transition: border-color .2s, box-shadow .2s; }
+.kpi-card.clickable { cursor: pointer; }
+.kpi-card.clickable:hover { border-color: #1677ff; box-shadow: 0 2px 8px rgba(22,119,255,.12); }
+.kpi-card.active { border-color: #1677ff; background: #e6f4ff; box-shadow: 0 2px 8px rgba(22,119,255,.15); }
+.kpi-card.kpi-expire7.active { border-color: #ff4d4f; background: #fff1f0; }
+.kpi-card.kpi-expire15.active { border-color: #fa8c16; background: #fff7e6; }
+.kpi-card.kpi-expire30.active { border-color: #faad14; background: #fffbe6; }
 .kpi-val { font-size: 22px; font-weight: 700; color: #1677ff; }
 .kpi-val.green { color: #52c41a; }
 .kpi-val.orange { color: #fa8c16; }
 .kpi-val.red { color: #ff4d4f; }
 .kpi-val.gray { color: #8c8c8c; }
 .kpi-val.warn { color: #dc2626; }
+.kpi-val.warn2 { color: #faad14; }
 .kpi-label { font-size: 12px; color: #8c8c8c; margin-top: 4px; }
 
 .res-tabs { background: #fff; border-radius: 10px; padding: 0 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); border: 1px solid #f0f0f0; }
@@ -1193,6 +1245,13 @@ onMounted(() => { loadData(); loadStats() })
 
 .balance-ok { font-size: 13px; font-weight: 600; color: #16a34a; }
 .balance-low { font-size: 13px; font-weight: 600; color: #dc2626; }
+.balance-cell { display: flex; flex-direction: column; gap: 1px; }
+.balance-hint { font-size: 10px; color: #9ca3af; }
+
+.account-name-cell { display: flex; flex-direction: column; gap: 2px; }
+.account-name-text { font-weight: 600; font-size: 13px; color: #1a1a2e; }
+.account-sub-num { font-size: 11px; color: #9ca3af; font-family: monospace; }
+.recharge-sub-num { font-size: 11px; color: #9ca3af; font-family: monospace; margin-top: 2px; }
 
 .expired { color: #ff4d4f; font-weight: 600; }
 .expiring-soon { color: #ff4d4f; font-weight: 500; }

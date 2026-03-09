@@ -7,29 +7,43 @@
 
     <!-- KPI -->
     <div class="kpi-row">
-      <div class="kpi-card">
-        <div class="kpi-val">{{ stats.total }}</div>
-        <div class="kpi-label">聊单号总数</div>
+      <div class="kpi-group left-group">
+        <div class="kpi-card">
+          <div class="kpi-val">{{ stats.total }}</div>
+          <div class="kpi-label">聊单号总数</div>
+        </div>
+        <div class="kpi-card kpi-active">
+          <div class="kpi-val green">{{ stats.active }}</div>
+          <div class="kpi-label">在用</div>
+        </div>
+        <div class="kpi-card kpi-disabled">
+          <div class="kpi-val gray">{{ stats.disabled }}</div>
+          <div class="kpi-label">已停用</div>
+        </div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-val green">{{ stats.active }}</div>
-        <div class="kpi-label">在用</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-val gray">{{ stats.disabled }}</div>
-        <div class="kpi-label">已停用</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-val blue">{{ stats.main }}</div>
-        <div class="kpi-label">主号</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-val orange">{{ stats.secondary }}</div>
-        <div class="kpi-label">次用号</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-val gray2">{{ stats.backup }}</div>
-        <div class="kpi-label">备用号</div>
+      <div class="kpi-divider"></div>
+      <div class="kpi-group right-group">
+        <div class="kpi-card kpi-main">
+          <div class="kpi-badge-wrap">
+            <span class="kpi-role-badge main">主</span>
+          </div>
+          <div class="kpi-val blue">{{ stats.main }}</div>
+          <div class="kpi-label">主号</div>
+        </div>
+        <div class="kpi-card kpi-secondary">
+          <div class="kpi-badge-wrap">
+            <span class="kpi-role-badge secondary">次</span>
+          </div>
+          <div class="kpi-val orange">{{ stats.secondary }}</div>
+          <div class="kpi-label">次用号</div>
+        </div>
+        <div class="kpi-card kpi-backup">
+          <div class="kpi-badge-wrap">
+            <span class="kpi-role-badge backup">备</span>
+          </div>
+          <div class="kpi-val gray2">{{ stats.backup }}</div>
+          <div class="kpi-label">备用号</div>
+        </div>
       </div>
     </div>
 
@@ -59,8 +73,9 @@
       :pagination="{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t:number) => `共 ${t} 条` }"
       row-key="id"
       size="middle"
-      :scroll="{ x: 1300 }"
+      :scroll="{ x: 1400 }"
       @change="onTableChange"
+      :row-class-name="(r: any) => r.status === '停用' ? 'row-disabled' : ''"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'account_no'">
@@ -99,7 +114,11 @@
         </template>
 
         <template v-if="column.key === 'status'">
-          <a-badge :status="record.status === '在用' ? 'success' : 'default'" :text="record.status" />
+          <div v-if="record.status === '停用'" class="status-disabled-cell">
+            <a-badge status="error" text="停用" />
+            <div v-if="record.disabled_reason" class="disabled-reason-text">{{ record.disabled_reason }}</div>
+          </div>
+          <a-badge v-else status="success" text="在用" />
         </template>
 
         <template v-if="column.key === 'action'">
@@ -145,10 +164,31 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="状态">
-              <a-select v-model:value="form.status">
+              <a-select v-model:value="form.status" @change="onStatusChange">
                 <a-select-option value="在用">在用</a-select-option>
                 <a-select-option value="停用">停用</a-select-option>
               </a-select>
+            </a-form-item>
+          </a-col>
+
+          <!-- 停用原因（仅停用时显示） -->
+          <a-col v-if="form.status === '停用'" :span="24">
+            <a-form-item label="停用原因" required>
+              <a-select v-model:value="form.disabled_reason_type" placeholder="选择停用原因" style="width:200px;margin-right:8px" @change="onDisabledReasonTypeChange">
+                <a-select-option value="账号封禁">账号封禁</a-select-option>
+                <a-select-option value="号码被封">号码被封</a-select-option>
+                <a-select-option value="设备损坏">设备损坏</a-select-option>
+                <a-select-option value="人员离职">人员离职</a-select-option>
+                <a-select-option value="主动停用">主动停用</a-select-option>
+                <a-select-option value="其他">其他</a-select-option>
+              </a-select>
+              <a-input
+                v-if="form.disabled_reason_type === '其他'"
+                v-model:value="form.disabled_reason_custom"
+                placeholder="请描述具体原因"
+                style="width:260px"
+              />
+              <div v-if="showDisabledReasonError" class="form-error-tip">请选择或填写停用原因</div>
             </a-form-item>
           </a-col>
 
@@ -252,13 +292,16 @@ const filterStatus = ref<string | undefined>(undefined)
 const stats = reactive({ total: 0, active: 0, disabled: 0, main: 0, secondary: 0, backup: 0 })
 const modalOpen = ref(false)
 const editId = ref<string | null>(null)
+const showDisabledReasonError = ref(false)
 
 const emptyForm = () => ({
   account_no: '', owner_name: '', account_role: '主号',
   phone_type: '个人', phone_number: '', pingme_number: '', email: '',
   ads_power_id: '', local_browser: '', physical_device: '', cloud_phone: '',
   sim_card_number: '', sim_card_expire: '' as string,
-  status: '在用', notes: '',
+  status: '在用', disabled_reason: '',
+  disabled_reason_type: '' as string, disabled_reason_custom: '',
+  notes: '',
 })
 const form = reactive(emptyForm())
 
@@ -270,14 +313,30 @@ function onSimExpireChange(v: Dayjs | null) {
   form.sim_card_expire = v ? v.format('YYYY-MM-DD') : ''
 }
 
+function onStatusChange(val: string) {
+  if (val !== '停用') {
+    form.disabled_reason_type = ''
+    form.disabled_reason_custom = ''
+    form.disabled_reason = ''
+    showDisabledReasonError.value = false
+  }
+}
+
+function onDisabledReasonTypeChange() {
+  showDisabledReasonError.value = false
+  if (form.disabled_reason_type !== '其他') {
+    form.disabled_reason_custom = ''
+  }
+}
+
 const roleColor: Record<string, string> = { '主号': 'blue', '次用号': 'orange', '备用号': 'default' }
 
 const columns = [
-  { title: '聊单号', key: 'account_no', width: 170 },
+  { title: '聊单号', key: 'account_no', width: 180 },
   { title: '归属人', dataIndex: 'owner_name', key: 'owner_name', width: 100 },
   { title: '手机号 / 邮箱', key: 'contact', width: 200 },
   { title: '登录环境', key: 'login_envs', width: 300 },
-  { title: '状态', key: 'status', width: 90 },
+  { title: '状态 / 停用原因', key: 'status', width: 160 },
   { title: '备注', dataIndex: 'notes', key: 'notes', width: 130, ellipsis: true },
   { title: '操作', key: 'action', width: 110, fixed: 'right' as const },
 ]
@@ -324,6 +383,9 @@ function openAdd() {
 
 function openEdit(row: any) {
   editId.value = row.id
+  const disabledReason = row.disabled_reason || ''
+  const presetOptions = ['账号封禁', '号码被封', '设备损坏', '人员离职', '主动停用']
+  const isPreset = presetOptions.includes(disabledReason)
   Object.assign(form, {
     account_no: row.account_no || '',
     owner_name: row.owner_name || '',
@@ -339,16 +401,34 @@ function openEdit(row: any) {
     sim_card_number: row.sim_card_number || '',
     sim_card_expire: row.sim_card_expire || '',
     status: row.status || '在用',
+    disabled_reason: disabledReason,
+    disabled_reason_type: isPreset ? disabledReason : (disabledReason ? '其他' : ''),
+    disabled_reason_custom: isPreset ? '' : disabledReason,
     notes: row.notes || '',
   })
+  showDisabledReasonError.value = false
   modalOpen.value = true
 }
 
 async function handleSave() {
   if (!form.account_no.trim()) { message.error('聊单号不能为空'); return }
+
+  if (form.status === '停用') {
+    const reason = form.disabled_reason_type === '其他' ? form.disabled_reason_custom.trim() : form.disabled_reason_type
+    if (!reason) {
+      showDisabledReasonError.value = true
+      message.error('请填写停用原因')
+      return
+    }
+    form.disabled_reason = reason
+  } else {
+    form.disabled_reason = ''
+  }
+
   saving.value = true
   try {
-    const payload: any = { ...form, updated_at: new Date().toISOString() }
+    const { disabled_reason_type, disabled_reason_custom, ...rest } = form
+    const payload: any = { ...rest, updated_at: new Date().toISOString() }
     if (!payload.sim_card_expire) payload.sim_card_expire = null
     if (editId.value) {
       await supabase.from('chat_accounts').update(payload).eq('id', editId.value)
@@ -376,15 +456,26 @@ onMounted(() => { loadData(); loadStats() })
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 0; }
 
-.kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 20px; }
-.kpi-card { background: #fff; border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.06); border: 1px solid #f0f0f0; }
-.kpi-val { font-size: 22px; font-weight: 700; color: #1677ff; }
+.kpi-row { display: flex; align-items: stretch; gap: 0; margin-bottom: 20px; background: #fff; border-radius: 12px; border: 1px solid #f0f0f0; box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; }
+.kpi-group { display: flex; flex: 1; }
+.left-group { flex: 0 0 auto; }
+.right-group { flex: 1; }
+.kpi-divider { width: 1px; background: #f0f0f0; margin: 16px 0; }
+.kpi-card { flex: 1; padding: 18px 16px; text-align: center; border-right: 1px solid #f0f0f0; position: relative; }
+.kpi-card:last-child { border-right: none; }
+.kpi-badge-wrap { height: 20px; display: flex; justify-content: center; align-items: center; margin-bottom: 4px; }
+.kpi-role-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; color: #fff; }
+.kpi-role-badge.main { background: #1677ff; }
+.kpi-role-badge.secondary { background: #fa8c16; }
+.kpi-role-badge.backup { background: #8c8c8c; }
+
+.kpi-val { font-size: 28px; font-weight: 700; color: #1677ff; line-height: 1; }
 .kpi-val.green { color: #52c41a; }
 .kpi-val.gray { color: #8c8c8c; }
 .kpi-val.gray2 { color: #aaa; }
 .kpi-val.blue { color: #1677ff; }
 .kpi-val.orange { color: #fa8c16; }
-.kpi-label { font-size: 12px; color: #8c8c8c; margin-top: 4px; }
+.kpi-label { font-size: 12px; color: #8c8c8c; margin-top: 6px; }
 
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 
@@ -396,7 +487,7 @@ onMounted(() => { loadData(); loadStats() })
 .contact-badge { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; color: #fff; flex-shrink: 0; }
 .contact-badge.pingme { background: #0ea5e9; }
 .contact-badge.phone { background: #059669; }
-.contact-badge.email { background: #7c3aed; }
+.contact-badge.email { background: #6d28d9; }
 .contact-val { font-size: 12px; color: #374151; font-family: monospace; }
 .text-none { color: #d1d5db; font-size: 12px; }
 
@@ -406,4 +497,12 @@ onMounted(() => { loadData(); loadStats() })
 .env-tag.local { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
 .env-tag.device { background: #e6f4ff; color: #0958d9; border: 1px solid #91caff; }
 .env-tag.cloud { background: #f9f0ff; color: #531dab; border: 1px solid #d3adf7; }
+
+.status-disabled-cell { display: flex; flex-direction: column; gap: 3px; }
+.disabled-reason-text { font-size: 11px; color: #ff4d4f; background: #fff1f0; border: 1px solid #ffccc7; padding: 1px 6px; border-radius: 3px; display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+:deep(.row-disabled) td { background: #fafafa !important; color: #9ca3af; }
+:deep(.row-disabled):hover td { background: #f5f5f5 !important; }
+
+.form-error-tip { color: #ff4d4f; font-size: 12px; margin-top: 4px; }
 </style>
