@@ -36,18 +36,20 @@
     <!-- Tab 切换 -->
     <a-tabs v-model:activeKey="activeTab" @change="onTabChange" class="ip-tabs">
       <a-tab-pane key="buyer" tab="买手 IP">
-        <!-- 筛选栏 -->
         <div class="filter-bar">
-          <a-input v-model:value="search" placeholder="搜索 IP / 供应商 / 聊单号 / 业务员" style="width:260px" allow-clear @change="loadData" />
+          <a-input v-model:value="search" placeholder="搜索 IP / 供应商 / 聊单号 / 业务员" style="width:280px" allow-clear @change="loadData" />
+          <a-select v-model:value="filterRegion" placeholder="地区" style="width:110px" allow-clear @change="loadData">
+            <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
+          </a-select>
           <a-select v-model:value="filterStatus" placeholder="状态" style="width:120px" allow-clear @change="loadData">
             <a-select-option value="使用中">使用中</a-select-option>
             <a-select-option value="待续费">待续费</a-select-option>
             <a-select-option value="已停用">已停用</a-select-option>
             <a-select-option value="已替换">已替换</a-select-option>
           </a-select>
-          <a-select v-model:value="filterDoNotRenew" placeholder="续费状态" style="width:120px" allow-clear @change="loadData">
-            <a-select-option :value="true">标记不续费</a-select-option>
-            <a-select-option :value="false">正常续费</a-select-option>
+          <a-select v-model:value="filterDoNotRenew" placeholder="续费标记" style="width:120px" allow-clear @change="loadData">
+            <a-select-option :value="true">不续费</a-select-option>
+            <a-select-option :value="false">正常</a-select-option>
           </a-select>
         </div>
 
@@ -58,7 +60,7 @@
           :pagination="{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t:number) => `共 ${t} 条` }"
           row-key="id"
           size="middle"
-          :scroll="{ x: 1100 }"
+          :scroll="{ x: 1200 }"
           @change="onTableChange"
           :row-class-name="(r: any) => r.do_not_renew ? 'row-no-renew' : ''"
         >
@@ -68,6 +70,10 @@
                 <span class="ip-addr">{{ record.ip_address }}</span>
                 <a-tag v-if="record.do_not_renew" color="red" size="small">不续费</a-tag>
               </div>
+            </template>
+            <template v-if="column.key === 'region'">
+              <a-tag v-if="record.region" color="geekblue">{{ record.region }}</a-tag>
+              <span v-else class="text-empty">—</span>
             </template>
             <template v-if="column.key === 'chat_account'">
               <div v-if="record.chat_account" class="binding-cell">
@@ -90,11 +96,13 @@
               <span :class="getRenewClass(record.next_renew_at)">{{ record.next_renew_at || '-' }}</span>
             </template>
             <template v-if="column.key === 'action'">
-              <a-space>
+              <a-space size="small" :wrap="false">
                 <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
                 <a-button type="link" size="small" @click="quickRenew(record)">续费</a-button>
-                <a-button v-if="!record.do_not_renew" type="link" size="small" danger @click="markNoRenew(record)">标记不续费</a-button>
-                <a-button v-else type="link" size="small" @click="unmarkNoRenew(record)">取消标记</a-button>
+                <a-button type="link" size="small" @click="openReplace(record)">替换</a-button>
+                <a-button type="link" size="small" @click="openHistory(record)">记录</a-button>
+                <a-button v-if="!record.do_not_renew" type="link" size="small" danger @click="markNoRenew(record)">不续费</a-button>
+                <a-button v-else type="link" size="small" @click="unmarkNoRenew(record)">恢复</a-button>
                 <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)">
                   <a-button type="link" size="small" danger>删除</a-button>
                 </a-popconfirm>
@@ -105,18 +113,20 @@
       </a-tab-pane>
 
       <a-tab-pane key="server" tab="服务器 IP">
-        <!-- 筛选栏 -->
         <div class="filter-bar">
-          <a-input v-model:value="search" placeholder="搜索 IP / 供应商 / 贝宝账号" style="width:260px" allow-clear @change="loadData" />
+          <a-input v-model:value="search" placeholder="搜索 IP / 供应商 / 贝宝账号" style="width:280px" allow-clear @change="loadData" />
+          <a-select v-model:value="filterRegion" placeholder="地区" style="width:110px" allow-clear @change="loadData">
+            <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
+          </a-select>
           <a-select v-model:value="filterStatus" placeholder="状态" style="width:120px" allow-clear @change="loadData">
             <a-select-option value="使用中">使用中</a-select-option>
             <a-select-option value="待续费">待续费</a-select-option>
             <a-select-option value="已停用">已停用</a-select-option>
             <a-select-option value="已替换">已替换</a-select-option>
           </a-select>
-          <a-select v-model:value="filterDoNotRenew" placeholder="续费状态" style="width:120px" allow-clear @change="loadData">
-            <a-select-option :value="true">标记不续费</a-select-option>
-            <a-select-option :value="false">正常续费</a-select-option>
+          <a-select v-model:value="filterDoNotRenew" placeholder="续费标记" style="width:120px" allow-clear @change="loadData">
+            <a-select-option :value="true">不续费</a-select-option>
+            <a-select-option :value="false">正常</a-select-option>
           </a-select>
         </div>
 
@@ -127,7 +137,7 @@
           :pagination="{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t:number) => `共 ${t} 条` }"
           row-key="id"
           size="middle"
-          :scroll="{ x: 1100 }"
+          :scroll="{ x: 1200 }"
           @change="onTableChange"
           :row-class-name="(r: any) => r.do_not_renew ? 'row-no-renew' : ''"
         >
@@ -137,6 +147,10 @@
                 <span class="ip-addr">{{ record.ip_address }}</span>
                 <a-tag v-if="record.do_not_renew" color="red" size="small">不续费</a-tag>
               </div>
+            </template>
+            <template v-if="column.key === 'region'">
+              <a-tag v-if="record.region" color="geekblue">{{ record.region }}</a-tag>
+              <span v-else class="text-empty">—</span>
             </template>
             <template v-if="column.key === 'paypal_account'">
               <div v-if="record.paypal_account" class="binding-cell">
@@ -155,11 +169,13 @@
               <span :class="getRenewClass(record.next_renew_at)">{{ record.next_renew_at || '-' }}</span>
             </template>
             <template v-if="column.key === 'action'">
-              <a-space>
+              <a-space size="small" :wrap="false">
                 <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
                 <a-button type="link" size="small" @click="quickRenew(record)">续费</a-button>
-                <a-button v-if="!record.do_not_renew" type="link" size="small" danger @click="markNoRenew(record)">标记不续费</a-button>
-                <a-button v-else type="link" size="small" @click="unmarkNoRenew(record)">取消标记</a-button>
+                <a-button type="link" size="small" @click="openReplace(record)">替换</a-button>
+                <a-button type="link" size="small" @click="openHistory(record)">记录</a-button>
+                <a-button v-if="!record.do_not_renew" type="link" size="small" danger @click="markNoRenew(record)">不续费</a-button>
+                <a-button v-else type="link" size="small" @click="unmarkNoRenew(record)">恢复</a-button>
                 <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)">
                   <a-button type="link" size="small" danger>删除</a-button>
                 </a-popconfirm>
@@ -174,7 +190,7 @@
     <a-modal
       v-model:open="modalOpen"
       :title="editId ? '编辑 IP' : '新增 IP'"
-      width="620px"
+      width="640px"
       @ok="handleSave"
       :confirm-loading="saving"
     >
@@ -195,6 +211,13 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
+            <a-form-item label="地区">
+              <a-select v-model:value="form.region" allow-clear show-search placeholder="选择或输入地区">
+                <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
             <a-form-item label="供应商">
               <a-input v-model:value="form.supplier" placeholder="供应商名称" />
             </a-form-item>
@@ -205,7 +228,6 @@
             </a-form-item>
           </a-col>
 
-          <!-- 买手IP专属字段 -->
           <template v-if="form.ip_type === '买手IP'">
             <a-col :span="12">
               <a-form-item label="绑定聊单号">
@@ -219,7 +241,6 @@
             </a-col>
           </template>
 
-          <!-- 服务器IP专属字段 -->
           <template v-if="form.ip_type === '服务器IP'">
             <a-col :span="24">
               <a-form-item label="绑定贝宝账号">
@@ -271,8 +292,8 @@
           <a-col :span="24">
             <a-form-item label="">
               <a-checkbox v-model:checked="form.do_not_renew">
-                <span style="color:#dc2626; font-weight:600">标记不续费</span>
-                <span style="color:#9ca3af; font-size:12px; margin-left:6px">（聊单号或贝宝已挂，下次到期不再续费）</span>
+                <span style="color:#dc2626;font-weight:600">标记不续费</span>
+                <span style="color:#9ca3af;font-size:12px;margin-left:6px">（到期不再续费）</span>
               </a-checkbox>
             </a-form-item>
           </a-col>
@@ -296,6 +317,95 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- IP 替换 弹窗 -->
+    <a-modal
+      v-model:open="replaceOpen"
+      title="IP 替换"
+      width="520px"
+      @ok="handleReplace"
+      :confirm-loading="saving"
+      ok-text="确认替换"
+    >
+      <div class="replace-info">
+        <div class="replace-old">
+          <span class="replace-label">旧 IP</span>
+          <span class="ip-addr">{{ replaceTarget?.ip_address }}</span>
+          <a-tag v-if="replaceTarget?.region" color="geekblue" size="small">{{ replaceTarget?.region }}</a-tag>
+        </div>
+        <div class="replace-arrow">→</div>
+        <div class="replace-new">
+          <span class="replace-label">新 IP</span>
+          <a-input v-model:value="replaceForm.new_ip_address" placeholder="新 IP 地址" style="width:180px" />
+        </div>
+      </div>
+      <a-form layout="vertical" style="margin-top:16px">
+        <a-row :gutter="14">
+          <a-col :span="12">
+            <a-form-item label="替换日期">
+              <a-input v-model:value="replaceForm.replaced_at" placeholder="YYYY-MM-DD" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="操作人">
+              <a-input v-model:value="replaceForm.operated_by" placeholder="姓名" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="替换原因">
+              <a-select v-model:value="replaceForm.reason" allow-clear>
+                <a-select-option value="聊单号封号">聊单号封号</a-select-option>
+                <a-select-option value="贝宝封号">贝宝封号</a-select-option>
+                <a-select-option value="IP 被封">IP 被封</a-select-option>
+                <a-select-option value="到期未续">到期未续</a-select-option>
+                <a-select-option value="主动更换">主动更换</a-select-option>
+                <a-select-option value="其他">其他</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="备注">
+              <a-textarea v-model:value="replaceForm.notes" :rows="2" placeholder="可填写详细情况" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+      <a-alert type="info" show-icon style="margin-top:4px">
+        <template #message>替换后旧 IP 状态将自动设为「已替换」，并新增一条替换记录</template>
+      </a-alert>
+    </a-modal>
+
+    <!-- 替换记录 抽屉 -->
+    <a-drawer
+      v-model:open="historyOpen"
+      :title="`替换记录 — ${historyTarget?.ip_address}`"
+      width="620"
+      placement="right"
+    >
+      <div v-if="historyLoading" class="drawer-loading">
+        <a-spin />
+      </div>
+      <div v-else-if="historyList.length === 0" class="drawer-empty">暂无替换记录</div>
+      <div v-else>
+        <a-timeline>
+          <a-timeline-item v-for="log in historyList" :key="log.id" color="blue">
+            <div class="log-header">
+              <span class="log-date">{{ log.replaced_at }}</span>
+              <a-tag v-if="log.reason" color="orange">{{ log.reason }}</a-tag>
+              <span v-if="log.operated_by" class="log-operator">操作人：{{ log.operated_by }}</span>
+            </div>
+            <div class="log-body">
+              <div class="log-ip-row">
+                <span class="log-ip old">{{ log.old_ip_address }}</span>
+                <span class="log-arrow">→</span>
+                <span class="log-ip new">{{ log.new_ip_address }}</span>
+              </div>
+              <div v-if="log.notes" class="log-notes">{{ log.notes }}</div>
+            </div>
+          </a-timeline-item>
+        </a-timeline>
+      </div>
+    </a-drawer>
   </div>
 </template>
 
@@ -313,8 +423,11 @@ const page = ref(1)
 const pageSize = ref(20)
 const search = ref('')
 const filterStatus = ref<string | undefined>(undefined)
+const filterRegion = ref<string | undefined>(undefined)
 const filterDoNotRenew = ref<boolean | undefined>(undefined)
 const activeTab = ref<'buyer' | 'server'>('buyer')
+
+const regionOptions = ['美国', '日本', '英国', '德国', '加拿大', '澳大利亚', '法国', '意大利', '西班牙', '墨西哥', '印度', '新加坡', '其他']
 
 const stats = reactive({ total: 0, active: 0, pending: 0, expiringSoon: 0, disabled: 0, doNotRenew: 0 })
 
@@ -324,9 +437,18 @@ const renewOpen = ref(false)
 const renewId = ref<string | null>(null)
 const renewForm = reactive({ last_renewed_at: '', next_renew_at: '' })
 
+const replaceOpen = ref(false)
+const replaceTarget = ref<any>(null)
+const replaceForm = reactive({ new_ip_address: '', replaced_at: '', reason: '', operated_by: '', notes: '' })
+
+const historyOpen = ref(false)
+const historyTarget = ref<any>(null)
+const historyLoading = ref(false)
+const historyList = ref<any[]>([])
+
 const emptyForm = () => ({
   ip_address: '', ip_type: activeTab.value === 'buyer' ? '买手IP' : '服务器IP',
-  supplier: '', phone_number: '',
+  region: '', supplier: '', phone_number: '',
   chat_account: '', staff_name: '', paypal_account: '',
   renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '',
   status: '使用中', assigned_to: '', notes: '', do_not_renew: false,
@@ -336,28 +458,28 @@ const form = reactive(emptyForm())
 const statusBadge: Record<string, string> = { '使用中': 'success', '待续费': 'warning', '已停用': 'error', '已替换': 'default' }
 
 const buyerColumns = [
-  { title: 'IP 地址', key: 'ip_address', width: 180 },
-  { title: '绑定聊单号', key: 'chat_account', width: 150 },
-  { title: '业务员', key: 'staff_name', width: 100 },
-  { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 100 },
-  { title: '手机号', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
+  { title: 'IP 地址', key: 'ip_address', width: 170 },
+  { title: '地区', key: 'region', width: 90 },
+  { title: '绑定聊单号', key: 'chat_account', width: 140 },
+  { title: '业务员', key: 'staff_name', width: 90 },
+  { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 90 },
   { title: '状态', key: 'status', width: 90 },
-  { title: '续费', key: 'renew', width: 110 },
+  { title: '续费', key: 'renew', width: 100 },
   { title: '下次到期', key: 'next_renew_at', width: 110 },
-  { title: '备注', dataIndex: 'notes', key: 'notes', width: 120, ellipsis: true },
-  { title: '操作', key: 'action', width: 220, fixed: 'right' as const },
+  { title: '备注', dataIndex: 'notes', key: 'notes', width: 110, ellipsis: true },
+  { title: '操作', key: 'action', width: 260, fixed: 'right' as const },
 ]
 
 const serverColumns = [
-  { title: 'IP 地址', key: 'ip_address', width: 180 },
-  { title: '绑定贝宝账号', key: 'paypal_account', width: 220 },
-  { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 110 },
-  { title: '手机号', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
+  { title: 'IP 地址', key: 'ip_address', width: 170 },
+  { title: '地区', key: 'region', width: 90 },
+  { title: '绑定贝宝账号', key: 'paypal_account', width: 210 },
+  { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 90 },
   { title: '状态', key: 'status', width: 90 },
-  { title: '续费', key: 'renew', width: 110 },
+  { title: '续费', key: 'renew', width: 100 },
   { title: '下次到期', key: 'next_renew_at', width: 110 },
-  { title: '备注', dataIndex: 'notes', key: 'notes', width: 130, ellipsis: true },
-  { title: '操作', key: 'action', width: 220, fixed: 'right' as const },
+  { title: '备注', dataIndex: 'notes', key: 'notes', width: 110, ellipsis: true },
+  { title: '操作', key: 'action', width: 260, fixed: 'right' as const },
 ]
 
 function getRenewClass(date: string) {
@@ -383,6 +505,7 @@ async function loadData() {
       q = q.or(`ip_address.ilike.%${search.value}%,supplier.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%,paypal_account.ilike.%${search.value}%`)
     }
     if (filterStatus.value) q = q.eq('status', filterStatus.value)
+    if (filterRegion.value) q = q.eq('region', filterRegion.value)
     if (filterDoNotRenew.value !== undefined && filterDoNotRenew.value !== null) {
       q = q.eq('do_not_renew', filterDoNotRenew.value)
     }
@@ -412,6 +535,7 @@ function onTabChange() {
   page.value = 1
   search.value = ''
   filterStatus.value = undefined
+  filterRegion.value = undefined
   filterDoNotRenew.value = undefined
   loadData()
 }
@@ -433,7 +557,7 @@ function openEdit(row: any) {
   editId.value = row.id
   Object.assign(form, {
     ip_address: row.ip_address || '', ip_type: row.ip_type || currentIpType(),
-    supplier: row.supplier || '', phone_number: row.phone_number || '',
+    region: row.region || '', supplier: row.supplier || '', phone_number: row.phone_number || '',
     chat_account: row.chat_account || '', staff_name: row.staff_name || '',
     paypal_account: row.paypal_account || '',
     renew_cycle: row.renew_cycle || '月付', renew_price: row.renew_price || 0,
@@ -486,18 +610,84 @@ async function handleRenew() {
   } finally { saving.value = false }
 }
 
+function openReplace(row: any) {
+  replaceTarget.value = row
+  replaceForm.new_ip_address = ''
+  replaceForm.replaced_at = dayjs().format('YYYY-MM-DD')
+  replaceForm.reason = ''
+  replaceForm.operated_by = ''
+  replaceForm.notes = ''
+  replaceOpen.value = true
+}
+
+async function handleReplace() {
+  if (!replaceForm.new_ip_address.trim()) { message.error('请输入新 IP 地址'); return }
+  if (!replaceTarget.value) return
+  saving.value = true
+  try {
+    const oldRow = replaceTarget.value
+    const { data: newIp } = await supabase.from('ip_resources').insert({
+      ip_address: replaceForm.new_ip_address.trim(),
+      ip_type: oldRow.ip_type,
+      region: oldRow.region || '',
+      supplier: oldRow.supplier || '',
+      phone_number: oldRow.phone_number || '',
+      chat_account: oldRow.chat_account || '',
+      staff_name: oldRow.staff_name || '',
+      paypal_account: oldRow.paypal_account || '',
+      renew_cycle: oldRow.renew_cycle || '月付',
+      renew_price: oldRow.renew_price || 0,
+      status: '使用中',
+      assigned_to: oldRow.assigned_to || '',
+      notes: '',
+      do_not_renew: false,
+    }).select().single()
+
+    await supabase.from('ip_resources').update({
+      status: '已替换',
+      updated_at: new Date().toISOString(),
+    }).eq('id', oldRow.id)
+
+    await supabase.from('ip_replacement_logs').insert({
+      old_ip_id: oldRow.id,
+      new_ip_id: newIp?.id || null,
+      old_ip_address: oldRow.ip_address,
+      new_ip_address: replaceForm.new_ip_address.trim(),
+      ip_type: oldRow.ip_type,
+      replaced_at: replaceForm.replaced_at || dayjs().format('YYYY-MM-DD'),
+      reason: replaceForm.reason || '',
+      operated_by: replaceForm.operated_by || '',
+      notes: replaceForm.notes || '',
+    })
+
+    message.success('替换成功，已新增新 IP 并记录替换日志')
+    replaceOpen.value = false
+    loadData(); loadStats()
+  } finally { saving.value = false }
+}
+
+async function openHistory(row: any) {
+  historyTarget.value = row
+  historyOpen.value = true
+  historyLoading.value = true
+  try {
+    const { data } = await supabase
+      .from('ip_replacement_logs')
+      .select('*')
+      .or(`old_ip_id.eq.${row.id},new_ip_id.eq.${row.id}`)
+      .order('replaced_at', { ascending: false })
+    historyList.value = data || []
+  } finally { historyLoading.value = false }
+}
+
 async function markNoRenew(row: any) {
-  await supabase.from('ip_resources').update({
-    do_not_renew: true, updated_at: new Date().toISOString(),
-  }).eq('id', row.id)
+  await supabase.from('ip_resources').update({ do_not_renew: true, updated_at: new Date().toISOString() }).eq('id', row.id)
   message.warning('已标记为不续费')
   loadData(); loadStats()
 }
 
 async function unmarkNoRenew(row: any) {
-  await supabase.from('ip_resources').update({
-    do_not_renew: false, updated_at: new Date().toISOString(),
-  }).eq('id', row.id)
+  await supabase.from('ip_resources').update({ do_not_renew: false, updated_at: new Date().toISOString() }).eq('id', row.id)
   message.success('已取消不续费标记')
   loadData(); loadStats()
 }
@@ -541,9 +731,7 @@ onMounted(() => { loadData(); loadStats() })
 .binding-val.mono { font-family: monospace; font-size: 12px; }
 
 .staff-badge { font-size: 12px; background: #eff6ff; color: #2563eb; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
-
 .renew-price { font-size: 12px; color: #555; }
-
 .text-empty { color: #d1d5db; font-size: 13px; }
 
 .expired { color: #ff4d4f; font-weight: 600; }
@@ -552,4 +740,24 @@ onMounted(() => { loadData(); loadStats() })
 
 :deep(.row-no-renew) td { background: #fff7ed !important; }
 :deep(.row-no-renew):hover td { background: #ffedd5 !important; }
+
+.replace-info { display: flex; align-items: center; gap: 12px; background: #f8faff; border: 1px solid #e0e7ff; border-radius: 8px; padding: 12px 16px; }
+.replace-label { font-size: 11px; color: #9ca3af; margin-right: 6px; }
+.replace-arrow { font-size: 20px; color: #6b7280; flex-shrink: 0; }
+.replace-old { display: flex; align-items: center; gap: 6px; }
+.replace-new { display: flex; align-items: center; gap: 6px; }
+
+.drawer-loading { display: flex; justify-content: center; padding: 40px; }
+.drawer-empty { text-align: center; color: #9ca3af; padding: 40px; }
+
+.log-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.log-date { font-size: 13px; font-weight: 600; color: #374151; }
+.log-operator { font-size: 12px; color: #9ca3af; }
+.log-body { background: #f9fafb; border-radius: 6px; padding: 8px 12px; }
+.log-ip-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.log-ip { font-family: monospace; font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+.log-ip.old { background: #fee2e2; color: #b91c1c; }
+.log-ip.new { background: #dcfce7; color: #166534; }
+.log-arrow { color: #9ca3af; font-size: 14px; }
+.log-notes { font-size: 12px; color: #6b7280; margin-top: 4px; }
 </style>

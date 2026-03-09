@@ -65,10 +65,6 @@
         <template v-if="column.key === 'platform'">
           <a-tag :color="platformColor[record.platform] || 'default'">{{ record.platform }}</a-tag>
         </template>
-        <template v-if="column.key === 'ip_info'">
-          <span v-if="record.ip_resources" class="ip-chip">{{ record.ip_resources.ip_address }}</span>
-          <span v-else class="text-muted">未绑定</span>
-        </template>
         <template v-if="column.key === 'env_info'">
           <div class="env-info">
             <span v-if="record.ads_power_id" class="env-tag ads">ADS: {{ record.ads_power_id }}</span>
@@ -128,15 +124,6 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="绑定 IP">
-              <a-select v-model:value="form.ip_id" placeholder="选择IP资源" allow-clear show-search>
-                <a-select-option v-for="ip in ipOptions" :key="ip.id" :value="ip.id">
-                  {{ ip.ip_address }} ({{ ip.ip_type }})
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
             <a-form-item label="手机号">
               <a-input v-model:value="form.phone_number" />
             </a-form-item>
@@ -185,15 +172,13 @@ const search = ref('')
 const filterOwnerType = ref<string | undefined>(undefined)
 const filterPlatform = ref<string | undefined>(undefined)
 const filterStatus = ref<string | undefined>(undefined)
-const ipOptions = ref<any[]>([])
-
 const stats = reactive({ total: 0, active: 0, disabled: 0, salesman: 0, buyer: 0 })
 const modalOpen = ref(false)
 const editId = ref<string | null>(null)
 
 const emptyForm = () => ({
   account_no: '', owner_type: '业务员', owner_name: '', platform: '微信',
-  ip_id: null as string | null, phone_number: '', ads_power_id: '', local_browser: '',
+  phone_number: '', ads_power_id: '', local_browser: '',
   status: '在用', notes: '',
 })
 const form = reactive(emptyForm())
@@ -205,7 +190,6 @@ const columns = [
   { title: '归属', key: 'owner_type', width: 90 },
   { title: '归属人', dataIndex: 'owner_name', key: 'owner_name', width: 100 },
   { title: '平台', key: 'platform', width: 90 },
-  { title: '绑定 IP', key: 'ip_info', width: 140 },
   { title: '手机号', dataIndex: 'phone_number', key: 'phone_number', width: 130 },
   { title: '浏览器环境', key: 'env_info', width: 200 },
   { title: '状态', key: 'status', width: 90 },
@@ -213,15 +197,10 @@ const columns = [
   { title: '操作', key: 'action', width: 120, fixed: 'right' as const },
 ]
 
-async function loadIpOptions() {
-  const { data } = await supabase.from('ip_resources').select('id,ip_address,ip_type').order('ip_address')
-  ipOptions.value = data || []
-}
-
 async function loadData() {
   loading.value = true
   try {
-    let q = supabase.from('chat_accounts').select('*, ip_resources(ip_address,ip_type)', { count: 'exact' })
+    let q = supabase.from('chat_accounts').select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
     if (search.value) q = q.or(`account_no.ilike.%${search.value}%,owner_name.ilike.%${search.value}%,phone_number.ilike.%${search.value}%`)
     if (filterOwnerType.value) q = q.eq('owner_type', filterOwnerType.value)
@@ -261,7 +240,7 @@ function openEdit(row: any) {
   Object.assign(form, {
     account_no: row.account_no || '', owner_type: row.owner_type || '业务员',
     owner_name: row.owner_name || '', platform: row.platform || '微信',
-    ip_id: row.ip_id || null, phone_number: row.phone_number || '',
+    phone_number: row.phone_number || '',
     ads_power_id: row.ads_power_id || '', local_browser: row.local_browser || '',
     status: row.status || '在用', notes: row.notes || '',
   })
@@ -292,7 +271,7 @@ async function deleteRow(id: string) {
   loadData(); loadStats()
 }
 
-onMounted(() => { loadData(); loadStats(); loadIpOptions() })
+onMounted(() => { loadData(); loadStats() })
 </script>
 
 <style scoped>
@@ -311,7 +290,6 @@ onMounted(() => { loadData(); loadStats(); loadIpOptions() })
 
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 
-.ip-chip { background: #e6f4ff; color: #1677ff; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-family: monospace; }
 .text-muted { color: #bbb; font-size: 12px; }
 
 .env-info { display: flex; flex-direction: column; gap: 3px; }
