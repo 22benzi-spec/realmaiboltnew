@@ -89,8 +89,7 @@ export const allNavGroups: NavGroup[] = [
     roles: ['管理员'],
     items: [
       { id: 'chat-accounts', label: '聊单号管理', icon: CommentOutlined },
-      { id: 'ip-resources', label: 'IP 资源库', icon: WifiOutlined },
-      { id: 'servers', label: '服务器管理', icon: CloudServerOutlined },
+      { id: 'ip-resources', label: '行政资源管理', icon: WifiOutlined },
     ],
   },
 ]
