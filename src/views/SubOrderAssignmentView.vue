@@ -160,7 +160,10 @@
                   <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_action'">
-                  <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
+                  <a-space>
+                    <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
+                    <a-button type="link" size="small" danger @click="openMarkIssue(sub)">问题单</a-button>
+                  </a-space>
                 </template>
               </template>
             </a-table>
@@ -385,6 +388,41 @@
                 <a-button type="link" size="small" danger @click="clearBuyer">取消</a-button>
               </div>
             </div>
+          </a-form-item>
+        </a-form>
+      </div>
+    </a-modal>
+
+    <!-- 标记问题单弹窗 -->
+    <a-modal
+      v-model:open="issueModalOpen"
+      title="标记为售后问题单"
+      @ok="handleMarkIssue"
+      :confirm-loading="markingIssue"
+      ok-text="确认创建"
+      cancel-text="取消"
+      width="520px"
+    >
+      <div v-if="issueSubOrder" class="issue-modal-body">
+        <div class="issue-sub-info">
+          <div class="issue-sub-row"><span class="issue-sub-label">子订单号</span><span class="issue-sub-val mono">{{ issueSubOrder.sub_order_number }}</span></div>
+          <div class="issue-sub-row"><span class="issue-sub-label">ASIN</span><span class="issue-sub-val">{{ issueSubOrder.asin }}</span></div>
+          <div class="issue-sub-row"><span class="issue-sub-label">店铺</span><span class="issue-sub-val">{{ issueSubOrder.store_name }}</span></div>
+          <div class="issue-sub-row"><span class="issue-sub-label">产品价格</span><span class="issue-sub-val issue-price">${{ Number(issueSubOrder.product_price || 0).toFixed(2) }}</span></div>
+          <div class="issue-sub-row"><span class="issue-sub-label">买手</span><span class="issue-sub-val">{{ issueSubOrder.buyer_name || '未分配' }}</span></div>
+          <div class="issue-sub-row"><span class="issue-sub-label">亚马逊订单号</span><span class="issue-sub-val mono">{{ issueSubOrder.amazon_order_id || '--' }}</span></div>
+        </div>
+        <a-form layout="vertical" style="margin-top:16px">
+          <a-form-item label="问题类型">
+            <a-radio-group v-model:value="issueType" button-style="solid">
+              <a-radio-button value="不下单">不下单</a-radio-button>
+              <a-radio-button value="取消">取消</a-radio-button>
+              <a-radio-button value="退款">退款</a-radio-button>
+              <a-radio-button value="无此订单">无此订单</a-radio-button>
+            </a-radio-group>
+          </a-form-item>
+          <a-form-item label="问题描述（可选）">
+            <a-textarea v-model:value="issueDescription" :rows="2" placeholder="简要描述问题..." />
           </a-form-item>
         </a-form>
       </div>
@@ -814,6 +852,71 @@ function onPageChange(page: number, pageSize: number) {
   load()
 }
 
+const issueModalOpen = ref(false)
+const issueSubOrder = ref<any>(null)
+const issueType = ref('不下单')
+const issueDescription = ref('')
+const markingIssue = ref(false)
+
+function openMarkIssue(sub: any) {
+  issueSubOrder.value = sub
+  issueType.value = '不下单'
+  issueDescription.value = ''
+  issueModalOpen.value = true
+}
+
+async function handleMarkIssue() {
+  if (!issueSubOrder.value) return
+  markingIssue.value = true
+  try {
+    const so = issueSubOrder.value
+    const { data: orderData } = await supabase
+      .from('erp_orders')
+      .select('order_number, sales_person')
+      .eq('id', so.order_id)
+      .maybeSingle()
+
+    const { data: existing } = await supabase
+      .from('after_sale_issues')
+      .select('id')
+      .eq('sub_order_id', so.id)
+      .maybeSingle()
+
+    if (existing) {
+      message.warning('该子订单已存在问题单，请前往售后问题单页面查看')
+      issueModalOpen.value = false
+      return
+    }
+
+    const { error } = await supabase.from('after_sale_issues').insert({
+      sub_order_id: so.id,
+      sub_order_number: so.sub_order_number,
+      order_id: so.order_id,
+      order_number: orderData?.order_number || so._order_number || '',
+      buyer_id: so.buyer_id || null,
+      buyer_name: so.buyer_name || '',
+      staff_id: so.staff_id || null,
+      staff_name: so.staff_name || '',
+      customer_name: so.customer_name || '',
+      asin: so.asin || '',
+      store_name: so.store_name || '',
+      product_price: Number(so.product_price || 0),
+      commission_fee: Number(so.commission_fee || 0),
+      issue_type: issueType.value,
+      description: issueDescription.value,
+      old_amazon_order_id: so.amazon_order_id || '',
+      issue_status: '待处理',
+    })
+    if (error) throw error
+    message.success('问题单已创建，请前往售后问题单页面处理')
+    issueModalOpen.value = false
+  } catch (e: any) {
+    message.error('创建失败：' + e.message)
+  } finally {
+    markingIssue.value = false
+  }
+}
+
 onMounted(() => { load(); loadStaff() })
 </script>
 
@@ -1089,4 +1192,20 @@ onMounted(() => { load(); loadStaff() })
   color: #166534;
 }
 .buyer-selected-chip strong { color: #15803d; }
+
+.issue-modal-body { padding: 4px 0; }
+.issue-sub-info {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.issue-sub-row { display: flex; align-items: center; gap: 8px; }
+.issue-sub-label { font-size: 11px; color: #9a3412; min-width: 80px; font-weight: 500; }
+.issue-sub-val { font-size: 13px; color: #1c1917; }
+.issue-sub-val.mono { font-family: 'Courier New', monospace; font-size: 12px; }
+.issue-price { font-weight: 700; color: #dc2626; }
 </style>
