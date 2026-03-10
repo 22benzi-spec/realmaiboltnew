@@ -87,6 +87,7 @@
                 <template v-if="column.key === 'country'"><a-tag :color="countryColor[record.country]">{{ countryLabel[record.country] }}</a-tag></template>
                 <template v-if="column.key === 'face_value_usd'">{{ record.face_value_usd }} {{ currencySymbol(record.country) }}</template>
                 <template v-if="column.key === 'available_count'"><span class="count-available">{{ record.available_count }}</span></template>
+                <template v-if="column.key === 'latest_import_at'"><span class="date-text">{{ record.latest_import_at ? dayjs(record.latest_import_at).format('MM-DD HH:mm') : '-' }}</span></template>
                 <template v-if="column.key === 'action'"><a-button type="link" size="small" @click="openDetailDrawer(record, 'available')">查看明细</a-button></template>
               </template>
             </a-table>
@@ -513,13 +514,18 @@ async function loadStats() {
 async function loadSpecs() {
   specsLoading.value = true
   try {
-    const { data, error } = await supabase.from('gift_cards').select('id, country, face_value_usd, status, exchange_rate')
+    const { data, error } = await supabase.from('gift_cards').select('id, country, face_value_usd, status, exchange_rate, created_at')
     if (error) throw error
     const map: Record<string, any> = {}
     for (const card of (data || [])) {
       const key = `${card.country}_${card.face_value_usd}`
-      if (!map[key]) map[key] = { spec_key: key, country: card.country, face_value_usd: card.face_value_usd, available_count: 0, used_count: 0, voided_count: 0, rate_sum: 0, rate_count: 0 }
-      if (card.status === '未使用') map[key].available_count++
+      if (!map[key]) map[key] = { spec_key: key, country: card.country, face_value_usd: card.face_value_usd, available_count: 0, used_count: 0, voided_count: 0, rate_sum: 0, rate_count: 0, latest_import_at: null }
+      if (card.status === '未使用') {
+        map[key].available_count++
+        if (!map[key].latest_import_at || card.created_at > map[key].latest_import_at) {
+          map[key].latest_import_at = card.created_at
+        }
+      }
       else if (card.status === '已使用') map[key].used_count++
       else if (card.status === '已作废') map[key].voided_count++
       if (card.exchange_rate) { map[key].rate_sum += Number(card.exchange_rate); map[key].rate_count++ }
@@ -738,6 +744,7 @@ const specColumns = [
   { title: '国家', key: 'country', width: 120 },
   { title: '面值', key: 'face_value_usd', width: 110 },
   { title: '可用库存', key: 'available_count', dataIndex: 'available_count', width: 100 },
+  { title: '入库时间', key: 'latest_import_at', width: 130 },
   { title: '平均汇率', dataIndex: 'avg_exchange_rate', key: 'avg_exchange_rate', width: 100 },
   { title: '操作', key: 'action', width: 100 },
 ]

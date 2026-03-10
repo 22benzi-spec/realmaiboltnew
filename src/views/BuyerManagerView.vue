@@ -162,7 +162,12 @@
           <a-form :model="editForm" layout="vertical" style="padding-top:8px">
             <a-row :gutter="14">
               <a-col :span="10">
-                <a-form-item label="买手名" required><a-input v-model:value="editForm.name" /></a-form-item>
+                <a-form-item label="买手名" required>
+                  <a-input v-model:value="editForm.name" @blur="onNameBlur" />
+                </a-form-item>
+                <div v-if="editForm.former_names && editForm.former_names.length" class="former-names-hint">
+                  曾用名：<span v-for="n in editForm.former_names" :key="n" class="former-name-tag">{{ n }}</span>
+                </div>
               </a-col>
               <a-col :span="8">
                 <a-form-item label="国家">
@@ -324,6 +329,9 @@
               {{ drawerBuyer.name }}
               <span class="drawer-number">{{ drawerBuyer.buyer_number }}</span>
               <a-tag v-if="drawerBuyer.is_prime_member" color="gold" size="small">Prime</a-tag>
+            </div>
+            <div v-if="drawerBuyer.former_names && drawerBuyer.former_names.length" class="drawer-former-names">
+              曾用名：<span v-for="n in drawerBuyer.former_names" :key="n" class="former-name-tag">{{ n }}</span>
             </div>
             <div class="drawer-meta">
               <a-tag :color="statusColor[drawerBuyer.status] || 'default'" size="small">{{ drawerBuyer.status }}</a-tag>
@@ -545,6 +553,7 @@ const defaultEditForm = () => ({
   cooperation_level: '', birthday: '', region: '', contact_platform: '',
   amazon_profile: '',
   backup_contacts: '[]',
+  former_names: [] as string[],
 })
 
 const addForm = reactive(defaultAddForm())
@@ -649,10 +658,23 @@ async function loadEditOrderStats(buyerId: string) {
   }
 }
 
+const originalBuyerName = ref('')
+
+function onNameBlur() {
+  const newName = editForm.name.trim()
+  if (!newName || newName === originalBuyerName.value) return
+  if (!editForm.former_names.includes(originalBuyerName.value) && originalBuyerName.value) {
+    editForm.former_names = [...editForm.former_names, originalBuyerName.value]
+  }
+  originalBuyerName.value = newName
+}
+
 function openEditModal(record: any) {
   editingId.value = record.id
   editTab.value = 'basic'
   Object.assign(editForm, defaultEditForm(), record)
+  editForm.former_names = Array.isArray(record.former_names) ? [...record.former_names] : []
+  originalBuyerName.value = record.name || ''
   backupContacts.value = parsedBackupContacts(record.backup_contacts)
   editModalOpen.value = true
   loadEditOrderStats(record.id)
@@ -726,8 +748,10 @@ async function handleEditSubmit() {
   if (!editForm.name) { message.error('买手名不能为空'); return }
   submitting.value = true
   try {
+    const formerNames = editForm.former_names.filter(n => n && n !== editForm.name)
     const payload = {
       ...editForm,
+      former_names: formerNames,
       backup_contacts: JSON.stringify(backupContacts.value.filter(bc => bc.value)),
       updated_at: new Date().toISOString(),
     }
@@ -823,6 +847,9 @@ onMounted(async () => {
 /* Drawer */
 .drawer-body { display: flex; flex-direction: column; height: 100%; }
 .drawer-header-card { display: flex; gap: 14px; padding: 18px 20px; background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%); border-bottom: 1px solid #e5e7eb; }
+.drawer-former-names { font-size: 11px; color: #9ca3af; margin: 2px 0 4px; }
+.former-name-tag { display: inline-block; background: #f3f4f6; color: #6b7280; border-radius: 3px; padding: 0 5px; margin-right: 4px; font-size: 11px; }
+.former-names-hint { font-size: 11px; color: #9ca3af; margin-top: -6px; margin-bottom: 8px; }
 .drawer-avatar { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 20px; flex-shrink: 0; }
 .drawer-header-info { flex: 1; min-width: 0; }
 .drawer-name { font-size: 16px; font-weight: 700; color: #1a1a2e; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

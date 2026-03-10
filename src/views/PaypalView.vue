@@ -1,7 +1,7 @@
 <template>
   <div class="page-content">
     <div class="page-header">
-      <h1 class="page-title">PayPal 账号管理</h1>
+      <h1 class="page-title">PayPal</h1>
       <a-space>
         <a-button @click="openSingle">
           <PlusOutlined /> 新增账号
@@ -45,7 +45,7 @@
       <div class="toolbar">
         <a-input-search
           v-model:value="search"
-          placeholder="搜索邮箱 / 持有人 / 别名"
+          placeholder="搜索邮箱 / 持有人"
           style="width:260px"
           allow-clear
           @search="loadAccounts"
@@ -79,7 +79,6 @@
           </template>
           <template v-if="column.key === 'owner'">
             <div>{{ record.owner_name || '-' }}</div>
-            <div v-if="record.account_alias" class="sub-text">{{ record.account_alias }}</div>
           </template>
           <template v-if="column.key === 'status'">
             <a-tag :color="statusColor[record.status] || 'default'">{{ record.status }}</a-tag>
@@ -121,14 +120,11 @@
           <div class="section-title">基本信息</div>
           <div class="detail-grid">
             <DetailRow label="持有人" :value="activeRecord.owner_name" />
-            <DetailRow label="账号别名" :value="activeRecord.account_alias" />
             <DetailRow label="邮箱" :value="activeRecord.email" />
             <DetailRow label="密码" sensitive :value="activeRecord.password" />
+            <DetailRow label="二步验证码" sensitive :value="activeRecord.totp_secret" />
             <DetailRow label="状态">
               <a-tag :color="statusColor[activeRecord.status]">{{ activeRecord.status }}</a-tag>
-            </DetailRow>
-            <DetailRow label="风险等级">
-              <a-tag :color="riskColor[activeRecord.risk_level]">{{ activeRecord.risk_level }}</a-tag>
             </DetailRow>
           </div>
         </div>
@@ -190,13 +186,6 @@
         <div class="form-section-title">基本信息</div>
         <a-row :gutter="12">
           <a-col :span="12"><a-form-item label="持有人"><a-input v-model:value="form.owner_name" /></a-form-item></a-col>
-          <a-col :span="12"><a-form-item label="账号别名"><a-input v-model:value="form.account_alias" placeholder="便于识别的简称" /></a-form-item></a-col>
-        </a-row>
-        <a-row :gutter="12">
-          <a-col :span="12"><a-form-item label="邮箱" required><a-input v-model:value="form.email" /></a-form-item></a-col>
-          <a-col :span="12"><a-form-item label="密码"><a-input-password v-model:value="form.password" /></a-form-item></a-col>
-        </a-row>
-        <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="状态">
               <a-select v-model:value="form.status" style="width:100%">
@@ -206,15 +195,13 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="风险等级">
-              <a-select v-model:value="form.risk_level" style="width:100%">
-                <a-select-option value="低风险">低风险</a-select-option>
-                <a-select-option value="中风险">中风险</a-select-option>
-                <a-select-option value="高风险">高风险</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
+        </a-row>
+        <a-row :gutter="12">
+          <a-col :span="12"><a-form-item label="邮箱" required><a-input v-model:value="form.email" /></a-form-item></a-col>
+          <a-col :span="12"><a-form-item label="密码"><a-input-password v-model:value="form.password" /></a-form-item></a-col>
+        </a-row>
+        <a-row :gutter="12">
+          <a-col :span="24"><a-form-item label="二步验证码 (TOTP)"><a-input v-model:value="form.totp_secret" placeholder="TOTP密钥或备用验证码" /></a-form-item></a-col>
         </a-row>
 
         <div class="form-section-title">服务器 / 代理</div>
@@ -273,25 +260,16 @@
       </a-alert>
       <a-form layout="vertical">
         <a-row :gutter="12">
-          <a-col :span="8">
+          <a-col :span="12">
             <a-form-item label="导入批次号（选填，留空自动生成）">
               <a-input v-model:value="importForm.batch" placeholder="如：PP-20260308-001" />
             </a-form-item>
           </a-col>
-          <a-col :span="8">
+          <a-col :span="12">
             <a-form-item label="默认状态">
               <a-select v-model:value="importForm.status" style="width:100%">
                 <a-select-option value="正常">正常</a-select-option>
                 <a-select-option value="受限">受限</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="默认风险等级">
-              <a-select v-model:value="importForm.risk_level" style="width:100%">
-                <a-select-option value="低风险">低风险</a-select-option>
-                <a-select-option value="中风险">中风险</a-select-option>
-                <a-select-option value="高风险">高风险</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
@@ -387,16 +365,16 @@ const editingId = ref('')
 const activeRecord = ref<any>(null)
 
 const defaultForm = () => ({
-  owner_name: '', account_alias: '', email: '', password: '',
+  owner_name: '', email: '', password: '', totp_secret: '',
   server_ip: '', server_username: '', server_password: '',
   bank_name: '', bank_card_holder: '', bank_card_number: '',
   total_refunded_usd: 0, refund_count: 0,
   started_at_day: '', died_at_day: '',
-  status: '正常', risk_level: '低风险', notes: '',
+  status: '正常', notes: '',
 })
 const form = reactive(defaultForm())
 
-const importForm = reactive({ batch: '', status: '正常', risk_level: '低风险', text: '' })
+const importForm = reactive({ batch: '', status: '正常', text: '' })
 const importLines = computed(() => importForm.text.split('\n').filter(l => l.trim()).length)
 
 // ── Stats ─────────────────────────────────────────────────────────────────
@@ -431,9 +409,9 @@ async function loadAccounts() {
   loading.value = true
   try {
     let q = supabase.from('paypal_accounts')
-      .select('id,email,account_alias,owner_name,status,risk_level,total_refunded_usd,refund_count,started_at,died_at,import_batch,server_ip,bank_name,notes', { count: 'exact' })
+      .select('id,email,owner_name,status,total_refunded_usd,refund_count,started_at,died_at,import_batch,server_ip,bank_name,notes', { count: 'exact' })
       .order('created_at', { ascending: false })
-    if (search.value) q = q.or(`email.ilike.%${search.value}%,owner_name.ilike.%${search.value}%,account_alias.ilike.%${search.value}%`)
+    if (search.value) q = q.or(`email.ilike.%${search.value}%,owner_name.ilike.%${search.value}%`)
     if (filterStatus.value) q = q.eq('status', filterStatus.value)
     if (filterBatch.value) q = q.eq('import_batch', filterBatch.value)
     const from = (pagination.value.current - 1) * pagination.value.pageSize
@@ -468,9 +446,9 @@ function openEdit(record: any) {
     if (!data) return
     Object.assign(form, {
       owner_name: data.owner_name || '',
-      account_alias: data.account_alias || '',
       email: data.email || '',
       password: data.password || '',
+      totp_secret: data.totp_secret || '',
       server_ip: data.server_ip || '',
       server_username: data.server_username || '',
       server_password: data.server_password || '',
@@ -482,7 +460,6 @@ function openEdit(record: any) {
       started_at_day: data.started_at || '',
       died_at_day: data.died_at || '',
       status: data.status || '正常',
-      risk_level: data.risk_level || '低风险',
       notes: data.notes || '',
     })
     formOpen.value = true
@@ -493,13 +470,13 @@ async function handleSave() {
   if (!form.email) { message.warning('请输入邮箱'); return }
   saving.value = true
   const payload: any = {
-    owner_name: form.owner_name, account_alias: form.account_alias,
-    email: form.email, password: form.password,
+    owner_name: form.owner_name,
+    email: form.email, password: form.password, totp_secret: form.totp_secret,
     server_ip: form.server_ip, server_username: form.server_username, server_password: form.server_password,
     bank_name: form.bank_name, bank_card_holder: form.bank_card_holder, bank_card_number: form.bank_card_number,
     total_refunded_usd: form.total_refunded_usd, refund_count: form.refund_count,
     started_at: form.started_at_day || null, died_at: form.died_at_day || null,
-    status: form.status, risk_level: form.risk_level, notes: form.notes,
+    status: form.status, notes: form.notes,
   }
   try {
     if (editingId.value) {
@@ -545,7 +522,6 @@ async function handleImport() {
         bank_card_number: parts[8] || '',
         started_at: parts[9] || null,
         status: importForm.status,
-        risk_level: importForm.risk_level,
         import_batch: batchNo,
         total_refunded_usd: 0,
         refund_count: 0,
@@ -563,11 +539,10 @@ async function handleImport() {
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const statusColor: Record<string, string> = { '正常': 'green', '受限': 'orange', '已关闭': 'red' }
-const riskColor: Record<string, string> = { '低风险': 'green', '中风险': 'orange', '高风险': 'red' }
 
 const columns = [
   { title: '邮箱 / 批次', key: 'email', width: 220 },
-  { title: '持有人 / 别名', key: 'owner', width: 140 },
+  { title: '持有人', key: 'owner', width: 130 },
   { title: '状态', key: 'status', width: 90 },
   { title: '服务器 IP', dataIndex: 'server_ip', key: 'server_ip', width: 130 },
   { title: '绑定银行', dataIndex: 'bank_name', key: 'bank_name', width: 110 },

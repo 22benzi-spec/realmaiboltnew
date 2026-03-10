@@ -65,7 +65,7 @@ export const allNavGroups: NavGroup[] = [
     roles: ['财务', '管理员'],
     items: [
       { id: 'gift-cards', label: '礼品卡管理', icon: CreditCardOutlined },
-      { id: 'paypal', label: 'PayPal / 美金库', icon: BankOutlined },
+      { id: 'paypal', label: 'PayPal', icon: BankOutlined },
       { id: 'refund-queue', label: '退款审批', icon: SendOutlined },
       { id: 'refund-ledger', label: '退款账单', icon: FileTextOutlined },
       { id: 'financial-ledger', label: '交易流水', icon: AccountBookOutlined },
