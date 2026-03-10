@@ -335,8 +335,8 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="浏览器 AdsPower ID">
-              <a-input v-model:value="buyerForm.browser" placeholder="AdsPower 环境 ID" />
+            <a-form-item label="浏览器 ID">
+              <a-input v-model:value="buyerForm.browser" placeholder="浏览器环境 ID" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -869,7 +869,7 @@ const buyerColumns = [
   { title: '端口', dataIndex: 'port', key: 'port', width: 80 },
   { title: '账号', dataIndex: 'account', key: 'account', width: 110 },
   { title: '密码', key: 'password', width: 110 },
-  { title: '浏览器(AdsPower)', key: 'browser', width: 130 },
+  { title: '浏览器 ID', key: 'browser', width: 110 },
   { title: '地区', key: 'region', width: 90 },
   { title: '绑定聊单号', key: 'chat_account', width: 150 },
   { title: '业务员', key: 'staff_name', width: 90 },
