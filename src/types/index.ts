@@ -304,6 +304,41 @@ export interface RefundRequest {
   refund_request_gift_cards?: RefundRequestGiftCard[]
 }
 
+export interface AfterSaleIssue {
+  id?: string
+  issue_number?: string
+  sub_order_id?: string
+  sub_order_number?: string
+  order_id?: string
+  order_number?: string
+  task_id?: string
+  buyer_id?: string
+  buyer_name?: string
+  staff_id?: string
+  staff_name?: string
+  customer_name?: string
+  asin?: string
+  store_name?: string
+  product_price?: number
+  issue_type: '不下单' | '取消' | '退款' | '无此订单'
+  issue_status: '待处理' | '处理中' | '已替换订单' | '需补单' | '已补单' | '已确认损失' | '已关闭'
+  principal_stolen?: boolean
+  principal_amount?: number
+  old_amazon_order_id?: string
+  new_amazon_order_id?: string
+  replacement_buyer_id?: string
+  replacement_buyer_name?: string
+  replacement_sub_order_id?: string
+  replacement_sub_order_number?: string
+  profit_diff?: number
+  loss_amount?: number
+  description?: string
+  resolution_notes?: string
+  resolved_at?: string
+  created_at?: string
+  updated_at?: string
+}
+
 export interface ClientContact {
   id?: string
   company_id: string
