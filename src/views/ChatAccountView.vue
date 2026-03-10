@@ -73,7 +73,7 @@
       :pagination="{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t:number) => `共 ${t} 条` }"
       row-key="id"
       size="middle"
-      :scroll="{ x: 1400 }"
+      :scroll="{ x: 1700 }"
       @change="onTableChange"
       :row-class-name="(r: any) => r.status === '停用' ? 'row-disabled' : ''"
     >
@@ -101,6 +101,16 @@
             </div>
             <span v-if="!record.phone_number && !record.pingme_number && !record.email" class="text-none">无</span>
           </div>
+        </template>
+
+        <template v-if="column.key === 'ip_address'">
+          <span v-if="record.ip_address" class="ip-mono">{{ record.ip_address }}</span>
+          <span v-else class="text-none">—</span>
+        </template>
+
+        <template v-if="column.key === 'friend_count'">
+          <span v-if="record.friend_count != null" class="friend-count">{{ record.friend_count }}</span>
+          <span v-else class="text-none">—</span>
         </template>
 
         <template v-if="column.key === 'login_envs'">
@@ -160,6 +170,31 @@
           <a-col :span="12">
             <a-form-item label="归属人">
               <a-input v-model:value="form.owner_name" placeholder="业务员 / 买手姓名" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="IP 地址">
+              <a-input v-model:value="form.ip_address" placeholder="如 192.168.1.1" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="注册账号">
+              <a-input v-model:value="form.registration_account" placeholder="注册时使用的账号" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="好友数量">
+              <a-input-number v-model:value="form.friend_count" :min="0" style="width:100%" placeholder="好友人数" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="账号链接">
+              <a-input v-model:value="form.account_link" placeholder="账号主页链接" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="两步验证码">
+              <a-input v-model:value="form.two_fa_code" placeholder="2FA 验证码 / 备用码" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -296,6 +331,8 @@ const showDisabledReasonError = ref(false)
 
 const emptyForm = () => ({
   account_no: '', owner_name: '', account_role: '主号',
+  ip_address: '', registration_account: '', friend_count: null as number | null,
+  account_link: '', two_fa_code: '',
   phone_type: '个人', phone_number: '', pingme_number: '', email: '',
   ads_power_id: '', local_browser: '', physical_device: '', cloud_phone: '',
   sim_card_number: '', sim_card_expire: '' as string,
@@ -334,6 +371,8 @@ const roleColor: Record<string, string> = { '主号': 'blue', '次用号': 'oran
 const columns = [
   { title: '聊单号', key: 'account_no', width: 180 },
   { title: '归属人', dataIndex: 'owner_name', key: 'owner_name', width: 100 },
+  { title: 'IP 地址', key: 'ip_address', width: 140 },
+  { title: '好友数量', key: 'friend_count', width: 90 },
   { title: '手机号 / 邮箱', key: 'contact', width: 200 },
   { title: '登录环境', key: 'login_envs', width: 300 },
   { title: '状态 / 停用原因', key: 'status', width: 160 },
@@ -390,6 +429,11 @@ function openEdit(row: any) {
     account_no: row.account_no || '',
     owner_name: row.owner_name || '',
     account_role: row.account_role || '主号',
+    ip_address: row.ip_address || '',
+    registration_account: row.registration_account || '',
+    friend_count: row.friend_count ?? null,
+    account_link: row.account_link || '',
+    two_fa_code: row.two_fa_code || '',
     phone_type: row.phone_type || '个人',
     phone_number: row.phone_number || '',
     pingme_number: row.pingme_number || '',
@@ -505,4 +549,7 @@ onMounted(() => { loadData(); loadStats() })
 :deep(.row-disabled):hover td { background: #f5f5f5 !important; }
 
 .form-error-tip { color: #ff4d4f; font-size: 12px; margin-top: 4px; }
+
+.ip-mono { font-family: monospace; font-size: 12px; color: #1a1a2e; font-weight: 500; }
+.friend-count { font-size: 13px; font-weight: 600; color: #1677ff; }
 </style>

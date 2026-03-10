@@ -39,8 +39,8 @@
 
     <a-tabs v-model:activeKey="activeTab" @change="onTabChange" class="res-tabs">
 
-      <!-- ===== 买手 IP ===== -->
-      <a-tab-pane key="buyer" tab="买手 IP">
+      <!-- ===== 聊单号 IP ===== -->
+      <a-tab-pane key="buyer" tab="聊单号 IP">
         <div class="filter-bar">
           <a-input v-model:value="search" placeholder="搜索 IP / 供应商 / 聊单号 / 业务员" style="width:300px" allow-clear @change="loadData" />
           <a-select v-model:value="filterRegion" placeholder="地区" style="width:110px" allow-clear @change="loadData">
@@ -58,7 +58,7 @@
           </a-select>
         </div>
         <a-table :columns="buyerColumns" :data-source="list" :loading="loading" :pagination="pagination"
-          row-key="id" size="middle" :scroll="{ x: 1200 }" @change="onTableChange"
+          row-key="id" size="middle" :scroll="{ x: 1700 }" @change="onTableChange"
           :row-class-name="(r: any) => r.do_not_renew ? 'row-no-renew' : ''">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'ip_address'">
@@ -66,6 +66,14 @@
                 <span class="ip-addr">{{ record.ip_address }}</span>
                 <a-tag v-if="record.do_not_renew" color="red" size="small">不续费</a-tag>
               </div>
+            </template>
+            <template v-if="column.key === 'password'">
+              <span v-if="record.password" class="password-cell">{{ record.password }}</span>
+              <span v-else class="text-empty">—</span>
+            </template>
+            <template v-if="column.key === 'browser'">
+              <span v-if="record.browser" class="browser-cell">{{ record.browser }}</span>
+              <span v-else class="text-empty">—</span>
             </template>
             <template v-if="column.key === 'region'">
               <a-tag v-if="record.region" color="geekblue">{{ record.region }}</a-tag>
@@ -309,6 +317,26 @@
           <a-col :span="12">
             <a-form-item label="供应商">
               <a-input v-model:value="buyerForm.supplier" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="端口">
+              <a-input v-model:value="buyerForm.port" placeholder="如 1080" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="账号">
+              <a-input v-model:value="buyerForm.account" placeholder="IP 登录账号" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="密码">
+              <a-input v-model:value="buyerForm.password" placeholder="IP 登录密码" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="浏览器 AdsPower ID">
+              <a-input v-model:value="buyerForm.browser" placeholder="AdsPower 环境 ID" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -799,7 +827,8 @@ const rechargeTotalAmount = computed(() =>
 )
 
 const buyerForm = reactive({
-  ip_address: '', ip_type: '买手IP', region: '', supplier: '', phone_number: '',
+  ip_address: '', ip_type: '聊单号IP', region: '', supplier: '', phone_number: '',
+  port: '', account: '', password: '', browser: '',
   chat_account: '', staff_name: '', renew_cycle: '月付', renew_price: 0,
   last_renewed_at: '', next_renew_at: '', status: '使用中', assigned_to: '',
   notes: '', do_not_renew: false,
@@ -837,6 +866,10 @@ const usageColor: Record<string, string> = { 'PayPal专用': 'blue', '混用': '
 
 const buyerColumns = [
   { title: 'IP 地址', key: 'ip_address', width: 170 },
+  { title: '端口', dataIndex: 'port', key: 'port', width: 80 },
+  { title: '账号', dataIndex: 'account', key: 'account', width: 110 },
+  { title: '密码', key: 'password', width: 110 },
+  { title: '浏览器(AdsPower)', key: 'browser', width: 130 },
   { title: '地区', key: 'region', width: 90 },
   { title: '绑定聊单号', key: 'chat_account', width: 150 },
   { title: '业务员', key: 'staff_name', width: 90 },
@@ -895,7 +928,7 @@ async function loadData() {
   loading.value = true
   try {
     if (activeTab.value === 'buyer') {
-      let q = supabase.from('ip_resources').select('*', { count: 'exact' }).eq('ip_type', '买手IP').order('created_at', { ascending: false })
+      let q = supabase.from('ip_resources').select('*', { count: 'exact' }).eq('ip_type', '聊单号IP').order('created_at', { ascending: false })
       if (search.value) q = q.or(`ip_address.ilike.%${search.value}%,supplier.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%`)
       if (filterStatus.value) q = q.eq('status', filterStatus.value)
       if (filterRegion.value) q = q.eq('region', filterRegion.value)
@@ -939,7 +972,7 @@ async function loadData() {
 async function loadStats() {
   let rows: any[] = []
   if (activeTab.value === 'buyer') {
-    const { data } = await supabase.from('ip_resources').select('status, next_renew_at, do_not_renew').eq('ip_type', '买手IP')
+    const { data } = await supabase.from('ip_resources').select('status, next_renew_at, do_not_renew').eq('ip_type', '聊单号IP')
     rows = data || []
   } else if (activeTab.value === 'server') {
     const { data } = await supabase.from('servers').select('status, next_renew_at, do_not_renew')
@@ -1011,7 +1044,7 @@ function onTableChange(p: any) {
 }
 
 function resetForms() {
-  Object.assign(buyerForm, { ip_address: '', ip_type: '买手IP', region: '', supplier: '', phone_number: '', chat_account: '', staff_name: '', renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '', status: '使用中', assigned_to: '', notes: '', do_not_renew: false })
+  Object.assign(buyerForm, { ip_address: '', ip_type: '聊单号IP', region: '', supplier: '', phone_number: '', port: '', account: '', password: '', browser: '', chat_account: '', staff_name: '', renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '', status: '使用中', assigned_to: '', notes: '', do_not_renew: false })
   Object.assign(serverForm, { server_ip: '', username: '', region: '', supplier: '', renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '', status: '使用中', usage_type: 'PayPal专用', notes: '' })
   Object.assign(phoneForm, { phone_type: 'SIM', phone_number: '', account_name: '', purchase_account: '', region: '', supplier: '', chat_account: '', staff_name: '', device_info: '', status: '使用中', renew_price: 0, renew_cycle: '年付', last_renewed_at: '', next_renew_at: '', balance: 0, do_not_renew: false, notes: '' })
 }
@@ -1025,7 +1058,7 @@ function openAdd() {
 function openEdit(row: any) {
   editId.value = row.id
   if (activeTab.value === 'buyer') {
-    Object.assign(buyerForm, { ip_address: row.ip_address || '', ip_type: row.ip_type || '买手IP', region: row.region || '', supplier: row.supplier || '', phone_number: row.phone_number || '', chat_account: row.chat_account || '', staff_name: row.staff_name || '', renew_cycle: row.renew_cycle || '月付', renew_price: row.renew_price || 0, last_renewed_at: row.last_renewed_at || '', next_renew_at: row.next_renew_at || '', status: row.status || '使用中', assigned_to: row.assigned_to || '', notes: row.notes || '', do_not_renew: row.do_not_renew || false })
+    Object.assign(buyerForm, { ip_address: row.ip_address || '', ip_type: row.ip_type || '聊单号IP', region: row.region || '', supplier: row.supplier || '', phone_number: row.phone_number || '', port: row.port || '', account: row.account || '', password: row.password || '', browser: row.browser || '', chat_account: row.chat_account || '', staff_name: row.staff_name || '', renew_cycle: row.renew_cycle || '月付', renew_price: row.renew_price || 0, last_renewed_at: row.last_renewed_at || '', next_renew_at: row.next_renew_at || '', status: row.status || '使用中', assigned_to: row.assigned_to || '', notes: row.notes || '', do_not_renew: row.do_not_renew || false })
   } else if (activeTab.value === 'server') {
     Object.assign(serverForm, { server_ip: row.server_ip || '', username: row.username || '', region: row.region || '', supplier: row.supplier || '', renew_cycle: row.renew_cycle || '月付', renew_price: row.renew_price || 0, last_renewed_at: row.last_renewed_at || '', next_renew_at: row.next_renew_at || '', status: row.status || '使用中', usage_type: row.usage_type || 'PayPal专用', notes: row.notes || '' })
   } else {
@@ -1348,4 +1381,7 @@ onMounted(() => { loadData(); loadStats() })
 .supplier-text { font-size: 12px; color: #6b7280; }
 
 .notes-ellipsis { font-size: 12px; color: #555; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+
+.password-cell { font-family: monospace; font-size: 12px; color: #6b7280; background: #f3f4f6; padding: 1px 6px; border-radius: 3px; }
+.browser-cell { font-size: 12px; color: #d46b08; background: #fff7e6; border: 1px solid #ffd591; padding: 1px 6px; border-radius: 3px; }
 </style>
