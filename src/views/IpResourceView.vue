@@ -106,7 +106,7 @@
                       <a-menu-item v-else @click="unmarkNoRenew(record)">取消不续费</a-menu-item>
                       <a-menu-divider />
                       <a-menu-item>
-                        <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)" placement="left">
+                        <a-popconfirm title="确认删除？" @confirm="deleteRow(record)" placement="left">
                           <span style="color:#ff4d4f">删除</span>
                         </a-popconfirm>
                       </a-menu-item>
@@ -122,7 +122,7 @@
       <!-- ===== 服务器管理 ===== -->
       <a-tab-pane key="server" tab="服务器管理">
         <div class="filter-bar">
-          <a-input v-model:value="search" placeholder="搜索 IP / 供应商" style="width:260px" allow-clear @change="loadData" />
+          <a-input v-model:value="search" placeholder="搜索 IP / 用户名 / 供应商 / 地区" style="width:280px" allow-clear @change="loadData" />
           <a-select v-model:value="filterStatus" placeholder="状态" style="width:120px" allow-clear @change="loadData">
             <a-select-option value="使用中">使用中</a-select-option>
             <a-select-option value="待续费">待续费</a-select-option>
@@ -134,12 +134,21 @@
             <a-select-option value="混用">混用</a-select-option>
             <a-select-option value="其他">其他</a-select-option>
           </a-select>
+          <a-select v-model:value="filterRegion" placeholder="地区" style="width:110px" allow-clear @change="loadData">
+            <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
+          </a-select>
         </div>
         <a-table :columns="serverColumns" :data-source="list" :loading="loading" :pagination="pagination"
-          row-key="id" size="middle" :scroll="{ x: 1100 }" @change="onTableChange">
+          row-key="id" size="middle" :scroll="{ x: 1200 }" @change="onTableChange">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'server_ip'">
-              <span v-if="record.server_ip" class="ip-addr">{{ record.server_ip }}</span>
+              <div class="server-cell">
+                <span class="ip-addr">{{ record.server_ip || '—' }}</span>
+                <div v-if="record.username" class="server-username">用户名: {{ record.username }}</div>
+              </div>
+            </template>
+            <template v-if="column.key === 'region'">
+              <a-tag v-if="record.region" color="geekblue">{{ record.region }}</a-tag>
               <span v-else class="text-empty">—</span>
             </template>
             <template v-if="column.key === 'status'">
@@ -158,7 +167,7 @@
               <a-space size="small">
                 <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
                 <a-button type="link" size="small" @click="quickRenew(record)">续费</a-button>
-                <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)" placement="left">
+                <a-popconfirm title="确认删除？" @confirm="deleteRow(record)" placement="left">
                   <a-button type="link" size="small" danger>删除</a-button>
                 </a-popconfirm>
               </a-space>
@@ -167,28 +176,37 @@
         </a-table>
       </a-tab-pane>
 
-      <!-- ===== SIM 卡手机号 ===== -->
-      <a-tab-pane key="sim" tab="SIM 卡手机号">
+      <!-- ===== 手机号管理（SIM + Pingme 合并） ===== -->
+      <a-tab-pane key="phone" tab="手机号">
         <div class="filter-bar">
-          <a-input v-model:value="search" placeholder="搜索手机号 / 聊单号 / 业务员 / 购买账号" style="width:300px" allow-clear @change="loadData" />
+          <a-input v-model:value="search" placeholder="搜索手机号 / 账号名称 / 聊单号 / 业务员" style="width:300px" allow-clear @change="loadData" />
+          <a-select v-model:value="filterPhoneType" placeholder="类型" style="width:110px" allow-clear @change="loadData">
+            <a-select-option value="SIM">SIM 卡</a-select-option>
+            <a-select-option value="Pingme">Pingme</a-select-option>
+          </a-select>
           <a-select v-model:value="filterStatus" placeholder="状态" style="width:120px" allow-clear @change="loadData">
             <a-select-option value="使用中">使用中</a-select-option>
             <a-select-option value="待激活">待激活</a-select-option>
             <a-select-option value="已停用">已停用</a-select-option>
+            <a-select-option value="已替换">已替换</a-select-option>
           </a-select>
-          <a-select v-model:value="filterDoNotRenew" placeholder="续费标记" style="width:120px" allow-clear @change="loadData">
-            <a-select-option :value="true">不续费</a-select-option>
-            <a-select-option :value="false">正常</a-select-option>
+          <a-select v-model:value="filterRegion" placeholder="归属地" style="width:110px" allow-clear @change="loadData">
+            <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
           </a-select>
         </div>
-        <a-table :columns="simColumns" :data-source="list" :loading="loading" :pagination="pagination"
-          row-key="id" size="middle" :scroll="{ x: 1200 }" @change="onTableChange"
+        <a-table :columns="phoneColumns" :data-source="list" :loading="loading" :pagination="pagination"
+          row-key="_uid" size="middle" :scroll="{ x: 1300 }" @change="onTableChange"
           :row-class-name="(r: any) => r.do_not_renew ? 'row-no-renew' : ''">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'phone_number'">
-              <div class="ip-cell">
-                <span class="ip-addr">{{ record.phone_number }}</span>
-                <a-tag v-if="record.do_not_renew" color="red" size="small">不续费</a-tag>
+              <div class="phone-cell">
+                <a-tag v-if="record._source === 'SIM'" color="green" size="small">SIM</a-tag>
+                <a-tag v-else color="blue" size="small">PM</a-tag>
+                <div class="phone-cell-info">
+                  <span class="ip-addr">{{ record.phone_number || record.account_name || '—' }}</span>
+                  <div v-if="record._source === 'Pingme' && record.phone_number && record.account_name" class="account-sub-num">{{ record.account_name }}</div>
+                  <a-tag v-if="record.do_not_renew" color="red" size="small" style="margin-left:4px">不续费</a-tag>
+                </div>
               </div>
             </template>
             <template v-if="column.key === 'purchase_account'">
@@ -206,104 +224,56 @@
               <span v-if="record.staff_name" class="staff-badge">{{ record.staff_name }}</span>
               <span v-else class="text-empty">—</span>
             </template>
+            <template v-if="column.key === 'region_supplier'">
+              <div class="region-supplier-cell">
+                <a-tag v-if="record.region" color="geekblue" size="small">{{ record.region }}</a-tag>
+                <span v-if="record.supplier" class="supplier-text">{{ record.supplier }}</span>
+                <span v-if="!record.region && !record.supplier" class="text-empty">—</span>
+              </div>
+            </template>
+            <template v-if="column.key === 'extra'">
+              <template v-if="record._source === 'SIM'">
+                <span class="renew-price">¥{{ Number(record.renew_price || 0).toFixed(0) }}/年</span>
+              </template>
+              <template v-else>
+                <div class="balance-cell">
+                  <span :class="Number(record.balance) < 10 ? 'balance-low' : 'balance-ok'">¥{{ Number(record.balance || 0).toFixed(2) }}</span>
+                  <span class="balance-hint">账号余额</span>
+                </div>
+              </template>
+            </template>
             <template v-if="column.key === 'status'">
               <a-badge :status="statusBadge[record.status] || 'default'" :text="record.status" />
-            </template>
-            <template v-if="column.key === 'renew_fee'">
-              <span class="renew-price">¥{{ Number(record.renew_price || 0).toFixed(0) }}/年</span>
             </template>
             <template v-if="column.key === 'next_renew_at'">
-              <span :class="getRenewClass(record.next_renew_at)">{{ record.next_renew_at || '-' }}</span>
+              <template v-if="record._source === 'SIM'">
+                <span :class="getRenewClass(record.next_renew_at)">{{ record.next_renew_at || '-' }}</span>
+              </template>
+              <template v-else>
+                <span class="text-empty">—</span>
+              </template>
+            </template>
+            <template v-if="column.key === 'notes'">
+              <span v-if="record.notes" class="notes-ellipsis">{{ record.notes }}</span>
+              <span v-else class="text-empty">—</span>
             </template>
             <template v-if="column.key === 'action'">
               <a-space size="small" :wrap="false">
                 <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
-                <a-button type="link" size="small" @click="quickRenew(record)">续费</a-button>
+                <a-button v-if="record._source === 'Pingme'" type="link" size="small" @click="openRecharge(record)">充值</a-button>
+                <a-button v-else type="link" size="small" @click="quickRenew(record)">续费</a-button>
                 <a-dropdown :trigger="['click']">
                   <a-button type="link" size="small">更多</a-button>
                   <template #overlay>
                     <a-menu>
+                      <a-menu-item v-if="record._source === 'Pingme'" @click="openRechargeLogs(record)">充值记录</a-menu-item>
+                      <a-menu-item @click="openPhoneReplace(record)">替换号码</a-menu-item>
+                      <a-menu-divider />
                       <a-menu-item v-if="!record.do_not_renew" @click="markNoRenew(record)" style="color:#dc2626">标记不续费</a-menu-item>
-                      <a-menu-item v-else @click="unmarkNoRenew(record)">取消不续费</a-menu-item>
-                      <a-menu-divider />
-                      <a-menu-item>
-                        <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)" placement="left">
-                          <span style="color:#ff4d4f">删除</span>
-                        </a-popconfirm>
-                      </a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
-              </a-space>
-            </template>
-          </template>
-        </a-table>
-      </a-tab-pane>
-
-      <!-- ===== Pingme 账号 ===== -->
-      <a-tab-pane key="pingme" tab="Pingme 账号">
-        <div class="filter-bar">
-          <a-input v-model:value="search" placeholder="搜索账号名称 / 号码 / 聊单号 / 业务员" style="width:300px" allow-clear @change="loadData" />
-          <a-select v-model:value="filterStatus" placeholder="状态" style="width:120px" allow-clear @change="loadData">
-            <a-select-option value="使用中">使用中</a-select-option>
-            <a-select-option value="已停用">已停用</a-select-option>
-            <a-select-option value="已替换">已替换</a-select-option>
-          </a-select>
-          <a-select v-model:value="filterRegion" placeholder="地区" style="width:110px" allow-clear @change="loadData">
-            <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
-          </a-select>
-        </div>
-        <a-table :columns="pingmeColumns" :data-source="list" :loading="loading" :pagination="pagination"
-          row-key="id" size="middle" :scroll="{ x: 1100 }" @change="onTableChange"
-          :row-class-name="(r: any) => r.do_not_renew ? 'row-no-renew' : ''">
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'account_name'">
-              <div class="account-name-cell">
-                <span class="account-name-text">{{ record.account_name || '—' }}</span>
-                <div v-if="record.phone_number" class="account-sub-num">{{ record.phone_number }}</div>
-              </div>
-            </template>
-            <template v-if="column.key === 'region'">
-              <a-tag v-if="record.region" color="geekblue">{{ record.region }}</a-tag>
-              <span v-else class="text-empty">—</span>
-            </template>
-            <template v-if="column.key === 'chat_account'">
-              <div v-if="record.chat_account" class="binding-cell">
-                <span class="binding-icon chat-icon">聊</span>
-                <span class="binding-val">{{ record.chat_account }}</span>
-              </div>
-              <span v-else class="text-empty">—</span>
-            </template>
-            <template v-if="column.key === 'staff_name'">
-              <span v-if="record.staff_name" class="staff-badge">{{ record.staff_name }}</span>
-              <span v-else class="text-empty">—</span>
-            </template>
-            <template v-if="column.key === 'balance'">
-              <div class="balance-cell">
-                <span :class="Number(record.balance) < 10 ? 'balance-low' : 'balance-ok'">
-                  ¥{{ Number(record.balance || 0).toFixed(2) }}
-                </span>
-                <span class="balance-hint">账号余额</span>
-              </div>
-            </template>
-            <template v-if="column.key === 'status'">
-              <a-badge :status="statusBadge[record.status] || 'default'" :text="record.status" />
-            </template>
-            <template v-if="column.key === 'action'">
-              <a-space size="small" :wrap="false">
-                <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
-                <a-button type="link" size="small" @click="openRecharge(record)">充值</a-button>
-                <a-dropdown :trigger="['click']">
-                  <a-button type="link" size="small">更多</a-button>
-                  <template #overlay>
-                    <a-menu>
-                      <a-menu-item @click="openRechargeLogs(record)">充值记录</a-menu-item>
-                      <a-menu-divider />
-                      <a-menu-item v-if="!record.do_not_renew" @click="markNoRenew(record)" style="color:#dc2626">标记停用</a-menu-item>
                       <a-menu-item v-else @click="unmarkNoRenew(record)">取消标记</a-menu-item>
                       <a-menu-divider />
                       <a-menu-item>
-                        <a-popconfirm title="确认删除？" @confirm="deleteRow(record.id)" placement="left">
+                        <a-popconfirm title="确认删除？" @confirm="deleteRow(record)" placement="left">
                           <span style="color:#ff4d4f">删除</span>
                         </a-popconfirm>
                       </a-menu-item>
@@ -420,6 +390,18 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
+            <a-form-item label="用户名">
+              <a-input v-model:value="serverForm.username" placeholder="登录用户名" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="地区">
+              <a-select v-model:value="serverForm.region" allow-clear show-search placeholder="选择地区">
+                <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
             <a-form-item label="供应商">
               <a-input v-model:value="serverForm.supplier" />
             </a-form-item>
@@ -476,140 +458,141 @@
         </a-row>
       </a-form>
 
-      <!-- SIM 卡表单 -->
-      <a-form v-else-if="activeTab === 'sim'" :model="simForm" layout="vertical" style="margin-top:8px">
+      <!-- 手机号表单（SIM / Pingme 统一） -->
+      <a-form v-else-if="activeTab === 'phone'" layout="vertical" style="margin-top:8px">
         <a-row :gutter="16">
           <a-col :span="12">
+            <a-form-item label="类型" required>
+              <a-select v-model:value="phoneForm.phone_type" :disabled="!!editId">
+                <a-select-option value="SIM">SIM 卡</a-select-option>
+                <a-select-option value="Pingme">Pingme 账号</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col v-if="phoneForm.phone_type === 'SIM'" :span="12">
             <a-form-item label="手机号码" required>
-              <a-input v-model:value="simForm.phone_number" placeholder="如 138xxxx0001" />
+              <a-input v-model:value="phoneForm.phone_number" placeholder="如 138xxxx0001" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="购买账号">
-              <a-input v-model:value="simForm.purchase_account" placeholder="号码归属的账号" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="归属地">
-              <a-input v-model:value="simForm.region" placeholder="省份/城市" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="供应商">
-              <a-input v-model:value="simForm.supplier" />
-            </a-form-item>
-          </a-col>
+          <template v-if="phoneForm.phone_type === 'Pingme'">
+            <a-col :span="12">
+              <a-form-item label="账号名称" required>
+                <a-input v-model:value="phoneForm.account_name" placeholder="账号名称（如 PM001）" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="Pingme 号码">
+                <a-input v-model:value="phoneForm.phone_number" placeholder="该账号下的号码（可选）" />
+              </a-form-item>
+            </a-col>
+          </template>
           <a-col :span="12">
             <a-form-item label="绑定聊单号">
-              <a-input v-model:value="simForm.chat_account" placeholder="微信号 / 账号" />
+              <a-input v-model:value="phoneForm.chat_account" placeholder="微信号 / 账号" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="绑定业务员">
-              <a-input v-model:value="simForm.staff_name" placeholder="业务员姓名" />
+              <a-input v-model:value="phoneForm.staff_name" placeholder="业务员姓名" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="设备信息">
-              <a-input v-model:value="simForm.device_info" placeholder="手机型号等" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="状态">
-              <a-select v-model:value="simForm.status">
-                <a-select-option value="使用中">使用中</a-select-option>
-                <a-select-option value="待激活">待激活</a-select-option>
-                <a-select-option value="已停用">已停用</a-select-option>
+            <a-form-item label="归属地">
+              <a-select v-model:value="phoneForm.region" allow-clear show-search placeholder="选择地区">
+                <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="年租费用（¥）">
-              <a-input-number v-model:value="simForm.renew_price" :min="0" style="width:100%" />
+            <a-form-item label="供应商">
+              <a-input v-model:value="phoneForm.supplier" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="上次续费日期">
-              <a-input v-model:value="simForm.last_renewed_at" placeholder="YYYY-MM-DD" />
+            <a-form-item label="购买账号">
+              <a-input v-model:value="phoneForm.purchase_account" placeholder="号码归属的采购账号" />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="phoneForm.phone_type === 'SIM'" :span="12">
+            <a-form-item label="设备信息">
+              <a-input v-model:value="phoneForm.device_info" placeholder="手机型号等" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="下次到期日期">
-              <a-input v-model:value="simForm.next_renew_at" placeholder="YYYY-MM-DD" />
+            <a-form-item label="状态">
+              <a-select v-model:value="phoneForm.status">
+                <a-select-option value="使用中">使用中</a-select-option>
+                <a-select-option value="待激活">待激活</a-select-option>
+                <a-select-option value="已停用">已停用</a-select-option>
+                <a-select-option value="已替换">已替换</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
+          <template v-if="phoneForm.phone_type === 'SIM'">
+            <a-col :span="12">
+              <a-form-item label="年租费用（¥）">
+                <a-input-number v-model:value="phoneForm.renew_price" :min="0" style="width:100%" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="上次续费日期">
+                <a-input v-model:value="phoneForm.last_renewed_at" placeholder="YYYY-MM-DD" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="下次到期日期">
+                <a-input v-model:value="phoneForm.next_renew_at" placeholder="YYYY-MM-DD" />
+              </a-form-item>
+            </a-col>
+          </template>
+          <template v-if="phoneForm.phone_type === 'Pingme'">
+            <a-col :span="12">
+              <a-form-item label="账号当前余额（¥）">
+                <a-input-number v-model:value="phoneForm.balance" :min="0" :precision="2" style="width:100%" />
+              </a-form-item>
+            </a-col>
+          </template>
           <a-col :span="24">
             <a-form-item>
-              <a-checkbox v-model:checked="simForm.do_not_renew">
+              <a-checkbox v-model:checked="phoneForm.do_not_renew">
                 <span style="color:#dc2626;font-weight:600">标记不续费</span>
               </a-checkbox>
             </a-form-item>
           </a-col>
           <a-col :span="24">
             <a-form-item label="备注">
-              <a-textarea v-model:value="simForm.notes" :rows="2" />
+              <a-textarea v-model:value="phoneForm.notes" :rows="2" />
             </a-form-item>
           </a-col>
         </a-row>
       </a-form>
+    </a-modal>
 
-      <!-- Pingme 表单 -->
-      <a-form v-else-if="activeTab === 'pingme'" :model="pingmeForm" layout="vertical" style="margin-top:8px">
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="Pingme 账号名称" required>
-              <a-input v-model:value="pingmeForm.account_name" placeholder="账号名称（如 PM001）" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="Pingme 号码">
-              <a-input v-model:value="pingmeForm.phone_number" placeholder="该账号下的号码（可选）" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="归属地区">
-              <a-select v-model:value="pingmeForm.region" allow-clear show-search placeholder="选择地区">
-                <a-select-option v-for="r in regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="绑定聊单号">
-              <a-input v-model:value="pingmeForm.chat_account" placeholder="微信号 / 账号" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="绑定业务员">
-              <a-input v-model:value="pingmeForm.staff_name" placeholder="业务员姓名" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="账号当前余额（¥）">
-              <a-input-number v-model:value="pingmeForm.balance" :min="0" :precision="2" style="width:100%" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="状态">
-              <a-select v-model:value="pingmeForm.status">
-                <a-select-option value="使用中">使用中</a-select-option>
-                <a-select-option value="已停用">已停用</a-select-option>
-                <a-select-option value="已替换">已替换</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="24">
-            <a-form-item>
-              <a-checkbox v-model:checked="pingmeForm.do_not_renew">
-                <span style="color:#dc2626;font-weight:600">标记停用</span>
-              </a-checkbox>
-            </a-form-item>
-          </a-col>
-          <a-col :span="24">
-            <a-form-item label="备注">
-              <a-textarea v-model:value="pingmeForm.notes" :rows="2" />
-            </a-form-item>
-          </a-col>
-        </a-row>
+    <!-- 手机号替换弹窗 -->
+    <a-modal v-model:open="phoneReplaceOpen" title="替换号码" width="500px" @ok="handlePhoneReplace" :confirm-loading="saving">
+      <div class="replace-info" style="margin-bottom:16px">
+        <div>
+          <div class="replace-label">当前号码</div>
+          <div class="ip-addr">{{ phoneReplaceTarget?.phone_number || phoneReplaceTarget?.account_name }}</div>
+        </div>
+        <div style="color:#d1d5db;font-size:20px">→</div>
+      </div>
+      <a-form layout="vertical">
+        <a-form-item v-if="phoneReplaceTarget?._source === 'SIM'" label="新手机号码" required>
+          <a-input v-model:value="phoneReplaceForm.new_phone" placeholder="新号码" />
+        </a-form-item>
+        <a-form-item v-else label="新账号名称" required>
+          <a-input v-model:value="phoneReplaceForm.new_phone" placeholder="新账号名称" />
+        </a-form-item>
+        <a-form-item label="替换原因">
+          <a-input v-model:value="phoneReplaceForm.reason" placeholder="如：被封号、换供应商等" />
+        </a-form-item>
+        <a-form-item label="操作人">
+          <a-input v-model:value="phoneReplaceForm.operated_by" />
+        </a-form-item>
+        <a-form-item label="备注">
+          <a-textarea v-model:value="phoneReplaceForm.notes" :rows="2" />
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -661,7 +644,7 @@
     </a-modal>
 
     <!-- Pingme 充值记录抽屉 -->
-    <a-drawer v-model:open="rechargeLogsOpen" :title="`充值记录 — ${rechargeLogsTarget?.phone_number}`" width="520" placement="right">
+    <a-drawer v-model:open="rechargeLogsOpen" :title="`充值记录 — ${rechargeLogsTarget?.account_name || rechargeLogsTarget?.phone_number}`" width="520" placement="right">
       <div v-if="!rechargeLogsTarget?.recharge_logs?.length" class="drawer-empty">暂无充值记录</div>
       <div v-else>
         <div class="recharge-summary">
@@ -765,7 +748,7 @@ import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabase'
 import dayjs from 'dayjs'
 
-type TabKey = 'buyer' | 'server' | 'sim' | 'pingme'
+type TabKey = 'buyer' | 'server' | 'phone'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -778,6 +761,7 @@ const filterStatus = ref<string | undefined>(undefined)
 const filterRegion = ref<string | undefined>(undefined)
 const filterDoNotRenew = ref<boolean | undefined>(undefined)
 const filterUsage = ref<string | undefined>(undefined)
+const filterPhoneType = ref<string | undefined>(undefined)
 const activeTab = ref<TabKey>('buyer')
 
 const regionOptions = ['美国', '日本', '英国', '德国', '加拿大', '澳大利亚', '法国', '意大利', '西班牙', '墨西哥', '印度', '新加坡', '其他']
@@ -804,6 +788,10 @@ const rechargeOpen = ref(false)
 const rechargeTarget = ref<any>(null)
 const rechargeForm = reactive({ amount: 0, date: '', operator: '', notes: '' })
 
+const phoneReplaceOpen = ref(false)
+const phoneReplaceTarget = ref<any>(null)
+const phoneReplaceForm = reactive({ new_phone: '', reason: '', operated_by: '', notes: '' })
+
 const rechargeLogsOpen = ref(false)
 const rechargeLogsTarget = ref<any>(null)
 const rechargeTotalAmount = computed(() =>
@@ -818,28 +806,24 @@ const buyerForm = reactive({
 })
 
 const serverForm = reactive({
-  server_ip: '', supplier: '', renew_cycle: '月付', renew_price: 0,
+  server_ip: '', username: '', region: '', supplier: '', renew_cycle: '月付', renew_price: 0,
   last_renewed_at: '', next_renew_at: '', status: '使用中', usage_type: 'PayPal专用', notes: '',
 })
 
-const simForm = reactive({
-  phone_number: '', purchase_account: '', region: '', supplier: '', chat_account: '',
-  staff_name: '', device_info: '', status: '使用中', renew_price: 0,
-  renew_cycle: '年付', last_renewed_at: '', next_renew_at: '',
-  do_not_renew: false, notes: '',
-})
-
-const pingmeForm = reactive({
-  account_name: '', phone_number: '', region: '', chat_account: '', staff_name: '',
-  balance: 0, status: '使用中', do_not_renew: false, notes: '',
+const phoneForm = reactive({
+  phone_type: 'SIM' as 'SIM' | 'Pingme',
+  phone_number: '', account_name: '', purchase_account: '', region: '', supplier: '',
+  chat_account: '', staff_name: '', device_info: '', status: '使用中',
+  renew_price: 0, renew_cycle: '年付', last_renewed_at: '', next_renew_at: '',
+  balance: 0, do_not_renew: false, notes: '',
 })
 
 const addBtnLabel = computed(() => {
-  const map: Record<TabKey, string> = { buyer: '新增 IP', server: '新增服务器', sim: '新增 SIM 卡', pingme: '新增 Pingme 账号' }
+  const map: Record<TabKey, string> = { buyer: '新增 IP', server: '新增服务器', phone: '新增手机号' }
   return map[activeTab.value]
 })
 const modalTitle = computed(() => {
-  const map: Record<TabKey, string> = { buyer: 'IP', server: '服务器', sim: 'SIM 卡', pingme: 'Pingme 账号' }
+  const map: Record<TabKey, string> = { buyer: 'IP', server: '服务器', phone: '手机号' }
   return map[activeTab.value]
 })
 
@@ -865,43 +849,37 @@ const buyerColumns = [
 ]
 
 const serverColumns = [
-  { title: '服务器 IP', key: 'server_ip', width: 160 },
-  { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 120 },
+  { title: '服务器 IP / 用户名', key: 'server_ip', width: 200 },
+  { title: '地区', key: 'region', width: 90 },
+  { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 110 },
   { title: '用途', key: 'usage_type', width: 110 },
   { title: '状态', key: 'status', width: 100 },
   { title: '续费', key: 'renew', width: 110 },
   { title: '下次到期', key: 'next_renew_at', width: 110 },
-  { title: '备注', dataIndex: 'notes', key: 'notes', width: 150, ellipsis: true },
+  { title: '备注', dataIndex: 'notes', key: 'notes', width: 120, ellipsis: true },
   { title: '操作', key: 'action', width: 140, fixed: 'right' as const },
 ]
 
-const simColumns = [
-  { title: '手机号码', key: 'phone_number', width: 150 },
-  { title: '购买账号', key: 'purchase_account', width: 140 },
+const phoneColumns = [
+  { title: '手机号码 / 账号', key: 'phone_number', width: 200 },
   { title: '绑定聊单号', key: 'chat_account', width: 150 },
   { title: '业务员', key: 'staff_name', width: 90 },
-  { title: '归属地', dataIndex: 'region', key: 'region', width: 90 },
-  { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 90 },
+  { title: '归属地 / 供应商', key: 'region_supplier', width: 140 },
+  { title: '购买账号', key: 'purchase_account', width: 130 },
+  { title: '费用 / 余额', key: 'extra', width: 100 },
   { title: '状态', key: 'status', width: 90 },
-  { title: '年租', key: 'renew_fee', width: 90 },
-  { title: '下次到期', key: 'next_renew_at', width: 110 },
-  { title: '操作', key: 'action', width: 140, fixed: 'right' as const },
-]
-
-const pingmeColumns = [
-  { title: 'Pingme 账号', key: 'account_name', width: 180 },
-  { title: '地区', key: 'region', width: 90 },
-  { title: '绑定聊单号', key: 'chat_account', width: 150 },
-  { title: '业务员', key: 'staff_name', width: 90 },
-  { title: '账号余额', key: 'balance', width: 120 },
-  { title: '状态', key: 'status', width: 90 },
-  { title: '备注', dataIndex: 'notes', key: 'notes', width: 150, ellipsis: true },
+  { title: '到期日', key: 'next_renew_at', width: 100 },
+  { title: '备注', key: 'notes', width: 110, ellipsis: true },
   { title: '操作', key: 'action', width: 150, fixed: 'right' as const },
 ]
 
 function currentTable() {
-  const map: Record<TabKey, string> = { buyer: 'ip_resources', server: 'servers', sim: 'sim_cards', pingme: 'pingme_numbers' }
+  const map: Record<TabKey, string> = { buyer: 'ip_resources', server: 'servers', phone: 'sim_cards' }
   return map[activeTab.value]
+}
+
+function phoneRowTable(row: any) {
+  return row._source === 'Pingme' ? 'pingme_numbers' : 'sim_cards'
 }
 
 function getRenewClass(date: string) {
@@ -916,45 +894,63 @@ function getRenewClass(date: string) {
 async function loadData() {
   loading.value = true
   try {
-    const tbl = currentTable()
-    let q: any
-
     if (activeTab.value === 'buyer') {
-      q = supabase.from(tbl).select('*', { count: 'exact' }).eq('ip_type', '买手IP').order('created_at', { ascending: false })
+      let q = supabase.from('ip_resources').select('*', { count: 'exact' }).eq('ip_type', '买手IP').order('created_at', { ascending: false })
       if (search.value) q = q.or(`ip_address.ilike.%${search.value}%,supplier.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%`)
       if (filterStatus.value) q = q.eq('status', filterStatus.value)
       if (filterRegion.value) q = q.eq('region', filterRegion.value)
       if (filterDoNotRenew.value !== undefined && filterDoNotRenew.value !== null) q = q.eq('do_not_renew', filterDoNotRenew.value)
+      q = q.range((page.value - 1) * pageSize.value, page.value * pageSize.value - 1)
+      const { data, count } = await q
+      list.value = data || []
+      total.value = count || 0
     } else if (activeTab.value === 'server') {
-      q = supabase.from(tbl).select('*', { count: 'exact' }).order('created_at', { ascending: false })
-      if (search.value) q = q.or(`server_ip.ilike.%${search.value}%,supplier.ilike.%${search.value}%`)
+      let q = supabase.from('servers').select('*', { count: 'exact' }).order('created_at', { ascending: false })
+      if (search.value) q = q.or(`server_ip.ilike.%${search.value}%,username.ilike.%${search.value}%,supplier.ilike.%${search.value}%,region.ilike.%${search.value}%`)
       if (filterStatus.value) q = q.eq('status', filterStatus.value)
       if (filterUsage.value) q = q.eq('usage_type', filterUsage.value)
-    } else if (activeTab.value === 'sim') {
-      q = supabase.from(tbl).select('*', { count: 'exact' }).order('created_at', { ascending: false })
-      if (search.value) q = q.or(`phone_number.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%,purchase_account.ilike.%${search.value}%`)
-      if (filterStatus.value) q = q.eq('status', filterStatus.value)
-      if (filterDoNotRenew.value !== undefined && filterDoNotRenew.value !== null) q = q.eq('do_not_renew', filterDoNotRenew.value)
-    } else {
-      q = supabase.from(tbl).select('*', { count: 'exact' }).order('created_at', { ascending: false })
-      if (search.value) q = q.or(`account_name.ilike.%${search.value}%,phone_number.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%`)
-      if (filterStatus.value) q = q.eq('status', filterStatus.value)
       if (filterRegion.value) q = q.eq('region', filterRegion.value)
+      q = q.range((page.value - 1) * pageSize.value, page.value * pageSize.value - 1)
+      const { data, count } = await q
+      list.value = data || []
+      total.value = count || 0
+    } else {
+      let simQ = supabase.from('sim_cards').select('*').order('created_at', { ascending: false })
+      let pingmeQ = supabase.from('pingme_numbers').select('*').order('created_at', { ascending: false })
+      if (search.value) {
+        simQ = simQ.or(`phone_number.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%,purchase_account.ilike.%${search.value}%`)
+        pingmeQ = pingmeQ.or(`account_name.ilike.%${search.value}%,phone_number.ilike.%${search.value}%,chat_account.ilike.%${search.value}%,staff_name.ilike.%${search.value}%`)
+      }
+      if (filterStatus.value) { simQ = simQ.eq('status', filterStatus.value); pingmeQ = pingmeQ.eq('status', filterStatus.value) }
+      if (filterRegion.value) { simQ = simQ.eq('region', filterRegion.value); pingmeQ = pingmeQ.eq('region', filterRegion.value) }
+      const [simRes, pingmeRes] = await Promise.all([simQ, pingmeQ])
+      let simRows = (simRes.data || []).map((r: any) => ({ ...r, _source: 'SIM', _uid: `sim_${r.id}` }))
+      let pingmeRows = (pingmeRes.data || []).map((r: any) => ({ ...r, _source: 'Pingme', _uid: `pm_${r.id}` }))
+      if (filterPhoneType.value === 'SIM') pingmeRows = []
+      if (filterPhoneType.value === 'Pingme') simRows = []
+      const combined = [...simRows, ...pingmeRows].sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''))
+      total.value = combined.length
+      const start = (page.value - 1) * pageSize.value
+      list.value = combined.slice(start, start + pageSize.value)
     }
-
-    q = q.range((page.value - 1) * pageSize.value, page.value * pageSize.value - 1)
-    const { data, count } = await q
-    list.value = data || []
-    total.value = count || 0
   } finally { loading.value = false }
 }
 
 async function loadStats() {
-  const tbl = currentTable()
-  let q: any = supabase.from(tbl).select('status, next_renew_at, do_not_renew')
-  if (activeTab.value === 'buyer') q = q.eq('ip_type', '买手IP')
-  const { data } = await q
-  const rows = data || []
+  let rows: any[] = []
+  if (activeTab.value === 'buyer') {
+    const { data } = await supabase.from('ip_resources').select('status, next_renew_at, do_not_renew').eq('ip_type', '买手IP')
+    rows = data || []
+  } else if (activeTab.value === 'server') {
+    const { data } = await supabase.from('servers').select('status, next_renew_at, do_not_renew')
+    rows = data || []
+  } else {
+    const [s1, s2] = await Promise.all([
+      supabase.from('sim_cards').select('status, next_renew_at, do_not_renew'),
+      supabase.from('pingme_numbers').select('status, do_not_renew'),
+    ])
+    rows = [...(s1.data || []), ...(s2.data || [])]
+  }
   stats.total = rows.length
   stats.active = rows.filter((r: any) => r.status === '使用中').length
   stats.disabled = rows.filter((r: any) => r.status === '已停用' || r.status === '已替换').length
@@ -1002,6 +998,7 @@ function onTabChange() {
   filterRegion.value = undefined
   filterDoNotRenew.value = undefined
   filterUsage.value = undefined
+  filterPhoneType.value = undefined
   expireFilter.value = null
   loadData()
   loadStats()
@@ -1015,9 +1012,8 @@ function onTableChange(p: any) {
 
 function resetForms() {
   Object.assign(buyerForm, { ip_address: '', ip_type: '买手IP', region: '', supplier: '', phone_number: '', chat_account: '', staff_name: '', renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '', status: '使用中', assigned_to: '', notes: '', do_not_renew: false })
-  Object.assign(serverForm, { server_ip: '', supplier: '', renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '', status: '使用中', usage_type: 'PayPal专用', notes: '' })
-  Object.assign(simForm, { phone_number: '', purchase_account: '', region: '', supplier: '', chat_account: '', staff_name: '', device_info: '', status: '使用中', renew_price: 0, renew_cycle: '年付', last_renewed_at: '', next_renew_at: '', do_not_renew: false, notes: '' })
-  Object.assign(pingmeForm, { account_name: '', phone_number: '', region: '', chat_account: '', staff_name: '', balance: 0, status: '使用中', do_not_renew: false, notes: '' })
+  Object.assign(serverForm, { server_ip: '', username: '', region: '', supplier: '', renew_cycle: '月付', renew_price: 0, last_renewed_at: '', next_renew_at: '', status: '使用中', usage_type: 'PayPal专用', notes: '' })
+  Object.assign(phoneForm, { phone_type: 'SIM', phone_number: '', account_name: '', purchase_account: '', region: '', supplier: '', chat_account: '', staff_name: '', device_info: '', status: '使用中', renew_price: 0, renew_cycle: '年付', last_renewed_at: '', next_renew_at: '', balance: 0, do_not_renew: false, notes: '' })
 }
 
 function openAdd() {
@@ -1031,11 +1027,28 @@ function openEdit(row: any) {
   if (activeTab.value === 'buyer') {
     Object.assign(buyerForm, { ip_address: row.ip_address || '', ip_type: row.ip_type || '买手IP', region: row.region || '', supplier: row.supplier || '', phone_number: row.phone_number || '', chat_account: row.chat_account || '', staff_name: row.staff_name || '', renew_cycle: row.renew_cycle || '月付', renew_price: row.renew_price || 0, last_renewed_at: row.last_renewed_at || '', next_renew_at: row.next_renew_at || '', status: row.status || '使用中', assigned_to: row.assigned_to || '', notes: row.notes || '', do_not_renew: row.do_not_renew || false })
   } else if (activeTab.value === 'server') {
-    Object.assign(serverForm, { server_ip: row.server_ip || '', supplier: row.supplier || '', renew_cycle: row.renew_cycle || '月付', renew_price: row.renew_price || 0, last_renewed_at: row.last_renewed_at || '', next_renew_at: row.next_renew_at || '', status: row.status || '使用中', usage_type: row.usage_type || 'PayPal专用', notes: row.notes || '' })
-  } else if (activeTab.value === 'sim') {
-    Object.assign(simForm, { phone_number: row.phone_number || '', purchase_account: row.purchase_account || '', region: row.region || '', supplier: row.supplier || '', chat_account: row.chat_account || '', staff_name: row.staff_name || '', device_info: row.device_info || '', status: row.status || '使用中', renew_price: row.renew_price || 0, renew_cycle: row.renew_cycle || '年付', last_renewed_at: row.last_renewed_at || '', next_renew_at: row.next_renew_at || '', do_not_renew: row.do_not_renew || false, notes: row.notes || '' })
+    Object.assign(serverForm, { server_ip: row.server_ip || '', username: row.username || '', region: row.region || '', supplier: row.supplier || '', renew_cycle: row.renew_cycle || '月付', renew_price: row.renew_price || 0, last_renewed_at: row.last_renewed_at || '', next_renew_at: row.next_renew_at || '', status: row.status || '使用中', usage_type: row.usage_type || 'PayPal专用', notes: row.notes || '' })
   } else {
-    Object.assign(pingmeForm, { account_name: row.account_name || '', phone_number: row.phone_number || '', region: row.region || '', chat_account: row.chat_account || '', staff_name: row.staff_name || '', balance: row.balance || 0, status: row.status || '使用中', do_not_renew: row.do_not_renew || false, notes: row.notes || '' })
+    const src = row._source || 'SIM'
+    Object.assign(phoneForm, {
+      phone_type: src,
+      phone_number: row.phone_number || '',
+      account_name: row.account_name || '',
+      purchase_account: row.purchase_account || '',
+      region: row.region || '',
+      supplier: row.supplier || '',
+      chat_account: row.chat_account || '',
+      staff_name: row.staff_name || '',
+      device_info: row.device_info || '',
+      status: row.status || '使用中',
+      renew_price: row.renew_price || 0,
+      renew_cycle: row.renew_cycle || '年付',
+      last_renewed_at: row.last_renewed_at || '',
+      next_renew_at: row.next_renew_at || '',
+      balance: row.balance || 0,
+      do_not_renew: row.do_not_renew || false,
+      notes: row.notes || '',
+    })
   }
   modalOpen.value = true
 }
@@ -1043,35 +1056,36 @@ function openEdit(row: any) {
 async function handleSave() {
   saving.value = true
   try {
-    let payload: any = {}
-    const tbl = currentTable()
-
     if (activeTab.value === 'buyer') {
       if (!buyerForm.ip_address.trim()) { message.error('IP 地址不能为空'); saving.value = false; return }
-      payload = { ...buyerForm, updated_at: new Date().toISOString() }
+      const payload = { ...buyerForm, updated_at: new Date().toISOString() } as any
       if (!payload.last_renewed_at) payload.last_renewed_at = null
       if (!payload.next_renew_at) payload.next_renew_at = null
+      if (editId.value) { await supabase.from('ip_resources').update(payload).eq('id', editId.value); message.success('已更新') }
+      else { await supabase.from('ip_resources').insert(payload); message.success('已新增') }
     } else if (activeTab.value === 'server') {
       if (!serverForm.server_ip.trim()) { message.error('服务器 IP 不能为空'); saving.value = false; return }
-      payload = { ...serverForm, updated_at: new Date().toISOString() }
+      const payload = { ...serverForm, updated_at: new Date().toISOString() } as any
       if (!payload.last_renewed_at) payload.last_renewed_at = null
       if (!payload.next_renew_at) payload.next_renew_at = null
-    } else if (activeTab.value === 'sim') {
-      if (!simForm.phone_number.trim()) { message.error('手机号码不能为空'); saving.value = false; return }
-      payload = { ...simForm, updated_at: new Date().toISOString() }
-      if (!payload.last_renewed_at) payload.last_renewed_at = null
-      if (!payload.next_renew_at) payload.next_renew_at = null
+      if (editId.value) { await supabase.from('servers').update(payload).eq('id', editId.value); message.success('已更新') }
+      else { await supabase.from('servers').insert(payload); message.success('已新增') }
     } else {
-      if (!pingmeForm.account_name.trim()) { message.error('账号名称不能为空'); saving.value = false; return }
-      payload = { ...pingmeForm, updated_at: new Date().toISOString() }
-    }
-
-    if (editId.value) {
-      await supabase.from(tbl).update(payload).eq('id', editId.value)
-      message.success('已更新')
-    } else {
-      await supabase.from(tbl).insert(payload)
-      message.success('已新增')
+      const isSIM = phoneForm.phone_type === 'SIM'
+      if (isSIM && !phoneForm.phone_number.trim()) { message.error('手机号码不能为空'); saving.value = false; return }
+      if (!isSIM && !phoneForm.account_name.trim()) { message.error('账号名称不能为空'); saving.value = false; return }
+      const { phone_type, ...rest } = phoneForm
+      if (isSIM) {
+        const { account_name, balance, ...simPayload } = { ...rest, updated_at: new Date().toISOString() } as any
+        if (!simPayload.last_renewed_at) simPayload.last_renewed_at = null
+        if (!simPayload.next_renew_at) simPayload.next_renew_at = null
+        if (editId.value) { await supabase.from('sim_cards').update(simPayload).eq('id', editId.value); message.success('已更新') }
+        else { await supabase.from('sim_cards').insert(simPayload); message.success('已新增') }
+      } else {
+        const { device_info, renew_price, renew_cycle, last_renewed_at, next_renew_at, purchase_account, ...pmPayload } = { ...rest, updated_at: new Date().toISOString() } as any
+        if (editId.value) { await supabase.from('pingme_numbers').update(pmPayload).eq('id', editId.value); message.success('已更新') }
+        else { await supabase.from('pingme_numbers').insert(pmPayload); message.success('已新增') }
+      }
     }
     modalOpen.value = false
     loadData(); loadStats()
@@ -1080,7 +1094,7 @@ async function handleSave() {
 
 function quickRenew(row: any) {
   renewId.value = row.id
-  renewTable.value = currentTable()
+  renewTable.value = activeTab.value === 'phone' ? phoneRowTable(row) : currentTable()
   renewForm.last_renewed_at = dayjs().format('YYYY-MM-DD')
   renewForm.next_renew_at = row.next_renew_at || ''
   renewOpen.value = true
@@ -1126,7 +1140,6 @@ async function handleReplace() {
       renew_price: oldRow.renew_price || 0, status: '使用中',
       assigned_to: oldRow.assigned_to || '', notes: '', do_not_renew: false,
     }).select().single()
-
     await supabase.from('ip_resources').update({ status: '已替换', updated_at: new Date().toISOString() }).eq('id', oldRow.id)
     await supabase.from('ip_replacement_logs').insert({
       old_ip_id: oldRow.id, new_ip_id: newIp?.id || null,
@@ -1184,20 +1197,62 @@ function openRechargeLogs(row: any) {
   rechargeLogsOpen.value = true
 }
 
+function openPhoneReplace(row: any) {
+  phoneReplaceTarget.value = row
+  phoneReplaceForm.new_phone = ''
+  phoneReplaceForm.reason = ''
+  phoneReplaceForm.operated_by = ''
+  phoneReplaceForm.notes = ''
+  phoneReplaceOpen.value = true
+}
+
+async function handlePhoneReplace() {
+  if (!phoneReplaceForm.new_phone.trim()) { message.error('请输入新号码/账号名称'); return }
+  if (!phoneReplaceTarget.value) return
+  saving.value = true
+  try {
+    const row = phoneReplaceTarget.value
+    const isSIM = row._source === 'SIM'
+    const tbl = isSIM ? 'sim_cards' : 'pingme_numbers'
+    const newRecord: any = { ...row }
+    delete newRecord.id
+    delete newRecord._source
+    delete newRecord._uid
+    newRecord.status = '使用中'
+    newRecord.do_not_renew = false
+    newRecord.notes = phoneReplaceForm.notes || ''
+    newRecord.updated_at = new Date().toISOString()
+    newRecord.created_at = new Date().toISOString()
+    if (isSIM) {
+      newRecord.phone_number = phoneReplaceForm.new_phone.trim()
+    } else {
+      newRecord.account_name = phoneReplaceForm.new_phone.trim()
+    }
+    await supabase.from(tbl).update({ status: '已替换', updated_at: new Date().toISOString() }).eq('id', row.id)
+    await supabase.from(tbl).insert(newRecord)
+    message.success('替换成功')
+    phoneReplaceOpen.value = false
+    loadData(); loadStats()
+  } finally { saving.value = false }
+}
+
 async function markNoRenew(row: any) {
-  await supabase.from(currentTable()).update({ do_not_renew: true, updated_at: new Date().toISOString() }).eq('id', row.id)
+  const tbl = activeTab.value === 'phone' ? phoneRowTable(row) : currentTable()
+  await supabase.from(tbl).update({ do_not_renew: true, updated_at: new Date().toISOString() }).eq('id', row.id)
   message.warning('已标记')
   loadData(); loadStats()
 }
 
 async function unmarkNoRenew(row: any) {
-  await supabase.from(currentTable()).update({ do_not_renew: false, updated_at: new Date().toISOString() }).eq('id', row.id)
+  const tbl = activeTab.value === 'phone' ? phoneRowTable(row) : currentTable()
+  await supabase.from(tbl).update({ do_not_renew: false, updated_at: new Date().toISOString() }).eq('id', row.id)
   message.success('已取消标记')
   loadData(); loadStats()
 }
 
-async function deleteRow(id: string) {
-  await supabase.from(currentTable()).delete().eq('id', id)
+async function deleteRow(row: any) {
+  const tbl = activeTab.value === 'phone' ? phoneRowTable(row) : currentTable()
+  await supabase.from(tbl).delete().eq('id', row.id)
   message.success('已删除')
   loadData(); loadStats()
 }
@@ -1248,8 +1303,6 @@ onMounted(() => { loadData(); loadStats() })
 .balance-cell { display: flex; flex-direction: column; gap: 1px; }
 .balance-hint { font-size: 10px; color: #9ca3af; }
 
-.account-name-cell { display: flex; flex-direction: column; gap: 2px; }
-.account-name-text { font-weight: 600; font-size: 13px; color: #1a1a2e; }
 .account-sub-num { font-size: 11px; color: #9ca3af; font-family: monospace; }
 .recharge-sub-num { font-size: 11px; color: #9ca3af; font-family: monospace; margin-top: 2px; }
 
@@ -1284,4 +1337,15 @@ onMounted(() => { loadData(); loadStats() })
 .log-ip.new { background: #dcfce7; color: #166534; }
 .log-arrow { color: #9ca3af; font-size: 14px; }
 .log-notes { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+.server-cell { display: flex; flex-direction: column; gap: 2px; }
+.server-username { font-size: 11px; color: #9ca3af; font-family: monospace; }
+
+.phone-cell { display: flex; align-items: flex-start; gap: 6px; }
+.phone-cell-info { display: flex; flex-direction: column; gap: 2px; }
+
+.region-supplier-cell { display: flex; flex-direction: column; gap: 3px; }
+.supplier-text { font-size: 12px; color: #6b7280; }
+
+.notes-ellipsis { font-size: 12px; color: #555; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 </style>
