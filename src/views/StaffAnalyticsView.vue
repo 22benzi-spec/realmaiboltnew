@@ -65,9 +65,9 @@
               <span>{{ record.name }}</span>
             </div>
           </template>
-          <template v-if="column.key === 'buyer_total'">
-            <span class="num-main">{{ record.buyer_total }}</span>
-            <span v-if="record.buyer_new > 0" class="num-new">+{{ record.buyer_new }}</span>
+          <template v-if="column.key === 'buyer_new'">
+            <span v-if="record.buyer_new > 0" class="num-new-main">+{{ record.buyer_new }}</span>
+            <span v-else class="tc-empty">0</span>
           </template>
           <template v-if="column.key === 'completed'">
             <div class="target-cell">
@@ -99,25 +99,10 @@
               &yen;{{ record.stolen_principal.toFixed(2) }}
             </span>
           </template>
-          <template v-if="column.key === 'cancel_count'">
-            <span>{{ record.cancel_count }}</span>
-          </template>
         </template>
       </a-table>
 
       <div v-if="viewMode === 'compare'" class="compare-view">
-        <div class="compare-section">
-          <div class="cs-title">完成率排名</div>
-          <div class="bar-list">
-            <div v-for="r in sortedByCompletion" :key="r.staff_id" class="bar-row">
-              <span class="bar-name">{{ r.name }}</span>
-              <div class="bar-track">
-                <div class="bar-fill" :style="{ width: completionPct(r) + '%', background: r.completed >= r.target && r.target > 0 ? '#059669' : '#2563eb' }"></div>
-              </div>
-              <span class="bar-val">{{ r.completed }}/{{ r.target || '--' }}</span>
-            </div>
-          </div>
-        </div>
         <div class="compare-section">
           <div class="cs-title">留评率排名</div>
           <div class="bar-list">
@@ -196,7 +181,6 @@ interface StaffRow {
   staff_id: string
   name: string
   avatar_color: string
-  buyer_total: number
   buyer_new: number
   target: number
   completed: number
@@ -207,7 +191,6 @@ interface StaffRow {
   after_sale_count: number
   after_sale_rate: number
   stolen_principal: number
-  cancel_count: number
 }
 
 const loading = ref(false)
@@ -238,9 +221,6 @@ const summaryData = computed(() => {
   return { totalCompleted, totalReviewed, avgReviewRate, totalDropped, totalAfterSale, totalStolenPrincipal }
 })
 
-const sortedByCompletion = computed(() =>
-  [...filteredRows.value].sort((a, b) => completionPct(b) - completionPct(a))
-)
 const sortedByReviewRate = computed(() =>
   [...filteredRows.value].sort((a, b) => b.review_rate - a.review_rate)
 )
@@ -250,11 +230,6 @@ const sortedByAfterSaleRate = computed(() =>
 const sortedByStolenPrincipal = computed(() =>
   [...filteredRows.value].sort((a, b) => b.stolen_principal - a.stolen_principal)
 )
-
-function completionPct(r: StaffRow): number {
-  if (!r.target) return 0
-  return Math.min(100, Math.round(r.completed / r.target * 100))
-}
 
 function stolenPct(r: StaffRow): number {
   const max = Math.max(...filteredRows.value.map(x => x.stolen_principal), 1)
@@ -269,13 +244,12 @@ function rateClass(rate: number): string {
 
 const columns = [
   { title: '业务员', key: 'name', width: 140, fixed: 'left' as const },
-  { title: '名下买手', key: 'buyer_total', width: 110 },
+  { title: '本月新增买手', key: 'buyer_new', width: 110 },
   { title: '完成/目标', key: 'completed', width: 220 },
   { title: '留评率', key: 'review_rate', width: 90 },
   { title: '掉评数(率)', key: 'drop_count', width: 110 },
   { title: '售后数(率)', key: 'after_sale_count', width: 110 },
   { title: '被骗本金', key: 'stolen_principal', width: 120 },
-  { title: '取消单', key: 'cancel_count', width: 80 },
 ]
 
 function onMonthChange(_: any, dateStr: string) {
@@ -302,18 +276,13 @@ async function loadData() {
     const staffIds = staffList.value.map(s => s.id)
     if (!staffIds.length) { rows.value = []; return }
 
-    const [subOrdersRes, buyersRes, buyersNewRes, reviewsRes, afterSaleRes, targetsRes] = await Promise.all([
+    const [subOrdersRes, buyersNewRes, reviewsRes, afterSaleRes, targetsRes] = await Promise.all([
       supabase
         .from('sub_orders')
         .select('staff_id, status, review_submitted_at')
         .in('staff_id', staffIds)
         .gte('updated_at', monthStart)
         .lte('updated_at', monthEnd),
-      supabase
-        .from('erp_buyers')
-        .select('staff_id')
-        .in('staff_id', staffIds)
-        .neq('status', '黑名单'),
       supabase
         .from('erp_buyers')
         .select('staff_id')
@@ -340,7 +309,6 @@ async function loadData() {
     ])
 
     const subOrders = subOrdersRes.data || []
-    const allBuyers = buyersRes.data || []
     const newBuyers = buyersNewRes.data || []
     const droppedReviews = reviewsRes.data || []
     const afterSaleIssues = afterSaleRes.data || []
@@ -355,8 +323,6 @@ async function loadData() {
       const staffSubOrders = subOrders.filter(o => o.staff_id === sid)
       const completed = staffSubOrders.filter(o => ['已完成', '已留评'].includes(o.status)).length
       const reviewed = staffSubOrders.filter(o => o.status === '已留评' || o.review_submitted_at).length
-      const cancelled = staffSubOrders.filter(o => o.status === '已取消').length
-      const buyerTotal = allBuyers.filter(b => b.staff_id === sid).length
       const buyerNew = newBuyers.filter(b => b.staff_id === sid).length
 
       const staffBuyerIdList = buyerStaffMap.get(sid) || []
@@ -378,7 +344,6 @@ async function loadData() {
         staff_id: sid,
         name: staff.name,
         avatar_color: staff.avatar_color,
-        buyer_total: buyerTotal,
         buyer_new: buyerNew,
         target: targetMap.get(sid) || 0,
         completed,
@@ -389,7 +354,6 @@ async function loadData() {
         after_sale_count: afterSaleCount,
         after_sale_rate: afterSaleRate,
         stolen_principal: stolenPrincipal,
-        cancel_count: cancelled,
       }
     })
 
@@ -482,6 +446,7 @@ onMounted(async () => {
 
 .num-main { font-weight: 700; font-size: 14px; color: #374151; }
 .num-new { font-size: 11px; color: #059669; font-weight: 600; background: #f0fdf4; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
+.num-new-main { font-size: 15px; font-weight: 700; color: #059669; }
 .num-target { font-size: 12px; color: #9ca3af; margin-left: 2px; }
 .num-warn { color: #d97706; font-weight: 700; }
 .num-danger { color: #dc2626; font-weight: 700; }
