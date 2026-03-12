@@ -30,6 +30,13 @@
           <template v-if="column.key === 'department'">
             <span>{{ record.department || '业务部' }}</span>
           </template>
+          <template v-if="column.key === 'buyer_count'">
+            <div class="buyer-count-cell">
+              <span class="bc-total">{{ buyerCountMap[record.id] || 0 }}</span>
+              <span class="bc-sep">人</span>
+              <span v-if="buyerNewCountMap[record.id]" class="bc-new">+{{ buyerNewCountMap[record.id] }} 本月</span>
+            </div>
+          </template>
           <template v-if="column.key === 'monthly_perf'">
             <div class="perf-cell">
               <div class="perf-cell-top">
@@ -202,6 +209,8 @@ const targetMonthVal = ref<any>(dayjs())
 const historicalTargets = ref<any[]>([])
 const monthlyTargetsMap = ref<Record<string, number>>({})
 const monthlyCompletedMap = ref<Record<string, number>>({})
+const buyerCountMap = ref<Record<string, number>>({})
+const buyerNewCountMap = ref<Record<string, number>>({})
 
 const targetForm = reactive({ monthly_target: 0, notes: '', year_month: dayjs().format('YYYY-MM') })
 
@@ -224,6 +233,7 @@ const columns = [
   { title: '编号', key: 'staff_number', dataIndex: 'staff_number', width: 100 },
   { title: '姓名', key: 'name', width: 150 },
   { title: '部门', key: 'department', dataIndex: 'department', width: 80 },
+  { title: '名下买手', key: 'buyer_count', width: 120 },
   { title: '本月业绩', key: 'monthly_perf', width: 280 },
   { title: '状态', key: 'status', width: 80 },
   { title: '操作', key: 'action', width: 130 },
@@ -293,7 +303,7 @@ async function load() {
     if (error) throw error
     staffList.value = data || []
 
-    await Promise.all([loadAllTargets(), loadMonthlyCompleted()])
+    await Promise.all([loadAllTargets(), loadMonthlyCompleted(), loadBuyerCounts()])
   } finally {
     loading.value = false
   }
@@ -315,6 +325,30 @@ async function loadAllTargets() {
     map[t.staff_id] = t.monthly_target
   }
   monthlyTargetsMap.value = map
+}
+
+async function loadBuyerCounts() {
+  const staffIds = staffList.value.map(s => s.id)
+  if (!staffIds.length) return
+
+  const { data: allBuyers } = await supabase
+    .from('erp_buyers')
+    .select('staff_id, created_at')
+    .in('staff_id', staffIds)
+    .neq('status', '黑名单')
+
+  const totalMap: Record<string, number> = {}
+  const newMap: Record<string, number> = {}
+  const monthStart = dayjs().startOf('month').toISOString()
+
+  for (const b of allBuyers || []) {
+    totalMap[b.staff_id] = (totalMap[b.staff_id] || 0) + 1
+    if (b.created_at >= monthStart) {
+      newMap[b.staff_id] = (newMap[b.staff_id] || 0) + 1
+    }
+  }
+  buyerCountMap.value = totalMap
+  buyerNewCountMap.value = newMap
 }
 
 async function loadMonthlyCompleted() {
@@ -475,6 +509,11 @@ onMounted(load)
 .sub { font-size: 11px; color: #9ca3af; }
 
 .staff-no { font-family: monospace; font-weight: 700; font-size: 13px; color: #1d4ed8; background: #eff6ff; padding: 2px 8px; border-radius: 5px; }
+
+.buyer-count-cell { display: flex; align-items: baseline; gap: 4px; }
+.bc-total { font-size: 18px; font-weight: 700; color: #374151; }
+.bc-sep { font-size: 12px; color: #9ca3af; }
+.bc-new { font-size: 11px; color: #059669; font-weight: 600; background: #f0fdf4; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
 
 .perf-cell { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
 .perf-cell-top { display: flex; align-items: center; justify-content: space-between; }

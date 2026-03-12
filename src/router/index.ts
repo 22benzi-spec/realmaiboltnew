@@ -25,6 +25,7 @@ const router = createRouter({
     { path: '/chat-accounts', name: 'chat-accounts', component: () => import('../views/ChatAccountView.vue') },
     { path: '/ip-resources', name: 'ip-resources', component: () => import('../views/IpResourceView.vue') },
 
+    { path: '/staff-analytics', name: 'staff-analytics', component: () => import('../views/StaffAnalyticsView.vue') },
     { path: '/financial-ledger', name: 'financial-ledger', component: () => import('../views/FinancialLedgerView.vue') },
     { path: '/profit-analysis', name: 'profit-analysis', component: () => import('../views/ProfitAnalysisView.vue') },
   ],
