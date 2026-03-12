@@ -33,24 +33,15 @@
           <template v-if="column.key === 'monthly_perf'">
             <div class="perf-cell">
               <div class="perf-cell-top">
-                <div class="perf-nums">
-                  <span class="perf-done">{{ getMonthlyCompleted(record.id) }}</span>
-                  <span class="perf-sep">/</span>
-                  <span class="perf-target-num">{{ getThisMonthTarget(record.id) || '--' }}</span>
-                  <span class="perf-unit">单</span>
+                <div class="buyer-info">
+                  <span class="buyer-count">{{ buyerCountMap[record.id] || 0 }}</span>
+                  <span class="buyer-label">名买手</span>
                 </div>
                 <span class="perf-set-btn" @click.stop="openTargetModal(record)">
-                  <SettingOutlined /> 设置目标
+                  <SettingOutlined /> 设目标
+                  <span v-if="getThisMonthTarget(record.id)" class="target-badge">{{ getThisMonthTarget(record.id) }}单</span>
                 </span>
               </div>
-              <a-progress
-                :percent="getCompletionRate(record.id)"
-                :stroke-color="getProgressColor(record.id)"
-                :show-info="true"
-                size="small"
-                stroke-linecap="round"
-                style="margin:0"
-              />
             </div>
           </template>
           <template v-if="column.key === 'status'">
@@ -201,7 +192,7 @@ const targetStaff = ref<any>(null)
 const targetMonthVal = ref<any>(dayjs())
 const historicalTargets = ref<any[]>([])
 const monthlyTargetsMap = ref<Record<string, number>>({})
-const monthlyCompletedMap = ref<Record<string, number>>({})
+const buyerCountMap = ref<Record<string, number>>({})
 const targetForm = reactive({ monthly_target: 0, notes: '', year_month: dayjs().format('YYYY-MM') })
 
 const statusColor: Record<string, string> = { '在职': 'green', '休假': 'orange', '离职': 'red' }
@@ -223,7 +214,7 @@ const columns = [
   { title: '编号', key: 'staff_number', dataIndex: 'staff_number', width: 100 },
   { title: '姓名', key: 'name', width: 150 },
   { title: '部门', key: 'department', dataIndex: 'department', width: 80 },
-  { title: '本月业绩', key: 'monthly_perf', width: 280 },
+  { title: '名下买手 / 当月目标', key: 'monthly_perf', width: 200 },
   { title: '状态', key: 'status', width: 80 },
   { title: '操作', key: 'action', width: 130 },
 ]
@@ -236,24 +227,6 @@ const dailyTarget = computed(() => {
 
 function getThisMonthTarget(staffId: string): number {
   return monthlyTargetsMap.value[staffId] || 0
-}
-
-function getMonthlyCompleted(staffId: string): number {
-  return monthlyCompletedMap.value[staffId] || 0
-}
-
-function getCompletionRate(staffId: string): number {
-  const target = getThisMonthTarget(staffId)
-  if (!target) return 0
-  return Math.min(100, Math.round((getMonthlyCompleted(staffId) / target) * 100))
-}
-
-function getProgressColor(staffId: string): string {
-  const rate = getCompletionRate(staffId)
-  if (rate >= 100) return '#059669'
-  if (rate >= 60) return '#2563eb'
-  if (rate >= 30) return '#d97706'
-  return '#dc2626'
 }
 
 function onJoinDateChange(_: any, dateStr: string) {
@@ -292,7 +265,7 @@ async function load() {
     if (error) throw error
     staffList.value = data || []
 
-    await Promise.all([loadAllTargets(), loadMonthlyCompleted()])
+    await Promise.all([loadAllTargets(), loadBuyerCounts()])
   } finally {
     loading.value = false
   }
@@ -316,25 +289,21 @@ async function loadAllTargets() {
   monthlyTargetsMap.value = map
 }
 
-async function loadMonthlyCompleted() {
-  const monthStart = dayjs().startOf('month').toISOString()
-  const monthEnd = dayjs().endOf('month').toISOString()
+async function loadBuyerCounts() {
   const staffIds = staffList.value.map(s => s.id)
   if (!staffIds.length) return
 
   const { data } = await supabase
-    .from('sub_orders')
+    .from('erp_buyers')
     .select('staff_id')
     .in('staff_id', staffIds)
-    .in('status', ['已完成', '已留评'])
-    .gte('updated_at', monthStart)
-    .lte('updated_at', monthEnd)
+    .neq('status', '黑名单')
 
   const map: Record<string, number> = {}
-  for (const s of data || []) {
-    map[s.staff_id] = (map[s.staff_id] || 0) + 1
+  for (const b of data || []) {
+    map[b.staff_id] = (map[b.staff_id] || 0) + 1
   }
-  monthlyCompletedMap.value = map
+  buyerCountMap.value = map
 }
 
 function openModal(record?: any) {
@@ -443,7 +412,7 @@ async function handleSaveTarget() {
     if (error) throw error
     message.success('目标已保存')
     targetModalOpen.value = false
-    await Promise.all([loadAllTargets(), loadMonthlyCompleted()])
+    await loadAllTargets()
   } catch (e: any) {
     message.error('保存失败：' + e.message)
   } finally {
@@ -475,15 +444,14 @@ onMounted(load)
 
 .staff-no { font-family: monospace; font-weight: 700; font-size: 13px; color: #1d4ed8; background: #eff6ff; padding: 2px 8px; border-radius: 5px; }
 
-.perf-cell { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
-.perf-cell-top { display: flex; align-items: center; justify-content: space-between; }
-.perf-nums { display: flex; align-items: baseline; gap: 2px; }
-.perf-done { font-size: 18px; font-weight: 700; color: #2563eb; }
-.perf-sep { font-size: 13px; color: #d1d5db; margin: 0 2px; }
-.perf-target-num { font-size: 14px; font-weight: 600; color: #6b7280; }
-.perf-unit { font-size: 11px; color: #9ca3af; margin-left: 2px; }
-.perf-set-btn { font-size: 12px; color: #2563eb; cursor: pointer; padding: 2px 8px; border-radius: 4px; transition: background 0.15s; }
+.perf-cell { padding: 4px 0; }
+.perf-cell-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.buyer-info { display: flex; align-items: baseline; gap: 3px; }
+.buyer-count { font-size: 20px; font-weight: 700; color: #1d4ed8; }
+.buyer-label { font-size: 12px; color: #6b7280; }
+.perf-set-btn { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #2563eb; cursor: pointer; padding: 3px 8px; border-radius: 5px; border: 1px solid #bfdbfe; transition: background 0.15s; white-space: nowrap; }
 .perf-set-btn:hover { background: #eff6ff; }
+.target-badge { font-size: 11px; font-weight: 700; color: #059669; background: #f0fdf4; padding: 1px 5px; border-radius: 8px; }
 
 .color-picker-row { display: flex; align-items: center; gap: 10px; }
 .color-input { width: 40px; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px; cursor: pointer; padding: 2px; }
