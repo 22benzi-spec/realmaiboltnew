@@ -2,6 +2,56 @@
   <div class="page-content">
     <h1 class="page-title">分配管理</h1>
 
+    <!-- 业绩概览面板 -->
+    <div class="perf-panel" v-if="perfList.length">
+      <div class="perf-panel-header">
+        <span class="perf-panel-title">业务员业绩概览</span>
+        <span class="perf-panel-month">{{ currentMonthLabel }}</span>
+      </div>
+      <div class="perf-grid">
+        <div v-for="p in perfList" :key="p.staff_id" class="perf-card">
+          <div class="perf-card-top">
+            <div class="perf-avatar" :style="{ background: p.avatar_color || '#2563eb' }">{{ p.name.charAt(0) }}</div>
+            <div class="perf-name-block">
+              <div class="perf-name">{{ p.name }}</div>
+              <div class="perf-role">{{ p.role || '业务员' }}</div>
+            </div>
+          </div>
+          <div class="perf-stats">
+            <div class="perf-stat-row">
+              <span class="perf-stat-lbl">今日完成</span>
+              <span class="perf-stat-val blue">{{ p.today_done }}</span>
+            </div>
+            <div class="perf-stat-row">
+              <span class="perf-stat-lbl">今日目标</span>
+              <span class="perf-stat-val gray">{{ p.daily_target }}</span>
+            </div>
+            <div class="perf-stat-row">
+              <span class="perf-stat-lbl">本月完成</span>
+              <span class="perf-stat-val teal">{{ p.month_done }}</span>
+            </div>
+            <div class="perf-stat-row">
+              <span class="perf-stat-lbl">月度目标</span>
+              <span class="perf-stat-val gray">{{ p.monthly_target }}</span>
+            </div>
+          </div>
+          <div class="perf-progress-wrap">
+            <div class="perf-progress-bar">
+              <div
+                class="perf-progress-fill"
+                :style="{ width: getProgressPct(p) + '%', background: getProgressColor(p) }"
+              ></div>
+            </div>
+            <span class="perf-pct" :style="{ color: getProgressColor(p) }">{{ getProgressPct(p) }}%</span>
+          </div>
+          <div class="perf-pending-row">
+            <span class="perf-pending-lbl">待处理：</span>
+            <span class="perf-pending-num">{{ p.pending }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card-panel">
       <div class="toolbar">
         <a-input-search v-model:value="searchText" placeholder="搜索订单号/ASIN/店铺" style="width:260px" @search="load" allow-clear />
@@ -474,6 +524,76 @@ import { supabase } from '../lib/supabase'
 const loading = ref(false)
 const subOrders = ref<any[]>([])
 const staffList = ref<any[]>([])
+
+const perfList = ref<any[]>([])
+const currentMonthLabel = dayjs().format('YYYY年MM月')
+
+function getProgressPct(p: any): number {
+  if (!p.monthly_target) return 0
+  return Math.min(100, Math.round((p.month_done / p.monthly_target) * 100))
+}
+
+function getProgressColor(p: any): string {
+  const pct = getProgressPct(p)
+  if (pct >= 100) return '#059669'
+  if (pct >= 60) return '#2563eb'
+  if (pct >= 30) return '#d97706'
+  return '#dc2626'
+}
+
+async function loadPerfPanel() {
+  const thisMonth = dayjs().format('YYYY-MM')
+  const todayStart = dayjs().startOf('day').toISOString()
+  const todayEnd = dayjs().endOf('day').toISOString()
+  const monthStart = dayjs().startOf('month').toISOString()
+  const monthEnd = dayjs().endOf('month').toISOString()
+
+  const { data: staffData } = await supabase
+    .from('staff')
+    .select('id, name, role, avatar_color')
+    .eq('status', '在职')
+
+  if (!staffData?.length) return
+
+  const staffIds = staffData.map(s => s.id)
+
+  const [{ data: targets }, { data: todaySubs }, { data: monthSubs }, { data: pendingSubs }] = await Promise.all([
+    supabase.from('staff_monthly_targets').select('staff_id, monthly_target').in('staff_id', staffIds).eq('year_month', thisMonth),
+    supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).in('status', ['已完成', '已留评']).gte('updated_at', todayStart).lte('updated_at', todayEnd),
+    supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).in('status', ['已完成', '已留评']).gte('updated_at', monthStart).lte('updated_at', monthEnd),
+    supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).in('status', ['已分配', '进行中', '已下单']),
+  ])
+
+  const targetMap: Record<string, number> = {}
+  for (const t of targets || []) targetMap[t.staff_id] = t.monthly_target
+
+  const todayMap: Record<string, number> = {}
+  for (const s of todaySubs || []) todayMap[s.staff_id] = (todayMap[s.staff_id] || 0) + 1
+
+  const monthMap: Record<string, number> = {}
+  for (const s of monthSubs || []) monthMap[s.staff_id] = (monthMap[s.staff_id] || 0) + 1
+
+  const pendingMap: Record<string, number> = {}
+  for (const s of pendingSubs || []) pendingMap[s.staff_id] = (pendingMap[s.staff_id] || 0) + 1
+
+  const daysInMonth = dayjs().daysInMonth()
+
+  perfList.value = staffData.map(s => {
+    const monthly = targetMap[s.id] || 0
+    const daily = monthly ? Math.ceil(monthly / daysInMonth) : 0
+    return {
+      staff_id: s.id,
+      name: s.name,
+      role: s.role,
+      avatar_color: s.avatar_color,
+      monthly_target: monthly,
+      daily_target: daily,
+      today_done: todayMap[s.id] || 0,
+      month_done: monthMap[s.id] || 0,
+      pending: pendingMap[s.id] || 0,
+    }
+  }).filter(p => p.monthly_target > 0 || p.pending > 0 || p.month_done > 0)
+}
 const searchText = ref('')
 const filterStatus = ref('待分配')
 const filterCountry = ref('')
@@ -917,12 +1037,64 @@ async function handleMarkIssue() {
   }
 }
 
-onMounted(() => { load(); loadStaff() })
+onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 </script>
 
 <style scoped>
 .page-content { padding: 24px; }
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+
+/* 业绩概览面板 */
+.perf-panel {
+  background: #fff; border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 16px 20px; margin-bottom: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.perf-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.perf-panel-title { font-size: 14px; font-weight: 700; color: #1f2937; }
+.perf-panel-month { font-size: 12px; color: #9ca3af; }
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.perf-card {
+  background: #f8fafc; border-radius: 10px;
+  border: 1px solid #e5e7eb; padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.perf-card-top { display: flex; align-items: center; gap: 8px; }
+.perf-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  color: #fff; font-weight: 700; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.perf-name { font-size: 13px; font-weight: 700; color: #1f2937; }
+.perf-role { font-size: 10px; color: #9ca3af; }
+
+.perf-stats { display: flex; flex-direction: column; gap: 3px; }
+.perf-stat-row { display: flex; justify-content: space-between; align-items: center; }
+.perf-stat-lbl { font-size: 11px; color: #6b7280; }
+.perf-stat-val { font-size: 13px; font-weight: 700; }
+.perf-stat-val.blue { color: #2563eb; }
+.perf-stat-val.teal { color: #0891b2; }
+.perf-stat-val.gray { color: #9ca3af; }
+
+.perf-progress-wrap { display: flex; align-items: center; gap: 6px; }
+.perf-progress-bar {
+  flex: 1; height: 6px; background: #e5e7eb;
+  border-radius: 3px; overflow: hidden;
+}
+.perf-progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+.perf-pct { font-size: 11px; font-weight: 700; min-width: 32px; text-align: right; }
+
+.perf-pending-row { display: flex; align-items: center; font-size: 11px; }
+.perf-pending-lbl { color: #9ca3af; }
+.perf-pending-num { font-weight: 700; color: #d97706; }
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
 .total-hint { font-size: 13px; color: #6b7280; margin-left: 4px; }
