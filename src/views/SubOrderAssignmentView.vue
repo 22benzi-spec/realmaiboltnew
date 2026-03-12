@@ -2,53 +2,72 @@
   <div class="page-content">
     <h1 class="page-title">分配管理</h1>
 
-    <!-- 业绩概览面板 -->
-    <div class="perf-panel" v-if="perfList.length">
-      <div class="perf-panel-header">
-        <span class="perf-panel-title">业务员业绩概览</span>
-        <span class="perf-panel-month">{{ currentMonthLabel }}</span>
+    <!-- 紧凑分配概览栏 -->
+    <div class="aob" v-if="perfList.length">
+      <div class="aob-header">
+        <span class="aob-title">分配概览 <span class="aob-month">{{ currentMonthLabel }}</span></span>
+        <a-button type="link" size="small" @click="perfExpanded = !perfExpanded">
+          {{ perfExpanded ? '收起' : '展开详情' }}
+        </a-button>
       </div>
-      <div class="perf-grid">
-        <div v-for="p in perfList" :key="p.staff_id" class="perf-card">
-          <div class="perf-card-top">
-            <div class="perf-avatar" :style="{ background: p.avatar_color || '#2563eb' }">{{ p.name.charAt(0) }}</div>
-            <div class="perf-name-block">
-              <div class="perf-name">{{ p.name }}</div>
-              <div class="perf-role">{{ p.role || '业务员' }}</div>
-            </div>
-          </div>
-          <div class="perf-stats">
-            <div class="perf-stat-row">
-              <span class="perf-stat-lbl">今日完成</span>
-              <span class="perf-stat-val blue">{{ p.today_done }}</span>
-            </div>
-            <div class="perf-stat-row">
-              <span class="perf-stat-lbl">今日目标</span>
-              <span class="perf-stat-val gray">{{ p.daily_target }}</span>
-            </div>
-            <div class="perf-stat-row">
-              <span class="perf-stat-lbl">本月完成</span>
-              <span class="perf-stat-val teal">{{ p.month_done }}</span>
-            </div>
-            <div class="perf-stat-row">
-              <span class="perf-stat-lbl">月度目标</span>
-              <span class="perf-stat-val gray">{{ p.monthly_target }}</span>
-            </div>
-          </div>
-          <div class="perf-progress-wrap">
-            <div class="perf-progress-bar">
-              <div
-                class="perf-progress-fill"
-                :style="{ width: getProgressPct(p) + '%', background: getProgressColor(p) }"
-              ></div>
-            </div>
-            <span class="perf-pct" :style="{ color: getProgressColor(p) }">{{ getProgressPct(p) }}%</span>
-          </div>
-          <div class="perf-pending-row">
-            <span class="perf-pending-lbl">待处理：</span>
-            <span class="perf-pending-num">{{ p.pending }}</span>
+      <div class="aob-pills-wrap">
+        <div class="aob-pills">
+          <div
+            v-for="p in perfList"
+            :key="p.staff_id"
+            :class="['aob-pill', { 'pill-priority': p.is_priority, 'pill-done': p.today_remaining === 0 && p.daily_target > 0 }]"
+            @click="quickSelectStaff(p.staff_id)"
+          >
+            <div class="pill-av" :style="{ background: p.avatar_color || '#2563eb' }">{{ p.name.charAt(0) }}</div>
+            <span class="pill-name">{{ p.name }}</span>
+            <span class="pill-nums">{{ p.today_done }}/{{ p.daily_target }}</span>
+            <span :class="['pill-remain', { 'remain-urgent': p.today_remaining >= 5, 'remain-ok': p.today_remaining === 0 && p.daily_target > 0 }]">
+              {{ p.today_remaining === 0 && p.daily_target > 0 ? '已满' : '剩' + p.today_remaining }}
+            </span>
           </div>
         </div>
+      </div>
+      <div v-if="perfExpanded" class="aob-detail">
+        <table class="aob-table">
+          <thead>
+            <tr>
+              <th>姓名</th>
+              <th>今日已分配</th>
+              <th>今日目标</th>
+              <th>今日剩余</th>
+              <th>本月完成</th>
+              <th>月度目标</th>
+              <th>月完成率</th>
+              <th>待处理</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in perfList" :key="p.staff_id" :class="{ 'row-priority': p.is_priority }">
+              <td>
+                <div class="aob-t-name">
+                  <div class="pill-av-sm" :style="{ background: p.avatar_color || '#2563eb' }">{{ p.name.charAt(0) }}</div>
+                  {{ p.name }}
+                </div>
+              </td>
+              <td class="aob-t-center">{{ p.today_done }}</td>
+              <td class="aob-t-center">{{ p.daily_target }}</td>
+              <td class="aob-t-center">
+                <span :class="['remain-badge', { 'remain-badge-urgent': p.today_remaining >= 5, 'remain-badge-ok': p.today_remaining === 0 && p.daily_target > 0 }]">
+                  {{ p.today_remaining }}
+                </span>
+              </td>
+              <td class="aob-t-center">{{ p.month_done }}</td>
+              <td class="aob-t-center">{{ p.monthly_target }}</td>
+              <td class="aob-t-center">
+                <div class="aob-t-progress">
+                  <div class="aob-t-bar"><div class="aob-t-fill" :style="{ width: getProgressPct(p) + '%', background: getProgressColor(p) }"></div></div>
+                  <span class="aob-t-pct" :style="{ color: getProgressColor(p) }">{{ getProgressPct(p) }}%</span>
+                </div>
+              </td>
+              <td class="aob-t-center"><span class="pending-badge">{{ p.pending }}</span></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -253,8 +272,8 @@
         </div>
         <a-form layout="vertical">
           <a-form-item label="选择业务员">
-            <a-select v-model:value="selectedStaffId" placeholder="请选择业务员" style="width:100%" show-search option-filter-prop="label">
-              <a-select-option v-for="s in staffList" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
+            <a-select v-model:value="selectedStaffId" placeholder="请选择业务员（按剩余量排序）" style="width:100%" show-search option-filter-prop="label">
+              <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}<span v-if="s.today_remaining !== undefined" style="color:#9ca3af;font-size:11px;margin-left:6px">(剩{{ s.today_remaining }})</span></a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item label="分配买手（可选）">
@@ -328,8 +347,8 @@
         </div>
         <a-form layout="vertical">
           <a-form-item label="选择业务员">
-            <a-select v-model:value="selectedStaffId" placeholder="请选择业务员" style="width:100%" show-search option-filter-prop="label" allow-clear>
-              <a-select-option v-for="s in staffList" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
+            <a-select v-model:value="selectedStaffId" placeholder="请选择业务员（按剩余量排序）" style="width:100%" show-search option-filter-prop="label" allow-clear>
+              <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}<span v-if="s.today_remaining !== undefined" style="color:#9ca3af;font-size:11px;margin-left:6px">(剩{{ s.today_remaining }})</span></a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item label="分配买手（可选）">
@@ -393,8 +412,8 @@
         </div>
         <a-form layout="vertical">
           <a-form-item label="选择业务员">
-            <a-select v-model:value="selectedStaffId" placeholder="请选择业务员" style="width:100%" show-search option-filter-prop="label" allow-clear>
-              <a-select-option v-for="s in staffList" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
+            <a-select v-model:value="selectedStaffId" placeholder="请选择业务员（按剩余量排序）" style="width:100%" show-search option-filter-prop="label" allow-clear>
+              <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}<span v-if="s.today_remaining !== undefined" style="color:#9ca3af;font-size:11px;margin-left:6px">(剩{{ s.today_remaining }})</span></a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item label="分配买手（可选）">
@@ -518,6 +537,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { UserAddOutlined, ReloadOutlined, RightOutlined, SearchOutlined, CheckCircleOutlined, EditOutlined, LinkOutlined } from '@ant-design/icons-vue'
+
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -526,6 +546,7 @@ const subOrders = ref<any[]>([])
 const staffList = ref<any[]>([])
 
 const perfList = ref<any[]>([])
+const perfExpanded = ref(false)
 const currentMonthLabel = dayjs().format('YYYY年MM月')
 
 function getProgressPct(p: any): number {
@@ -539,6 +560,12 @@ function getProgressColor(p: any): string {
   if (pct >= 60) return '#2563eb'
   if (pct >= 30) return '#d97706'
   return '#dc2626'
+}
+
+function quickSelectStaff(staffId: string) {
+  selectedStaffId.value = staffId
+  const s = staffList.value.find(x => x.id === staffId)
+  message.info(`已选中：${s?.name || ''}`)
 }
 
 async function loadPerfPanel() {
@@ -559,7 +586,7 @@ async function loadPerfPanel() {
 
   const [{ data: targets }, { data: todaySubs }, { data: monthSubs }, { data: pendingSubs }] = await Promise.all([
     supabase.from('staff_monthly_targets').select('staff_id, monthly_target').in('staff_id', staffIds).eq('year_month', thisMonth),
-    supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).in('status', ['已完成', '已留评']).gte('updated_at', todayStart).lte('updated_at', todayEnd),
+    supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).neq('status', '待分配').gte('updated_at', todayStart).lte('updated_at', todayEnd),
     supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).in('status', ['已完成', '已留评']).gte('updated_at', monthStart).lte('updated_at', monthEnd),
     supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).in('status', ['已分配', '进行中', '已下单']),
   ])
@@ -578,9 +605,10 @@ async function loadPerfPanel() {
 
   const daysInMonth = dayjs().daysInMonth()
 
-  perfList.value = staffData.map(s => {
+  const list = staffData.map(s => {
     const monthly = targetMap[s.id] || 0
     const daily = monthly ? Math.ceil(monthly / daysInMonth) : 0
+    const todayDone = todayMap[s.id] || 0
     return {
       staff_id: s.id,
       name: s.name,
@@ -588,11 +616,23 @@ async function loadPerfPanel() {
       avatar_color: s.avatar_color,
       monthly_target: monthly,
       daily_target: daily,
-      today_done: todayMap[s.id] || 0,
+      today_done: todayDone,
+      today_remaining: Math.max(0, daily - todayDone),
       month_done: monthMap[s.id] || 0,
       pending: pendingMap[s.id] || 0,
+      is_priority: false,
     }
   }).filter(p => p.monthly_target > 0 || p.pending > 0 || p.month_done > 0)
+    .sort((a, b) => b.today_remaining - a.today_remaining)
+
+  if (list.length) {
+    const maxRemain = list[0].today_remaining
+    if (maxRemain > 0) {
+      list.forEach(p => { p.is_priority = p.today_remaining === maxRemain })
+    }
+  }
+
+  perfList.value = list
 }
 const searchText = ref('')
 const filterStatus = ref('待分配')
@@ -872,6 +912,13 @@ async function load() {
   }
 }
 
+const staffListWithPerf = computed(() => {
+  const perfMap = new Map(perfList.value.map(p => [p.staff_id, p]))
+  return staffList.value
+    .map(s => ({ ...s, today_remaining: perfMap.get(s.id)?.today_remaining }))
+    .sort((a, b) => (b.today_remaining ?? -1) - (a.today_remaining ?? -1))
+})
+
 async function loadStaff() {
   const { data } = await supabase.from('staff').select('id, name').eq('status', '在职')
   staffList.value = data || []
@@ -1044,57 +1091,50 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 .page-content { padding: 24px; }
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
 
-/* 业绩概览面板 */
-.perf-panel {
-  background: #fff; border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  padding: 16px 20px; margin-bottom: 20px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-}
-.perf-panel-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 14px;
-}
-.perf-panel-title { font-size: 14px; font-weight: 700; color: #1f2937; }
-.perf-panel-month { font-size: 12px; color: #9ca3af; }
-.perf-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
-}
-.perf-card {
-  background: #f8fafc; border-radius: 10px;
-  border: 1px solid #e5e7eb; padding: 12px;
-  display: flex; flex-direction: column; gap: 8px;
-}
-.perf-card-top { display: flex; align-items: center; gap: 8px; }
-.perf-avatar {
-  width: 30px; height: 30px; border-radius: 50%;
-  color: #fff; font-weight: 700; font-size: 12px;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.perf-name { font-size: 13px; font-weight: 700; color: #1f2937; }
-.perf-role { font-size: 10px; color: #9ca3af; }
+/* 紧凑分配概览栏 */
+.aob { background: #fff; border-radius: 12px; border: 1px solid #e5e7eb; padding: 12px 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+.aob-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.aob-title { font-size: 13px; font-weight: 700; color: #1f2937; }
+.aob-month { font-size: 11px; font-weight: 400; color: #9ca3af; margin-left: 6px; }
 
-.perf-stats { display: flex; flex-direction: column; gap: 3px; }
-.perf-stat-row { display: flex; justify-content: space-between; align-items: center; }
-.perf-stat-lbl { font-size: 11px; color: #6b7280; }
-.perf-stat-val { font-size: 13px; font-weight: 700; }
-.perf-stat-val.blue { color: #2563eb; }
-.perf-stat-val.teal { color: #0891b2; }
-.perf-stat-val.gray { color: #9ca3af; }
+.aob-pills-wrap { overflow-x: auto; margin: 0 -4px; padding-bottom: 4px; }
+.aob-pills-wrap::-webkit-scrollbar { height: 4px; }
+.aob-pills-wrap::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+.aob-pills { display: flex; gap: 8px; padding: 2px 4px; min-width: max-content; }
 
-.perf-progress-wrap { display: flex; align-items: center; gap: 6px; }
-.perf-progress-bar {
-  flex: 1; height: 6px; background: #e5e7eb;
-  border-radius: 3px; overflow: hidden;
-}
-.perf-progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
-.perf-pct { font-size: 11px; font-weight: 700; min-width: 32px; text-align: right; }
+.aob-pill { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 20px; border: 1.5px solid #e5e7eb; background: #f9fafb; cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
+.aob-pill:hover { border-color: #93c5fd; background: #eff6ff; }
+.aob-pill.pill-priority { border-color: #fca5a5; background: #fef2f2; }
+.aob-pill.pill-priority .pill-remain { color: #dc2626; font-weight: 700; }
+.aob-pill.pill-done { border-color: #86efac; background: #f0fdf4; opacity: 0.7; }
 
-.perf-pending-row { display: flex; align-items: center; font-size: 11px; }
-.perf-pending-lbl { color: #9ca3af; }
-.perf-pending-num { font-weight: 700; color: #d97706; }
+.pill-av { width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.pill-name { font-size: 12px; font-weight: 600; color: #374151; }
+.pill-nums { font-size: 11px; color: #6b7280; font-family: monospace; }
+.pill-remain { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 8px; }
+.pill-remain.remain-urgent { color: #dc2626; background: #fee2e2; }
+.pill-remain.remain-ok { color: #059669; background: #d1fae5; }
+
+/* 展开详情表格 */
+.aob-detail { margin-top: 10px; border-top: 1px solid #f0f0f0; padding-top: 10px; }
+.aob-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.aob-table th { text-align: left; font-size: 11px; color: #6b7280; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+.aob-table td { padding: 7px 8px; border-bottom: 1px solid #f3f4f6; }
+.aob-table tr.row-priority { background: #fef2f2; }
+.aob-t-center { text-align: center; }
+.aob-t-name { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #374151; white-space: nowrap; }
+.pill-av-sm { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+.remain-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-weight: 700; font-size: 12px; background: #f3f4f6; color: #374151; }
+.remain-badge-urgent { background: #fee2e2; color: #dc2626; }
+.remain-badge-ok { background: #d1fae5; color: #059669; }
+
+.aob-t-progress { display: flex; align-items: center; gap: 4px; }
+.aob-t-bar { flex: 1; height: 5px; background: #e5e7eb; border-radius: 3px; overflow: hidden; min-width: 60px; }
+.aob-t-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.aob-t-pct { font-size: 11px; font-weight: 700; min-width: 30px; text-align: right; }
+
+.pending-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-weight: 700; font-size: 12px; background: #fffbeb; color: #d97706; }
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
 .total-hint { font-size: 13px; color: #6b7280; margin-left: 4px; }

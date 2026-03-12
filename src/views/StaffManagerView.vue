@@ -30,20 +30,27 @@
           <template v-if="column.key === 'department'">
             <span>{{ record.department || '业务部' }}</span>
           </template>
-          <template v-if="column.key === 'join_date'">
-            <span>{{ record.join_date || '—' }}</span>
-          </template>
-          <template v-if="column.key === 'monthly_target'">
-            <div class="target-cell" @click.stop="openTargetModal(record)">
-              <span class="target-num">{{ getThisMonthTarget(record.id) }}</span>
-              <span class="target-lbl">单/月</span>
-              <span class="target-edit-hint">设置</span>
-            </div>
-          </template>
-          <template v-if="column.key === 'stats'">
-            <div class="stats-cell">
-              <span class="stat-item assigned">已分配 {{ record.total_assigned || 0 }}</span>
-              <span class="stat-item completed">已完成 {{ record.total_completed || 0 }}</span>
+          <template v-if="column.key === 'monthly_perf'">
+            <div class="perf-cell">
+              <div class="perf-cell-top">
+                <div class="perf-nums">
+                  <span class="perf-done">{{ getMonthlyCompleted(record.id) }}</span>
+                  <span class="perf-sep">/</span>
+                  <span class="perf-target-num">{{ getThisMonthTarget(record.id) || '--' }}</span>
+                  <span class="perf-unit">单</span>
+                </div>
+                <span class="perf-set-btn" @click.stop="openTargetModal(record)">
+                  <SettingOutlined /> 设置目标
+                </span>
+              </div>
+              <a-progress
+                :percent="getCompletionRate(record.id)"
+                :stroke-color="getProgressColor(record.id)"
+                :show-info="true"
+                size="small"
+                stroke-linecap="round"
+                style="margin:0"
+              />
             </div>
           </template>
           <template v-if="column.key === 'status'">
@@ -61,7 +68,6 @@
       </a-table>
     </div>
 
-    <!-- 添加/编辑业务员 Modal -->
     <a-modal v-model:open="modalOpen" :title="editingId ? '编辑业务员' : '添加业务员'" @ok="handleSubmit" :confirm-loading="submitting" width="560px" ok-text="确定" cancel-text="取消">
       <a-form :model="form" layout="vertical" ref="formRef" :rules="rules" style="margin-top:8px">
         <a-row :gutter="16">
@@ -127,7 +133,6 @@
       </a-form>
     </a-modal>
 
-    <!-- 月度目标设置 Modal -->
     <a-modal
       v-model:open="targetModalOpen"
       :title="`设置月度目标 — ${targetStaff?.name || ''}`"
@@ -176,7 +181,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs from 'dayjs'
 
@@ -196,6 +201,7 @@ const targetStaff = ref<any>(null)
 const targetMonthVal = ref<any>(dayjs())
 const historicalTargets = ref<any[]>([])
 const monthlyTargetsMap = ref<Record<string, number>>({})
+const monthlyCompletedMap = ref<Record<string, number>>({})
 
 const targetForm = reactive({ monthly_target: 0, notes: '', year_month: dayjs().format('YYYY-MM') })
 
@@ -215,14 +221,12 @@ const form = reactive(defaultForm())
 const rules = { name: [{ required: true, message: '请输入姓名' }] }
 
 const columns = [
-  { title: '编号', key: 'staff_number', dataIndex: 'staff_number', width: 110 },
-  { title: '姓名', key: 'name', width: 160 },
-  { title: '部门', key: 'department', dataIndex: 'department', width: 90 },
-  { title: '入职日期', key: 'join_date', dataIndex: 'join_date', width: 110 },
-  { title: '本月目标', key: 'monthly_target', width: 120 },
-  { title: '任务统计', key: 'stats', width: 150 },
+  { title: '编号', key: 'staff_number', dataIndex: 'staff_number', width: 100 },
+  { title: '姓名', key: 'name', width: 150 },
+  { title: '部门', key: 'department', dataIndex: 'department', width: 80 },
+  { title: '本月业绩', key: 'monthly_perf', width: 280 },
   { title: '状态', key: 'status', width: 80 },
-  { title: '操作', key: 'action', width: 110 },
+  { title: '操作', key: 'action', width: 130 },
 ]
 
 const daysInMonth = computed(() => dayjs(targetForm.year_month).daysInMonth())
@@ -233,6 +237,24 @@ const dailyTarget = computed(() => {
 
 function getThisMonthTarget(staffId: string): number {
   return monthlyTargetsMap.value[staffId] || 0
+}
+
+function getMonthlyCompleted(staffId: string): number {
+  return monthlyCompletedMap.value[staffId] || 0
+}
+
+function getCompletionRate(staffId: string): number {
+  const target = getThisMonthTarget(staffId)
+  if (!target) return 0
+  return Math.min(100, Math.round((getMonthlyCompleted(staffId) / target) * 100))
+}
+
+function getProgressColor(staffId: string): string {
+  const rate = getCompletionRate(staffId)
+  if (rate >= 100) return '#059669'
+  if (rate >= 60) return '#2563eb'
+  if (rate >= 30) return '#d97706'
+  return '#dc2626'
 }
 
 function onJoinDateChange(_: any, dateStr: string) {
@@ -271,7 +293,7 @@ async function load() {
     if (error) throw error
     staffList.value = data || []
 
-    await loadAllTargets()
+    await Promise.all([loadAllTargets(), loadMonthlyCompleted()])
   } finally {
     loading.value = false
   }
@@ -293,6 +315,27 @@ async function loadAllTargets() {
     map[t.staff_id] = t.monthly_target
   }
   monthlyTargetsMap.value = map
+}
+
+async function loadMonthlyCompleted() {
+  const monthStart = dayjs().startOf('month').toISOString()
+  const monthEnd = dayjs().endOf('month').toISOString()
+  const staffIds = staffList.value.map(s => s.id)
+  if (!staffIds.length) return
+
+  const { data } = await supabase
+    .from('sub_orders')
+    .select('staff_id')
+    .in('staff_id', staffIds)
+    .in('status', ['已完成', '已留评'])
+    .gte('updated_at', monthStart)
+    .lte('updated_at', monthEnd)
+
+  const map: Record<string, number> = {}
+  for (const s of data || []) {
+    map[s.staff_id] = (map[s.staff_id] || 0) + 1
+  }
+  monthlyCompletedMap.value = map
 }
 
 function openModal(record?: any) {
@@ -401,7 +444,7 @@ async function handleSaveTarget() {
     if (error) throw error
     message.success('目标已保存')
     targetModalOpen.value = false
-    await loadAllTargets()
+    await Promise.all([loadAllTargets(), loadMonthlyCompleted()])
   } catch (e: any) {
     message.error('保存失败：' + e.message)
   } finally {
@@ -433,41 +476,25 @@ onMounted(load)
 
 .staff-no { font-family: monospace; font-weight: 700; font-size: 13px; color: #1d4ed8; background: #eff6ff; padding: 2px 8px; border-radius: 5px; }
 
-.target-cell {
-  display: flex; align-items: center; gap: 4px;
-  cursor: pointer; padding: 4px 8px; border-radius: 6px;
-  transition: background 0.15s;
-}
-.target-cell:hover { background: #eff6ff; }
-.target-cell:hover .target-edit-hint { opacity: 1; }
-.target-num { font-size: 16px; font-weight: 700; color: #2563eb; }
-.target-lbl { font-size: 11px; color: #9ca3af; }
-.target-edit-hint { font-size: 11px; color: #93c5fd; margin-left: 4px; opacity: 0; transition: opacity 0.15s; }
-
-.stats-cell { display: flex; flex-direction: column; gap: 2px; }
-.stat-item { font-size: 11px; padding: 1px 6px; border-radius: 4px; width: fit-content; }
-.stat-item.assigned { background: #eff6ff; color: #1d4ed8; }
-.stat-item.completed { background: #f0fdf4; color: #15803d; }
+.perf-cell { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
+.perf-cell-top { display: flex; align-items: center; justify-content: space-between; }
+.perf-nums { display: flex; align-items: baseline; gap: 2px; }
+.perf-done { font-size: 18px; font-weight: 700; color: #2563eb; }
+.perf-sep { font-size: 13px; color: #d1d5db; margin: 0 2px; }
+.perf-target-num { font-size: 14px; font-weight: 600; color: #6b7280; }
+.perf-unit { font-size: 11px; color: #9ca3af; margin-left: 2px; }
+.perf-set-btn { font-size: 12px; color: #2563eb; cursor: pointer; padding: 2px 8px; border-radius: 4px; transition: background 0.15s; }
+.perf-set-btn:hover { background: #eff6ff; }
 
 .color-picker-row { display: flex; align-items: center; gap: 10px; }
 .color-input { width: 40px; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px; cursor: pointer; padding: 2px; }
 .avatar-preview { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
 
-.target-calc-hint {
-  font-size: 12px; color: #059669; margin-top: 4px;
-  padding: 4px 8px; background: #f0fdf4; border-radius: 4px;
-}
+.target-calc-hint { font-size: 12px; color: #059669; margin-top: 4px; padding: 4px 8px; background: #f0fdf4; border-radius: 4px; }
 
-.target-history {
-  margin-top: 16px; border-top: 1px solid #f0f0f0; padding-top: 12px;
-}
+.target-history { margin-top: 16px; border-top: 1px solid #f0f0f0; padding-top: 12px; }
 .th-title { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 8px; }
-.th-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 6px 10px; border-radius: 6px;
-  background: #f8fafc; margin-bottom: 4px;
-  font-size: 13px;
-}
+.th-row { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-radius: 6px; background: #f8fafc; margin-bottom: 4px; font-size: 13px; }
 .th-month { font-weight: 600; color: #374151; min-width: 70px; }
 .th-target { color: #2563eb; font-weight: 700; min-width: 60px; }
 .th-daily { color: #9ca3af; font-size: 12px; flex: 1; }
