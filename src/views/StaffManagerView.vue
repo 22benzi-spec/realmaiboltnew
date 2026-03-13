@@ -63,96 +63,61 @@
           </template>
           <template v-if="column.key === 'action'">
             <a-space>
-              <a-button type="link" size="small" @click="openModal(record)">编辑</a-button>
-              <a-popconfirm title="确定删除该业务员?" @confirm="deleteStaff(record.id)">
-                <a-button type="link" size="small" danger>删除</a-button>
-              </a-popconfirm>
+              <a-button type="link" size="small" @click="openDetail(record)">详情</a-button>
+              <span class="perf-set-btn-sm" @click.stop="openTargetModal(record)">
+                <SettingOutlined /> 设目标
+              </span>
             </a-space>
           </template>
         </template>
       </a-table>
     </div>
 
-    <a-modal v-model:open="modalOpen" :title="editingId ? '编辑业务员' : '添加业务员'" @ok="handleSubmit" :confirm-loading="submitting" width="560px" ok-text="确定" cancel-text="取消">
-      <a-form :model="form" layout="vertical" ref="formRef" :rules="rules" style="margin-top:8px">
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="业务员编号">
-              <a-input :value="editingId ? form.staff_number : '系统自动生成'" disabled />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="姓名" name="name">
-              <a-input v-model:value="form.name" placeholder="真实姓名" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="角色/职位" name="role">
-              <a-select v-model:value="form.role">
-                <a-select-option value="业务员">业务员</a-select-option>
-                <a-select-option value="主管">主管</a-select-option>
-                <a-select-option value="经理">经理</a-select-option>
-                <a-select-option value="实习">实习</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="部门">
-              <a-input v-model:value="form.department" placeholder="所属部门" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="在职状态">
-              <a-select v-model:value="form.status">
-                <a-select-option value="在职">在职</a-select-option>
-                <a-select-option value="休假">休假</a-select-option>
-                <a-select-option value="离职">离职</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="入职日期">
-              <a-date-picker v-model:value="joinDateVal" style="width:100%" @change="onJoinDateChange" placeholder="选择入职日期" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="操作国家">
-          <a-checkbox-group v-model:value="form.countries" style="display:flex;gap:4px;flex-wrap:wrap">
-            <a-checkbox value="US" disabled checked>
-              <span class="country-tag country-us">🇺🇸 美国</span>
-            </a-checkbox>
-            <a-checkbox value="DE">
-              <span class="country-tag country-de">🇩🇪 德国</span>
-            </a-checkbox>
-            <a-checkbox value="UK">
-              <span class="country-tag country-uk">🇬🇧 英国</span>
-            </a-checkbox>
-            <a-checkbox value="CA">
-              <span class="country-tag country-ca">🇨🇦 加拿大</span>
-            </a-checkbox>
-          </a-checkbox-group>
-        </a-form-item>
-        <a-row :gutter="16">
-          <a-col :span="6">
-            <a-form-item label="头像颜色">
-              <div class="color-picker-row">
-                <input type="color" v-model="form.avatar_color" class="color-input" />
-                <div class="avatar-preview" :style="{ background: form.avatar_color }">{{ form.name ? form.name.charAt(0) : 'A' }}</div>
-              </div>
-            </a-form-item>
-          </a-col>
-          <a-col :span="18">
-            <a-form-item label="备注">
-              <a-textarea v-model:value="form.notes" :rows="2" placeholder="备注信息..." />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-form>
-    </a-modal>
+    <a-drawer
+      v-model:open="detailOpen"
+      :title="detailRecord?.name ? `业务员详情 — ${detailRecord.name}` : '业务员详情'"
+      width="480px"
+      :footer="null"
+    >
+      <template v-if="detailRecord">
+        <div class="detail-header">
+          <div class="detail-avatar" :style="{ background: detailRecord.avatar_color || '#2563eb' }">
+            {{ detailRecord.name?.charAt(0) }}
+          </div>
+          <div>
+            <div class="detail-name">{{ detailRecord.name }}</div>
+            <div class="detail-sub">{{ detailRecord.staff_number }} · {{ detailRecord.role || '业务员' }}</div>
+          </div>
+          <div style="flex:1" />
+          <a-tag :color="statusColor[detailRecord.status] || 'default'">{{ detailRecord.status }}</a-tag>
+        </div>
+        <a-descriptions :column="2" size="small" style="margin-top:20px">
+          <a-descriptions-item label="部门">{{ detailRecord.department || '业务部' }}</a-descriptions-item>
+          <a-descriptions-item label="入职日期">{{ detailRecord.join_date || '—' }}</a-descriptions-item>
+          <a-descriptions-item label="操作国家" :span="2">
+            <div class="countries-cell">
+              <span
+                v-for="c in (detailRecord.countries || ['US'])"
+                :key="c"
+                class="country-badge"
+                :style="{ borderColor: countryMap[c]?.color, color: countryMap[c]?.color }"
+              >
+                {{ countryMap[c]?.flag }} {{ countryMap[c]?.label }}
+              </span>
+            </div>
+          </a-descriptions-item>
+          <a-descriptions-item label="名下买手数">
+            <span style="font-size:16px;font-weight:700;color:#1d4ed8">{{ buyerCountMap[detailRecord.id] || 0 }}</span> 人
+          </a-descriptions-item>
+          <a-descriptions-item label="本月目标">
+            <span v-if="getThisMonthTarget(detailRecord.id)" style="font-size:16px;font-weight:700;color:#059669">{{ getThisMonthTarget(detailRecord.id) }}</span>
+            <span v-else style="color:#94a3b8">未设置</span>
+            <span v-if="getThisMonthTarget(detailRecord.id)" style="color:#64748b;margin-left:4px">单</span>
+          </a-descriptions-item>
+          <a-descriptions-item label="备注" :span="2">{{ detailRecord.notes || '—' }}</a-descriptions-item>
+        </a-descriptions>
+      </template>
+    </a-drawer>
 
     <a-modal
       v-model:open="targetModalOpen"
@@ -288,11 +253,8 @@ const loading = ref(false)
 const staffList = ref<any[]>([])
 const searchText = ref('')
 const filterStatus = ref('')
-const modalOpen = ref(false)
-const submitting = ref(false)
-const editingId = ref('')
-const formRef = ref()
-const joinDateVal = ref<any>(null)
+const detailOpen = ref(false)
+const detailRecord = ref<any>(null)
 
 const targetModalOpen = ref(false)
 const targetSubmitting = ref(false)
@@ -304,20 +266,6 @@ const buyerCountMap = ref<Record<string, number>>({})
 const targetForm = reactive({ monthly_target: 0, daily_target: 0, notes: '', year_month: dayjs().format('YYYY-MM') })
 
 const statusColor: Record<string, string> = { '在职': 'green', '休假': 'orange', '离职': 'red' }
-
-const defaultForm = () => ({
-  staff_number: '',
-  name: '',
-  role: '业务员',
-  department: '业务部',
-  status: '在职',
-  avatar_color: '#2563eb',
-  notes: '',
-  join_date: '',
-  countries: ['US'] as string[],
-})
-const form = reactive(defaultForm())
-const rules = { name: [{ required: true, message: '请输入姓名' }] }
 
 const columns = [
   { title: '编号', key: 'staff_number', dataIndex: 'staff_number', width: 100 },
@@ -394,28 +342,9 @@ function getThisMonthTarget(staffId: string): number {
   return monthlyTargetsMap.value[staffId] || 0
 }
 
-function onJoinDateChange(_: any, dateStr: string) {
-  form.join_date = dateStr
-}
-
 function onTargetMonthChange(_: any, dateStr: string) {
   targetForm.year_month = dateStr
   loadTargetForMonth()
-}
-
-async function generateStaffNumber(): Promise<string> {
-  const { data } = await supabase
-    .from('staff')
-    .select('staff_number')
-    .not('staff_number', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(50)
-  const nums = (data || [])
-    .map((r: any) => r.staff_number)
-    .filter((n: string) => /^YWY-\d+$/.test(n))
-    .map((n: string) => parseInt(n.replace('YWY-', '')))
-  const max = nums.length ? Math.max(...nums) : 0
-  return `YWY-${String(max + 1).padStart(3, '0')}`
 }
 
 async function load() {
@@ -471,59 +400,11 @@ async function loadBuyerCounts() {
   buyerCountMap.value = map
 }
 
-function openModal(record?: any) {
-  editingId.value = record?.id || ''
-  if (record) {
-    Object.assign(form, defaultForm(), record)
-    form.countries = record.countries?.length ? record.countries : ['US']
-    joinDateVal.value = record.join_date ? dayjs(record.join_date) : null
-  } else {
-    Object.assign(form, defaultForm())
-    joinDateVal.value = null
-  }
-  modalOpen.value = true
+function openDetail(record: any) {
+  detailRecord.value = record
+  detailOpen.value = true
 }
 
-async function handleSubmit() {
-  await formRef.value?.validate()
-  submitting.value = true
-  try {
-    const countries = (form.countries || []).filter((c: string) => c !== 'US')
-    const payload: any = {
-      name: form.name,
-      role: form.role,
-      department: form.department || '业务部',
-      status: form.status,
-      avatar_color: form.avatar_color,
-      notes: form.notes,
-      join_date: form.join_date || null,
-      countries: ['US', ...countries],
-    }
-    if (editingId.value) {
-      const { error } = await supabase.from('staff').update(payload).eq('id', editingId.value)
-      if (error) throw error
-      message.success('更新成功')
-    } else {
-      payload.staff_number = await generateStaffNumber()
-      const { error } = await supabase.from('staff').insert([payload])
-      if (error) throw error
-      message.success('添加成功')
-    }
-    modalOpen.value = false
-    load()
-  } catch (e: any) {
-    message.error('操作失败：' + e.message)
-  } finally {
-    submitting.value = false
-  }
-}
-
-async function deleteStaff(id: string) {
-  const { error } = await supabase.from('staff').delete().eq('id', id)
-  if (error) { message.error('删除失败'); return }
-  message.success('删除成功')
-  load()
-}
 
 async function openTargetModal(record: any) {
   targetStaff.value = record
@@ -666,4 +547,18 @@ onMounted(load)
 .th-month { font-weight: 600; color: #374151; min-width: 70px; }
 .th-target { color: #2563eb; font-weight: 700; min-width: 60px; }
 .th-daily { color: #9ca3af; font-size: 12px; flex: 1; }
+
+.detail-header { display: flex; align-items: center; gap: 14px; padding: 16px; background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; }
+.detail-avatar { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 18px; flex-shrink: 0; }
+.detail-name { font-size: 16px; font-weight: 700; color: #1e293b; }
+.detail-sub { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+
+.perf-set-btn-sm {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 12px; color: #2563eb; cursor: pointer;
+  padding: 2px 7px; border-radius: 5px;
+  border: 1px solid #bfdbfe; background: #eff6ff;
+  transition: background 0.15s; white-space: nowrap;
+}
+.perf-set-btn-sm:hover { background: #dbeafe; }
 </style>
