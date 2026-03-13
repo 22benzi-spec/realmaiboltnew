@@ -14,14 +14,21 @@
       <div class="s-card">
         <div class="s-label">总完成单量</div>
         <div class="s-val">{{ summaryData.totalCompleted }}</div>
+        <div class="s-sub">
+          <span class="s-tag s-tag-review">留评 {{ summaryData.totalReviewType }}</span>
+          <span class="s-tag s-tag-free">免评 {{ summaryData.totalFreeType }}</span>
+          <span class="s-tag s-tag-fb">FB {{ summaryData.totalFeedbackType }}</span>
+        </div>
       </div>
       <div class="s-card">
-        <div class="s-label">留评单量</div>
-        <div class="s-val">{{ summaryData.totalReviewed }}</div>
+        <div class="s-label">业绩完成率</div>
+        <div class="s-val" :class="rateClass(summaryData.avgCompletionRate)">{{ summaryData.avgCompletionRate }}%</div>
+        <div class="s-sub-small">目标 {{ summaryData.totalTarget }} 单</div>
       </div>
       <div class="s-card">
         <div class="s-label">平均留评率</div>
         <div class="s-val" :class="rateClass(summaryData.avgReviewRate)">{{ summaryData.avgReviewRate }}%</div>
+        <div class="s-sub-small">已留评 {{ summaryData.totalReviewed }} 单</div>
       </div>
       <div class="s-card">
         <div class="s-label">掉评数</div>
@@ -70,17 +77,36 @@
             <span v-else class="tc-empty">0</span>
           </template>
           <template v-if="column.key === 'completed'">
-            <div class="target-cell">
-              <span class="num-main">{{ record.completed }}</span>
-              <span class="num-target">/{{ record.target || '--' }}</span>
+            <div class="completed-cell">
+              <div class="completed-top">
+                <div class="completed-counts">
+                  <span class="cc-num cc-main">{{ record.completed }}</span>
+                  <span class="cc-sep">/</span>
+                  <span class="cc-target">{{ record.target || '--' }}</span>
+                </div>
+                <span v-if="record.target > 0" class="completion-rate-badge" :class="completionRateClass(record.completed, record.target)">
+                  {{ Math.min(100, Math.round(record.completed / record.target * 100)) }}%
+                </span>
+              </div>
               <a-progress
                 v-if="record.target > 0"
                 :percent="Math.min(100, Math.round(record.completed / record.target * 100))"
-                :stroke-color="record.completed >= record.target ? '#059669' : '#2563eb'"
+                :stroke-color="record.completed >= record.target ? '#059669' : record.completed / record.target >= 0.6 ? '#2563eb' : '#d97706'"
                 size="small"
                 :show-info="false"
-                style="width:80px;margin-left:8px"
+                style="margin: 4px 0 2px"
               />
+              <div class="type-breakdown">
+                <span class="tb-item tb-review" title="留评（文字/图片/视频）">
+                  <span class="tb-dot tb-dot-review"></span>留评 {{ record.review_type_count }}
+                </span>
+                <span class="tb-item tb-free" title="免评">
+                  <span class="tb-dot tb-dot-free"></span>免评 {{ record.free_type_count }}
+                </span>
+                <span class="tb-item tb-fb" title="Feedback">
+                  <span class="tb-dot tb-dot-fb"></span>FB {{ record.feedback_type_count }}
+                </span>
+              </div>
             </div>
           </template>
           <template v-if="column.key === 'review_rate'">
@@ -186,6 +212,9 @@ interface StaffRow {
   completed: number
   reviewed: number
   review_rate: number
+  review_type_count: number
+  free_type_count: number
+  feedback_type_count: number
   drop_count: number
   drop_rate: number
   after_sale_count: number
@@ -214,11 +243,16 @@ const summaryData = computed(() => {
   const list = filteredRows.value
   const totalCompleted = list.reduce((s, r) => s + r.completed, 0)
   const totalReviewed = list.reduce((s, r) => s + r.reviewed, 0)
+  const totalTarget = list.reduce((s, r) => s + r.target, 0)
+  const totalReviewType = list.reduce((s, r) => s + r.review_type_count, 0)
+  const totalFreeType = list.reduce((s, r) => s + r.free_type_count, 0)
+  const totalFeedbackType = list.reduce((s, r) => s + r.feedback_type_count, 0)
   const avgReviewRate = totalCompleted > 0 ? Math.round(totalReviewed / totalCompleted * 100) : 0
+  const avgCompletionRate = totalTarget > 0 ? Math.min(100, Math.round(totalCompleted / totalTarget * 100)) : 0
   const totalDropped = list.reduce((s, r) => s + r.drop_count, 0)
   const totalAfterSale = list.reduce((s, r) => s + r.after_sale_count, 0)
   const totalStolenPrincipal = list.reduce((s, r) => s + r.stolen_principal, 0)
-  return { totalCompleted, totalReviewed, avgReviewRate, totalDropped, totalAfterSale, totalStolenPrincipal }
+  return { totalCompleted, totalReviewed, totalTarget, totalReviewType, totalFreeType, totalFeedbackType, avgReviewRate, avgCompletionRate, totalDropped, totalAfterSale, totalStolenPrincipal }
 })
 
 const sortedByReviewRate = computed(() =>
@@ -242,10 +276,18 @@ function rateClass(rate: number): string {
   return 'rate-low'
 }
 
+function completionRateClass(completed: number, target: number): string {
+  if (!target) return ''
+  const rate = completed / target
+  if (rate >= 1) return 'cr-full'
+  if (rate >= 0.6) return 'cr-mid'
+  return 'cr-low'
+}
+
 const columns = [
   { title: '业务员', key: 'name', width: 140, fixed: 'left' as const },
   { title: '本月新增买手', key: 'buyer_new', width: 110 },
-  { title: '完成/目标', key: 'completed', width: 220 },
+  { title: '完成/目标（类型明细）', key: 'completed', width: 260 },
   { title: '留评率', key: 'review_rate', width: 90 },
   { title: '掉评数(率)', key: 'drop_count', width: 110 },
   { title: '售后数(率)', key: 'after_sale_count', width: 110 },
@@ -279,7 +321,7 @@ async function loadData() {
     const [subOrdersRes, buyersNewRes, reviewsRes, afterSaleRes, targetsRes] = await Promise.all([
       supabase
         .from('sub_orders')
-        .select('staff_id, status, review_submitted_at')
+        .select('staff_id, status, review_submitted_at, order_types')
         .in('staff_id', staffIds)
         .gte('updated_at', monthStart)
         .lte('updated_at', monthEnd),
@@ -321,9 +363,15 @@ async function loadData() {
     const result: StaffRow[] = staffList.value.map(staff => {
       const sid = staff.id
       const staffSubOrders = subOrders.filter(o => o.staff_id === sid)
-      const completed = staffSubOrders.filter(o => ['已完成', '已留评'].includes(o.status)).length
+      const completedOrders = staffSubOrders.filter(o => ['已完成', '已留评'].includes(o.status))
+      const completed = completedOrders.length
       const reviewed = staffSubOrders.filter(o => o.status === '已留评' || o.review_submitted_at).length
       const buyerNew = newBuyers.filter(b => b.staff_id === sid).length
+
+      const REVIEW_TYPES = new Set(['文字评', '图片评', '视频评'])
+      const review_type_count = completedOrders.filter(o => (o.order_types || []).some((t: string) => REVIEW_TYPES.has(t))).length
+      const free_type_count = completedOrders.filter(o => (o.order_types || []).includes('免评')).length
+      const feedback_type_count = completedOrders.filter(o => (o.order_types || []).includes('Feedback')).length
 
       const staffBuyerIdList = buyerStaffMap.get(sid) || []
       const staffBuyerIdSet = new Set(staffBuyerIdList)
@@ -349,6 +397,9 @@ async function loadData() {
         completed,
         reviewed,
         review_rate: reviewRate,
+        review_type_count,
+        free_type_count,
+        feedback_type_count,
         drop_count: dropCount,
         drop_rate: dropRate,
         after_sale_count: afterSaleCount,
@@ -436,6 +487,12 @@ onMounted(async () => {
 .s-val { font-size: 22px; font-weight: 700; color: #374151; }
 .s-val.warn { color: #d97706; }
 .s-val.danger { color: #dc2626; }
+.s-sub { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.s-sub-small { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+.s-tag { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 8px; }
+.s-tag-review { background: #eff6ff; color: #2563eb; }
+.s-tag-free { background: #f3f4f6; color: #6b7280; }
+.s-tag-fb { background: #fffbeb; color: #d97706; }
 
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
@@ -457,6 +514,23 @@ onMounted(async () => {
 .rate-low { color: #dc2626; font-weight: 700; }
 
 .target-cell { display: flex; align-items: center; }
+
+.completed-cell { min-width: 200px; }
+.completed-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.completed-counts { display: flex; align-items: baseline; gap: 2px; }
+.cc-num.cc-main { font-size: 16px; font-weight: 700; color: #374151; }
+.cc-sep { font-size: 12px; color: #d1d5db; margin: 0 2px; }
+.cc-target { font-size: 12px; color: #9ca3af; }
+.completion-rate-badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 10px; }
+.cr-full { background: #f0fdf4; color: #059669; }
+.cr-mid { background: #eff6ff; color: #2563eb; }
+.cr-low { background: #fffbeb; color: #d97706; }
+.type-breakdown { display: flex; gap: 8px; margin-top: 2px; }
+.tb-item { display: flex; align-items: center; gap: 3px; font-size: 11px; color: #6b7280; }
+.tb-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tb-dot-review { background: #2563eb; }
+.tb-dot-free { background: #9ca3af; }
+.tb-dot-fb { background: #d97706; }
 
 .compare-view { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .compare-section { }

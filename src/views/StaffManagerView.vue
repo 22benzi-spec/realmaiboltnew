@@ -131,36 +131,74 @@
       :confirm-loading="targetSubmitting"
       ok-text="保存"
       cancel-text="取消"
-      width="440px"
+      width="580px"
     >
       <div style="margin-top:8px">
         <a-form layout="vertical">
-          <a-form-item label="选择月份">
-            <a-month-picker v-model:value="targetMonthVal" style="width:100%" placeholder="选择年月" @change="onTargetMonthChange" />
-          </a-form-item>
-          <a-form-item label="月度目标单量">
-            <a-input-number
-              v-model:value="targetForm.monthly_target"
-              :min="0"
-              :max="99999"
-              style="width:100%"
-              placeholder="输入当月目标单量"
-            />
-            <div v-if="targetForm.monthly_target > 0" class="target-calc-hint">
-              日均目标：约 {{ dailyTarget }} 单/天（按{{ daysInMonth }}天计算）
-            </div>
-          </a-form-item>
+          <a-row :gutter="12">
+            <a-col :span="12">
+              <a-form-item label="选择月份">
+                <a-month-picker v-model:value="targetMonthVal" style="width:100%" placeholder="选择年月" @change="onTargetMonthChange" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="月度目标单量">
+                <a-input-number
+                  v-model:value="targetForm.monthly_target"
+                  :min="0"
+                  :max="99999"
+                  style="width:100%"
+                  placeholder="输入当月目标单量"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
           <a-form-item label="备注">
             <a-input v-model:value="targetForm.notes" placeholder="如：旺季冲刺目标" />
           </a-form-item>
         </a-form>
+
+        <div v-if="targetForm.monthly_target > 0" class="workday-plan">
+          <div class="wp-header">
+            <span class="wp-title">工作日任务分配</span>
+            <div class="wp-stats">
+              <span class="wp-stat-item"><span class="wp-stat-num">{{ workdayCount }}</span> 个工作日</span>
+              <span class="wp-divider">·</span>
+              <span class="wp-stat-item">日均 <span class="wp-stat-num">{{ dailyWorkdayTarget }}</span> 单/天</span>
+              <span class="wp-divider">·</span>
+              <span class="wp-stat-item">周均 <span class="wp-stat-num">{{ weeklyTarget }}</span> 单/周</span>
+            </div>
+          </div>
+          <div class="wp-calendar">
+            <div class="wp-week-row wp-week-header">
+              <div v-for="d in ['一','二','三','四','五','六','日']" :key="d" class="wp-day-header">{{ d }}</div>
+            </div>
+            <div v-for="(week, wi) in calendarWeeks" :key="wi" class="wp-week-row">
+              <div
+                v-for="(day, di) in week"
+                :key="di"
+                class="wp-day-cell"
+                :class="{
+                  'wp-day-empty': !day,
+                  'wp-day-workday': day && isWorkday(day),
+                  'wp-day-weekend': day && !isWorkday(day),
+                }"
+              >
+                <template v-if="day">
+                  <span class="wp-day-num">{{ day.date() }}</span>
+                  <span v-if="isWorkday(day)" class="wp-day-task">{{ dailyWorkdayTarget }}</span>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div v-if="historicalTargets.length" class="target-history">
           <div class="th-title">历史目标记录</div>
           <div v-for="t in historicalTargets" :key="t.id" class="th-row">
             <span class="th-month">{{ t.year_month }}</span>
             <span class="th-target">{{ t.monthly_target }} 单</span>
-            <span class="th-daily">日均 {{ Math.ceil(t.monthly_target / 30) }}</span>
+            <span class="th-daily">工作日均 {{ Math.ceil(t.monthly_target / 22) }} 单</span>
             <a-button type="link" size="small" danger style="padding:0;height:auto" @click="deleteTarget(t)">删除</a-button>
           </div>
         </div>
@@ -219,11 +257,47 @@ const columns = [
   { title: '操作', key: 'action', width: 130 },
 ]
 
-const daysInMonth = computed(() => dayjs(targetForm.year_month).daysInMonth())
-const dailyTarget = computed(() => {
-  if (!targetForm.monthly_target || !daysInMonth.value) return 0
-  return Math.ceil(targetForm.monthly_target / daysInMonth.value)
+function isWorkday(d: any): boolean {
+  const dow = d.day()
+  return dow !== 0 && dow !== 6
+}
+
+const calendarWeeks = computed(() => {
+  if (!targetForm.year_month) return []
+  const first = dayjs(targetForm.year_month).startOf('month')
+  const last = dayjs(targetForm.year_month).endOf('month')
+  const weeks: (any | null)[][] = []
+  let week: (any | null)[] = []
+  const startDow = first.day() === 0 ? 6 : first.day() - 1
+  for (let i = 0; i < startDow; i++) week.push(null)
+  for (let d = first; !d.isAfter(last); d = d.add(1, 'day')) {
+    week.push(d)
+    if (week.length === 7) { weeks.push(week); week = [] }
+  }
+  if (week.length) {
+    while (week.length < 7) week.push(null)
+    weeks.push(week)
+  }
+  return weeks
 })
+
+const workdayCount = computed(() => {
+  if (!targetForm.year_month) return 0
+  const first = dayjs(targetForm.year_month).startOf('month')
+  const last = dayjs(targetForm.year_month).endOf('month')
+  let count = 0
+  for (let d = first; !d.isAfter(last); d = d.add(1, 'day')) {
+    if (isWorkday(d)) count++
+  }
+  return count
+})
+
+const dailyWorkdayTarget = computed(() => {
+  if (!targetForm.monthly_target || !workdayCount.value) return 0
+  return Math.ceil(targetForm.monthly_target / workdayCount.value)
+})
+
+const weeklyTarget = computed(() => dailyWorkdayTarget.value * 5)
 
 function getThisMonthTarget(staffId: string): number {
   return monthlyTargetsMap.value[staffId] || 0
@@ -457,7 +531,24 @@ onMounted(load)
 .color-input { width: 40px; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px; cursor: pointer; padding: 2px; }
 .avatar-preview { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
 
-.target-calc-hint { font-size: 12px; color: #059669; margin-top: 4px; padding: 4px 8px; background: #f0fdf4; border-radius: 4px; }
+.workday-plan { margin: 4px 0 16px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+.wp-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
+.wp-title { font-size: 13px; font-weight: 700; color: #374151; }
+.wp-stats { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; }
+.wp-stat-item { display: flex; align-items: center; gap: 3px; }
+.wp-stat-num { font-weight: 700; color: #2563eb; font-size: 13px; }
+.wp-divider { color: #d1d5db; }
+.wp-calendar { padding: 10px 12px; }
+.wp-week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+.wp-week-header { margin-bottom: 6px; }
+.wp-day-header { text-align: center; font-size: 11px; font-weight: 700; color: #9ca3af; padding: 2px 0; }
+.wp-day-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 44px; border-radius: 7px; font-size: 11px; transition: background 0.15s; }
+.wp-day-empty { background: transparent; }
+.wp-day-workday { background: #eff6ff; border: 1px solid #bfdbfe; }
+.wp-day-weekend { background: #f9fafb; border: 1px solid #f0f0f0; }
+.wp-day-num { font-size: 11px; color: #374151; font-weight: 600; line-height: 1.2; }
+.wp-day-weekend .wp-day-num { color: #d1d5db; }
+.wp-day-task { font-size: 10px; font-weight: 700; color: #2563eb; background: #dbeafe; padding: 1px 4px; border-radius: 4px; margin-top: 2px; }
 
 .target-history { margin-top: 16px; border-top: 1px solid #f0f0f0; padding-top: 12px; }
 .th-title { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 8px; }
