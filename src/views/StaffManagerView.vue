@@ -30,6 +30,18 @@
           <template v-if="column.key === 'department'">
             <span>{{ record.department || '业务部' }}</span>
           </template>
+          <template v-if="column.key === 'countries'">
+            <div class="countries-cell">
+              <span
+                v-for="c in (record.countries || ['US'])"
+                :key="c"
+                class="country-badge"
+                :style="{ borderColor: countryMap[c]?.color, color: countryMap[c]?.color }"
+              >
+                {{ countryMap[c]?.flag }} {{ countryMap[c]?.label }}
+              </span>
+            </div>
+          </template>
           <template v-if="column.key === 'monthly_perf'">
             <div class="perf-cell">
               <div class="perf-cell-top">
@@ -106,6 +118,22 @@
             </a-form-item>
           </a-col>
         </a-row>
+        <a-form-item label="操作国家">
+          <a-checkbox-group v-model:value="form.countries" style="display:flex;gap:4px;flex-wrap:wrap">
+            <a-checkbox value="US" disabled checked>
+              <span class="country-tag country-us">🇺🇸 美国</span>
+            </a-checkbox>
+            <a-checkbox value="DE">
+              <span class="country-tag country-de">🇩🇪 德国</span>
+            </a-checkbox>
+            <a-checkbox value="UK">
+              <span class="country-tag country-uk">🇬🇧 英国</span>
+            </a-checkbox>
+            <a-checkbox value="CA">
+              <span class="country-tag country-ca">🇨🇦 加拿大</span>
+            </a-checkbox>
+          </a-checkbox-group>
+        </a-form-item>
         <a-row :gutter="16">
           <a-col :span="6">
             <a-form-item label="头像颜色">
@@ -153,9 +181,25 @@
               </a-form-item>
             </a-col>
           </a-row>
-          <a-form-item label="备注">
-            <a-input v-model:value="targetForm.notes" placeholder="如：旺季冲刺目标" />
-          </a-form-item>
+          <a-row :gutter="12">
+            <a-col :span="12">
+              <a-form-item label="日目标单量">
+                <a-input-number
+                  v-model:value="targetForm.daily_target"
+                  :min="0"
+                  :max="9999"
+                  style="width:100%"
+                  placeholder="手动填写日均目标"
+                  addon-after="单/天"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="备注">
+                <a-input v-model:value="targetForm.notes" placeholder="如：旺季冲刺目标" />
+              </a-form-item>
+            </a-col>
+          </a-row>
         </a-form>
 
         <div v-if="targetForm.monthly_target > 0" class="workday-plan">
@@ -217,8 +261,9 @@
           <div class="th-title">历史目标记录</div>
           <div v-for="t in historicalTargets" :key="t.id" class="th-row">
             <span class="th-month">{{ t.year_month }}</span>
-            <span class="th-target">{{ t.monthly_target }} 单</span>
-            <span class="th-daily">日均 {{ historicalDailyTarget(t) }} 单/工作日</span>
+            <span class="th-target">月 {{ t.monthly_target }} 单</span>
+            <span class="th-daily" v-if="t.daily_target > 0">日 {{ t.daily_target }} 单</span>
+            <span class="th-daily" v-else>日参考 {{ historicalDailyTarget(t) }} 单</span>
             <a-button type="link" size="small" danger style="padding:0;height:auto" @click="deleteTarget(t)">删除</a-button>
           </div>
         </div>
@@ -251,7 +296,7 @@ const targetMonthVal = ref<any>(dayjs())
 const historicalTargets = ref<any[]>([])
 const monthlyTargetsMap = ref<Record<string, number>>({})
 const buyerCountMap = ref<Record<string, number>>({})
-const targetForm = reactive({ monthly_target: 0, notes: '', year_month: dayjs().format('YYYY-MM') })
+const targetForm = reactive({ monthly_target: 0, daily_target: 0, notes: '', year_month: dayjs().format('YYYY-MM') })
 
 const statusColor: Record<string, string> = { '在职': 'green', '休假': 'orange', '离职': 'red' }
 
@@ -264,6 +309,7 @@ const defaultForm = () => ({
   avatar_color: '#2563eb',
   notes: '',
   join_date: '',
+  countries: ['US'] as string[],
 })
 const form = reactive(defaultForm())
 const rules = { name: [{ required: true, message: '请输入姓名' }] }
@@ -272,10 +318,18 @@ const columns = [
   { title: '编号', key: 'staff_number', dataIndex: 'staff_number', width: 100 },
   { title: '姓名', key: 'name', width: 150 },
   { title: '部门', key: 'department', dataIndex: 'department', width: 80 },
+  { title: '操作国家', key: 'countries', width: 160 },
   { title: '名下买手 / 当月目标', key: 'monthly_perf', width: 200 },
   { title: '状态', key: 'status', width: 80 },
   { title: '操作', key: 'action', width: 130 },
 ]
+
+const countryMap: Record<string, { label: string; flag: string; color: string }> = {
+  US: { label: '美国', flag: '🇺🇸', color: '#1d4ed8' },
+  DE: { label: '德国', flag: '🇩🇪', color: '#dc2626' },
+  UK: { label: '英国', flag: '🇬🇧', color: '#059669' },
+  CA: { label: '加拿大', flag: '🇨🇦', color: '#d97706' },
+}
 
 function isWorkday(d: any): boolean {
   const dow = d.day()
@@ -416,6 +470,7 @@ function openModal(record?: any) {
   editingId.value = record?.id || ''
   if (record) {
     Object.assign(form, defaultForm(), record)
+    form.countries = record.countries?.length ? record.countries : ['US']
     joinDateVal.value = record.join_date ? dayjs(record.join_date) : null
   } else {
     Object.assign(form, defaultForm())
@@ -428,6 +483,7 @@ async function handleSubmit() {
   await formRef.value?.validate()
   submitting.value = true
   try {
+    const countries = (form.countries || []).filter((c: string) => c !== 'US')
     const payload: any = {
       name: form.name,
       role: form.role,
@@ -436,6 +492,7 @@ async function handleSubmit() {
       avatar_color: form.avatar_color,
       notes: form.notes,
       join_date: form.join_date || null,
+      countries: ['US', ...countries],
     }
     if (editingId.value) {
       const { error } = await supabase.from('staff').update(payload).eq('id', editingId.value)
@@ -484,9 +541,11 @@ async function loadTargetForMonth() {
 
   if (data) {
     targetForm.monthly_target = data.monthly_target
+    targetForm.daily_target = data.daily_target || 0
     targetForm.notes = data.notes || ''
   } else {
     targetForm.monthly_target = 0
+    targetForm.daily_target = 0
     targetForm.notes = ''
   }
 }
@@ -512,6 +571,7 @@ async function handleSaveTarget() {
         staff_id: targetStaff.value.id,
         year_month: targetForm.year_month,
         monthly_target: targetForm.monthly_target,
+        daily_target: targetForm.daily_target || 0,
         notes: targetForm.notes,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'staff_id,year_month' })
@@ -559,6 +619,9 @@ onMounted(load)
 .perf-set-btn:hover { background: #eff6ff; }
 .target-badge { font-size: 11px; font-weight: 700; color: #059669; background: #f0fdf4; padding: 1px 5px; border-radius: 8px; }
 
+.countries-cell { display: flex; flex-wrap: wrap; gap: 4px; }
+.country-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 20px; border: 1.5px solid; background: #fff; white-space: nowrap; }
+.country-tag { font-size: 13px; }
 .color-picker-row { display: flex; align-items: center; gap: 10px; }
 .color-input { width: 40px; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px; cursor: pointer; padding: 2px; }
 .avatar-preview { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
