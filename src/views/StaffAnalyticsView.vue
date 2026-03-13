@@ -130,6 +130,18 @@
 
       <div v-if="viewMode === 'compare'" class="compare-view">
         <div class="compare-section">
+          <div class="cs-title">业绩完成率</div>
+          <div class="bar-list">
+            <div v-for="r in sortedByCompletion" :key="r.staff_id" class="bar-row">
+              <span class="bar-name">{{ r.name }}</span>
+              <div class="bar-track">
+                <div class="bar-fill" :style="{ width: completionPct(r) + '%', background: completionPct(r) >= 100 ? '#059669' : completionPct(r) >= 60 ? '#2563eb' : '#d97706' }"></div>
+              </div>
+              <span class="bar-val">{{ r.target > 0 ? completionPct(r) + '%' : '--' }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="compare-section">
           <div class="cs-title">留评率排名</div>
           <div class="bar-list">
             <div v-for="r in sortedByReviewRate" :key="r.staff_id" class="bar-row">
@@ -142,6 +154,27 @@
           </div>
         </div>
         <div class="compare-section">
+          <div class="cs-title">完成单量（类型细分）</div>
+          <div class="bar-list">
+            <div v-for="r in sortedByCompletion" :key="r.staff_id" class="bar-row bar-row-stacked">
+              <span class="bar-name">{{ r.name }}</span>
+              <div class="bar-track">
+                <div class="bar-stacked">
+                  <div class="bar-seg bar-seg-review" :style="{ width: stackedPct(r, 'review') + '%' }" :title="`留评 ${r.review_type_count}`"></div>
+                  <div class="bar-seg bar-seg-free" :style="{ width: stackedPct(r, 'free') + '%' }" :title="`免评 ${r.free_type_count}`"></div>
+                  <div class="bar-seg bar-seg-fb" :style="{ width: stackedPct(r, 'fb') + '%' }" :title="`FB ${r.feedback_type_count}`"></div>
+                </div>
+              </div>
+              <span class="bar-val">{{ r.completed }}</span>
+            </div>
+          </div>
+          <div class="cs-legend">
+            <span class="cs-dot cs-dot-review"></span>留评
+            <span class="cs-dot cs-dot-free"></span>免评
+            <span class="cs-dot cs-dot-fb"></span>Feedback
+          </div>
+        </div>
+        <div class="compare-section">
           <div class="cs-title">售后率排名 (越低越好)</div>
           <div class="bar-list">
             <div v-for="r in sortedByAfterSaleRate" :key="r.staff_id" class="bar-row">
@@ -150,18 +183,6 @@
                 <div class="bar-fill bar-warn" :style="{ width: Math.min(100, r.after_sale_rate * 2) + '%' }"></div>
               </div>
               <span class="bar-val">{{ r.after_sale_rate }}%</span>
-            </div>
-          </div>
-        </div>
-        <div class="compare-section">
-          <div class="cs-title">被骗本金排名</div>
-          <div class="bar-list">
-            <div v-for="r in sortedByStolenPrincipal" :key="r.staff_id" class="bar-row">
-              <span class="bar-name">{{ r.name }}</span>
-              <div class="bar-track">
-                <div class="bar-fill bar-danger" :style="{ width: stolenPct(r) + '%' }"></div>
-              </div>
-              <span class="bar-val">&yen;{{ r.stolen_principal.toFixed(0) }}</span>
             </div>
           </div>
         </div>
@@ -258,17 +279,28 @@ const summaryData = computed(() => {
 const sortedByReviewRate = computed(() =>
   [...filteredRows.value].sort((a, b) => b.review_rate - a.review_rate)
 )
+
+const sortedByCompletion = computed(() =>
+  [...filteredRows.value].sort((a, b) => b.completed - a.completed)
+)
+
+function completionPct(r: StaffRow): number {
+  if (!r.target) return 0
+  return Math.min(100, Math.round(r.completed / r.target * 100))
+}
+
+function stackedPct(r: StaffRow, type: 'review' | 'free' | 'fb'): number {
+  if (!r.completed) return 0
+  const maxCompleted = Math.max(...filteredRows.value.map(x => x.completed), 1)
+  let seg = 0
+  if (type === 'review') seg = r.review_type_count
+  if (type === 'free') seg = r.free_type_count
+  if (type === 'fb') seg = r.feedback_type_count
+  return Math.round(seg / maxCompleted * 100)
+}
 const sortedByAfterSaleRate = computed(() =>
   [...filteredRows.value].sort((a, b) => b.after_sale_rate - a.after_sale_rate)
 )
-const sortedByStolenPrincipal = computed(() =>
-  [...filteredRows.value].sort((a, b) => b.stolen_principal - a.stolen_principal)
-)
-
-function stolenPct(r: StaffRow): number {
-  const max = Math.max(...filteredRows.value.map(x => x.stolen_principal), 1)
-  return Math.round(r.stolen_principal / max * 100)
-}
 
 function rateClass(rate: number): string {
   if (rate >= 80) return 'rate-good'
@@ -532,9 +564,20 @@ onMounted(async () => {
 .tb-dot-free { background: #9ca3af; }
 .tb-dot-fb { background: #d97706; }
 
-.compare-view { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.compare-section { }
-.cs-title { font-size: 13px; font-weight: 700; color: #6b7280; margin-bottom: 10px; }
+.compare-view { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.compare-section { background: #fafbfc; border: 1px solid #f0f0f0; border-radius: 10px; padding: 14px; }
+.cs-title { font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 12px; }
+.cs-legend { display: flex; align-items: center; gap: 12px; margin-top: 10px; font-size: 11px; color: #6b7280; }
+.cs-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; }
+.cs-dot-review { background: #2563eb; }
+.cs-dot-free { background: #9ca3af; }
+.cs-dot-fb { background: #d97706; }
+.bar-row-stacked { }
+.bar-stacked { display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: #f3f4f6; }
+.bar-seg { height: 100%; min-width: 0; transition: width 0.4s ease; }
+.bar-seg-review { background: #2563eb; }
+.bar-seg-free { background: #9ca3af; }
+.bar-seg-fb { background: #d97706; }
 .bar-list { display: flex; flex-direction: column; gap: 6px; }
 .bar-row { display: flex; align-items: center; gap: 8px; }
 .bar-name { width: 60px; font-size: 12px; font-weight: 600; color: #374151; text-align: right; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

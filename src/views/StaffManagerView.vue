@@ -160,18 +160,33 @@
 
         <div v-if="targetForm.monthly_target > 0" class="workday-plan">
           <div class="wp-header">
-            <span class="wp-title">工作日任务分配</span>
-            <div class="wp-stats">
-              <span class="wp-stat-item"><span class="wp-stat-num">{{ workdayCount }}</span> 个工作日</span>
-              <span class="wp-divider">·</span>
-              <span class="wp-stat-item">日均 <span class="wp-stat-num">{{ dailyWorkdayTarget }}</span> 单/天</span>
-              <span class="wp-divider">·</span>
-              <span class="wp-stat-item">周均 <span class="wp-stat-num">{{ weeklyTarget }}</span> 单/周</span>
+            <span class="wp-title">每日任务分配预览</span>
+            <span class="wp-hint">系统按工作日（周一至周五）自动均摊</span>
+          </div>
+          <div class="wp-stats-bar">
+            <div class="wp-stat-block">
+              <span class="wp-stat-val">{{ workdayCount }}</span>
+              <span class="wp-stat-lbl">工作日</span>
+            </div>
+            <div class="wp-stat-divider"></div>
+            <div class="wp-stat-block">
+              <span class="wp-stat-val">{{ dailyWorkdayTarget }}</span>
+              <span class="wp-stat-lbl">单/天</span>
+            </div>
+            <div class="wp-stat-divider"></div>
+            <div class="wp-stat-block">
+              <span class="wp-stat-val">{{ weeklyTarget }}</span>
+              <span class="wp-stat-lbl">单/周（5天）</span>
+            </div>
+            <div class="wp-stat-divider"></div>
+            <div class="wp-stat-block">
+              <span class="wp-stat-val">{{ targetForm.monthly_target }}</span>
+              <span class="wp-stat-lbl">月总目标</span>
             </div>
           </div>
           <div class="wp-calendar">
             <div class="wp-week-row wp-week-header">
-              <div v-for="d in ['一','二','三','四','五','六','日']" :key="d" class="wp-day-header">{{ d }}</div>
+              <div v-for="d in ['周一','周二','周三','周四','周五','周六','周日']" :key="d" class="wp-day-header">{{ d }}</div>
             </div>
             <div v-for="(week, wi) in calendarWeeks" :key="wi" class="wp-week-row">
               <div
@@ -186,10 +201,15 @@
               >
                 <template v-if="day">
                   <span class="wp-day-num">{{ day.date() }}</span>
-                  <span v-if="isWorkday(day)" class="wp-day-task">{{ dailyWorkdayTarget }}</span>
+                  <span v-if="isWorkday(day)" class="wp-day-task">{{ dailyWorkdayTarget }} 单</span>
+                  <span v-else class="wp-day-rest">休</span>
                 </template>
               </div>
             </div>
+          </div>
+          <div class="wp-legend">
+            <span class="wpl-workday"></span><span>工作日（自动分配）</span>
+            <span class="wpl-weekend"></span><span>休息日（不分配）</span>
           </div>
         </div>
 
@@ -198,7 +218,7 @@
           <div v-for="t in historicalTargets" :key="t.id" class="th-row">
             <span class="th-month">{{ t.year_month }}</span>
             <span class="th-target">{{ t.monthly_target }} 单</span>
-            <span class="th-daily">工作日均 {{ Math.ceil(t.monthly_target / 22) }} 单</span>
+            <span class="th-daily">日均 {{ historicalDailyTarget(t) }} 单/工作日</span>
             <a-button type="link" size="small" danger style="padding:0;height:auto" @click="deleteTarget(t)">删除</a-button>
           </div>
         </div>
@@ -298,6 +318,18 @@ const dailyWorkdayTarget = computed(() => {
 })
 
 const weeklyTarget = computed(() => dailyWorkdayTarget.value * 5)
+
+function historicalDailyTarget(t: any): number {
+  if (!t.year_month || !t.monthly_target) return 0
+  const first = dayjs(t.year_month).startOf('month')
+  const last = dayjs(t.year_month).endOf('month')
+  let count = 0
+  for (let d = first; !d.isAfter(last); d = d.add(1, 'day')) {
+    const dow = d.day()
+    if (dow !== 0 && dow !== 6) count++
+  }
+  return count > 0 ? Math.ceil(t.monthly_target / count) : 0
+}
 
 function getThisMonthTarget(staffId: string): number {
   return monthlyTargetsMap.value[staffId] || 0
@@ -532,23 +564,29 @@ onMounted(load)
 .avatar-preview { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
 
 .workday-plan { margin: 4px 0 16px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
-.wp-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
-.wp-title { font-size: 13px; font-weight: 700; color: #374151; }
-.wp-stats { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; }
-.wp-stat-item { display: flex; align-items: center; gap: 3px; }
-.wp-stat-num { font-weight: 700; color: #2563eb; font-size: 13px; }
-.wp-divider { color: #d1d5db; }
-.wp-calendar { padding: 10px 12px; }
+.wp-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border-bottom: 1px solid #e5e7eb; }
+.wp-title { font-size: 13px; font-weight: 700; color: #1d4ed8; }
+.wp-hint { font-size: 11px; color: #6b7280; }
+.wp-stats-bar { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: center; padding: 12px 16px; background: #fff; border-bottom: 1px solid #f0f0f0; }
+.wp-stat-block { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.wp-stat-val { font-size: 18px; font-weight: 800; color: #1d4ed8; line-height: 1.1; }
+.wp-stat-lbl { font-size: 11px; color: #9ca3af; }
+.wp-stat-divider { width: 1px; height: 30px; background: #e5e7eb; margin: 0 4px; }
+.wp-calendar { padding: 10px 12px; background: #fafbfc; }
 .wp-week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
 .wp-week-header { margin-bottom: 6px; }
-.wp-day-header { text-align: center; font-size: 11px; font-weight: 700; color: #9ca3af; padding: 2px 0; }
-.wp-day-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 44px; border-radius: 7px; font-size: 11px; transition: background 0.15s; }
-.wp-day-empty { background: transparent; }
+.wp-day-header { text-align: center; font-size: 10px; font-weight: 700; color: #9ca3af; padding: 2px 0; }
+.wp-day-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 48px; border-radius: 7px; font-size: 11px; transition: background 0.15s; }
+.wp-day-empty { background: transparent; border: 1px solid transparent; }
 .wp-day-workday { background: #eff6ff; border: 1px solid #bfdbfe; }
 .wp-day-weekend { background: #f9fafb; border: 1px solid #f0f0f0; }
 .wp-day-num { font-size: 11px; color: #374151; font-weight: 600; line-height: 1.2; }
 .wp-day-weekend .wp-day-num { color: #d1d5db; }
-.wp-day-task { font-size: 10px; font-weight: 700; color: #2563eb; background: #dbeafe; padding: 1px 4px; border-radius: 4px; margin-top: 2px; }
+.wp-day-task { font-size: 10px; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 1px 5px; border-radius: 4px; margin-top: 3px; white-space: nowrap; }
+.wp-day-rest { font-size: 10px; color: #d1d5db; margin-top: 3px; }
+.wp-legend { display: flex; align-items: center; gap: 16px; padding: 8px 14px; background: #fff; border-top: 1px solid #f0f0f0; font-size: 11px; color: #6b7280; }
+.wpl-workday { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #eff6ff; border: 1px solid #bfdbfe; margin-right: 4px; }
+.wpl-weekend { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #f9fafb; border: 1px solid #e5e7eb; margin-right: 4px; }
 
 .target-history { margin-top: 16px; border-top: 1px solid #f0f0f0; padding-top: 12px; }
 .th-title { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 8px; }
