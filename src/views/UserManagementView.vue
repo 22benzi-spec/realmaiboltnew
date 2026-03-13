@@ -174,28 +174,27 @@
           </div>
 
           <!-- 操作国家（仅业务类角色） -->
-          <template v-if="isSalesRole(rp.role)">
-            <div class="rc-countries-section" v-if="editingRole !== rp.role">
-              <span class="rc-section-label">操作国家</span>
+          <div v-if="isSalesRole(rp.role)" class="rc-countries-section">
+            <span class="rc-section-label">操作国家</span>
+            <template v-if="editingRole !== rp.role">
               <div class="rc-countries">
-                <span v-if="!rp.countries?.length" class="rc-no-country">全部</span>
+                <span v-if="!rp.countries?.length" class="rc-no-country">全部国家</span>
                 <template v-else>
                   <span v-for="c in rp.countries" :key="c" class="country-badge-sm" :style="{ borderColor: countryMap[c]?.color, color: countryMap[c]?.color }">
                     {{ countryMap[c]?.flag }} {{ countryMap[c]?.label }}
                   </span>
                 </template>
               </div>
-            </div>
-            <div class="rc-countries-section" v-else>
-              <span class="rc-section-label">操作国家</span>
-              <a-checkbox-group v-model:value="editingCountries" style="display:flex;flex-wrap:wrap;gap:6px">
+            </template>
+            <template v-else>
+              <a-checkbox-group v-model:value="editingCountries" style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">
                 <a-checkbox v-for="c in allCountries" :key="c.value" :value="c.value">
                   {{ c.flag }} {{ c.label }}
                 </a-checkbox>
               </a-checkbox-group>
-              <div class="rc-country-hint">不选则默认全部国家</div>
-            </div>
-          </template>
+              <div class="rc-country-hint">不勾选则默认操作全部国家</div>
+            </template>
+          </div>
 
           <div class="rc-perms">
             <template v-if="editingRole !== rp.role">
