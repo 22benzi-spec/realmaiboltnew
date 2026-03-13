@@ -6,7 +6,7 @@
         <a-input-search v-model:value="searchText" placeholder="搜索微信号/商务经理" style="width:220px" allow-clear @search="load" />
         <a-button @click="load"><ReloadOutlined /></a-button>
         <a-button type="primary" @click="openAddWechat()"><PlusOutlined /> 添加微信号</a-button>
-        <a-button @click="openAddManager"><UserAddOutlined /> 添加商务经理</a-button>
+        <a-button @click="goToUserMgmt" style="color:#2563eb;border-color:#bfdbfe;background:#eff6ff"><SafetyOutlined /> 在用户管理中添加</a-button>
       </div>
     </div>
 
@@ -550,9 +550,16 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserAddOutlined, UserOutlined, BankOutlined, EllipsisOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, BankOutlined, EllipsisOutlined, DownOutlined, SafetyOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
+import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
+
+const router = useRouter()
+
+function goToUserMgmt() {
+  router.push('/user-management')
+}
 
 const loading = ref(false)
 const managerList = ref<any[]>([])
@@ -843,10 +850,6 @@ function openManagerDetail(mgr: any) {
   managerDetailOpen.value = true
 }
 
-function openAddManager() {
-  Object.assign(managerForm, { name: '', phone: '', email: '', join_date: null, notes: '' })
-  managerModalOpen.value = true
-}
 
 async function handleAddManager() {
   if (!managerForm.name.trim()) { message.warning('请输入姓名'); return }

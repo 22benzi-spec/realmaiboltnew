@@ -5,7 +5,7 @@ import {
   CreditCardOutlined, BankOutlined, SendOutlined, MessageOutlined,
   FileTextOutlined, WifiOutlined, CloudServerOutlined, CommentOutlined,
   AccountBookOutlined, LineChartOutlined, WarningOutlined, FundOutlined,
-  BarChartOutlined,
+  BarChartOutlined, SafetyOutlined,
 } from '@ant-design/icons-vue'
 import type { StaffRole } from '../types'
 
@@ -93,6 +93,15 @@ export const allNavGroups: NavGroup[] = [
     items: [
       { id: 'chat-accounts', label: '聊单号管理', icon: CommentOutlined },
       { id: 'ip-resources', label: '行政资源管理', icon: WifiOutlined },
+    ],
+  },
+  {
+    id: 'system',
+    label: '系统管理',
+    icon: SafetyOutlined,
+    roles: ['管理员'],
+    items: [
+      { id: 'user-management', label: '用户与权限', icon: SafetyOutlined },
     ],
   },
 ]

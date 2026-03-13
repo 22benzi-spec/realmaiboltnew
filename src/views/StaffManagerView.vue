@@ -10,7 +10,9 @@
           <a-select-option value="休假">休假</a-select-option>
           <a-select-option value="离职">离职</a-select-option>
         </a-select>
-        <a-button type="primary" @click="openModal()"><PlusOutlined /> 添加业务员</a-button>
+        <a-button @click="goToUserMgmt" style="color:#2563eb;border-color:#bfdbfe;background:#eff6ff">
+          <SafetyOutlined /> 在用户管理中添加
+        </a-button>
       </div>
 
       <a-table :columns="columns" :data-source="staffList" :loading="loading" row-key="id" size="middle" :pagination="{ pageSize: 20 }">
@@ -275,9 +277,12 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { SettingOutlined, SafetyOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
+import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
+
+const router = useRouter()
 
 const loading = ref(false)
 const staffList = ref<any[]>([])
@@ -592,6 +597,10 @@ async function deleteTarget(t: any) {
   message.success('已删除')
   await loadHistoricalTargets()
   await loadAllTargets()
+}
+
+function goToUserMgmt() {
+  router.push('/user-management')
 }
 
 onMounted(load)

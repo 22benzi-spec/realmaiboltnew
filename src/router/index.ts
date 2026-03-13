@@ -28,6 +28,7 @@ const router = createRouter({
     { path: '/staff-analytics', name: 'staff-analytics', component: () => import('../views/StaffAnalyticsView.vue') },
     { path: '/financial-ledger', name: 'financial-ledger', component: () => import('../views/FinancialLedgerView.vue') },
     { path: '/profit-analysis', name: 'profit-analysis', component: () => import('../views/ProfitAnalysisView.vue') },
+    { path: '/user-management', name: 'user-management', component: () => import('../views/UserManagementView.vue') },
   ],
 })
 
