@@ -336,82 +336,81 @@
           </div>
         </div>
 
-        <!-- Billing Section -->
+        <!-- Billing + Payment Records (Merged) -->
         <a-divider style="margin: 20px 0 16px" />
         <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
-          <span>任务账单</span>
+          <span>账单 & 收款记录</span>
           <a-button size="small" type="link" @click="openDebtModal(currentOrder)">编辑账单</a-button>
         </div>
+
+        <!-- Billing Summary -->
         <div class="billing-panel" :class="{ 'billing-warn': currentOrder.billing_status === '未完成', 'billing-debt': hasRealDebt(currentOrder) }">
-          <div class="billing-info-row">
-            <span class="billing-key">应收总额：</span>
-            <span class="billing-val" style="font-weight:700;color:#111827">&yen;{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
-          </div>
-          <div class="billing-info-row">
-            <span class="billing-key">实收总额：</span>
-            <span class="billing-val" :style="{ fontWeight: '700', color: paymentTotal > 0 ? '#16a34a' : '#9ca3af' }">
-              &yen;{{ paymentTotal.toFixed(2) }}
-            </span>
-            <span v-if="paymentTotal > 0 && paymentDiff !== 0" class="billing-diff" :class="paymentDiff > 0 ? 'diff-surplus' : 'diff-deficit'">
-              {{ paymentDiff > 0 ? '多收' : '差额' }} &yen;{{ Math.abs(paymentDiff).toFixed(2) }}
-            </span>
-          </div>
-
-          <div class="billing-type-breakdown" v-if="paymentsByType.base > 0 || paymentsByType.supplement > 0 || paymentsByType.refund > 0">
-            <div class="billing-type-row" v-if="paymentsByType.base > 0">
-              <span class="billing-type-label">基础收款</span>
-              <span class="billing-type-val">&yen;{{ paymentsByType.base.toFixed(2) }}</span>
+          <div class="billing-summary-row">
+            <div class="billing-summary-item">
+              <span class="billing-summary-label">签单金额</span>
+              <span class="billing-summary-val">&yen;{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
+              <span class="billing-summary-hint">本次任务约定总价</span>
             </div>
-            <div class="billing-type-row" v-if="paymentsByType.supplement > 0">
-              <span class="billing-type-label supplement-label">+ 补款</span>
-              <span class="billing-type-val supplement-val">&yen;{{ paymentsByType.supplement.toFixed(2) }}</span>
-            </div>
-            <div class="billing-type-row" v-if="paymentsByType.refund > 0">
-              <span class="billing-type-label refund-label">- 退款</span>
-              <span class="billing-type-val refund-val">-&yen;{{ paymentsByType.refund.toFixed(2) }}</span>
-            </div>
-          </div>
-
-          <div class="billing-info-row">
-            <span class="billing-key">入账状态：</span>
-            <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">{{ currentOrder.billing_status || '已完成' }}</a-tag>
-          </div>
-          <div class="billing-info-row">
-            <span class="billing-key">账款状态：</span>
-            <a-tag v-if="hasRealDebt(currentOrder)" color="orange">客户欠款</a-tag>
-            <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">我方溢收</a-tag>
-            <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="green">已结清</a-tag>
-            <a-tag v-else color="green">无异常</a-tag>
-          </div>
-          <template v-if="hasRealDebt(currentOrder) || hasRealSurplus(currentOrder)">
-            <div class="billing-info-row">
-              <span class="billing-key">{{ hasRealSurplus(currentOrder) ? '溢收金额：' : '欠款金额：' }}</span>
-              <span :class="hasRealSurplus(currentOrder) ? 'surplus-amount-text' : 'debt-amount-text'">&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
-            </div>
-            <div class="billing-info-row billing-notes-row" v-if="currentOrder.debt_notes">
-              <span class="billing-key">{{ hasRealSurplus(currentOrder) ? '溢款明细：' : '欠款明细：' }}</span>
-              <span class="debt-notes-text">{{ currentOrder.debt_notes }}</span>
-            </div>
-            <div class="billing-info-row" v-if="currentOrder.debt_marked_by">
-              <span class="billing-key">标记商务：</span>
-              <span class="billing-val">{{ currentOrder.debt_marked_by }}
-                <span v-if="currentOrder.debt_marked_at" style="color:#9ca3af;font-size:11px;margin-left:4px">{{ dayjs(currentOrder.debt_marked_at).format('MM-DD HH:mm') }}</span>
+            <div class="billing-summary-divider"></div>
+            <div class="billing-summary-item">
+              <span class="billing-summary-label">累计到账</span>
+              <span class="billing-summary-val" :style="{ color: paymentTotal > 0 ? '#16a34a' : '#9ca3af' }">&yen;{{ paymentTotal.toFixed(2) }}</span>
+              <span class="billing-summary-hint">
+                <template v-if="paymentsByType.base > 0">首款¥{{ paymentsByType.base.toFixed(0) }}</template>
+                <template v-if="paymentsByType.supplement > 0"> + 补¥{{ paymentsByType.supplement.toFixed(0) }}</template>
+                <template v-if="paymentsByType.refund > 0"> - 退¥{{ paymentsByType.refund.toFixed(0) }}</template>
+                <template v-if="paymentTotal === 0">暂无到账</template>
               </span>
             </div>
-          </template>
+            <div class="billing-summary-divider"></div>
+            <div class="billing-summary-item">
+              <span class="billing-summary-label">剩余待结</span>
+              <span class="billing-summary-val" :style="{ color: paymentDiff < 0 ? '#dc2626' : paymentDiff > 0 ? '#2563eb' : '#16a34a' }">
+                <template v-if="paymentDiff < 0">&yen;{{ Math.abs(paymentDiff).toFixed(2) }}</template>
+                <template v-else-if="paymentDiff > 0">-&yen;{{ paymentDiff.toFixed(2) }}</template>
+                <template v-else>&yen;0</template>
+              </span>
+              <span class="billing-summary-hint">
+                <template v-if="paymentDiff < 0">待客户补款</template>
+                <template v-else-if="paymentDiff > 0">待退客户</template>
+                <template v-else>已结清</template>
+              </span>
+            </div>
+          </div>
+          <div class="billing-status-row">
+            <div class="billing-info-row">
+              <span class="billing-key">入账状态：</span>
+              <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">{{ currentOrder.billing_status || '已完成' }}</a-tag>
+            </div>
+            <div class="billing-info-row">
+              <span class="billing-key">账款状态：</span>
+              <a-tag v-if="hasRealDebt(currentOrder)" color="orange">客户欠款</a-tag>
+              <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">我方溢收</a-tag>
+              <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="green">已结清</a-tag>
+              <a-tag v-else color="green">无异常</a-tag>
+            </div>
+            <template v-if="hasRealDebt(currentOrder) || hasRealSurplus(currentOrder)">
+              <div class="billing-info-row">
+                <span class="billing-key">{{ hasRealSurplus(currentOrder) ? '溢收金额：' : '欠款金额：' }}</span>
+                <span :class="hasRealSurplus(currentOrder) ? 'surplus-amount-text' : 'debt-amount-text'">&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
+              </div>
+              <div class="billing-info-row billing-notes-row" v-if="currentOrder.debt_notes">
+                <span class="billing-key">{{ hasRealSurplus(currentOrder) ? '溢款说明：' : '欠款说明：' }}</span>
+                <span class="debt-notes-text">{{ currentOrder.debt_notes }}</span>
+              </div>
+              <div class="billing-info-row" v-if="currentOrder.debt_marked_by">
+                <span class="billing-key">标记商务：</span>
+                <span class="billing-val">{{ currentOrder.debt_marked_by }}
+                  <span v-if="currentOrder.debt_marked_at" style="color:#9ca3af;font-size:11px;margin-left:4px">{{ dayjs(currentOrder.debt_marked_at).format('MM-DD HH:mm') }}</span>
+                </span>
+              </div>
+            </template>
+          </div>
         </div>
 
-        <!-- Payment Records Section -->
-        <a-divider style="margin: 20px 0 16px" />
-        <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
-          <span>收款记录</span>
-          <a-space>
-            <a-button size="small" @click="openPaymentModal('基础收款')">录入收款</a-button>
-            <a-button size="small" @click="openPaymentModal('补款')">录入补款</a-button>
-            <a-button size="small" danger @click="openPaymentModal('退款')">录入退款</a-button>
-          </a-space>
-        </div>
-        <div v-if="batchPayments.length === 0" class="payment-empty">暂无收款记录</div>
+        <!-- Payment Flow Records -->
+        <div class="payment-records-title">流水明细</div>
+        <div v-if="batchPayments.length === 0" class="payment-empty">暂无收款流水</div>
         <div v-else class="payment-list">
           <div v-for="p in batchPayments" :key="p.id" class="payment-card" :class="getPaymentCardClass(p.payment_type)">
             <div class="payment-main">
@@ -1272,22 +1271,6 @@ async function saveFeedback() {
   }
 }
 
-async function openPaymentModal(type: string) {
-  paymentForm.value = {
-    payment_type: type,
-    amount_cny: 0,
-    payment_date_picker: dayjs(),
-    payment_method: '银行转账',
-    payer_name: currentOrder.value?.customer_name || '',
-    recorded_by: '',
-    notes: '',
-    enableGroupPay: false,
-  }
-  groupPaySelected.value = []
-  Object.keys(groupAllocations).forEach(k => delete groupAllocations[k])
-  sameCustomerOrders.value = []
-  paymentModalOpen.value = true
-}
 
 async function onGroupPayToggle() {
   if (paymentForm.value.enableGroupPay && currentOrder.value?.customer_name) {
@@ -2023,6 +2006,26 @@ onMounted(loadOrders)
 .batch-pay-label { font-size: 13px; font-weight: 500; color: #374151; }
 .batch-pay-upload-area { background: #fafafa; border: 1px dashed #d1d5db; border-radius: 8px; padding: 8px 12px; }
 .batch-pay-upload-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #6b7280; }
+
+.billing-summary-row {
+  display: flex; align-items: stretch; gap: 0; margin-bottom: 12px;
+  background: #f8fafc; border-radius: 8px; border: 1px solid #e5e7eb; overflow: hidden;
+}
+.billing-summary-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 12px 10px; gap: 3px; text-align: center;
+}
+.billing-summary-divider { width: 1px; background: #e5e7eb; flex-shrink: 0; }
+.billing-summary-label { font-size: 11px; color: #6b7280; font-weight: 500; letter-spacing: 0.3px; }
+.billing-summary-val { font-size: 16px; font-weight: 700; color: #111827; }
+.billing-summary-hint { font-size: 11px; color: #9ca3af; }
+.billing-status-row { display: flex; flex-wrap: wrap; gap: 0; }
+.billing-status-row .billing-info-row { margin-right: 20px; }
+.payment-records-title {
+  font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase;
+  letter-spacing: 0.5px; margin: 14px 0 8px; padding-bottom: 6px;
+  border-bottom: 1px solid #f3f4f6;
+}
 
 .task-group-badge {
   display: inline-flex; align-items: center; gap: 3px; margin-top: 3px;
