@@ -193,9 +193,9 @@ const stats = reactive({ totalIncome: 0, totalExpense: 0, net: 0, count: 0 })
 const modalOpen = ref(false)
 const editId = ref<string | null>(null)
 
-const typeOptions = ['订单收入', '客户充值', '退款支出', '返佣支出', '礼品卡采购', '美金购汇', '其他收入', '其他支出']
+const typeOptions = ['订单收入', '客户充值', '批次收款', '退款支出', '返佣支出', '礼品卡采购', '美金购汇', '其他收入', '其他支出']
 const typeColor: Record<string, string> = {
-  '订单收入': 'green', '客户充值': 'cyan', '退款支出': 'red', '返佣支出': 'orange',
+  '订单收入': 'green', '客户充值': 'cyan', '批次收款': 'geekblue', '退款支出': 'red', '返佣支出': 'orange',
   '礼品卡采购': 'gold', '美金购汇': 'blue', '其他收入': 'lime', '其他支出': 'default',
 }
 const statusBadge: Record<string, string> = { '已确认': 'success', '待审批': 'warning', '已取消': 'default' }
@@ -227,7 +227,7 @@ function formatNum(n: number) {
 }
 
 function onTypeChange(val: string) {
-  if (['订单收入', '客户充值', '其他收入'].includes(val)) {
+  if (['订单收入', '客户充值', '批次收款', '其他收入'].includes(val)) {
     form.direction = '收入'
   } else {
     form.direction = '支出'

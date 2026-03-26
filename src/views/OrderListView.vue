@@ -56,7 +56,7 @@
         size="middle"
         :row-selection="rowSelection"
         @change="handleTableChange"
-        :scroll="{ x: 1700 }"
+        :scroll="{ x: 1900 }"
         :row-class-name="getRowClass"
       >
         <template #bodyCell="{ column, record }">
@@ -89,15 +89,32 @@
               <template v-if="hasMultipleTypes(record)">
                 <div v-for="t in record.order_types" :key="t" class="type-qty-row">
                   <a-tag :color="getOrderTypeColor(t)" size="small">{{ t }}</a-tag>
-                  <span class="type-qty">×{{ getTypeQty(record, t) }}</span>
+                  <span class="type-qty">&times;{{ getTypeQty(record, t) }}</span>
                 </div>
               </template>
               <template v-else>
                 <a-tag :color="getOrderTypeColor(record.order_type || (record.order_types && record.order_types[0]))" size="small">
                   {{ record.order_type || (record.order_types && record.order_types[0]) || '-' }}
                 </a-tag>
-                <span class="type-qty">×{{ record.order_quantity }}</span>
+                <span class="type-qty">&times;{{ record.order_quantity }}</span>
               </template>
+            </div>
+          </template>
+
+          <template v-if="column.key === 'feedback'">
+            <div class="feedback-cell">
+              <div class="feedback-row">
+                <span class="feedback-label">订单：</span>
+                <a-tag :color="record.order_feedback_status === '已反馈' ? 'green' : 'default'" size="small">
+                  {{ record.order_feedback_status || '未反馈' }}
+                </a-tag>
+              </div>
+              <div class="feedback-row">
+                <span class="feedback-label">评论：</span>
+                <a-tag :color="record.review_feedback_status === '已反馈' ? 'green' : 'default'" size="small">
+                  {{ record.review_feedback_status || '未反馈' }}
+                </a-tag>
+              </div>
             </div>
           </template>
 
@@ -112,11 +129,11 @@
               </div>
               <div v-if="record.debt_status === 'owed'" class="debt-row">
                 <span class="billing-label">欠款：</span>
-                <a-tag color="orange" size="small">¥{{ Number(record.debt_amount || 0).toFixed(0) }}</a-tag>
+                <a-tag color="orange" size="small">&yen;{{ Number(record.debt_amount || 0).toFixed(0) }}</a-tag>
               </div>
               <div v-else-if="record.debt_status === 'surplus'" class="debt-row">
                 <span class="billing-label">溢款：</span>
-                <a-tag color="blue" size="small">退¥{{ Number(record.debt_amount || 0).toFixed(0) }}</a-tag>
+                <a-tag color="blue" size="small">退&yen;{{ Number(record.debt_amount || 0).toFixed(0) }}</a-tag>
               </div>
               <div v-else-if="record.debt_status === 'cleared'" class="billing-row">
                 <span class="billing-label">已结清</span>
@@ -130,7 +147,7 @@
           </template>
 
           <template v-if="column.key === 'total_amount'">
-            <span class="amount">¥{{ Number(record.total_amount).toFixed(2) }}</span>
+            <span class="amount">&yen;{{ Number(record.total_amount).toFixed(2) }}</span>
           </template>
 
           <template v-if="column.key === 'country'">
@@ -150,6 +167,7 @@
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="viewDetail(record)">详情</a-button>
+              <a-button type="link" size="small" @click="openFeedbackModal(record)">反馈</a-button>
               <a-button type="link" size="small" @click="openDebtModal(record)">账单</a-button>
               <a-popconfirm title="确定删除这条订单吗?" @confirm="deleteOrder(record.id)">
                 <a-button type="link" size="small" danger>删除</a-button>
@@ -160,6 +178,7 @@
       </a-table>
     </div>
 
+    <!-- Detail Drawer -->
     <a-drawer
       v-model:open="drawerOpen"
       :title="`接单详情 - ${currentOrder?.order_number}`"
@@ -186,8 +205,8 @@
               <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
                 <a-tag :color="getStatusColor(currentOrder.status)">{{ currentOrder.status }}</a-tag>
                 <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">入账{{ currentOrder.billing_status || '已完成' }}</a-tag>
-                <a-tag v-if="currentOrder.debt_status === 'owed'" color="orange">欠款 ¥{{ Number(currentOrder.debt_amount || 0).toFixed(0) }}</a-tag>
-                <a-tag v-else-if="currentOrder.debt_status === 'surplus'" color="blue">溢款退¥{{ Number(currentOrder.debt_amount || 0).toFixed(0) }}</a-tag>
+                <a-tag v-if="currentOrder.debt_status === 'owed'" color="orange">欠款 &yen;{{ Number(currentOrder.debt_amount || 0).toFixed(0) }}</a-tag>
+                <a-tag v-else-if="currentOrder.debt_status === 'surplus'" color="blue">溢款退&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(0) }}</a-tag>
                 <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">已结清</a-tag>
               </div>
             </div>
@@ -213,12 +232,12 @@
               <template v-if="hasMultipleTypes(currentOrder)">
                 <div v-for="t in currentOrder.order_types" :key="t" class="type-qty-row">
                   <a-tag :color="getOrderTypeColor(t)" size="small">{{ t }}</a-tag>
-                  <span class="type-qty">×{{ getTypeQty(currentOrder, t) }}</span>
+                  <span class="type-qty">&times;{{ getTypeQty(currentOrder, t) }}</span>
                 </div>
               </template>
               <template v-else>
                 <a-tag :color="getOrderTypeColor(currentOrder.order_type)" size="small">{{ currentOrder.order_type || '-' }}</a-tag>
-                <span class="type-qty">×{{ currentOrder.order_quantity }}</span>
+                <span class="type-qty">&times;{{ currentOrder.order_quantity }}</span>
               </template>
             </div>
           </a-descriptions-item>
@@ -241,8 +260,8 @@
             <span class="amount-usd">$ {{ Number(currentOrder.product_price || 0).toFixed(2) }}</span>
           </div>
           <div class="amount-row amount-row-sub">
-            <span class="amount-label amount-label-sm">× 汇率 {{ Number(currentOrder.exchange_rate || 1).toFixed(2) }} × 数量 {{ currentOrder.order_quantity }} 单</span>
-            <span class="amount-cny-sm">小计 ¥{{ (Number(currentOrder.product_price || 0) * Number(currentOrder.exchange_rate || 1) * Number(currentOrder.order_quantity || 1)).toFixed(2) }}</span>
+            <span class="amount-label amount-label-sm">&times; 汇率 {{ Number(currentOrder.exchange_rate || 1).toFixed(2) }} &times; 数量 {{ currentOrder.order_quantity }} 单</span>
+            <span class="amount-cny-sm">小计 &yen;{{ (Number(currentOrder.product_price || 0) * Number(currentOrder.exchange_rate || 1) * Number(currentOrder.order_quantity || 1)).toFixed(2) }}</span>
           </div>
 
           <div class="amount-divider"></div>
@@ -251,15 +270,15 @@
             <div v-for="t in currentOrder.order_types" :key="t" class="amount-row">
               <span class="amount-label">
                 <a-tag :color="getOrderTypeColor(t)" size="small" style="margin-right:4px">{{ t }}</a-tag>
-                × {{ getTypeQty(currentOrder, t) }} 单 × ¥{{ getTypeUnitPrice(currentOrder, t).toFixed(2) }}
+                &times; {{ getTypeQty(currentOrder, t) }} 单 &times; &yen;{{ getTypeUnitPrice(currentOrder, t).toFixed(2) }}
               </span>
-              <span class="amount-commission">¥{{ (getTypeQty(currentOrder, t) * getTypeUnitPrice(currentOrder, t)).toFixed(2) }}</span>
+              <span class="amount-commission">&yen;{{ (getTypeQty(currentOrder, t) * getTypeUnitPrice(currentOrder, t)).toFixed(2) }}</span>
             </div>
           </template>
           <template v-else>
             <div class="amount-row">
-              <span class="amount-label">{{ currentOrder.order_type }} × {{ currentOrder.order_quantity }} 单 × ¥{{ getCommissionUnitPrice(currentOrder).toFixed(2) }}</span>
-              <span class="amount-commission">¥{{ (getCommissionUnitPrice(currentOrder) * Number(currentOrder.order_quantity || 1)).toFixed(2) }}</span>
+              <span class="amount-label">{{ currentOrder.order_type }} &times; {{ currentOrder.order_quantity }} 单 &times; &yen;{{ getCommissionUnitPrice(currentOrder).toFixed(2) }}</span>
+              <span class="amount-commission">&yen;{{ (getCommissionUnitPrice(currentOrder) * Number(currentOrder.order_quantity || 1)).toFixed(2) }}</span>
             </div>
           </template>
 
@@ -269,10 +288,42 @@
               <span class="amount-label-total">总金额</span>
               <span class="amount-desc">产品回款 + 佣金</span>
             </div>
-            <span class="amount-total">¥{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
+            <span class="amount-total">&yen;{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
           </div>
         </div>
 
+        <!-- Feedback Section -->
+        <a-divider style="margin: 20px 0 16px" />
+        <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>反馈状态</span>
+          <a-button size="small" type="link" @click="openFeedbackModal(currentOrder)">编辑反馈</a-button>
+        </div>
+        <div class="feedback-panel">
+          <div class="feedback-info-row">
+            <span class="feedback-key">订单反馈：</span>
+            <a-tag :color="currentOrder.order_feedback_status === '已反馈' ? 'green' : 'default'">
+              {{ currentOrder.order_feedback_status || '未反馈' }}
+            </a-tag>
+            <span v-if="currentOrder.order_feedback_date" class="feedback-date">
+              {{ currentOrder.order_feedback_date }}
+            </span>
+          </div>
+          <div class="feedback-info-row">
+            <span class="feedback-key">评论反馈：</span>
+            <a-tag :color="currentOrder.review_feedback_status === '已反馈' ? 'green' : 'default'">
+              {{ currentOrder.review_feedback_status || '未反馈' }}
+            </a-tag>
+            <span v-if="currentOrder.review_feedback_date" class="feedback-date">
+              {{ currentOrder.review_feedback_date }}
+            </span>
+          </div>
+          <div v-if="currentOrder.feedback_notes" class="feedback-info-row">
+            <span class="feedback-key">备注：</span>
+            <span class="feedback-notes-text">{{ currentOrder.feedback_notes }}</span>
+          </div>
+        </div>
+
+        <!-- Billing Section -->
         <a-divider style="margin: 20px 0 16px" />
         <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>任务账单</span>
@@ -293,7 +344,7 @@
           <template v-if="currentOrder.debt_status === 'owed' || currentOrder.debt_status === 'surplus'">
             <div class="billing-info-row">
               <span class="billing-key">{{ currentOrder.debt_status === 'surplus' ? '溢收金额：' : '欠款金额：' }}</span>
-              <span :class="currentOrder.debt_status === 'surplus' ? 'surplus-amount-text' : 'debt-amount-text'">¥{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
+              <span :class="currentOrder.debt_status === 'surplus' ? 'surplus-amount-text' : 'debt-amount-text'">&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
             </div>
             <div class="billing-info-row billing-notes-row" v-if="currentOrder.debt_notes">
               <span class="billing-key">{{ currentOrder.debt_status === 'surplus' ? '溢款明细：' : '欠款明细：' }}</span>
@@ -310,9 +361,41 @@
             账单正常，无异常
           </div>
         </div>
+
+        <!-- Batch Payment Section -->
+        <a-divider style="margin: 20px 0 16px" />
+        <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>收款记录</span>
+          <a-button size="small" type="primary" @click="openPaymentModal">录入收款</a-button>
+        </div>
+        <div v-if="batchPayments.length === 0" class="payment-empty">暂无收款记录</div>
+        <div v-else class="payment-list">
+          <div v-for="p in batchPayments" :key="p.id" class="payment-card">
+            <div class="payment-main">
+              <div class="payment-amount">&yen;{{ Number(p.amount_cny).toFixed(2) }}</div>
+              <div class="payment-meta">
+                <span>{{ p.payment_date }}</span>
+                <span v-if="p.payment_method" class="payment-method">{{ p.payment_method }}</span>
+                <span v-if="p.payer_name" class="payment-payer">{{ p.payer_name }}</span>
+              </div>
+              <div v-if="p.notes" class="payment-notes">{{ p.notes }}</div>
+            </div>
+            <div class="payment-actions">
+              <a-tag color="cyan" size="small">已同步流水</a-tag>
+              <a-popconfirm title="确认删除此收款记录？" @confirm="deletePayment(p)">
+                <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
+              </a-popconfirm>
+            </div>
+          </div>
+          <div class="payment-summary">
+            <span>收款合计：</span>
+            <span class="payment-summary-val">&yen;{{ paymentTotal.toFixed(2) }}</span>
+          </div>
+        </div>
       </template>
     </a-drawer>
 
+    <!-- Debt Modal -->
     <a-modal
       v-model:open="debtModalOpen"
       title="编辑任务账单"
@@ -361,13 +444,119 @@
         </template>
       </div>
     </a-modal>
+
+    <!-- Feedback Modal -->
+    <a-modal
+      v-model:open="feedbackModalOpen"
+      title="编辑反馈状态"
+      :confirm-loading="feedbackSaving"
+      @ok="saveFeedback"
+      ok-text="保存"
+      cancel-text="取消"
+      width="520px"
+    >
+      <div class="feedback-form">
+        <div class="feedback-field">
+          <label class="feedback-form-label">订单反馈</label>
+          <a-radio-group v-model:value="feedbackForm.order_feedback_status">
+            <a-radio-button value="未反馈">未反馈</a-radio-button>
+            <a-radio-button value="已反馈">已反馈</a-radio-button>
+          </a-radio-group>
+          <div v-if="feedbackForm.order_feedback_status === '已反馈'" class="feedback-date-field">
+            <label class="feedback-date-label">反馈日期</label>
+            <a-date-picker
+              v-model:value="feedbackForm.order_feedback_date_picker"
+              style="width:100%"
+              placeholder="选择订单反馈日期"
+              value-format="YYYY-MM-DD"
+            />
+          </div>
+        </div>
+        <div class="feedback-field">
+          <label class="feedback-form-label">评论反馈</label>
+          <a-radio-group v-model:value="feedbackForm.review_feedback_status">
+            <a-radio-button value="未反馈">未反馈</a-radio-button>
+            <a-radio-button value="已反馈">已反馈</a-radio-button>
+          </a-radio-group>
+          <div v-if="feedbackForm.review_feedback_status === '已反馈'" class="feedback-date-field">
+            <label class="feedback-date-label">反馈日期</label>
+            <a-date-picker
+              v-model:value="feedbackForm.review_feedback_date_picker"
+              style="width:100%"
+              placeholder="选择评论反馈日期"
+              value-format="YYYY-MM-DD"
+            />
+          </div>
+        </div>
+        <div class="feedback-field">
+          <label class="feedback-form-label">反馈备注</label>
+          <a-textarea v-model:value="feedbackForm.feedback_notes" :rows="2" placeholder="如：客户已确认全部订单到货" />
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- Payment Modal -->
+    <a-modal
+      v-model:open="paymentModalOpen"
+      title="录入收款"
+      :confirm-loading="paymentSaving"
+      @ok="savePayment"
+      ok-text="保存并同步流水"
+      cancel-text="取消"
+      width="520px"
+    >
+      <div class="payment-form">
+        <div class="payment-form-info">
+          <span>订单：{{ currentOrder?.order_number }}</span>
+          <span>客户：{{ currentOrder?.customer_name || '-' }}</span>
+        </div>
+        <div class="payment-form-field">
+          <label class="payment-form-label">收款金额（元）<span class="required">*</span></label>
+          <a-input-number v-model:value="paymentForm.amount_cny" style="width:100%" :min="0.01" :precision="2" placeholder="输入收款金额" />
+        </div>
+        <div class="payment-form-field">
+          <label class="payment-form-label">收款日期 <span class="required">*</span></label>
+          <a-date-picker
+            v-model:value="paymentForm.payment_date_picker"
+            style="width:100%"
+            placeholder="选择日期"
+            value-format="YYYY-MM-DD"
+          />
+        </div>
+        <div class="payment-form-field">
+          <label class="payment-form-label">收款方式</label>
+          <a-select v-model:value="paymentForm.payment_method" style="width:100%">
+            <a-select-option value="银行转账">银行转账</a-select-option>
+            <a-select-option value="微信">微信</a-select-option>
+            <a-select-option value="支付宝">支付宝</a-select-option>
+            <a-select-option value="现金">现金</a-select-option>
+            <a-select-option value="其他">其他</a-select-option>
+          </a-select>
+        </div>
+        <div class="payment-form-field">
+          <label class="payment-form-label">付款人</label>
+          <a-input v-model:value="paymentForm.payer_name" placeholder="付款方名称" />
+        </div>
+        <div class="payment-form-field">
+          <label class="payment-form-label">操作人</label>
+          <a-input v-model:value="paymentForm.recorded_by" placeholder="录入人姓名" />
+        </div>
+        <div class="payment-form-field">
+          <label class="payment-form-label">备注</label>
+          <a-textarea v-model:value="paymentForm.notes" :rows="2" placeholder="收款备注（可选）" />
+        </div>
+        <div class="payment-form-tip">
+          保存后将自动生成一条交易流水，供财务核验
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -392,6 +581,34 @@ const debtForm = ref({
   debt_marked_by: '',
 })
 
+const feedbackModalOpen = ref(false)
+const feedbackSaving = ref(false)
+const feedbackTargetId = ref<string | null>(null)
+const feedbackForm = ref({
+  order_feedback_status: '未反馈',
+  order_feedback_date_picker: null as any,
+  review_feedback_status: '未反馈',
+  review_feedback_date_picker: null as any,
+  feedback_notes: '',
+})
+
+const paymentModalOpen = ref(false)
+const paymentSaving = ref(false)
+const paymentForm = ref({
+  amount_cny: 0,
+  payment_date_picker: null as any,
+  payment_method: '银行转账',
+  payer_name: '',
+  recorded_by: '',
+  notes: '',
+})
+
+const batchPayments = ref<any[]>([])
+
+const paymentTotal = computed(() =>
+  batchPayments.value.reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+)
+
 const selectedRowKeys = ref<string[]>([])
 
 const statuses = ['待处理', '进行中', '已完成', '已取消', '暂停']
@@ -411,12 +628,13 @@ const columns = [
   { title: '国家', key: 'country', dataIndex: 'country', width: 75 },
   { title: '测评类型', dataIndex: 'review_type', key: 'review_type', width: 95 },
   { title: '下单类型/量', key: 'order_types', width: 150 },
+  { title: '反馈状态', key: 'feedback', width: 140 },
   { title: '账单状态', key: 'billing', width: 140 },
   { title: '总金额', key: 'total_amount', width: 100 },
   { title: '状态', key: 'status', width: 85 },
   { title: '对接商务/客户', key: 'sales_person', width: 125 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
-  { title: '操作', key: 'action', width: 160, fixed: 'right' },
+  { title: '操作', key: 'action', width: 200, fixed: 'right' as const },
 ]
 
 function getStatusColor(status: string) {
@@ -425,7 +643,7 @@ function getStatusColor(status: string) {
 }
 
 function getOrderTypeColor(type: string) {
-  const map: Record<string, string> = { '免评': 'default', '文字评': 'blue', '图片评': 'cyan', '视频评': 'purple', 'Feedback': 'orange' }
+  const map: Record<string, string> = { '免评': 'default', '文字评': 'blue', '图片评': 'cyan', '视频评': 'geekblue', 'Feedback': 'orange' }
   return map[type] || 'default'
 }
 
@@ -514,9 +732,19 @@ function handleTableChange(pag: any) {
   loadOrders()
 }
 
-function viewDetail(record: any) {
+async function viewDetail(record: any) {
   currentOrder.value = record
   drawerOpen.value = true
+  await loadPayments(record.id)
+}
+
+async function loadPayments(orderId: string) {
+  const { data } = await supabase
+    .from('batch_payments')
+    .select('*')
+    .eq('batch_id', orderId)
+    .order('payment_date', { ascending: false })
+  batchPayments.value = data || []
 }
 
 function openDebtModal(record: any) {
@@ -558,6 +786,153 @@ async function saveDebt() {
     message.error('保存失败：' + e.message)
   } finally {
     debtSaving.value = false
+  }
+}
+
+function openFeedbackModal(record: any) {
+  feedbackTargetId.value = record.id
+  feedbackForm.value = {
+    order_feedback_status: record.order_feedback_status || '未反馈',
+    order_feedback_date_picker: record.order_feedback_date ? dayjs(record.order_feedback_date) : null,
+    review_feedback_status: record.review_feedback_status || '未反馈',
+    review_feedback_date_picker: record.review_feedback_date ? dayjs(record.review_feedback_date) : null,
+    feedback_notes: record.feedback_notes || '',
+  }
+  feedbackModalOpen.value = true
+}
+
+async function saveFeedback() {
+  if (!feedbackTargetId.value) return
+  feedbackSaving.value = true
+  try {
+    const isOrderFb = feedbackForm.value.order_feedback_status === '已反馈'
+    const isReviewFb = feedbackForm.value.review_feedback_status === '已反馈'
+
+    if (isOrderFb && !feedbackForm.value.order_feedback_date_picker) {
+      message.warning('请选择订单反馈日期')
+      feedbackSaving.value = false
+      return
+    }
+    if (isReviewFb && !feedbackForm.value.review_feedback_date_picker) {
+      message.warning('请选择评论反馈日期')
+      feedbackSaving.value = false
+      return
+    }
+
+    const payload: any = {
+      order_feedback_status: feedbackForm.value.order_feedback_status,
+      order_feedback_date: isOrderFb
+        ? (typeof feedbackForm.value.order_feedback_date_picker === 'string'
+          ? feedbackForm.value.order_feedback_date_picker
+          : feedbackForm.value.order_feedback_date_picker?.format('YYYY-MM-DD'))
+        : null,
+      review_feedback_status: feedbackForm.value.review_feedback_status,
+      review_feedback_date: isReviewFb
+        ? (typeof feedbackForm.value.review_feedback_date_picker === 'string'
+          ? feedbackForm.value.review_feedback_date_picker
+          : feedbackForm.value.review_feedback_date_picker?.format('YYYY-MM-DD'))
+        : null,
+      feedback_notes: feedbackForm.value.feedback_notes || null,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase.from('erp_orders').update(payload).eq('id', feedbackTargetId.value)
+    if (error) throw error
+
+    const idx = orders.value.findIndex(o => o.id === feedbackTargetId.value)
+    if (idx !== -1) Object.assign(orders.value[idx], payload)
+    if (currentOrder.value?.id === feedbackTargetId.value) Object.assign(currentOrder.value, payload)
+
+    message.success('反馈状态已保存')
+    feedbackModalOpen.value = false
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    feedbackSaving.value = false
+  }
+}
+
+function openPaymentModal() {
+  paymentForm.value = {
+    amount_cny: 0,
+    payment_date_picker: dayjs(),
+    payment_method: '银行转账',
+    payer_name: currentOrder.value?.customer_name || '',
+    recorded_by: '',
+    notes: '',
+  }
+  paymentModalOpen.value = true
+}
+
+async function savePayment() {
+  if (!currentOrder.value) return
+  if (!paymentForm.value.amount_cny || paymentForm.value.amount_cny <= 0) {
+    message.warning('请输入收款金额')
+    return
+  }
+  if (!paymentForm.value.payment_date_picker) {
+    message.warning('请选择收款日期')
+    return
+  }
+  paymentSaving.value = true
+  try {
+    const paymentDate = typeof paymentForm.value.payment_date_picker === 'string'
+      ? paymentForm.value.payment_date_picker
+      : paymentForm.value.payment_date_picker?.format('YYYY-MM-DD')
+
+    const { data: txNo } = await supabase.rpc('generate_transaction_no')
+    const transactionNo = txNo || `FT-${Date.now()}`
+
+    const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
+      transaction_no: transactionNo,
+      transaction_type: '批次收款',
+      direction: '收入',
+      amount_cny: paymentForm.value.amount_cny,
+      exchange_rate: currentOrder.value.exchange_rate || 7.25,
+      customer_name: currentOrder.value.customer_name || '',
+      customer_id_str: currentOrder.value.customer_id_str || '',
+      order_id: currentOrder.value.id,
+      order_number: currentOrder.value.order_number,
+      staff_name: paymentForm.value.recorded_by,
+      status: '待审批',
+      notes: `批次收款 - ${paymentForm.value.payment_method}${paymentForm.value.notes ? ' | ' + paymentForm.value.notes : ''}`,
+      transaction_date: paymentDate,
+    }).select('id').maybeSingle()
+    if (txErr) throw txErr
+
+    const { error: pmErr } = await supabase.from('batch_payments').insert({
+      batch_id: currentOrder.value.id,
+      batch_number: currentOrder.value.order_number,
+      transaction_id: txData?.id || null,
+      amount_cny: paymentForm.value.amount_cny,
+      payment_date: paymentDate,
+      payment_method: paymentForm.value.payment_method,
+      payer_name: paymentForm.value.payer_name,
+      recorded_by: paymentForm.value.recorded_by,
+      notes: paymentForm.value.notes,
+    })
+    if (pmErr) throw pmErr
+
+    message.success('收款已录入，交易流水已同步')
+    paymentModalOpen.value = false
+    await loadPayments(currentOrder.value.id)
+  } catch (e: any) {
+    message.error('录入失败：' + e.message)
+  } finally {
+    paymentSaving.value = false
+  }
+}
+
+async function deletePayment(payment: any) {
+  try {
+    if (payment.transaction_id) {
+      await supabase.from('financial_transactions').delete().eq('id', payment.transaction_id)
+    }
+    await supabase.from('batch_payments').delete().eq('id', payment.id)
+    message.success('已删除收款记录及对应流水')
+    if (currentOrder.value) await loadPayments(currentOrder.value.id)
+  } catch (e: any) {
+    message.error('删除失败：' + e.message)
   }
 }
 
@@ -616,6 +991,10 @@ onMounted(loadOrders)
 .type-qty-row { display: flex; align-items: center; gap: 4px; }
 .type-qty { font-size: 12px; color: #374151; font-weight: 500; }
 
+.feedback-cell { display: flex; flex-direction: column; gap: 3px; }
+.feedback-row { display: flex; align-items: center; gap: 4px; }
+.feedback-label { font-size: 11px; color: #9ca3af; }
+
 .billing-cell { display: flex; flex-direction: column; gap: 3px; }
 .billing-row { display: flex; align-items: center; gap: 4px; }
 .debt-row { display: flex; align-items: center; gap: 4px; }
@@ -660,6 +1039,20 @@ onMounted(loadOrders)
 .amount-divider { height: 1px; background: #e5e7eb; margin: 4px 0; }
 .amount-divider-bold { height: 2px; background: #d1d5db; margin: 6px 0; }
 
+.feedback-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 18px;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.feedback-info-row { display: flex; align-items: center; gap: 6px; }
+.feedback-key { font-size: 13px; color: #6b7280; flex-shrink: 0; }
+.feedback-date { font-size: 12px; color: #374151; margin-left: 4px; }
+.feedback-notes-text { font-size: 13px; color: #374151; }
+
 .billing-panel {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
@@ -681,10 +1074,96 @@ onMounted(loadOrders)
 .debt-notes-text { font-size: 13px; color: #92400e; line-height: 1.6; }
 .billing-all-clear { font-size: 13px; color: #16a34a; text-align: center; padding: 4px 0; }
 
+.payment-empty {
+  text-align: center;
+  color: #9ca3af;
+  padding: 20px;
+  font-size: 13px;
+  background: #f9fafb;
+  border-radius: 10px;
+  border: 1px dashed #e5e7eb;
+}
+.payment-list { display: flex; flex-direction: column; gap: 8px; }
+.payment-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px 16px;
+  transition: border-color 0.2s;
+}
+.payment-card:hover { border-color: #93c5fd; }
+.payment-main { flex: 1; min-width: 0; }
+.payment-amount { font-size: 16px; font-weight: 700; color: #16a34a; font-family: 'Courier New', monospace; }
+.payment-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+.payment-method { color: #2563eb; }
+.payment-payer { color: #374151; }
+.payment-notes { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+.payment-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.payment-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #6b7280;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+.payment-summary-val { font-size: 16px; font-weight: 700; color: #16a34a; font-family: 'Courier New', monospace; }
+
 .debt-form { display: flex; flex-direction: column; gap: 16px; padding: 4px 0; }
 .debt-field { display: flex; flex-direction: column; gap: 6px; }
 .debt-label { font-size: 13px; font-weight: 500; color: #374151; }
 .debt-status-hint { font-size: 12px; padding: 6px 10px; border-radius: 6px; margin-top: 2px; }
 .debt-hint-surplus { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .debt-hint-owed { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+
+.feedback-form { display: flex; flex-direction: column; gap: 18px; padding: 4px 0; }
+.feedback-field { display: flex; flex-direction: column; gap: 6px; }
+.feedback-form-label { font-size: 13px; font-weight: 500; color: #374151; }
+.feedback-date-field {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+.feedback-date-label { font-size: 12px; color: #6b7280; }
+
+.payment-form { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
+.payment-form-info {
+  display: flex; gap: 16px;
+  font-size: 13px; color: #374151; font-weight: 500;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+.payment-form-field { display: flex; flex-direction: column; gap: 4px; }
+.payment-form-label { font-size: 13px; font-weight: 500; color: #374151; }
+.required { color: #ef4444; margin-left: 2px; }
+.payment-form-tip {
+  font-size: 12px;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 8px 12px;
+  text-align: center;
+}
 </style>
