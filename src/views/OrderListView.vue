@@ -1837,18 +1837,8 @@ onMounted(loadOrders)
 .sales-name { font-size: 13px; font-weight: 500; color: #374151; display: flex; align-items: center; }
 .customer-name { font-size: 11px; color: #9ca3af; }
 
-:global(.row-billing-warn td) { background-color: #fff7ed !important; }
-:global(.row-debt-warn td) { background-color: #fffbeb !important; }
-:global(.row-billing-debt td) { background-color: #fff1f2 !important; }
-:global(.row-surplus-warn td) { background-color: #eff6ff !important; }
-
 :global(.row-batch-first td) { border-top: 2px solid #e2e8f0 !important; }
 :global(.row-batch-last td) { border-bottom: 2px solid #e2e8f0 !important; }
-:global(.row-in-batch td) { background-color: #f8faff !important; }
-:global(.row-in-batch.row-billing-warn td) { background-color: #fff7ed !important; }
-:global(.row-in-batch.row-debt-warn td) { background-color: #fffbeb !important; }
-:global(.row-in-batch.row-billing-debt td) { background-color: #fff1f2 !important; }
-:global(.row-in-batch.row-surplus-warn td) { background-color: #eff6ff !important; }
 
 .order-number-cell {
   display: flex;
