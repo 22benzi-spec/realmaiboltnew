@@ -1286,6 +1286,14 @@ function generateOrderNumber(): string {
   return `ORD${y}${m}${d}${h}${min}${s}${rand}`
 }
 
+function generateBatchNumber(orderNumber: string): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `B-${y}${m}${d}-${orderNumber.slice(-6)}`
+}
+
 const priceNoReview = ref(25)
 const priceText = ref(88)
 const priceImage = ref(100)
@@ -1408,9 +1416,11 @@ async function doSubmit() {
   try {
     recalc()
     const orderNumber = currentOrderNumber.value
+    const batchNumber = generateBatchNumber(orderNumber)
     const submitData = {
       ...form,
       order_number: orderNumber,
+      batch_number: batchNumber,
       total_orders: form.order_quantity,
       order_type: form.order_types[0] || '',
       order_types: form.order_types,

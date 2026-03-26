@@ -69,10 +69,16 @@
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'order_number'">
-            <div v-if="record._isFirstInBatch && record.batch_number" class="batch-divider-label" @click.stop="showGroupDetail(record)">
-              <span class="batch-divider-tag">{{ record.batch_number }}</span>
+            <div class="order-number-cell">
+              <div v-if="record._isMultiBatch && record._isFirstInBatch" class="batch-group-header" @click.stop="showGroupDetail(record)">
+                <span class="batch-group-icon"><LinkOutlined /></span>
+                <span class="batch-group-name">{{ record.batch_number }}</span>
+              </div>
+              <div class="order-number-row">
+                <div v-if="record._isMultiBatch" class="batch-side-bar" :style="{ background: record._batchColor }"></div>
+                <a class="order-number-link" @click="viewDetail(record)">{{ record.order_number }}</a>
+              </div>
             </div>
-            <a class="order-number-link" @click="viewDetail(record)">{{ record.order_number }}</a>
           </template>
 
           <template v-if="column.key === 'product'">
@@ -1069,12 +1075,17 @@ function hasRealSurplus(record: any): boolean {
 }
 
 function getRowClass(record: any): string {
-  const batchClass = record._batchColorIndex === 1 ? 'row-batch-odd' : 'row-batch-even'
-  if (record.billing_status === '未完成' && hasRealDebt(record)) return `row-billing-debt ${batchClass}`
-  if (record.billing_status === '未完成') return `row-billing-warn ${batchClass}`
-  if (hasRealDebt(record)) return `row-debt-warn ${batchClass}`
-  if (hasRealSurplus(record)) return `row-surplus-warn ${batchClass}`
-  return batchClass
+  const classes: string[] = []
+  if (record._isMultiBatch) {
+    classes.push('row-in-batch')
+    if (record._isFirstInBatch) classes.push('row-batch-first')
+    if (record._isLastInBatch) classes.push('row-batch-last')
+  }
+  if (record.billing_status === '未完成' && hasRealDebt(record)) classes.push('row-billing-debt')
+  else if (record.billing_status === '未完成') classes.push('row-billing-warn')
+  else if (hasRealDebt(record)) classes.push('row-debt-warn')
+  else if (hasRealSurplus(record)) classes.push('row-surplus-warn')
+  return classes.join(' ')
 }
 
 function getPaymentTypeColor(type: string) {
@@ -1118,16 +1129,27 @@ async function loadOrders() {
     const { data, count, error } = await query
     if (error) throw error
     const rows = data || []
-    const batchKeys: string[] = []
-    const batchColorIndex: Record<string, number> = {}
+    const batchGroups: Record<string, any[]> = {}
     for (const row of rows) {
-      const key = row.batch_number || `_nobatch_${row.id}`
-      if (!(key in batchColorIndex)) {
-        batchColorIndex[key] = batchKeys.length % 2
-        batchKeys.push(key)
-      }
-      row._batchColorIndex = batchColorIndex[key]
-      row._isFirstInBatch = batchKeys.indexOf(key) >= 0 && rows.filter((r: any) => (r.batch_number || `_nobatch_${r.id}`) === key).indexOf(row) === 0
+      const key = row.batch_number || `_solo_${row.id}`
+      if (!batchGroups[key]) batchGroups[key] = []
+      batchGroups[key].push(row)
+    }
+    const batchColorPalette = ['#2563eb', '#0891b2', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
+    let colorIdx = 0
+    const batchColorMap: Record<string, string> = {}
+    for (const key of Object.keys(batchGroups)) {
+      const isMulti = batchGroups[key].length > 1
+      batchColorMap[key] = isMulti ? batchColorPalette[colorIdx % batchColorPalette.length] : 'none'
+      if (isMulti) colorIdx++
+    }
+    for (const row of rows) {
+      const key = row.batch_number || `_solo_${row.id}`
+      const group = batchGroups[key]
+      row._batchColor = batchColorMap[key]
+      row._isMultiBatch = group.length > 1
+      row._isFirstInBatch = group[0].id === row.id
+      row._isLastInBatch = group[group.length - 1].id === row.id
     }
     orders.value = rows
     pagination.value.total = count || 0
@@ -1815,28 +1837,67 @@ onMounted(loadOrders)
 .sales-name { font-size: 13px; font-weight: 500; color: #374151; display: flex; align-items: center; }
 .customer-name { font-size: 11px; color: #9ca3af; }
 
-:global(.row-batch-odd td) { background-color: #f8faff !important; }
-:global(.row-batch-even td) { background-color: #ffffff !important; }
 :global(.row-billing-warn td) { background-color: #fff7ed !important; }
 :global(.row-debt-warn td) { background-color: #fffbeb !important; }
 :global(.row-billing-debt td) { background-color: #fff1f2 !important; }
 :global(.row-surplus-warn td) { background-color: #eff6ff !important; }
-:global(.row-batch-odd .ant-table-cell-row-hover) { background-color: #eef3ff !important; }
-:global(.row-batch-even .ant-table-cell-row-hover) { background-color: #f0f4ff !important; }
 
-.batch-divider-label {
-  margin-bottom: 3px;
+:global(.row-batch-first td) { border-top: 2px solid #e2e8f0 !important; }
+:global(.row-batch-last td) { border-bottom: 2px solid #e2e8f0 !important; }
+:global(.row-in-batch td) { background-color: #f8faff !important; }
+:global(.row-in-batch.row-billing-warn td) { background-color: #fff7ed !important; }
+:global(.row-in-batch.row-debt-warn td) { background-color: #fffbeb !important; }
+:global(.row-in-batch.row-billing-debt td) { background-color: #fff1f2 !important; }
+:global(.row-in-batch.row-surplus-warn td) { background-color: #eff6ff !important; }
+
+.order-number-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
-.batch-divider-tag {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  color: #2563eb;
+
+.batch-group-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f0f4ff;
+  border: 1px solid #c7d7fd;
+  border-radius: 5px;
+  padding: 2px 8px 2px 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  max-width: 100%;
+  overflow: hidden;
+}
+.batch-group-header:hover {
   background: #dbeafe;
-  border-radius: 4px;
-  padding: 1px 7px;
-  letter-spacing: 0.3px;
-  border: 1px solid #bfdbfe;
+  border-color: #93c5fd;
+}
+.batch-group-icon {
+  font-size: 10px;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+.batch-group-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d4ed8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.order-number-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.batch-side-bar {
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .detail-header { display: flex; align-items: flex-start; }
