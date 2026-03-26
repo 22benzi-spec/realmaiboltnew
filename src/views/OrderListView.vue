@@ -47,6 +47,9 @@
         <a-button :disabled="selectedRowKeys.length === 0" danger @click="openBatchPayModal('退款')">
           <RollbackOutlined /> 批量退款<template v-if="selectedRowKeys.length > 0">（{{ selectedRowKeys.length }}）</template>
         </a-button>
+        <a-button :disabled="selectedRowKeys.length < 2" @click="openCreateGroupModal" style="color:#7c3aed;border-color:#7c3aed" :style="selectedRowKeys.length >= 2 ? '' : ''">
+          <LinkOutlined /> 创建任务组<template v-if="selectedRowKeys.length >= 2">（{{ selectedRowKeys.length }}）</template>
+        </a-button>
         <a-popconfirm v-if="selectedRowKeys.length > 0" title="确定批量删除选中的订单吗?" @confirm="batchDelete">
           <a-button danger>批量删除（{{ selectedRowKeys.length }}）</a-button>
         </a-popconfirm>
@@ -67,6 +70,10 @@
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'order_number'">
             <a class="order-number-link" @click="viewDetail(record)">{{ record.order_number }}</a>
+            <div v-if="record.batch_number" class="task-group-badge" @click.stop="showGroupDetail(record)">
+              <LinkOutlined style="font-size:10px" />
+              <span>{{ record.batch_number }}</span>
+            </div>
           </template>
 
           <template v-if="column.key === 'product'">
@@ -756,13 +763,104 @@
         </div>
       </div>
     </a-modal>
+
+    <!-- Create Task Group Modal -->
+    <a-modal
+      v-model:open="createGroupModalOpen"
+      title="创建任务组"
+      :confirm-loading="createGroupSaving"
+      @ok="saveCreateGroup"
+      ok-text="确认创建"
+      cancel-text="取消"
+      width="560px"
+    >
+      <div class="task-group-form">
+        <div class="task-group-hint">将选中的订单绑定为一个任务组，表示它们由同一客户同批次下达，需要一起结算和反馈。</div>
+        <div class="task-group-field">
+          <label class="task-group-label">任务组名称 <span class="required">*</span></label>
+          <a-input v-model:value="createGroupForm.label" placeholder="如：李婷 3月26日批次" />
+        </div>
+        <div class="task-group-field">
+          <label class="task-group-label">日期</label>
+          <a-date-picker v-model:value="createGroupForm.date_picker" style="width:100%" value-format="YYYY-MM-DD" />
+        </div>
+        <div class="task-group-field">
+          <label class="task-group-label">备注</label>
+          <a-textarea v-model:value="createGroupForm.notes" :rows="2" placeholder="备注（可选）" />
+        </div>
+        <div class="task-group-orders-preview">
+          <div class="task-group-preview-title">包含订单（{{ createGroupOrders.length }} 个）</div>
+          <div v-for="o in createGroupOrders" :key="o.id" class="task-group-order-row">
+            <LinkOutlined style="color:#7c3aed;font-size:11px" />
+            <span class="task-group-order-num">{{ o.order_number }}</span>
+            <span class="task-group-order-asin">{{ o.asin }}</span>
+            <span class="task-group-order-amount">¥{{ Number(o.total_amount).toFixed(2) }}</span>
+          </div>
+          <div class="task-group-total">合计应收：¥{{ createGroupOrders.reduce((s,o)=>s+Number(o.total_amount||0),0).toFixed(2) }}</div>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- Group Detail Modal -->
+    <a-modal
+      v-model:open="groupDetailModalOpen"
+      :title="`任务组：${groupDetailData?.label || groupDetailData?.batch_number}`"
+      :footer="null"
+      width="600px"
+    >
+      <div v-if="groupDetailData" class="group-detail-body">
+        <div class="group-detail-meta">
+          <span class="group-detail-item"><span class="gd-label">日期：</span>{{ groupDetailData.batch_date || '-' }}</span>
+          <span class="group-detail-item"><span class="gd-label">客户：</span>{{ groupDetailData.customer_name || '-' }}</span>
+          <span class="group-detail-item"><span class="gd-label">商务：</span>{{ groupDetailData.sales_person || '-' }}</span>
+          <span class="group-detail-item"><span class="gd-label">状态：</span>
+            <a-tag :color="groupDetailData.batch_status === '已结清' ? 'green' : groupDetailData.batch_status === '进行中' ? 'blue' : 'default'" size="small">
+              {{ groupDetailData.batch_status || '进行中' }}
+            </a-tag>
+          </span>
+        </div>
+        <div class="group-detail-orders">
+          <div class="gd-section-title">关联订单</div>
+          <div v-for="o in groupDetailOrders" :key="o.id" class="gd-order-row">
+            <div class="gd-order-left">
+              <a class="order-number-link" @click="viewDetail(o); groupDetailModalOpen=false">{{ o.order_number }}</a>
+              <span class="gd-order-asin">{{ o.asin }}</span>
+            </div>
+            <div class="gd-order-right">
+              <span class="gd-order-amount">¥{{ Number(o.total_amount).toFixed(2) }}</span>
+              <a-tag :color="o.billing_status === '未完成' ? 'red' : 'green'" size="small">{{ o.billing_status || '已完成' }}</a-tag>
+              <a-tag v-if="o.debt_status === 'owed'" color="orange" size="small">欠款¥{{ Number(o.debt_amount).toFixed(0) }}</a-tag>
+              <a-tag v-else-if="o.debt_status === 'surplus'" color="blue" size="small">应退¥{{ Number(o.debt_amount).toFixed(0) }}</a-tag>
+              <a-tag v-else-if="o.debt_status === 'cleared'" color="green" size="small">已结清</a-tag>
+            </div>
+          </div>
+        </div>
+        <div class="group-detail-summary">
+          <span>合计应收：<strong>¥{{ groupDetailOrders.reduce((s,o)=>s+Number(o.total_amount||0),0).toFixed(2) }}</strong></span>
+          <span v-if="groupDetailOrders.some(o=>o.debt_status==='owed')" class="gd-debt">
+            待补款：¥{{ groupDetailOrders.filter(o=>o.debt_status==='owed').reduce((s,o)=>s+Number(o.debt_amount||0),0).toFixed(2) }}
+          </span>
+          <span v-if="groupDetailOrders.some(o=>o.debt_status==='surplus')" class="gd-surplus">
+            待退款：¥{{ groupDetailOrders.filter(o=>o.debt_status==='surplus').reduce((s,o)=>s+Number(o.debt_amount||0),0).toFixed(2) }}
+          </span>
+        </div>
+        <div class="group-detail-actions">
+          <a-button size="small" @click="batchPayGroupOrders('补款')"><DollarOutlined /> 批量补款</a-button>
+          <a-button size="small" danger @click="batchPayGroupOrders('退款')"><RollbackOutlined /> 批量退款</a-button>
+          <a-popconfirm title="确认解散任务组？订单将不再关联" @confirm="dissolveGroup">
+            <a-button size="small" danger type="text">解散任务组</a-button>
+          </a-popconfirm>
+        </div>
+        <div v-if="groupDetailData.notes" class="gd-notes">备注：{{ groupDetailData.notes }}</div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined, DollarOutlined, RollbackOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined, DollarOutlined, RollbackOutlined, PlusOutlined, LinkOutlined } from '@ant-design/icons-vue'
 import { useCurrentUser } from '../composables/useCurrentUser'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -1346,6 +1444,124 @@ async function deletePayment(payment: any) {
   }
 }
 
+const createGroupModalOpen = ref(false)
+const createGroupSaving = ref(false)
+const createGroupOrders = ref<any[]>([])
+const createGroupForm = ref({ label: '', date_picker: dayjs().format('YYYY-MM-DD'), notes: '' })
+
+const groupDetailModalOpen = ref(false)
+const groupDetailData = ref<any>(null)
+const groupDetailOrders = ref<any[]>([])
+
+function openCreateGroupModal() {
+  const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id))
+  if (selected.length < 2) { message.warning('请至少选择2个订单'); return }
+  createGroupOrders.value = selected
+  const firstCustomer = selected[0]?.customer_name || ''
+  const firstSales = selected[0]?.sales_person || ''
+  createGroupForm.value = {
+    label: `${firstSales || firstCustomer} ${dayjs().format('MM月DD日')}批次`,
+    date_picker: dayjs().format('YYYY-MM-DD'),
+    notes: '',
+  }
+  createGroupModalOpen.value = true
+}
+
+async function saveCreateGroup() {
+  if (!createGroupForm.value.label.trim()) { message.warning('请填写任务组名称'); return }
+  createGroupSaving.value = true
+  try {
+    const firstOrder = createGroupOrders.value[0]
+    const batchNo = `BG-${Date.now()}`
+    const totalAmt = createGroupOrders.value.reduce((s, o) => s + Number(o.total_amount || 0), 0)
+
+    const { data: bData, error: bErr } = await supabase.from('order_batches').insert({
+      batch_number: batchNo,
+      label: createGroupForm.value.label.trim(),
+      customer_name: firstOrder?.customer_name || '',
+      sales_person: firstOrder?.sales_person || '',
+      batch_date: createGroupForm.value.date_picker,
+      actual_amount: totalAmt,
+      notes: createGroupForm.value.notes,
+      batch_status: '进行中',
+      order_count: createGroupOrders.value.length,
+    }).select('id').maybeSingle()
+    if (bErr) throw bErr
+
+    const batchId = bData?.id
+    for (const o of createGroupOrders.value) {
+      await supabase.from('erp_orders').update({
+        batch_id: batchId,
+        batch_number: createGroupForm.value.label.trim(),
+      }).eq('id', o.id)
+    }
+
+    message.success(`任务组「${createGroupForm.value.label}」创建成功`)
+    createGroupModalOpen.value = false
+    selectedRowKeys.value = []
+    loadOrders()
+  } catch (e: any) {
+    message.error('创建失败：' + e.message)
+  } finally {
+    createGroupSaving.value = false
+  }
+}
+
+async function showGroupDetail(record: any) {
+  if (!record.batch_id) return
+  const { data: bData } = await supabase.from('order_batches').select('*').eq('id', record.batch_id).maybeSingle()
+  if (!bData) { message.warning('任务组信息不存在'); return }
+  groupDetailData.value = bData
+  const { data: oData } = await supabase.from('erp_orders').select('*').eq('batch_id', record.batch_id).order('created_at')
+  groupDetailOrders.value = oData || []
+  groupDetailModalOpen.value = true
+}
+
+function batchPayGroupOrders(type: string) {
+  groupDetailModalOpen.value = false
+  batchPayOrders.value = groupDetailOrders.value
+  Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
+  let netAmount = 0
+  for (const o of groupDetailOrders.value) {
+    const amt = Number(o.debt_amount || 0)
+    if (o.debt_status === 'owed' && amt > 0) {
+      batchPayAllocations[o.id] = amt
+      netAmount += amt
+    } else if (o.debt_status === 'surplus' && amt > 0) {
+      batchPayAllocations[o.id] = amt
+      netAmount -= amt
+    } else {
+      batchPayAllocations[o.id] = null
+    }
+  }
+  const firstOrder = groupDetailOrders.value[0]
+  const autoType = netAmount >= 0 ? '补款' : '退款'
+  batchPayReceiptFiles.value = []
+  batchPayForm.value = {
+    payment_type: type === '混合' ? autoType : type,
+    amount_cny: Number(Math.abs(netAmount).toFixed(2)),
+    payment_date_picker: dayjs(),
+    payment_method: '银行转账',
+    payer_name: firstOrder?.customer_name || '',
+    recorded_by: firstOrder?.sales_person || currentUser.value.name || '',
+    notes: '',
+    update_debt_status: 'none',
+  }
+  batchPayModalOpen.value = true
+}
+
+async function dissolveGroup() {
+  if (!groupDetailData.value) return
+  const batchId = groupDetailData.value.id
+  for (const o of groupDetailOrders.value) {
+    await supabase.from('erp_orders').update({ batch_id: null, batch_number: null }).eq('id', o.id)
+  }
+  await supabase.from('order_batches').delete().eq('id', batchId)
+  message.success('任务组已解散')
+  groupDetailModalOpen.value = false
+  loadOrders()
+}
+
 function openSinglePayModal(record: any, type: string) {
   batchPayOrders.value = [record]
   Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
@@ -1807,4 +2023,42 @@ onMounted(loadOrders)
 .batch-pay-label { font-size: 13px; font-weight: 500; color: #374151; }
 .batch-pay-upload-area { background: #fafafa; border: 1px dashed #d1d5db; border-radius: 8px; padding: 8px 12px; }
 .batch-pay-upload-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #6b7280; }
+
+.task-group-badge {
+  display: inline-flex; align-items: center; gap: 3px; margin-top: 3px;
+  background: #f5f3ff; color: #7c3aed; border: 1px solid #ddd6fe;
+  border-radius: 4px; padding: 1px 6px; font-size: 11px; cursor: pointer;
+  white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
+  transition: background 0.15s;
+}
+.task-group-badge:hover { background: #ede9fe; }
+.task-group-form { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
+.task-group-hint { font-size: 13px; color: #6b7280; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; padding: 10px 14px; }
+.task-group-field { display: flex; flex-direction: column; gap: 4px; }
+.task-group-label { font-size: 13px; font-weight: 500; color: #374151; }
+.task-group-orders-preview { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+.task-group-preview-title { font-size: 12px; color: #6b7280; margin-bottom: 8px; font-weight: 500; }
+.task-group-order-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #f3f4f6; font-size: 12px; }
+.task-group-order-row:last-child { border-bottom: none; }
+.task-group-order-num { font-weight: 600; color: #1e40af; }
+.task-group-order-asin { color: #6b7280; flex: 1; }
+.task-group-order-amount { font-weight: 600; color: #374151; }
+.task-group-total { font-size: 13px; font-weight: 600; color: #374151; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; }
+
+.group-detail-body { display: flex; flex-direction: column; gap: 16px; }
+.group-detail-meta { display: flex; flex-wrap: wrap; gap: 16px; background: #f5f3ff; border-radius: 8px; padding: 12px 16px; }
+.group-detail-item { font-size: 13px; color: #374151; }
+.gd-label { color: #6b7280; }
+.group-detail-orders { display: flex; flex-direction: column; gap: 4px; }
+.gd-section-title { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.gd-order-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb; }
+.gd-order-left { display: flex; align-items: center; gap: 10px; }
+.gd-order-asin { font-size: 12px; color: #6b7280; }
+.gd-order-right { display: flex; align-items: center; gap: 6px; }
+.gd-order-amount { font-size: 13px; font-weight: 600; color: #374151; }
+.group-detail-summary { display: flex; gap: 16px; padding: 10px 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e5e7eb; font-size: 13px; }
+.gd-debt { color: #dc2626; font-weight: 600; }
+.gd-surplus { color: #2563eb; font-weight: 600; }
+.group-detail-actions { display: flex; gap: 8px; align-items: center; }
+.gd-notes { font-size: 12px; color: #6b7280; padding: 8px 12px; background: #f9fafb; border-radius: 6px; }
 </style>
