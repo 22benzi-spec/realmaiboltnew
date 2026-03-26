@@ -657,7 +657,7 @@
         <div class="batch-pay-order-list">
           <div class="batch-pay-list-header">
             <span>已选订单（{{ batchPayOrders.length }} 个）</span>
-            <span class="batch-pay-total-expected">应收合计：&yen;{{ batchPayTotalExpected.toFixed(2) }}</span>
+            <span class="batch-pay-total-expected">欠款合计：&yen;{{ batchPayTotalDebt.toFixed(2) }}</span>
           </div>
           <div v-for="o in batchPayOrders" :key="o.id" class="batch-pay-order-row">
             <div class="batch-pay-order-left">
@@ -665,11 +665,13 @@
               <div class="batch-pay-order-detail">{{ o.order_number }} | {{ o.customer_name || '-' }}</div>
             </div>
             <div class="batch-pay-order-right">
-              <span class="batch-pay-order-expected">应收 &yen;{{ Number(o.total_amount).toFixed(0) }}</span>
+              <span class="batch-pay-order-expected" :class="Number(o.debt_amount) > 0 ? 'batch-pay-debt-label' : 'batch-pay-no-debt'">
+                欠款 &yen;{{ Number(o.debt_amount || 0).toFixed(0) }}
+              </span>
               <a-input-number
                 v-model:value="batchPayAllocations[o.id]"
                 :min="0" :precision="2" size="small" style="width:110px"
-                placeholder="自动"
+                @change="onAllocationChange"
               />
             </div>
           </div>
@@ -678,8 +680,7 @@
         <div class="batch-pay-fields">
           <div class="batch-pay-field">
             <label class="batch-pay-label">{{ batchPayForm.payment_type === '退款' ? '退款总金额（元）' : '补款总金额（元）' }} <span class="required">*</span></label>
-            <a-input-number v-model:value="batchPayForm.amount_cny" style="width:100%" :min="0.01" :precision="2"
-              :placeholder="`建议 ¥${batchPayTotalExpected.toFixed(2)}`" />
+            <a-input-number v-model:value="batchPayForm.amount_cny" style="width:100%" :min="0.01" :precision="2" />
           </div>
           <div class="batch-pay-field-row">
             <div class="batch-pay-field" style="flex:1">
@@ -708,6 +709,23 @@
             </div>
           </div>
           <div class="batch-pay-field">
+            <label class="batch-pay-label">上传流水单</label>
+            <div class="batch-pay-upload-area">
+              <a-upload
+                v-model:file-list="batchPayReceiptFiles"
+                list-type="picture-card"
+                :before-upload="() => false"
+                accept="image/*,.pdf"
+                :multiple="true"
+              >
+                <div v-if="batchPayReceiptFiles.length < 5" class="batch-pay-upload-btn">
+                  <plus-outlined />
+                  <div style="margin-top:4px;font-size:12px">上传凭证</div>
+                </div>
+              </a-upload>
+            </div>
+          </div>
+          <div class="batch-pay-field">
             <label class="batch-pay-label">账单状态变更</label>
             <a-radio-group v-model:value="batchPayForm.update_debt_status">
               <a-radio-button value="none">不变更</a-radio-button>
@@ -729,7 +747,8 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined, DollarOutlined, RollbackOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined, DollarOutlined, RollbackOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { useCurrentUser } from '../composables/useCurrentUser'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -778,10 +797,13 @@ const paymentForm = ref({
   enableGroupPay: false,
 })
 
+const { currentUser } = useCurrentUser()
+
 const batchPayModalOpen = ref(false)
 const batchPaySaving = ref(false)
 const batchPayOrders = ref<any[]>([])
 const batchPayAllocations = reactive<Record<string, number | null>>({})
+const batchPayReceiptFiles = ref<any[]>([])
 const batchPayForm = ref({
   payment_type: '补款',
   amount_cny: 0,
@@ -793,9 +815,14 @@ const batchPayForm = ref({
   update_debt_status: 'none',
 })
 
-const batchPayTotalExpected = computed(() =>
-  batchPayOrders.value.reduce((s, o) => s + Number(o.total_amount || 0), 0)
+const batchPayTotalDebt = computed(() =>
+  batchPayOrders.value.reduce((s, o) => s + Number(o.debt_amount || 0), 0)
 )
+
+function onAllocationChange() {
+  const sum = Object.values(batchPayAllocations).reduce((s: number, v) => s + Number(v || 0), 0 as number)
+  batchPayForm.value.amount_cny = Number((sum as number).toFixed(2))
+}
 
 const batchPayments = ref<any[]>([])
 const sameCustomerOrders = ref<any[]>([])
@@ -1303,14 +1330,22 @@ function openBatchPayModal(type: string) {
   if (!selected.length) { message.warning('请先勾选订单'); return }
   batchPayOrders.value = selected
   Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
+  let totalDebt = 0
+  for (const o of selected) {
+    const debt = Number(o.debt_amount || 0)
+    batchPayAllocations[o.id] = debt > 0 ? debt : null
+    totalDebt += debt > 0 ? debt : 0
+  }
   const firstCustomer = selected[0]?.customer_name || ''
+  const defaultOperator = selected[0]?.sales_person || currentUser.value.name || ''
+  batchPayReceiptFiles.value = []
   batchPayForm.value = {
     payment_type: type,
-    amount_cny: 0,
+    amount_cny: Number(totalDebt.toFixed(2)),
     payment_date_picker: dayjs(),
     payment_method: '银行转账',
     payer_name: firstCustomer,
-    recorded_by: '',
+    recorded_by: defaultOperator,
     notes: '',
     update_debt_status: 'none',
   }
@@ -1333,7 +1368,22 @@ async function saveBatchPay() {
       ? batchPayForm.value.payment_date_picker
       : batchPayForm.value.payment_date_picker?.format('YYYY-MM-DD')
     const isRefund = batchPayForm.value.payment_type === '退款'
-    const totalExpected = batchPayTotalExpected.value
+    let receiptUrls: string[] = []
+    if (batchPayReceiptFiles.value.length > 0) {
+      for (const f of batchPayReceiptFiles.value) {
+        if (f.originFileObj) {
+          const ext = f.name.split('.').pop()
+          const path = `receipts/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+          const { data: upData, error: upErr } = await supabase.storage
+            .from('payment-receipts')
+            .upload(path, f.originFileObj, { upsert: true })
+          if (!upErr && upData) {
+            const { data: urlData } = supabase.storage.from('payment-receipts').getPublicUrl(upData.path)
+            receiptUrls.push(urlData.publicUrl)
+          }
+        }
+      }
+    }
 
     const { data: gData, error: gErr } = await supabase.from('payment_groups').insert({
       group_number: `PG-${Date.now()}`,
@@ -1348,15 +1398,16 @@ async function saveBatchPay() {
     if (gErr) throw gErr
     const groupId = gData?.id
 
+    const totalAllocated = Object.values(batchPayAllocations).reduce((s: number, v) => s + Number(v || 0), 0 as number) as number
     const groupOrderEntries = batchPayOrders.value.map(o => {
       const manual = batchPayAllocations[o.id]
-      const auto = totalExpected > 0
-        ? (Number(o.total_amount) / totalExpected) * batchPayForm.value.amount_cny
+      const fallback = totalAllocated > 0
+        ? (Number(o.debt_amount || o.total_amount) / totalAllocated) * batchPayForm.value.amount_cny
         : batchPayForm.value.amount_cny / batchPayOrders.value.length
       return {
         payment_group_id: groupId,
         order_id: o.id,
-        allocated_amount: manual != null ? manual : Number(auto.toFixed(2)),
+        allocated_amount: manual != null ? manual : Number(fallback.toFixed(2)),
       }
     })
     const { error: goErr } = await supabase.from('payment_group_orders').insert(groupOrderEntries)
@@ -1384,6 +1435,7 @@ async function saveBatchPay() {
       status: txStatus,
       notes: txNotes,
       transaction_date: paymentDate,
+      receipt_urls: receiptUrls,
     }).select('id').maybeSingle()
     if (txErr) throw txErr
 
@@ -1401,6 +1453,7 @@ async function saveBatchPay() {
         notes: batchPayForm.value.notes,
         payment_type: batchPayForm.value.payment_type,
         payment_group_id: groupId,
+        receipt_urls: receiptUrls,
       })
     }
 
@@ -1690,8 +1743,12 @@ onMounted(loadOrders)
 .batch-pay-order-detail { font-size: 11px; color: #6b7280; margin-top: 1px; }
 .batch-pay-order-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .batch-pay-order-expected { font-size: 12px; color: #6b7280; white-space: nowrap; }
+.batch-pay-debt-label { font-size: 12px; color: #dc2626; font-weight: 600; white-space: nowrap; font-family: 'Courier New', monospace; }
+.batch-pay-no-debt { font-size: 12px; color: #10b981; white-space: nowrap; }
 .batch-pay-fields { display: flex; flex-direction: column; gap: 12px; }
 .batch-pay-field { display: flex; flex-direction: column; gap: 4px; }
 .batch-pay-field-row { display: flex; gap: 12px; }
 .batch-pay-label { font-size: 13px; font-weight: 500; color: #374151; }
+.batch-pay-upload-area { background: #fafafa; border: 1px dashed #d1d5db; border-radius: 8px; padding: 8px 12px; }
+.batch-pay-upload-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #6b7280; }
 </style>
