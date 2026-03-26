@@ -30,23 +30,26 @@
         </a-select>
         <a-button type="primary" @click="loadOrders"><ReloadOutlined /> 刷新</a-button>
 
-        <template v-if="selectedRowKeys.length > 0">
-          <a-divider type="vertical" />
-          <span class="batch-hint">已选 {{ selectedRowKeys.length }} 条</span>
-          <a-dropdown>
-            <a-button type="default">批量改状态 <DownOutlined /></a-button>
-            <template #overlay>
-              <a-menu @click="(info: any) => batchUpdateStatus(info.key as string)">
-                <a-menu-item v-for="s in statuses" :key="s">{{ s }}</a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
-          <a-button @click="openBatchPayModal('补款')"><DollarOutlined /> 批量补款</a-button>
-          <a-button danger @click="openBatchPayModal('退款')"><RollbackOutlined /> 批量退款</a-button>
-          <a-popconfirm title="确定批量删除选中的订单吗?" @confirm="batchDelete">
-            <a-button danger>批量删除</a-button>
-          </a-popconfirm>
-        </template>
+        <a-divider type="vertical" />
+        <a-dropdown>
+          <a-button type="default" :disabled="selectedRowKeys.length === 0">
+            批量改状态 <DownOutlined />
+          </a-button>
+          <template #overlay>
+            <a-menu @click="(info: any) => batchUpdateStatus(info.key as string)">
+              <a-menu-item v-for="s in statuses" :key="s">{{ s }}</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
+        <a-button :disabled="selectedRowKeys.length === 0" @click="openBatchPayModal('补款')">
+          <DollarOutlined /> 批量补款<template v-if="selectedRowKeys.length > 0">（{{ selectedRowKeys.length }}）</template>
+        </a-button>
+        <a-button :disabled="selectedRowKeys.length === 0" danger @click="openBatchPayModal('退款')">
+          <RollbackOutlined /> 批量退款<template v-if="selectedRowKeys.length > 0">（{{ selectedRowKeys.length }}）</template>
+        </a-button>
+        <a-popconfirm v-if="selectedRowKeys.length > 0" title="确定批量删除选中的订单吗?" @confirm="batchDelete">
+          <a-button danger>批量删除（{{ selectedRowKeys.length }}）</a-button>
+        </a-popconfirm>
       </div>
 
       <a-table
@@ -170,6 +173,8 @@
               <a-button type="link" size="small" @click="viewDetail(record)">详情</a-button>
               <a-button type="link" size="small" @click="openFeedbackModal(record)">反馈</a-button>
               <a-button type="link" size="small" @click="openDebtModal(record)">账单</a-button>
+              <a-button type="link" size="small" style="color:#059669" @click="openSinglePayModal(record, '补款')">补款</a-button>
+              <a-button type="link" size="small" style="color:#dc2626" @click="openSinglePayModal(record, '退款')">退款</a-button>
               <a-popconfirm title="确定删除这条订单吗?" @confirm="deleteOrder(record.id)">
                 <a-button type="link" size="small" danger>删除</a-button>
               </a-popconfirm>
@@ -657,7 +662,13 @@
         <div class="batch-pay-order-list">
           <div class="batch-pay-list-header">
             <span>已选订单（{{ batchPayOrders.length }} 个）</span>
-            <span class="batch-pay-total-expected">欠款合计：&yen;{{ batchPayTotalDebt.toFixed(2) }}</span>
+            <div class="batch-pay-summary-tags">
+              <span v-if="batchPayTotalOwed > 0" class="batch-summary-owed">客户补款 ¥{{ batchPayTotalOwed.toFixed(2) }}</span>
+              <span v-if="batchPayTotalSurplus > 0" class="batch-summary-surplus">应退客户 ¥{{ batchPayTotalSurplus.toFixed(2) }}</span>
+              <span class="batch-summary-net" :class="batchPayNetBalance >= 0 ? 'batch-summary-net-pos' : 'batch-summary-net-neg'">
+                净：{{ batchPayNetBalance >= 0 ? '补' : '退' }} ¥{{ Math.abs(batchPayNetBalance).toFixed(2) }}
+              </span>
+            </div>
           </div>
           <div v-for="o in batchPayOrders" :key="o.id" class="batch-pay-order-row">
             <div class="batch-pay-order-left">
@@ -665,9 +676,13 @@
               <div class="batch-pay-order-detail">{{ o.order_number }} | {{ o.customer_name || '-' }}</div>
             </div>
             <div class="batch-pay-order-right">
-              <span class="batch-pay-order-expected" :class="Number(o.debt_amount) > 0 ? 'batch-pay-debt-label' : 'batch-pay-no-debt'">
-                欠款 &yen;{{ Number(o.debt_amount || 0).toFixed(0) }}
+              <span v-if="o.debt_status === 'surplus'" class="batch-pay-surplus-label">
+                应退 ¥{{ Number(o.debt_amount || 0).toFixed(0) }}
               </span>
+              <span v-else-if="o.debt_status === 'owed'" class="batch-pay-debt-label">
+                欠款 ¥{{ Number(o.debt_amount || 0).toFixed(0) }}
+              </span>
+              <span v-else class="batch-pay-no-debt">无欠款</span>
               <a-input-number
                 v-model:value="batchPayAllocations[o.id]"
                 :min="0" :precision="2" size="small" style="width:110px"
@@ -815,9 +830,15 @@ const batchPayForm = ref({
   update_debt_status: 'none',
 })
 
-const batchPayTotalDebt = computed(() =>
-  batchPayOrders.value.reduce((s, o) => s + Number(o.debt_amount || 0), 0)
+const batchPayTotalOwed = computed(() =>
+  batchPayOrders.value.filter(o => o.debt_status === 'owed').reduce((s, o) => s + Number(o.debt_amount || 0), 0)
 )
+
+const batchPayTotalSurplus = computed(() =>
+  batchPayOrders.value.filter(o => o.debt_status === 'surplus').reduce((s, o) => s + Number(o.debt_amount || 0), 0)
+)
+
+const batchPayNetBalance = computed(() => batchPayTotalOwed.value - batchPayTotalSurplus.value)
 
 function onAllocationChange() {
   const sum = Object.values(batchPayAllocations).reduce((s: number, v) => s + Number(v || 0), 0 as number)
@@ -1325,23 +1346,51 @@ async function deletePayment(payment: any) {
   }
 }
 
+function openSinglePayModal(record: any, type: string) {
+  batchPayOrders.value = [record]
+  Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
+  const amt = Number(record.debt_amount || 0)
+  batchPayAllocations[record.id] = amt > 0 ? amt : null
+  const netAmount = type === '补款' ? amt : -amt
+  batchPayReceiptFiles.value = []
+  batchPayForm.value = {
+    payment_type: type,
+    amount_cny: Number(Math.abs(netAmount).toFixed(2)),
+    payment_date_picker: dayjs(),
+    payment_method: '银行转账',
+    payer_name: record.customer_name || '',
+    recorded_by: record.sales_person || currentUser.value.name || '',
+    notes: '',
+    update_debt_status: 'none',
+  }
+  batchPayModalOpen.value = true
+}
+
 function openBatchPayModal(type: string) {
   const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id))
   if (!selected.length) { message.warning('请先勾选订单'); return }
   batchPayOrders.value = selected
   Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
-  let totalDebt = 0
+  let netAmount = 0
   for (const o of selected) {
-    const debt = Number(o.debt_amount || 0)
-    batchPayAllocations[o.id] = debt > 0 ? debt : null
-    totalDebt += debt > 0 ? debt : 0
+    const amt = Number(o.debt_amount || 0)
+    if (o.debt_status === 'owed' && amt > 0) {
+      batchPayAllocations[o.id] = amt
+      netAmount += amt
+    } else if (o.debt_status === 'surplus' && amt > 0) {
+      batchPayAllocations[o.id] = amt
+      netAmount -= amt
+    } else {
+      batchPayAllocations[o.id] = null
+    }
   }
   const firstCustomer = selected[0]?.customer_name || ''
   const defaultOperator = selected[0]?.sales_person || currentUser.value.name || ''
   batchPayReceiptFiles.value = []
+  const autoType = netAmount >= 0 ? '补款' : '退款'
   batchPayForm.value = {
-    payment_type: type,
-    amount_cny: Number(totalDebt.toFixed(2)),
+    payment_type: type === '混合' ? autoType : type,
+    amount_cny: Number(Math.abs(netAmount).toFixed(2)),
     payment_date_picker: dayjs(),
     payment_method: '银行转账',
     payer_name: firstCustomer,
@@ -1743,8 +1792,15 @@ onMounted(loadOrders)
 .batch-pay-order-detail { font-size: 11px; color: #6b7280; margin-top: 1px; }
 .batch-pay-order-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .batch-pay-order-expected { font-size: 12px; color: #6b7280; white-space: nowrap; }
-.batch-pay-debt-label { font-size: 12px; color: #dc2626; font-weight: 600; white-space: nowrap; font-family: 'Courier New', monospace; }
+.batch-pay-debt-label { font-size: 12px; color: #dc2626; font-weight: 600; white-space: nowrap; }
+.batch-pay-surplus-label { font-size: 12px; color: #2563eb; font-weight: 600; white-space: nowrap; }
 .batch-pay-no-debt { font-size: 12px; color: #10b981; white-space: nowrap; }
+.batch-pay-summary-tags { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.batch-summary-owed { font-size: 12px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 1px 8px; font-weight: 600; }
+.batch-summary-surplus { font-size: 12px; background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 4px; padding: 1px 8px; font-weight: 600; }
+.batch-summary-net { font-size: 12px; border-radius: 4px; padding: 1px 8px; font-weight: 700; }
+.batch-summary-net-pos { background: #f0fdf4; color: #059669; border: 1px solid #bbf7d0; }
+.batch-summary-net-neg { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
 .batch-pay-fields { display: flex; flex-direction: column; gap: 12px; }
 .batch-pay-field { display: flex; flex-direction: column; gap: 4px; }
 .batch-pay-field-row { display: flex; gap: 12px; }
