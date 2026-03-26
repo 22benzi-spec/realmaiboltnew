@@ -6,7 +6,7 @@
       <div class="toolbar">
         <a-input-search
           v-model:value="searchText"
-          placeholder="搜索订单号/ASIN/店铺/产品名"
+          placeholder="搜索任务号/ASIN/店铺/产品名"
           style="width: 300px"
           @search="loadOrders"
           allow-clear
@@ -69,11 +69,10 @@
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'order_number'">
-            <a class="order-number-link" @click="viewDetail(record)">{{ record.order_number }}</a>
-            <div v-if="record.batch_number" class="task-group-badge" @click.stop="showGroupDetail(record)">
-              <LinkOutlined style="font-size:10px" />
-              <span>{{ record.batch_number }}</span>
+            <div v-if="record._isFirstInBatch && record.batch_number" class="batch-divider-label" @click.stop="showGroupDetail(record)">
+              <span class="batch-divider-tag">{{ record.batch_number }}</span>
             </div>
+            <a class="order-number-link" @click="viewDetail(record)">{{ record.order_number }}</a>
           </template>
 
           <template v-if="column.key === 'product'">
@@ -182,7 +181,7 @@
               <a-button type="link" size="small" @click="openDebtModal(record)">账单</a-button>
               <a-button type="link" size="small" style="color:#059669" @click="openSinglePayModal(record, '补款')">补款</a-button>
               <a-button type="link" size="small" style="color:#dc2626" @click="openSinglePayModal(record, '退款')">退款</a-button>
-              <a-popconfirm title="确定删除这条订单吗?" @confirm="deleteOrder(record.id)">
+              <a-popconfirm title="确定删除这条任务吗?" @confirm="deleteOrder(record.id)">
                 <a-button type="link" size="small" danger>删除</a-button>
               </a-popconfirm>
             </a-space>
@@ -194,7 +193,7 @@
     <!-- Detail Drawer -->
     <a-drawer
       v-model:open="drawerOpen"
-      :title="`接单详情 - ${currentOrder?.order_number}`"
+      :title="`任务详情 - ${currentOrder?.order_number}`"
       width="820"
       placement="right"
     >
@@ -229,7 +228,7 @@
         <a-divider style="margin: 16px 0" />
 
         <a-descriptions :column="2" bordered size="small">
-          <a-descriptions-item label="订单编号" :span="2">
+          <a-descriptions-item label="任务编号" :span="2">
             <span class="detail-order-num">{{ currentOrder.order_number }}</span>
           </a-descriptions-item>
           <a-descriptions-item label="产品名称" :span="2" v-if="currentOrder.product_name">
@@ -1005,7 +1004,7 @@ const rowSelection = computed(() => ({
 }))
 
 const columns = [
-  { title: '订单号', key: 'order_number', dataIndex: 'order_number', width: 175 },
+  { title: '任务号', key: 'order_number', dataIndex: 'order_number', width: 175 },
   { title: '产品信息', key: 'product', width: 220 },
   { title: '国家', key: 'country', dataIndex: 'country', width: 75 },
   { title: '测评类型', dataIndex: 'review_type', key: 'review_type', width: 95 },
@@ -1070,11 +1069,12 @@ function hasRealSurplus(record: any): boolean {
 }
 
 function getRowClass(record: any): string {
-  if (record.billing_status === '未完成' && hasRealDebt(record)) return 'row-billing-debt'
-  if (record.billing_status === '未完成') return 'row-billing-warn'
-  if (hasRealDebt(record)) return 'row-debt-warn'
-  if (hasRealSurplus(record)) return 'row-surplus-warn'
-  return ''
+  const batchClass = record._batchColorIndex === 1 ? 'row-batch-odd' : 'row-batch-even'
+  if (record.billing_status === '未完成' && hasRealDebt(record)) return `row-billing-debt ${batchClass}`
+  if (record.billing_status === '未完成') return `row-billing-warn ${batchClass}`
+  if (hasRealDebt(record)) return `row-debt-warn ${batchClass}`
+  if (hasRealSurplus(record)) return `row-surplus-warn ${batchClass}`
+  return batchClass
 }
 
 function getPaymentTypeColor(type: string) {
@@ -1099,7 +1099,9 @@ async function loadOrders() {
   loading.value = true
   selectedRowKeys.value = []
   try {
-    let query = supabase.from('erp_orders').select('*', { count: 'exact' }).order('created_at', { ascending: false })
+    let query = supabase.from('erp_orders').select('*', { count: 'exact' })
+      .order('batch_number', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: true })
     if (searchText.value) {
       query = query.or(`order_number.ilike.%${searchText.value}%,asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%,product_name.ilike.%${searchText.value}%`)
     }
@@ -1115,7 +1117,19 @@ async function loadOrders() {
 
     const { data, count, error } = await query
     if (error) throw error
-    orders.value = data || []
+    const rows = data || []
+    const batchKeys: string[] = []
+    const batchColorIndex: Record<string, number> = {}
+    for (const row of rows) {
+      const key = row.batch_number || `_nobatch_${row.id}`
+      if (!(key in batchColorIndex)) {
+        batchColorIndex[key] = batchKeys.length % 2
+        batchKeys.push(key)
+      }
+      row._batchColorIndex = batchColorIndex[key]
+      row._isFirstInBatch = batchKeys.indexOf(key) >= 0 && rows.filter((r: any) => (r.batch_number || `_nobatch_${r.id}`) === key).indexOf(row) === 0
+    }
+    orders.value = rows
     pagination.value.total = count || 0
   } catch (e: any) {
     message.error('加载失败：' + e.message)
@@ -1801,10 +1815,29 @@ onMounted(loadOrders)
 .sales-name { font-size: 13px; font-weight: 500; color: #374151; display: flex; align-items: center; }
 .customer-name { font-size: 11px; color: #9ca3af; }
 
+:global(.row-batch-odd td) { background-color: #f8faff !important; }
+:global(.row-batch-even td) { background-color: #ffffff !important; }
 :global(.row-billing-warn td) { background-color: #fff7ed !important; }
 :global(.row-debt-warn td) { background-color: #fffbeb !important; }
 :global(.row-billing-debt td) { background-color: #fff1f2 !important; }
 :global(.row-surplus-warn td) { background-color: #eff6ff !important; }
+:global(.row-batch-odd .ant-table-cell-row-hover) { background-color: #eef3ff !important; }
+:global(.row-batch-even .ant-table-cell-row-hover) { background-color: #f0f4ff !important; }
+
+.batch-divider-label {
+  margin-bottom: 3px;
+}
+.batch-divider-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #2563eb;
+  background: #dbeafe;
+  border-radius: 4px;
+  padding: 1px 7px;
+  letter-spacing: 0.3px;
+  border: 1px solid #bfdbfe;
+}
 
 .detail-header { display: flex; align-items: flex-start; }
 .detail-product { display: flex; gap: 16px; align-items: flex-start; }

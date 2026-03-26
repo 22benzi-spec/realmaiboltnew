@@ -1,9 +1,9 @@
 <template>
   <div class="page-content">
     <div class="page-header">
-      <h1 class="page-title">创建订单</h1>
+      <h1 class="page-title">创建任务</h1>
       <div class="order-number-badge" v-if="currentOrderNumber">
-        <span class="badge-label">任务订单号</span>
+        <span class="badge-label">任务编号</span>
         <span class="badge-value">{{ currentOrderNumber }}</span>
       </div>
     </div>
@@ -37,7 +37,7 @@
                     @click="customerLocked = true"
                     class="lock-btn"
                   >锁定客户</a-button>
-                  <span class="lock-hint">锁定后可连续为同一客户创建多个ASIN订单</span>
+                  <span class="lock-hint">锁定后可连续为同一客户创建多个ASIN任务</span>
                 </template>
               </div>
             </div>
@@ -729,7 +729,7 @@
           <div class="form-actions">
             <a-button @click="resetForm">重置全部</a-button>
             <a-button type="primary" html-type="submit" :loading="submitting">
-              提交订单
+              提交任务
             </a-button>
           </div>
         </a-col>
@@ -1221,7 +1221,7 @@ function saveScheduleEntry() {
     } else if (remaining > 0) {
       message.success(`${selectedDates.value[0]} 排期已保存，剩余未排 ${remaining} 单`)
     } else {
-      message.success(`排期已保存，全部订单已排期完毕！`)
+      message.success(`排期已保存，全部任务已排期完毕！`)
     }
     selectedDates.value = []
     editingTypeDetails.value = []
@@ -1442,7 +1442,7 @@ async function doSubmit() {
     }
 
     await syncToClientLibrary()
-    message.success(`订单 ${orderNumber} 创建成功！`)
+    message.success(`任务 ${orderNumber} 创建成功！`)
     if (customerLocked.value) {
       const savedCustomer = {
         customer_name: form.customer_name,
@@ -1452,10 +1452,10 @@ async function doSubmit() {
         store_id: form.store_id,
       }
       Modal.confirm({
-        title: '继续为同一客户下单？',
-        content: `客户「${savedCustomer.customer_name || savedCustomer.customer_id_str}」还有其他ASIN需要下单吗？`,
+        title: '继续为同一客户创建任务？',
+        content: `客户「${savedCustomer.customer_name || savedCustomer.customer_id_str}」还有其他ASIN需要创建任务吗？`,
         okText: '继续下一个ASIN',
-        cancelText: '完成下单',
+        cancelText: '完成',
         onOk: () => {
           continueNextAsin(savedCustomer)
         },

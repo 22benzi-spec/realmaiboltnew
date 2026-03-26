@@ -139,7 +139,7 @@ const statusStats = ref([
 ])
 
 const quickLinks = [
-  { label: '创建订单', route: 'fba-orders', icon: InboxOutlined, colorClass: 'ql-blue' },
+  { label: '创建任务', route: 'fba-orders', icon: InboxOutlined, colorClass: 'ql-blue' },
   { label: '任务管理', route: 'task-management', icon: CheckCircleOutlined, colorClass: 'ql-green' },
   { label: '分配管理', route: 'assignment', icon: UserAddOutlined, colorClass: 'ql-orange' },
   { label: '买手库', route: 'buyers', icon: TeamOutlined, colorClass: 'ql-purple' },
