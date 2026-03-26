@@ -33,7 +33,7 @@ export const allNavGroups: NavGroup[] = [
     roles: ['商务', '管理员'],
     items: [
       { id: 'fba-orders', label: '创建订单', icon: InboxOutlined },
-      { id: 'my-orders', label: '订单列表', icon: UnorderedListOutlined },
+      { id: 'my-orders', label: '接单管理', icon: UnorderedListOutlined },
     ],
   },
   {

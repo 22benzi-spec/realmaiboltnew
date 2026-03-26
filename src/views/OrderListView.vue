@@ -1,13 +1,13 @@
 <template>
   <div class="page-content">
-    <h1 class="page-title">订单列表</h1>
+    <h1 class="page-title">接单管理</h1>
 
     <div class="card-panel">
       <div class="toolbar">
         <a-input-search
           v-model:value="searchText"
-          placeholder="搜索订单号/ASIN/店铺"
-          style="width: 280px"
+          placeholder="搜索订单号/ASIN/店铺/产品名"
+          style="width: 300px"
           @search="loadOrders"
           allow-clear
         />
@@ -18,6 +18,10 @@
         <a-select v-model:value="filterCountry" style="width: 120px" @change="loadOrders" allow-clear placeholder="国家筛选">
           <a-select-option value="">全部国家</a-select-option>
           <a-select-option v-for="c in countries" :key="c" :value="c">{{ c }}</a-select-option>
+        </a-select>
+        <a-select v-model:value="filterOrderType" style="width: 130px" @change="loadOrders" allow-clear placeholder="下单类型">
+          <a-select-option value="">全部类型</a-select-option>
+          <a-select-option v-for="t in orderTypeOptions" :key="t" :value="t">{{ t }}</a-select-option>
         </a-select>
         <a-button type="primary" @click="loadOrders"><ReloadOutlined /> 刷新</a-button>
 
@@ -49,7 +53,7 @@
         size="middle"
         :row-selection="rowSelection"
         @change="handleTableChange"
-        :scroll="{ x: 1300 }"
+        :scroll="{ x: 1600 }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'order_number'">
@@ -69,10 +73,23 @@
                   <PictureOutlined />
                 </div>
               </div>
-              <div>
+              <div class="product-info">
+                <div class="product-name" v-if="record.product_name">{{ record.product_name }}</div>
                 <div class="asin">{{ record.asin }}</div>
                 <div class="store">{{ record.store_name }}</div>
               </div>
+            </div>
+          </template>
+          <template v-if="column.key === 'order_types'">
+            <div class="order-types-cell">
+              <template v-if="record.order_types && record.order_types.length > 1">
+                <a-tag v-for="t in record.order_types" :key="t" :color="getOrderTypeColor(t)" size="small" style="margin:1px 2px 1px 0">{{ t }}</a-tag>
+              </template>
+              <template v-else>
+                <a-tag :color="getOrderTypeColor(record.order_type || (record.order_types && record.order_types[0]))" size="small">
+                  {{ record.order_type || (record.order_types && record.order_types[0]) || '-' }}
+                </a-tag>
+              </template>
             </div>
           </template>
           <template v-if="column.key === 'status'">
@@ -83,6 +100,15 @@
           </template>
           <template v-if="column.key === 'country'">
             <a-tag>{{ record.country }}</a-tag>
+          </template>
+          <template v-if="column.key === 'sales_person'">
+            <div v-if="record.sales_person || record.customer_name" class="sales-cell">
+              <div v-if="record.sales_person" class="sales-name">
+                <UserOutlined style="font-size:11px;margin-right:3px;color:#6b7280" />{{ record.sales_person }}
+              </div>
+              <div v-if="record.customer_name" class="customer-name">{{ record.customer_name }}</div>
+            </div>
+            <span v-else class="text-empty">-</span>
           </template>
           <template v-if="column.key === 'action'">
             <a-space>
@@ -105,8 +131,8 @@
 
     <a-drawer
       v-model:open="drawerOpen"
-      :title="`订单详情 - ${currentOrder?.order_number}`"
-      width="760"
+      :title="`接单详情 - ${currentOrder?.order_number}`"
+      width="780"
       placement="right"
     >
       <template v-if="currentOrder">
@@ -123,6 +149,7 @@
               <div v-else class="detail-img-placeholder"><PictureOutlined /></div>
             </div>
             <div>
+              <div v-if="currentOrder.product_name" class="detail-product-name">{{ currentOrder.product_name }}</div>
               <div class="detail-asin">{{ currentOrder.asin }}</div>
               <div class="detail-store">{{ currentOrder.store_name }}</div>
               <a-tag :color="getStatusColor(currentOrder.status)" style="margin-top:6px">{{ currentOrder.status }}</a-tag>
@@ -136,18 +163,31 @@
           <a-descriptions-item label="订单编号" :span="2">
             <span class="detail-order-num">{{ currentOrder.order_number }}</span>
           </a-descriptions-item>
+          <a-descriptions-item label="产品名称" :span="2" v-if="currentOrder.product_name">
+            {{ currentOrder.product_name }}
+          </a-descriptions-item>
           <a-descriptions-item label="ASIN">{{ currentOrder.asin }}</a-descriptions-item>
           <a-descriptions-item label="店铺">{{ currentOrder.store_name }}</a-descriptions-item>
-          <a-descriptions-item label="品牌">{{ currentOrder.brand_name }}</a-descriptions-item>
+          <a-descriptions-item label="品牌">{{ currentOrder.brand_name || '-' }}</a-descriptions-item>
           <a-descriptions-item label="国家">{{ currentOrder.country }}</a-descriptions-item>
           <a-descriptions-item label="测评类型">{{ currentOrder.review_type }}</a-descriptions-item>
-          <a-descriptions-item label="下单类型">{{ currentOrder.order_type }}</a-descriptions-item>
+          <a-descriptions-item label="下单类型">
+            <div class="order-types-cell">
+              <template v-if="currentOrder.order_types && currentOrder.order_types.length > 1">
+                <a-tag v-for="t in currentOrder.order_types" :key="t" :color="getOrderTypeColor(t)" size="small" style="margin:2px 3px 2px 0">{{ t }}</a-tag>
+              </template>
+              <template v-else>
+                <a-tag :color="getOrderTypeColor(currentOrder.order_type)" size="small">{{ currentOrder.order_type || '-' }}</a-tag>
+              </template>
+            </div>
+          </a-descriptions-item>
           <a-descriptions-item label="下单数量">{{ currentOrder.order_quantity }}</a-descriptions-item>
           <a-descriptions-item label="状态">
             <a-tag :color="getStatusColor(currentOrder.status)">{{ currentOrder.status }}</a-tag>
           </a-descriptions-item>
-          <a-descriptions-item label="创建时间">{{ dayjs(currentOrder.created_at).format('YYYY-MM-DD HH:mm') }}</a-descriptions-item>
-          <a-descriptions-item label="客户名称" :span="2">{{ currentOrder.customer_name || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="对接商务">{{ currentOrder.sales_person || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="客户名称">{{ currentOrder.customer_name || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="创建时间" :span="2">{{ dayjs(currentOrder.created_at).format('YYYY-MM-DD HH:mm') }}</a-descriptions-item>
           <a-descriptions-item label="备注" :span="2">{{ currentOrder.notes || '-' }}</a-descriptions-item>
         </a-descriptions>
 
@@ -179,7 +219,15 @@
           <div class="amount-section-label">佣金收费</div>
           <div class="amount-row">
             <div class="amount-row-left">
-              <span class="amount-label">{{ currentOrder.order_type }} 佣金单价</span>
+              <span class="amount-label">
+                <template v-if="currentOrder.order_types && currentOrder.order_types.length > 1">
+                  多类型
+                </template>
+                <template v-else>
+                  {{ currentOrder.order_type }}
+                </template>
+                佣金单价
+              </span>
             </div>
             <span class="amount-commission">¥{{ getCommissionUnitPrice(currentOrder).toFixed(2) }} / 单</span>
           </div>
@@ -218,7 +266,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, DownOutlined, PictureOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -227,6 +275,7 @@ const orders = ref<any[]>([])
 const searchText = ref('')
 const filterStatus = ref('')
 const filterCountry = ref('')
+const filterOrderType = ref('')
 const drawerOpen = ref(false)
 const currentOrder = ref<any>(null)
 
@@ -243,6 +292,7 @@ const taskLoadingId = ref<string | null>(null)
 
 const statuses = ['待处理', '进行中', '已完成', '已取消', '暂停']
 const countries = ['美国', '德国', '英国', '加拿大']
+const orderTypeOptions = ['免评', '文字评', '图片评', '视频评', 'Feedback']
 
 const pagination = ref({ current: 1, pageSize: 20, total: 0, showSizeChanger: true })
 
@@ -252,22 +302,33 @@ const rowSelection = computed(() => ({
 }))
 
 const columns = [
-  { title: '订单号', key: 'order_number', dataIndex: 'order_number', width: 160 },
-  { title: '产品', key: 'product', width: 220 },
+  { title: '订单号', key: 'order_number', dataIndex: 'order_number', width: 175 },
+  { title: '产品信息', key: 'product', width: 240 },
   { title: '国家', key: 'country', dataIndex: 'country', width: 80 },
   { title: '测评类型', dataIndex: 'review_type', key: 'review_type', width: 100 },
-  { title: '下单类型', dataIndex: 'order_type', key: 'order_type', width: 90 },
-  { title: '数量', dataIndex: 'order_quantity', key: 'order_quantity', width: 70 },
+  { title: '下单类型', key: 'order_types', width: 140 },
+  { title: '数量', dataIndex: 'order_quantity', key: 'order_quantity', width: 65 },
   { title: '总金额', key: 'total_amount', width: 110 },
   { title: '状态', key: 'status', width: 90 },
-  { title: '客户', dataIndex: 'customer_name', key: 'customer_name', width: 100 },
-  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 130, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
-  { title: '操作', key: 'action', width: 170, fixed: 'right' },
+  { title: '对接商务/客户', key: 'sales_person', width: 130 },
+  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 115, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
+  { title: '操作', key: 'action', width: 175, fixed: 'right' },
 ]
 
 function getStatusColor(status: string) {
   const map: Record<string, string> = { '待处理': 'default', '进行中': 'blue', '已完成': 'green', '已取消': 'red', '暂停': 'orange' }
   return map[status] || 'default'
+}
+
+function getOrderTypeColor(type: string) {
+  const map: Record<string, string> = {
+    '免评': 'default',
+    '文字评': 'blue',
+    '图片评': 'cyan',
+    '视频评': 'purple',
+    'Feedback': 'orange',
+  }
+  return map[type] || 'default'
 }
 
 function onImgError(e: Event) {
@@ -283,10 +344,11 @@ async function loadOrders() {
   try {
     let query = supabase.from('erp_orders').select('*', { count: 'exact' }).order('created_at', { ascending: false })
     if (searchText.value) {
-      query = query.or(`order_number.ilike.%${searchText.value}%,asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%`)
+      query = query.or(`order_number.ilike.%${searchText.value}%,asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%,product_name.ilike.%${searchText.value}%`)
     }
     if (filterStatus.value) query = query.eq('status', filterStatus.value)
     if (filterCountry.value) query = query.eq('country', filterCountry.value)
+    if (filterOrderType.value) query = query.or(`order_type.eq.${filterOrderType.value},order_types.cs.{${filterOrderType.value}}`)
 
     const from = (pagination.value.current - 1) * pagination.value.pageSize
     const to = from + pagination.value.pageSize - 1
@@ -374,18 +436,18 @@ onMounted(loadOrders)
 .order-number-link:hover { text-decoration: underline; }
 
 .product-cell { display: flex; align-items: center; gap: 10px; }
-.product-img-wrap { position: relative; width: 40px; height: 40px; flex-shrink: 0; }
+.product-img-wrap { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
 .product-img {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   object-fit: cover;
   border-radius: 6px;
   border: 1px solid #f0f0f0;
   display: block;
 }
 .product-img-placeholder {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 6px;
   border: 1px dashed #d1d5db;
   background: #f9fafb;
@@ -395,9 +457,18 @@ onMounted(loadOrders)
   color: #9ca3af;
   font-size: 16px;
 }
-.asin { font-weight: 600; font-size: 13px; }
-.store { color: #6b7280; font-size: 12px; }
+.product-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.product-name { font-weight: 600; font-size: 12px; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.asin { font-weight: 600; font-size: 12px; color: #2563eb; }
+.store { color: #6b7280; font-size: 11px; }
 .amount { font-weight: 600; color: #2563eb; }
+.text-empty { color: #d1d5db; font-size: 13px; }
+
+.order-types-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+
+.sales-cell { display: flex; flex-direction: column; gap: 2px; }
+.sales-name { font-size: 13px; font-weight: 500; color: #374151; display: flex; align-items: center; }
+.customer-name { font-size: 11px; color: #9ca3af; }
 
 .detail-header { display: flex; align-items: flex-start; }
 .detail-product { display: flex; gap: 16px; align-items: flex-start; }
@@ -422,8 +493,9 @@ onMounted(loadOrders)
   color: #9ca3af;
   font-size: 28px;
 }
-.detail-asin { font-size: 18px; font-weight: 700; color: #1e40af; }
-.detail-store { font-size: 14px; color: #6b7280; margin-top: 2px; }
+.detail-product-name { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 2px; }
+.detail-asin { font-size: 16px; font-weight: 700; color: #1e40af; }
+.detail-store { font-size: 13px; color: #6b7280; margin-top: 2px; }
 .detail-order-num { font-family: 'Courier New', monospace; font-weight: 700; font-size: 14px; color: #1e3a8a; }
 .detail-section-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; }
 .detail-full-img {
@@ -451,12 +523,6 @@ onMounted(loadOrders)
 .amount-row-sub {
   padding: 3px 0 6px 16px;
   opacity: 0.75;
-}
-.amount-row-unit {
-  background: #eff6ff;
-  border-radius: 6px;
-  padding: 9px 10px;
-  margin: 0 -4px;
 }
 .amount-row-total {
   padding: 10px 0 2px;
