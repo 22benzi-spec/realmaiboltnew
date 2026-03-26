@@ -41,6 +41,8 @@
               </a-menu>
             </template>
           </a-dropdown>
+          <a-button @click="openBatchPayModal('补款')"><DollarOutlined /> 批量补款</a-button>
+          <a-button danger @click="openBatchPayModal('退款')"><RollbackOutlined /> 批量退款</a-button>
           <a-popconfirm title="确定批量删除选中的订单吗?" @confirm="batchDelete">
             <a-button danger>批量删除</a-button>
           </a-popconfirm>
@@ -635,13 +637,99 @@
         </div>
       </div>
     </a-modal>
+
+    <!-- Batch Payment Modal -->
+    <a-modal
+      v-model:open="batchPayModalOpen"
+      :title="batchPayForm.payment_type === '退款' ? '批量退款' : '批量补款'"
+      :confirm-loading="batchPaySaving"
+      @ok="saveBatchPay"
+      :ok-text="batchPayForm.payment_type === '退款' ? '确认退款' : '确认补款'"
+      cancel-text="取消"
+      width="720px"
+      :ok-button-props="{ danger: batchPayForm.payment_type === '退款' }"
+    >
+      <div class="batch-pay-form">
+        <div class="batch-pay-info-bar" :class="batchPayForm.payment_type === '退款' ? 'batch-pay-info-refund' : ''">
+          {{ batchPayForm.payment_type === '退款' ? '退款将生成待审批的退款流水，需财务审批后执行' : '补款将直接生成收款记录和交易流水' }}
+        </div>
+
+        <div class="batch-pay-order-list">
+          <div class="batch-pay-list-header">
+            <span>已选订单（{{ batchPayOrders.length }} 个）</span>
+            <span class="batch-pay-total-expected">应收合计：&yen;{{ batchPayTotalExpected.toFixed(2) }}</span>
+          </div>
+          <div v-for="o in batchPayOrders" :key="o.id" class="batch-pay-order-row">
+            <div class="batch-pay-order-left">
+              <div class="batch-pay-asin">{{ o.asin }}</div>
+              <div class="batch-pay-order-detail">{{ o.order_number }} | {{ o.customer_name || '-' }}</div>
+            </div>
+            <div class="batch-pay-order-right">
+              <span class="batch-pay-order-expected">应收 &yen;{{ Number(o.total_amount).toFixed(0) }}</span>
+              <a-input-number
+                v-model:value="batchPayAllocations[o.id]"
+                :min="0" :precision="2" size="small" style="width:110px"
+                placeholder="自动"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="batch-pay-fields">
+          <div class="batch-pay-field">
+            <label class="batch-pay-label">{{ batchPayForm.payment_type === '退款' ? '退款总金额（元）' : '补款总金额（元）' }} <span class="required">*</span></label>
+            <a-input-number v-model:value="batchPayForm.amount_cny" style="width:100%" :min="0.01" :precision="2"
+              :placeholder="`建议 ¥${batchPayTotalExpected.toFixed(2)}`" />
+          </div>
+          <div class="batch-pay-field-row">
+            <div class="batch-pay-field" style="flex:1">
+              <label class="batch-pay-label">日期 <span class="required">*</span></label>
+              <a-date-picker v-model:value="batchPayForm.payment_date_picker" style="width:100%" placeholder="选择日期" value-format="YYYY-MM-DD" />
+            </div>
+            <div class="batch-pay-field" style="flex:1">
+              <label class="batch-pay-label">方式</label>
+              <a-select v-model:value="batchPayForm.payment_method" style="width:100%">
+                <a-select-option value="银行转账">银行转账</a-select-option>
+                <a-select-option value="微信">微信</a-select-option>
+                <a-select-option value="支付宝">支付宝</a-select-option>
+                <a-select-option value="现金">现金</a-select-option>
+                <a-select-option value="其他">其他</a-select-option>
+              </a-select>
+            </div>
+          </div>
+          <div class="batch-pay-field-row">
+            <div class="batch-pay-field" style="flex:1">
+              <label class="batch-pay-label">{{ batchPayForm.payment_type === '退款' ? '退款对象' : '付款人' }}</label>
+              <a-input v-model:value="batchPayForm.payer_name" placeholder="付款方名称" />
+            </div>
+            <div class="batch-pay-field" style="flex:1">
+              <label class="batch-pay-label">操作人</label>
+              <a-input v-model:value="batchPayForm.recorded_by" placeholder="录入人姓名" />
+            </div>
+          </div>
+          <div class="batch-pay-field">
+            <label class="batch-pay-label">账单状态变更</label>
+            <a-radio-group v-model:value="batchPayForm.update_debt_status">
+              <a-radio-button value="none">不变更</a-radio-button>
+              <a-radio-button value="cleared">标记已结清</a-radio-button>
+              <a-radio-button value="owed" v-if="batchPayForm.payment_type !== '退款'">标记有欠款</a-radio-button>
+              <a-radio-button value="surplus" v-if="batchPayForm.payment_type === '退款'">标记溢收</a-radio-button>
+            </a-radio-group>
+          </div>
+          <div class="batch-pay-field">
+            <label class="batch-pay-label">备注</label>
+            <a-textarea v-model:value="batchPayForm.notes" :rows="2" placeholder="备注（可选）" />
+          </div>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined, DollarOutlined, RollbackOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -689,6 +777,25 @@ const paymentForm = ref({
   notes: '',
   enableGroupPay: false,
 })
+
+const batchPayModalOpen = ref(false)
+const batchPaySaving = ref(false)
+const batchPayOrders = ref<any[]>([])
+const batchPayAllocations = reactive<Record<string, number | null>>({})
+const batchPayForm = ref({
+  payment_type: '补款',
+  amount_cny: 0,
+  payment_date_picker: null as any,
+  payment_method: '银行转账',
+  payer_name: '',
+  recorded_by: '',
+  notes: '',
+  update_debt_status: 'none',
+})
+
+const batchPayTotalExpected = computed(() =>
+  batchPayOrders.value.reduce((s, o) => s + Number(o.total_amount || 0), 0)
+)
 
 const batchPayments = ref<any[]>([])
 const sameCustomerOrders = ref<any[]>([])
@@ -1191,6 +1298,137 @@ async function deletePayment(payment: any) {
   }
 }
 
+function openBatchPayModal(type: string) {
+  const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id))
+  if (!selected.length) { message.warning('请先勾选订单'); return }
+  batchPayOrders.value = selected
+  Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
+  const firstCustomer = selected[0]?.customer_name || ''
+  batchPayForm.value = {
+    payment_type: type,
+    amount_cny: 0,
+    payment_date_picker: dayjs(),
+    payment_method: '银行转账',
+    payer_name: firstCustomer,
+    recorded_by: '',
+    notes: '',
+    update_debt_status: 'none',
+  }
+  batchPayModalOpen.value = true
+}
+
+async function saveBatchPay() {
+  if (!batchPayOrders.value.length) return
+  if (!batchPayForm.value.amount_cny || batchPayForm.value.amount_cny <= 0) {
+    message.warning('请输入金额')
+    return
+  }
+  if (!batchPayForm.value.payment_date_picker) {
+    message.warning('请选择日期')
+    return
+  }
+  batchPaySaving.value = true
+  try {
+    const paymentDate = typeof batchPayForm.value.payment_date_picker === 'string'
+      ? batchPayForm.value.payment_date_picker
+      : batchPayForm.value.payment_date_picker?.format('YYYY-MM-DD')
+    const isRefund = batchPayForm.value.payment_type === '退款'
+    const totalExpected = batchPayTotalExpected.value
+
+    const { data: gData, error: gErr } = await supabase.from('payment_groups').insert({
+      group_number: `PG-${Date.now()}`,
+      customer_name: batchPayForm.value.payer_name,
+      total_amount: batchPayForm.value.amount_cny,
+      payment_date: paymentDate,
+      payment_method: batchPayForm.value.payment_method,
+      payer_name: batchPayForm.value.payer_name,
+      recorded_by: batchPayForm.value.recorded_by,
+      notes: batchPayForm.value.notes,
+    }).select('id').maybeSingle()
+    if (gErr) throw gErr
+    const groupId = gData?.id
+
+    const groupOrderEntries = batchPayOrders.value.map(o => {
+      const manual = batchPayAllocations[o.id]
+      const auto = totalExpected > 0
+        ? (Number(o.total_amount) / totalExpected) * batchPayForm.value.amount_cny
+        : batchPayForm.value.amount_cny / batchPayOrders.value.length
+      return {
+        payment_group_id: groupId,
+        order_id: o.id,
+        allocated_amount: manual != null ? manual : Number(auto.toFixed(2)),
+      }
+    })
+    const { error: goErr } = await supabase.from('payment_group_orders').insert(groupOrderEntries)
+    if (goErr) throw goErr
+
+    const { data: txNo } = await supabase.rpc('generate_transaction_no')
+    const transactionNo = txNo || `FT-${Date.now()}`
+    const firstOrder = batchPayOrders.value[0]
+    const txType = isRefund ? '退款' : '批次收款'
+    const txDirection = isRefund ? '支出' : '收入'
+    const txStatus = isRefund ? '待审批' : '已确认'
+    const txNotes = `批量${batchPayForm.value.payment_type} - ${batchPayForm.value.payment_method} | ${batchPayOrders.value.length}个订单${batchPayForm.value.notes ? ' | ' + batchPayForm.value.notes : ''}`
+
+    const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
+      transaction_no: transactionNo,
+      transaction_type: txType,
+      direction: txDirection,
+      amount_cny: batchPayForm.value.amount_cny,
+      exchange_rate: firstOrder.exchange_rate || 7.25,
+      customer_name: batchPayForm.value.payer_name,
+      customer_id_str: firstOrder.customer_id_str || '',
+      order_id: firstOrder.id,
+      order_number: firstOrder.order_number,
+      staff_name: batchPayForm.value.recorded_by,
+      status: txStatus,
+      notes: txNotes,
+      transaction_date: paymentDate,
+    }).select('id').maybeSingle()
+    if (txErr) throw txErr
+
+    for (const entry of groupOrderEntries) {
+      const order = batchPayOrders.value.find(o => o.id === entry.order_id)
+      await supabase.from('batch_payments').insert({
+        batch_id: entry.order_id,
+        batch_number: order?.order_number || '',
+        transaction_id: txData?.id || null,
+        amount_cny: entry.allocated_amount,
+        payment_date: paymentDate,
+        payment_method: batchPayForm.value.payment_method,
+        payer_name: batchPayForm.value.payer_name,
+        recorded_by: batchPayForm.value.recorded_by,
+        notes: batchPayForm.value.notes,
+        payment_type: batchPayForm.value.payment_type,
+        payment_group_id: groupId,
+      })
+    }
+
+    if (batchPayForm.value.update_debt_status !== 'none') {
+      const statusPayload: any = {
+        debt_status: batchPayForm.value.update_debt_status,
+        updated_at: new Date().toISOString(),
+      }
+      if (batchPayForm.value.update_debt_status === 'cleared') {
+        statusPayload.debt_amount = 0
+      }
+      const ids = batchPayOrders.value.map(o => o.id)
+      await supabase.from('erp_orders').update(statusPayload).in('id', ids)
+    }
+
+    const label = isRefund ? '退款' : '补款'
+    const extra = isRefund ? '，退款流水已进入待审批' : ''
+    message.success(`批量${label}已完成（${batchPayOrders.value.length} 个订单）${extra}`)
+    batchPayModalOpen.value = false
+    selectedRowKeys.value = []
+    loadOrders()
+  } catch (e: any) {
+    message.error('操作失败：' + e.message)
+  } finally {
+    batchPaySaving.value = false
+  }
+}
+
 async function deleteOrder(id: string) {
   const { error } = await supabase.from('erp_orders').delete().eq('id', id)
   if (error) { message.error('删除失败'); return }
@@ -1427,4 +1665,33 @@ onMounted(loadOrders)
 }
 .group-alloc-asin { font-size: 13px; font-weight: 600; color: #1e40af; min-width: 120px; }
 .group-alloc-expected { font-size: 12px; color: #6b7280; min-width: 100px; }
+
+.batch-pay-form { display: flex; flex-direction: column; gap: 14px; }
+.batch-pay-info-bar {
+  font-size: 13px; color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe;
+  border-radius: 8px; padding: 10px 14px; text-align: center; font-weight: 500;
+}
+.batch-pay-info-refund { color: #dc2626; background: #fef2f2; border-color: #fecdd3; }
+.batch-pay-order-list {
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;
+}
+.batch-pay-list-header {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px;
+}
+.batch-pay-total-expected { color: #dc2626; font-family: 'Courier New', monospace; }
+.batch-pay-order-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 6px;
+}
+.batch-pay-order-row:last-child { margin-bottom: 0; }
+.batch-pay-order-left { flex: 1; min-width: 0; }
+.batch-pay-asin { font-size: 13px; font-weight: 600; color: #1e40af; }
+.batch-pay-order-detail { font-size: 11px; color: #6b7280; margin-top: 1px; }
+.batch-pay-order-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.batch-pay-order-expected { font-size: 12px; color: #6b7280; white-space: nowrap; }
+.batch-pay-fields { display: flex; flex-direction: column; gap: 12px; }
+.batch-pay-field { display: flex; flex-direction: column; gap: 4px; }
+.batch-pay-field-row { display: flex; gap: 12px; }
+.batch-pay-label { font-size: 13px; font-weight: 500; color: #374151; }
 </style>
