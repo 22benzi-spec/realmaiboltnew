@@ -114,9 +114,13 @@
                 <span class="billing-label">欠款：</span>
                 <a-tag color="orange" size="small">¥{{ Number(record.debt_amount || 0).toFixed(0) }}</a-tag>
               </div>
+              <div v-else-if="record.debt_status === 'surplus'" class="debt-row">
+                <span class="billing-label">溢款：</span>
+                <a-tag color="blue" size="small">退¥{{ Number(record.debt_amount || 0).toFixed(0) }}</a-tag>
+              </div>
               <div v-else-if="record.debt_status === 'cleared'" class="billing-row">
-                <span class="billing-label">欠款：</span>
-                <a-tag color="default" size="small">已清</a-tag>
+                <span class="billing-label">已结清</span>
+                <a-tag color="default" size="small">清</a-tag>
               </div>
             </div>
           </template>
@@ -183,7 +187,8 @@
                 <a-tag :color="getStatusColor(currentOrder.status)">{{ currentOrder.status }}</a-tag>
                 <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">入账{{ currentOrder.billing_status || '已完成' }}</a-tag>
                 <a-tag v-if="currentOrder.debt_status === 'owed'" color="orange">欠款 ¥{{ Number(currentOrder.debt_amount || 0).toFixed(0) }}</a-tag>
-                <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">欠款已清</a-tag>
+                <a-tag v-else-if="currentOrder.debt_status === 'surplus'" color="blue">溢款退¥{{ Number(currentOrder.debt_amount || 0).toFixed(0) }}</a-tag>
+                <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">已结清</a-tag>
               </div>
             </div>
           </div>
@@ -279,18 +284,19 @@
             <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">{{ currentOrder.billing_status || '已完成' }}</a-tag>
           </div>
           <div class="billing-info-row">
-            <span class="billing-key">欠款状态：</span>
-            <a-tag v-if="currentOrder.debt_status === 'owed'" color="orange">有欠款</a-tag>
-            <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">已清</a-tag>
-            <a-tag v-else color="green">无欠款</a-tag>
+            <span class="billing-key">账款状态：</span>
+            <a-tag v-if="currentOrder.debt_status === 'owed'" color="orange">客户欠款</a-tag>
+            <a-tag v-else-if="currentOrder.debt_status === 'surplus'" color="blue">我方溢收</a-tag>
+            <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">已结清</a-tag>
+            <a-tag v-else color="green">无异常</a-tag>
           </div>
-          <template v-if="currentOrder.debt_status === 'owed'">
+          <template v-if="currentOrder.debt_status === 'owed' || currentOrder.debt_status === 'surplus'">
             <div class="billing-info-row">
-              <span class="billing-key">欠款金额：</span>
-              <span class="debt-amount-text">¥{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
+              <span class="billing-key">{{ currentOrder.debt_status === 'surplus' ? '溢收金额：' : '欠款金额：' }}</span>
+              <span :class="currentOrder.debt_status === 'surplus' ? 'surplus-amount-text' : 'debt-amount-text'">¥{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
             </div>
             <div class="billing-info-row billing-notes-row" v-if="currentOrder.debt_notes">
-              <span class="billing-key">欠款明细：</span>
+              <span class="billing-key">{{ currentOrder.debt_status === 'surplus' ? '溢款明细：' : '欠款明细：' }}</span>
               <span class="debt-notes-text">{{ currentOrder.debt_notes }}</span>
             </div>
             <div class="billing-info-row" v-if="currentOrder.debt_marked_by">
@@ -300,7 +306,7 @@
               </span>
             </div>
           </template>
-          <div v-if="currentOrder.billing_status !== '未完成' && currentOrder.debt_status !== 'owed'" class="billing-all-clear">
+          <div v-if="currentOrder.billing_status !== '未完成' && currentOrder.debt_status !== 'owed' && currentOrder.debt_status !== 'surplus'" class="billing-all-clear">
             账单正常，无异常
           </div>
         </div>
@@ -325,21 +331,28 @@
           </a-radio-group>
         </div>
         <div class="debt-field">
-          <label class="debt-label">欠款状态</label>
+          <label class="debt-label">欠款/溢款状态</label>
           <a-radio-group v-model:value="debtForm.debt_status">
-            <a-radio-button value="none">无欠款</a-radio-button>
-            <a-radio-button value="owed">有欠款</a-radio-button>
-            <a-radio-button value="cleared">已清</a-radio-button>
+            <a-radio-button value="none">无异常</a-radio-button>
+            <a-radio-button value="owed">客户欠款</a-radio-button>
+            <a-radio-button value="surplus">我方溢收</a-radio-button>
+            <a-radio-button value="cleared">已结清</a-radio-button>
           </a-radio-group>
+          <div v-if="debtForm.debt_status === 'surplus'" class="debt-status-hint debt-hint-surplus">
+            溢款：我方多收了客户的钱，需退还给客户
+          </div>
+          <div v-if="debtForm.debt_status === 'owed'" class="debt-status-hint debt-hint-owed">
+            欠款：客户还需补付款项给我方
+          </div>
         </div>
-        <template v-if="debtForm.debt_status === 'owed'">
+        <template v-if="debtForm.debt_status === 'owed' || debtForm.debt_status === 'surplus'">
           <div class="debt-field">
-            <label class="debt-label">欠款金额（元）</label>
-            <a-input-number v-model:value="debtForm.debt_amount" style="width:100%" :min="0" :precision="2" placeholder="输入欠款金额" />
+            <label class="debt-label">{{ debtForm.debt_status === 'surplus' ? '溢收金额（元）' : '欠款金额（元）' }}</label>
+            <a-input-number v-model:value="debtForm.debt_amount" style="width:100%" :min="0" :precision="2" :placeholder="debtForm.debt_status === 'surplus' ? '多收的金额' : '欠款金额'" />
           </div>
           <div class="debt-field">
-            <label class="debt-label">欠款明细备注</label>
-            <a-textarea v-model:value="debtForm.debt_notes" :rows="3" placeholder="如：税费 ¥120 + 本金差价 ¥200" />
+            <label class="debt-label">{{ debtForm.debt_status === 'surplus' ? '溢款明细备注' : '欠款明细备注' }}</label>
+            <a-textarea v-model:value="debtForm.debt_notes" :rows="3" :placeholder="debtForm.debt_status === 'surplus' ? '如：预收超出实际 ¥150，需退还' : '如：税费 ¥120 + 本金差价 ¥200'" />
           </div>
           <div class="debt-field">
             <label class="debt-label">标记商务</label>
@@ -455,6 +468,7 @@ function getRowClass(record: any): string {
   if (record.billing_status === '未完成' && record.debt_status === 'owed') return 'row-billing-debt'
   if (record.billing_status === '未完成') return 'row-billing-warn'
   if (record.debt_status === 'owed') return 'row-debt-warn'
+  if (record.debt_status === 'surplus') return 'row-surplus-warn'
   return ''
 }
 
@@ -521,13 +535,14 @@ async function saveDebt() {
   if (!debtTargetId.value) return
   debtSaving.value = true
   try {
+    const hasIssue = debtForm.value.debt_status === 'owed' || debtForm.value.debt_status === 'surplus'
     const payload: any = {
       billing_status: debtForm.value.billing_status,
       debt_status: debtForm.value.debt_status,
-      debt_amount: debtForm.value.debt_status === 'owed' ? debtForm.value.debt_amount : 0,
-      debt_notes: debtForm.value.debt_status === 'owed' ? debtForm.value.debt_notes : null,
-      debt_marked_by: debtForm.value.debt_status === 'owed' ? debtForm.value.debt_marked_by : null,
-      debt_marked_at: debtForm.value.debt_status === 'owed' ? new Date().toISOString() : null,
+      debt_amount: hasIssue ? debtForm.value.debt_amount : 0,
+      debt_notes: hasIssue ? debtForm.value.debt_notes : null,
+      debt_marked_by: hasIssue ? debtForm.value.debt_marked_by : null,
+      debt_marked_at: hasIssue ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     }
     const { error } = await supabase.from('erp_orders').update(payload).eq('id', debtTargetId.value)
@@ -616,6 +631,7 @@ onMounted(loadOrders)
 :global(.row-billing-warn td) { background-color: #fff7ed !important; }
 :global(.row-debt-warn td) { background-color: #fffbeb !important; }
 :global(.row-billing-debt td) { background-color: #fff1f2 !important; }
+:global(.row-surplus-warn td) { background-color: #eff6ff !important; }
 
 .detail-header { display: flex; align-items: flex-start; }
 .detail-product { display: flex; gap: 16px; align-items: flex-start; }
@@ -661,10 +677,14 @@ onMounted(loadOrders)
 .billing-key { font-size: 13px; color: #6b7280; flex-shrink: 0; padding-top: 1px; }
 .billing-val { font-size: 13px; color: #374151; }
 .debt-amount-text { font-size: 15px; font-weight: 700; color: #d97706; }
+.surplus-amount-text { font-size: 15px; font-weight: 700; color: #2563eb; }
 .debt-notes-text { font-size: 13px; color: #92400e; line-height: 1.6; }
 .billing-all-clear { font-size: 13px; color: #16a34a; text-align: center; padding: 4px 0; }
 
 .debt-form { display: flex; flex-direction: column; gap: 16px; padding: 4px 0; }
 .debt-field { display: flex; flex-direction: column; gap: 6px; }
 .debt-label { font-size: 13px; font-weight: 500; color: #374151; }
+.debt-status-hint { font-size: 12px; padding: 6px 10px; border-radius: 6px; margin-top: 2px; }
+.debt-hint-surplus { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.debt-hint-owed { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
 </style>

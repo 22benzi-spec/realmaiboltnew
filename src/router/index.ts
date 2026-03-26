@@ -7,6 +7,7 @@ const router = createRouter({
     { path: '/home', name: 'home', component: () => import('../views/DashboardView.vue') },
     { path: '/fba-orders', name: 'fba-orders', component: () => import('../views/OrderFormView.vue') },
     { path: '/my-orders', name: 'my-orders', component: () => import('../views/OrderListView.vue') },
+    { path: '/order-batches', name: 'order-batches', component: () => import('../views/OrderBatchView.vue') },
     { path: '/task-management', name: 'task-management', component: () => import('../views/TaskManagementView.vue') },
     { path: '/assignment', name: 'assignment', component: () => import('../views/SubOrderAssignmentView.vue') },
     { path: '/staff-workbench', name: 'staff-workbench', component: () => import('../views/StaffWorkbenchView.vue') },

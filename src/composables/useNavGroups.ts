@@ -34,6 +34,7 @@ export const allNavGroups: NavGroup[] = [
     items: [
       { id: 'fba-orders', label: '创建订单', icon: InboxOutlined },
       { id: 'my-orders', label: '接单管理', icon: UnorderedListOutlined },
+      { id: 'order-batches', label: '批次结算', icon: AccountBookOutlined },
     ],
   },
   {
