@@ -127,13 +127,13 @@
                   size="small"
                 >{{ record.billing_status || '已完成' }}</a-tag>
               </div>
-              <div v-if="record.debt_status === 'owed'" class="debt-row">
+              <div v-if="record.debt_status === 'owed' && Number(record.debt_amount || 0) > 0" class="debt-row">
                 <span class="billing-label">欠款：</span>
-                <a-tag color="orange" size="small">&yen;{{ Number(record.debt_amount || 0).toFixed(0) }}</a-tag>
+                <a-tag color="orange" size="small">&yen;{{ Number(record.debt_amount).toFixed(0) }}</a-tag>
               </div>
-              <div v-else-if="record.debt_status === 'surplus'" class="debt-row">
+              <div v-else-if="record.debt_status === 'surplus' && Number(record.debt_amount || 0) > 0" class="debt-row">
                 <span class="billing-label">溢款：</span>
-                <a-tag color="blue" size="small">退&yen;{{ Number(record.debt_amount || 0).toFixed(0) }}</a-tag>
+                <a-tag color="blue" size="small">退&yen;{{ Number(record.debt_amount).toFixed(0) }}</a-tag>
               </div>
               <div v-else-if="record.debt_status === 'cleared'" class="billing-row">
                 <span class="billing-label">已结清</span>
@@ -205,8 +205,8 @@
               <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
                 <a-tag :color="getStatusColor(currentOrder.status)">{{ currentOrder.status }}</a-tag>
                 <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">入账{{ currentOrder.billing_status || '已完成' }}</a-tag>
-                <a-tag v-if="currentOrder.debt_status === 'owed'" color="orange">欠款 &yen;{{ Number(currentOrder.debt_amount || 0).toFixed(0) }}</a-tag>
-                <a-tag v-else-if="currentOrder.debt_status === 'surplus'" color="blue">溢款退&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(0) }}</a-tag>
+                <a-tag v-if="hasRealDebt(currentOrder)" color="orange">欠款 &yen;{{ Number(currentOrder.debt_amount).toFixed(0) }}</a-tag>
+                <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">溢款退&yen;{{ Number(currentOrder.debt_amount).toFixed(0) }}</a-tag>
                 <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">已结清</a-tag>
               </div>
             </div>
@@ -329,25 +329,25 @@
           <span>任务账单</span>
           <a-button size="small" type="link" @click="openDebtModal(currentOrder)">编辑账单</a-button>
         </div>
-        <div class="billing-panel" :class="{ 'billing-warn': currentOrder.billing_status === '未完成', 'billing-debt': currentOrder.debt_status === 'owed' }">
+        <div class="billing-panel" :class="{ 'billing-warn': currentOrder.billing_status === '未完成', 'billing-debt': hasRealDebt(currentOrder) }">
           <div class="billing-info-row">
             <span class="billing-key">基础入账：</span>
             <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">{{ currentOrder.billing_status || '已完成' }}</a-tag>
           </div>
           <div class="billing-info-row">
             <span class="billing-key">账款状态：</span>
-            <a-tag v-if="currentOrder.debt_status === 'owed'" color="orange">客户欠款</a-tag>
-            <a-tag v-else-if="currentOrder.debt_status === 'surplus'" color="blue">我方溢收</a-tag>
+            <a-tag v-if="hasRealDebt(currentOrder)" color="orange">客户欠款</a-tag>
+            <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">我方溢收</a-tag>
             <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">已结清</a-tag>
             <a-tag v-else color="green">无异常</a-tag>
           </div>
-          <template v-if="currentOrder.debt_status === 'owed' || currentOrder.debt_status === 'surplus'">
+          <template v-if="hasRealDebt(currentOrder) || hasRealSurplus(currentOrder)">
             <div class="billing-info-row">
-              <span class="billing-key">{{ currentOrder.debt_status === 'surplus' ? '溢收金额：' : '欠款金额：' }}</span>
-              <span :class="currentOrder.debt_status === 'surplus' ? 'surplus-amount-text' : 'debt-amount-text'">&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
+              <span class="billing-key">{{ hasRealSurplus(currentOrder) ? '溢收金额：' : '欠款金额：' }}</span>
+              <span :class="hasRealSurplus(currentOrder) ? 'surplus-amount-text' : 'debt-amount-text'">&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
             </div>
             <div class="billing-info-row billing-notes-row" v-if="currentOrder.debt_notes">
-              <span class="billing-key">{{ currentOrder.debt_status === 'surplus' ? '溢款明细：' : '欠款明细：' }}</span>
+              <span class="billing-key">{{ hasRealSurplus(currentOrder) ? '溢款明细：' : '欠款明细：' }}</span>
               <span class="debt-notes-text">{{ currentOrder.debt_notes }}</span>
             </div>
             <div class="billing-info-row" v-if="currentOrder.debt_marked_by">
@@ -357,7 +357,7 @@
               </span>
             </div>
           </template>
-          <div v-if="currentOrder.billing_status !== '未完成' && currentOrder.debt_status !== 'owed' && currentOrder.debt_status !== 'surplus'" class="billing-all-clear">
+          <div v-if="currentOrder.billing_status !== '未完成' && !hasRealDebt(currentOrder) && !hasRealSurplus(currentOrder)" class="billing-all-clear">
             账单正常，无异常
           </div>
         </div>
@@ -682,11 +682,19 @@ function getCommissionUnitPrice(order: any): number {
   return derived > 0 ? derived : 0
 }
 
+function hasRealDebt(record: any): boolean {
+  return record.debt_status === 'owed' && Number(record.debt_amount || 0) > 0
+}
+
+function hasRealSurplus(record: any): boolean {
+  return record.debt_status === 'surplus' && Number(record.debt_amount || 0) > 0
+}
+
 function getRowClass(record: any): string {
-  if (record.billing_status === '未完成' && record.debt_status === 'owed') return 'row-billing-debt'
+  if (record.billing_status === '未完成' && hasRealDebt(record)) return 'row-billing-debt'
   if (record.billing_status === '未完成') return 'row-billing-warn'
-  if (record.debt_status === 'owed') return 'row-debt-warn'
-  if (record.debt_status === 'surplus') return 'row-surplus-warn'
+  if (hasRealDebt(record)) return 'row-debt-warn'
+  if (hasRealSurplus(record)) return 'row-surplus-warn'
   return ''
 }
 
