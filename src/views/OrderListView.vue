@@ -127,17 +127,16 @@
                   size="small"
                 >{{ record.billing_status || '已完成' }}</a-tag>
               </div>
-              <div v-if="record.debt_status === 'owed' && Number(record.debt_amount || 0) > 0" class="debt-row">
+              <div v-if="hasRealDebt(record)" class="debt-row">
                 <span class="billing-label">欠款：</span>
                 <a-tag color="orange" size="small">&yen;{{ Number(record.debt_amount).toFixed(0) }}</a-tag>
               </div>
-              <div v-else-if="record.debt_status === 'surplus' && Number(record.debt_amount || 0) > 0" class="debt-row">
+              <div v-else-if="hasRealSurplus(record)" class="debt-row">
                 <span class="billing-label">溢款：</span>
                 <a-tag color="blue" size="small">退&yen;{{ Number(record.debt_amount).toFixed(0) }}</a-tag>
               </div>
               <div v-else-if="record.debt_status === 'cleared'" class="billing-row">
-                <span class="billing-label">已结清</span>
-                <a-tag color="default" size="small">清</a-tag>
+                <a-tag color="green" size="small">已结清</a-tag>
               </div>
             </div>
           </template>
@@ -207,7 +206,7 @@
                 <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">入账{{ currentOrder.billing_status || '已完成' }}</a-tag>
                 <a-tag v-if="hasRealDebt(currentOrder)" color="orange">欠款 &yen;{{ Number(currentOrder.debt_amount).toFixed(0) }}</a-tag>
                 <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">溢款退&yen;{{ Number(currentOrder.debt_amount).toFixed(0) }}</a-tag>
-                <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">已结清</a-tag>
+                <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="green">已结清</a-tag>
               </div>
             </div>
           </div>
@@ -285,7 +284,7 @@
           <div class="amount-divider amount-divider-bold"></div>
           <div class="amount-row amount-row-total">
             <div style="display:flex;align-items:center;gap:8px">
-              <span class="amount-label-total">总金额</span>
+              <span class="amount-label-total">应收总额</span>
               <span class="amount-desc">产品回款 + 佣金</span>
             </div>
             <span class="amount-total">&yen;{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
@@ -331,14 +330,43 @@
         </div>
         <div class="billing-panel" :class="{ 'billing-warn': currentOrder.billing_status === '未完成', 'billing-debt': hasRealDebt(currentOrder) }">
           <div class="billing-info-row">
-            <span class="billing-key">基础入账：</span>
+            <span class="billing-key">应收总额：</span>
+            <span class="billing-val" style="font-weight:700;color:#111827">&yen;{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
+          </div>
+          <div class="billing-info-row">
+            <span class="billing-key">实收总额：</span>
+            <span class="billing-val" :style="{ fontWeight: '700', color: paymentTotal > 0 ? '#16a34a' : '#9ca3af' }">
+              &yen;{{ paymentTotal.toFixed(2) }}
+            </span>
+            <span v-if="paymentTotal > 0 && paymentDiff !== 0" class="billing-diff" :class="paymentDiff > 0 ? 'diff-surplus' : 'diff-deficit'">
+              {{ paymentDiff > 0 ? '多收' : '差额' }} &yen;{{ Math.abs(paymentDiff).toFixed(2) }}
+            </span>
+          </div>
+
+          <div class="billing-type-breakdown" v-if="paymentsByType.base > 0 || paymentsByType.supplement > 0 || paymentsByType.refund > 0">
+            <div class="billing-type-row" v-if="paymentsByType.base > 0">
+              <span class="billing-type-label">基础收款</span>
+              <span class="billing-type-val">&yen;{{ paymentsByType.base.toFixed(2) }}</span>
+            </div>
+            <div class="billing-type-row" v-if="paymentsByType.supplement > 0">
+              <span class="billing-type-label supplement-label">+ 补款</span>
+              <span class="billing-type-val supplement-val">&yen;{{ paymentsByType.supplement.toFixed(2) }}</span>
+            </div>
+            <div class="billing-type-row" v-if="paymentsByType.refund > 0">
+              <span class="billing-type-label refund-label">- 退款</span>
+              <span class="billing-type-val refund-val">-&yen;{{ paymentsByType.refund.toFixed(2) }}</span>
+            </div>
+          </div>
+
+          <div class="billing-info-row">
+            <span class="billing-key">入账状态：</span>
             <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">{{ currentOrder.billing_status || '已完成' }}</a-tag>
           </div>
           <div class="billing-info-row">
             <span class="billing-key">账款状态：</span>
             <a-tag v-if="hasRealDebt(currentOrder)" color="orange">客户欠款</a-tag>
             <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">我方溢收</a-tag>
-            <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="default">已结清</a-tag>
+            <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="green">已结清</a-tag>
             <a-tag v-else color="green">无异常</a-tag>
           </div>
           <template v-if="hasRealDebt(currentOrder) || hasRealSurplus(currentOrder)">
@@ -357,39 +385,48 @@
               </span>
             </div>
           </template>
-          <div v-if="currentOrder.billing_status !== '未完成' && !hasRealDebt(currentOrder) && !hasRealSurplus(currentOrder)" class="billing-all-clear">
-            账单正常，无异常
-          </div>
         </div>
 
-        <!-- Batch Payment Section -->
+        <!-- Payment Records Section -->
         <a-divider style="margin: 20px 0 16px" />
         <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>收款记录</span>
-          <a-button size="small" type="primary" @click="openPaymentModal">录入收款</a-button>
+          <a-space>
+            <a-button size="small" @click="openPaymentModal('基础收款')">录入收款</a-button>
+            <a-button size="small" @click="openPaymentModal('补款')">录入补款</a-button>
+            <a-button size="small" danger @click="openPaymentModal('退款')">录入退款</a-button>
+          </a-space>
         </div>
         <div v-if="batchPayments.length === 0" class="payment-empty">暂无收款记录</div>
         <div v-else class="payment-list">
-          <div v-for="p in batchPayments" :key="p.id" class="payment-card">
+          <div v-for="p in batchPayments" :key="p.id" class="payment-card" :class="getPaymentCardClass(p.payment_type)">
             <div class="payment-main">
-              <div class="payment-amount">&yen;{{ Number(p.amount_cny).toFixed(2) }}</div>
+              <div class="payment-top">
+                <span class="payment-amount" :class="p.payment_type === '退款' ? 'payment-amount-refund' : ''">
+                  {{ p.payment_type === '退款' ? '-' : '' }}&yen;{{ Number(p.amount_cny).toFixed(2) }}
+                </span>
+                <a-tag :color="getPaymentTypeColor(p.payment_type)" size="small">{{ p.payment_type || '基础收款' }}</a-tag>
+              </div>
               <div class="payment-meta">
                 <span>{{ p.payment_date }}</span>
                 <span v-if="p.payment_method" class="payment-method">{{ p.payment_method }}</span>
                 <span v-if="p.payer_name" class="payment-payer">{{ p.payer_name }}</span>
               </div>
+              <div v-if="p.payment_group_id && p.group_orders && p.group_orders.length > 1" class="payment-group-info">
+                <span class="payment-group-label">合并收款订单：</span>
+                <span v-for="(go, gi) in p.group_orders" :key="gi" class="payment-group-order">
+                  {{ go.asin || go.order_number }}
+                  <span v-if="go.allocated_amount" class="payment-group-alloc">(&yen;{{ Number(go.allocated_amount).toFixed(0) }})</span>
+                  <span v-if="gi < p.group_orders.length - 1"> / </span>
+                </span>
+              </div>
               <div v-if="p.notes" class="payment-notes">{{ p.notes }}</div>
             </div>
             <div class="payment-actions">
-              <a-tag color="cyan" size="small">已同步流水</a-tag>
               <a-popconfirm title="确认删除此收款记录？" @confirm="deletePayment(p)">
                 <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
               </a-popconfirm>
             </div>
-          </div>
-          <div class="payment-summary">
-            <span>收款合计：</span>
-            <span class="payment-summary-val">&yen;{{ paymentTotal.toFixed(2) }}</span>
           </div>
         </div>
       </template>
@@ -419,8 +456,11 @@
             <a-radio-button value="none">无异常</a-radio-button>
             <a-radio-button value="owed">客户欠款</a-radio-button>
             <a-radio-button value="surplus">我方溢收</a-radio-button>
-            <a-radio-button value="cleared">已结清</a-radio-button>
+            <a-radio-button value="cleared" :disabled="!canMarkCleared">已结清</a-radio-button>
           </a-radio-group>
+          <div v-if="!canMarkCleared && debtForm.debt_status !== 'cleared'" class="debt-status-hint" style="background:#f9fafb;color:#6b7280;border:1px solid #e5e7eb">
+            需要有收款记录后才能标记为已结清
+          </div>
           <div v-if="debtForm.debt_status === 'surplus'" class="debt-status-hint debt-hint-surplus">
             溢款：我方多收了客户的钱，需退还给客户
           </div>
@@ -498,24 +538,67 @@
     <!-- Payment Modal -->
     <a-modal
       v-model:open="paymentModalOpen"
-      title="录入收款"
+      :title="paymentModalTitle"
       :confirm-loading="paymentSaving"
       @ok="savePayment"
-      ok-text="保存并同步流水"
+      :ok-text="paymentForm.payment_type === '退款' ? '保存退款' : '保存收款'"
       cancel-text="取消"
-      width="520px"
+      :width="paymentForm.enableGroupPay ? 720 : 520"
     >
       <div class="payment-form">
         <div class="payment-form-info">
-          <span>订单：{{ currentOrder?.order_number }}</span>
+          <span>当前订单：{{ currentOrder?.order_number }}</span>
           <span>客户：{{ currentOrder?.customer_name || '-' }}</span>
+          <span>应收：&yen;{{ Number(currentOrder?.total_amount || 0).toFixed(2) }}</span>
+        </div>
+
+        <div class="payment-form-field" v-if="paymentForm.payment_type !== '退款'">
+          <a-checkbox v-model:checked="paymentForm.enableGroupPay" @change="onGroupPayToggle">
+            合并收款（同时关联该客户的其他订单）
+          </a-checkbox>
+        </div>
+
+        <div v-if="paymentForm.enableGroupPay && sameCustomerOrders.length > 0" class="group-pay-section">
+          <div class="group-pay-title">选择要合并的订单（同客户：{{ currentOrder?.customer_name }}）</div>
+          <div class="group-pay-list">
+            <div v-for="o in sameCustomerOrders" :key="o.id" class="group-pay-item"
+              :class="{ 'group-pay-selected': groupPaySelected.includes(o.id) }"
+              @click="toggleGroupOrder(o.id)">
+              <a-checkbox :checked="groupPaySelected.includes(o.id)" />
+              <div class="group-pay-order-info">
+                <div class="group-pay-asin">{{ o.asin }}</div>
+                <div class="group-pay-detail">{{ o.order_number }} | {{ o.product_name || o.store_name }}</div>
+              </div>
+              <div class="group-pay-amount">&yen;{{ Number(o.total_amount).toFixed(2) }}</div>
+            </div>
+          </div>
+          <div class="group-pay-summary">
+            <span>合并应收合计：</span>
+            <span class="group-pay-total">&yen;{{ groupPayTotalAmount.toFixed(2) }}</span>
+            <span class="group-pay-count">（{{ groupPaySelected.length + 1 }} 个订单）</span>
+          </div>
+
+          <div class="group-alloc-section" v-if="groupPaySelected.length > 0">
+            <div class="group-alloc-title">金额分配（可选，不填按应收比例自动分配）</div>
+            <div v-for="ao in allGroupOrders" :key="ao.id" class="group-alloc-row">
+              <span class="group-alloc-asin">{{ ao.asin }}</span>
+              <span class="group-alloc-expected">应收 &yen;{{ Number(ao.total_amount).toFixed(0) }}</span>
+              <a-input-number
+                v-model:value="groupAllocations[ao.id]"
+                :min="0" :precision="2" size="small" style="width:120px"
+                placeholder="自动"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="payment-form-field">
+          <label class="payment-form-label">{{ paymentForm.payment_type === '退款' ? '退款金额（元）' : '收款金额（元）' }}<span class="required">*</span></label>
+          <a-input-number v-model:value="paymentForm.amount_cny" style="width:100%" :min="0.01" :precision="2"
+            :placeholder="paymentForm.enableGroupPay ? `建议 ¥${groupPayTotalAmount.toFixed(2)}` : '输入金额'" />
         </div>
         <div class="payment-form-field">
-          <label class="payment-form-label">收款金额（元）<span class="required">*</span></label>
-          <a-input-number v-model:value="paymentForm.amount_cny" style="width:100%" :min="0.01" :precision="2" placeholder="输入收款金额" />
-        </div>
-        <div class="payment-form-field">
-          <label class="payment-form-label">收款日期 <span class="required">*</span></label>
+          <label class="payment-form-label">{{ paymentForm.payment_type === '退款' ? '退款日期' : '收款日期' }} <span class="required">*</span></label>
           <a-date-picker
             v-model:value="paymentForm.payment_date_picker"
             style="width:100%"
@@ -524,7 +607,7 @@
           />
         </div>
         <div class="payment-form-field">
-          <label class="payment-form-label">收款方式</label>
+          <label class="payment-form-label">{{ paymentForm.payment_type === '退款' ? '退款方式' : '收款方式' }}</label>
           <a-select v-model:value="paymentForm.payment_method" style="width:100%">
             <a-select-option value="银行转账">银行转账</a-select-option>
             <a-select-option value="微信">微信</a-select-option>
@@ -534,7 +617,7 @@
           </a-select>
         </div>
         <div class="payment-form-field">
-          <label class="payment-form-label">付款人</label>
+          <label class="payment-form-label">{{ paymentForm.payment_type === '退款' ? '退款对象' : '付款人' }}</label>
           <a-input v-model:value="paymentForm.payer_name" placeholder="付款方名称" />
         </div>
         <div class="payment-form-field">
@@ -545,8 +628,10 @@
           <label class="payment-form-label">备注</label>
           <a-textarea v-model:value="paymentForm.notes" :rows="2" placeholder="收款备注（可选）" />
         </div>
-        <div class="payment-form-tip">
-          保存后将自动生成一条交易流水，供财务核验
+        <div class="payment-form-tip" :class="paymentForm.payment_type === '退款' ? 'payment-form-tip-refund' : ''">
+          {{ paymentForm.payment_type === '退款'
+            ? '保存后将生成一条退款交易流水'
+            : '保存后将自动生成一条交易流水，供财务核验' }}
         </div>
       </div>
     </a-modal>
@@ -554,7 +639,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
@@ -595,19 +680,64 @@ const feedbackForm = ref({
 const paymentModalOpen = ref(false)
 const paymentSaving = ref(false)
 const paymentForm = ref({
+  payment_type: '基础收款',
   amount_cny: 0,
   payment_date_picker: null as any,
   payment_method: '银行转账',
   payer_name: '',
   recorded_by: '',
   notes: '',
+  enableGroupPay: false,
 })
 
 const batchPayments = ref<any[]>([])
+const sameCustomerOrders = ref<any[]>([])
+const groupPaySelected = ref<string[]>([])
+const groupAllocations = reactive<Record<string, number | null>>({})
 
-const paymentTotal = computed(() =>
-  batchPayments.value.reduce((s, p) => s + Number(p.amount_cny || 0), 0)
-)
+const paymentTotal = computed(() => {
+  return batchPayments.value.reduce((s, p) => {
+    const amt = Number(p.amount_cny || 0)
+    return p.payment_type === '退款' ? s - amt : s + amt
+  }, 0)
+})
+
+const paymentsByType = computed(() => {
+  const base = batchPayments.value
+    .filter(p => !p.payment_type || p.payment_type === '基础收款')
+    .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+  const supplement = batchPayments.value
+    .filter(p => p.payment_type === '补款')
+    .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+  const refund = batchPayments.value
+    .filter(p => p.payment_type === '退款')
+    .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+  return { base, supplement, refund }
+})
+
+const paymentDiff = computed(() => {
+  return paymentTotal.value - Number(currentOrder.value?.total_amount || 0)
+})
+
+const canMarkCleared = computed(() => batchPayments.value.length > 0)
+
+const paymentModalTitle = computed(() => {
+  const m: Record<string, string> = { '基础收款': '录入收款', '补款': '录入补款', '退款': '录入退款' }
+  return m[paymentForm.value.payment_type] || '录入收款'
+})
+
+const allGroupOrders = computed(() => {
+  if (!currentOrder.value) return []
+  const list = [currentOrder.value]
+  for (const o of sameCustomerOrders.value) {
+    if (groupPaySelected.value.includes(o.id)) list.push(o)
+  }
+  return list
+})
+
+const groupPayTotalAmount = computed(() => {
+  return allGroupOrders.value.reduce((s, o) => s + Number(o.total_amount || 0), 0)
+})
 
 const selectedRowKeys = ref<string[]>([])
 
@@ -662,11 +792,8 @@ function getTypeQty(record: any, type: string): number {
 
 function getTypeUnitPrice(record: any, type: string): number {
   const map: Record<string, string> = {
-    '免评': 'price_no_review',
-    '文字评': 'price_text',
-    '图片评': 'price_image',
-    '视频评': 'price_video',
-    'Feedback': 'price_feedback',
+    '免评': 'price_no_review', '文字评': 'price_text', '图片评': 'price_image',
+    '视频评': 'price_video', 'Feedback': 'price_feedback',
   }
   const field = map[type]
   if (field && record[field] !== undefined) return Number(record[field] || 0)
@@ -695,6 +822,17 @@ function getRowClass(record: any): string {
   if (record.billing_status === '未完成') return 'row-billing-warn'
   if (hasRealDebt(record)) return 'row-debt-warn'
   if (hasRealSurplus(record)) return 'row-surplus-warn'
+  return ''
+}
+
+function getPaymentTypeColor(type: string) {
+  const map: Record<string, string> = { '基础收款': 'green', '补款': 'orange', '退款': 'red' }
+  return map[type] || 'green'
+}
+
+function getPaymentCardClass(type: string) {
+  if (type === '补款') return 'payment-card-supplement'
+  if (type === '退款') return 'payment-card-refund'
   return ''
 }
 
@@ -752,7 +890,28 @@ async function loadPayments(orderId: string) {
     .select('*')
     .eq('batch_id', orderId)
     .order('payment_date', { ascending: false })
-  batchPayments.value = data || []
+  const payments = data || []
+
+  for (const p of payments) {
+    if (p.payment_group_id) {
+      const { data: goData } = await supabase
+        .from('payment_group_orders')
+        .select('order_id, allocated_amount')
+        .eq('payment_group_id', p.payment_group_id)
+      if (goData && goData.length > 1) {
+        const orderIds = goData.map((g: any) => g.order_id)
+        const { data: orderData } = await supabase
+          .from('erp_orders')
+          .select('id, order_number, asin')
+          .in('id', orderIds)
+        p.group_orders = goData.map((g: any) => {
+          const ord = orderData?.find((o: any) => o.id === g.order_id)
+          return { ...g, order_number: ord?.order_number, asin: ord?.asin }
+        })
+      }
+    }
+  }
+  batchPayments.value = payments
 }
 
 function openDebtModal(record: any) {
@@ -860,26 +1019,53 @@ async function saveFeedback() {
   }
 }
 
-function openPaymentModal() {
+async function openPaymentModal(type: string) {
   paymentForm.value = {
+    payment_type: type,
     amount_cny: 0,
     payment_date_picker: dayjs(),
     payment_method: '银行转账',
     payer_name: currentOrder.value?.customer_name || '',
     recorded_by: '',
     notes: '',
+    enableGroupPay: false,
   }
+  groupPaySelected.value = []
+  Object.keys(groupAllocations).forEach(k => delete groupAllocations[k])
+  sameCustomerOrders.value = []
   paymentModalOpen.value = true
+}
+
+async function onGroupPayToggle() {
+  if (paymentForm.value.enableGroupPay && currentOrder.value?.customer_name) {
+    const { data } = await supabase
+      .from('erp_orders')
+      .select('id, order_number, asin, product_name, store_name, total_amount, billing_status')
+      .eq('customer_name', currentOrder.value.customer_name)
+      .neq('id', currentOrder.value.id)
+      .order('created_at', { ascending: false })
+    sameCustomerOrders.value = data || []
+  }
+}
+
+function toggleGroupOrder(orderId: string) {
+  const idx = groupPaySelected.value.indexOf(orderId)
+  if (idx === -1) {
+    groupPaySelected.value.push(orderId)
+  } else {
+    groupPaySelected.value.splice(idx, 1)
+    delete groupAllocations[orderId]
+  }
 }
 
 async function savePayment() {
   if (!currentOrder.value) return
   if (!paymentForm.value.amount_cny || paymentForm.value.amount_cny <= 0) {
-    message.warning('请输入收款金额')
+    message.warning('请输入金额')
     return
   }
   if (!paymentForm.value.payment_date_picker) {
-    message.warning('请选择收款日期')
+    message.warning('请选择日期')
     return
   }
   paymentSaving.value = true
@@ -888,13 +1074,54 @@ async function savePayment() {
       ? paymentForm.value.payment_date_picker
       : paymentForm.value.payment_date_picker?.format('YYYY-MM-DD')
 
+    const isGroupPay = paymentForm.value.enableGroupPay && groupPaySelected.value.length > 0
+    const isRefund = paymentForm.value.payment_type === '退款'
+
+    let groupId: string | null = null
+
+    if (isGroupPay) {
+      const { data: gData, error: gErr } = await supabase.from('payment_groups').insert({
+        group_number: `PG-${Date.now()}`,
+        customer_name: currentOrder.value.customer_name || '',
+        total_amount: paymentForm.value.amount_cny,
+        payment_date: paymentDate,
+        payment_method: paymentForm.value.payment_method,
+        payer_name: paymentForm.value.payer_name,
+        recorded_by: paymentForm.value.recorded_by,
+        notes: paymentForm.value.notes,
+      }).select('id').maybeSingle()
+      if (gErr) throw gErr
+      groupId = gData?.id || null
+
+      if (groupId) {
+        const totalExpected = groupPayTotalAmount.value
+        const groupOrderEntries = allGroupOrders.value.map(o => {
+          const manualAlloc = groupAllocations[o.id]
+          const autoAlloc = totalExpected > 0
+            ? (Number(o.total_amount) / totalExpected) * paymentForm.value.amount_cny
+            : paymentForm.value.amount_cny / allGroupOrders.value.length
+          return {
+            payment_group_id: groupId!,
+            order_id: o.id,
+            allocated_amount: manualAlloc != null ? manualAlloc : Number(autoAlloc.toFixed(2)),
+          }
+        })
+        const { error: goErr } = await supabase.from('payment_group_orders').insert(groupOrderEntries)
+        if (goErr) throw goErr
+      }
+    }
+
     const { data: txNo } = await supabase.rpc('generate_transaction_no')
     const transactionNo = txNo || `FT-${Date.now()}`
 
+    const txType = isRefund ? '退款' : '批次收款'
+    const txDirection = isRefund ? '支出' : '收入'
+    const txNotes = `${paymentForm.value.payment_type} - ${paymentForm.value.payment_method}${paymentForm.value.notes ? ' | ' + paymentForm.value.notes : ''}${isGroupPay ? ' | 合并收款' : ''}`
+
     const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
       transaction_no: transactionNo,
-      transaction_type: '批次收款',
-      direction: '收入',
+      transaction_type: txType,
+      direction: txDirection,
       amount_cny: paymentForm.value.amount_cny,
       exchange_rate: currentOrder.value.exchange_rate || 7.25,
       customer_name: currentOrder.value.customer_name || '',
@@ -903,25 +1130,38 @@ async function savePayment() {
       order_number: currentOrder.value.order_number,
       staff_name: paymentForm.value.recorded_by,
       status: '待审批',
-      notes: `批次收款 - ${paymentForm.value.payment_method}${paymentForm.value.notes ? ' | ' + paymentForm.value.notes : ''}`,
+      notes: txNotes,
       transaction_date: paymentDate,
     }).select('id').maybeSingle()
     if (txErr) throw txErr
 
-    const { error: pmErr } = await supabase.from('batch_payments').insert({
-      batch_id: currentOrder.value.id,
-      batch_number: currentOrder.value.order_number,
-      transaction_id: txData?.id || null,
-      amount_cny: paymentForm.value.amount_cny,
-      payment_date: paymentDate,
-      payment_method: paymentForm.value.payment_method,
-      payer_name: paymentForm.value.payer_name,
-      recorded_by: paymentForm.value.recorded_by,
-      notes: paymentForm.value.notes,
-    })
-    if (pmErr) throw pmErr
+    const orderIds = isGroupPay
+      ? [currentOrder.value.id, ...groupPaySelected.value]
+      : [currentOrder.value.id]
 
-    message.success('收款已录入，交易流水已同步')
+    for (const oid of orderIds) {
+      const order = oid === currentOrder.value.id ? currentOrder.value : sameCustomerOrders.value.find(o => o.id === oid)
+      await supabase.from('batch_payments').insert({
+        batch_id: oid,
+        batch_number: order?.order_number || currentOrder.value.order_number,
+        transaction_id: txData?.id || null,
+        amount_cny: isGroupPay
+          ? (groupAllocations[oid] != null
+            ? groupAllocations[oid]
+            : Number(((Number(order?.total_amount || 0) / groupPayTotalAmount.value) * paymentForm.value.amount_cny).toFixed(2)))
+          : paymentForm.value.amount_cny,
+        payment_date: paymentDate,
+        payment_method: paymentForm.value.payment_method,
+        payer_name: paymentForm.value.payer_name,
+        recorded_by: paymentForm.value.recorded_by,
+        notes: paymentForm.value.notes,
+        payment_type: paymentForm.value.payment_type,
+        payment_group_id: groupId,
+      })
+    }
+
+    const typeLabel = isRefund ? '退款' : '收款'
+    message.success(`${typeLabel}已录入${isGroupPay ? '（已合并关联 ' + orderIds.length + ' 个订单）' : ''}`)
     paymentModalOpen.value = false
     await loadPayments(currentOrder.value.id)
   } catch (e: any) {
@@ -936,8 +1176,15 @@ async function deletePayment(payment: any) {
     if (payment.transaction_id) {
       await supabase.from('financial_transactions').delete().eq('id', payment.transaction_id)
     }
-    await supabase.from('batch_payments').delete().eq('id', payment.id)
-    message.success('已删除收款记录及对应流水')
+    if (payment.payment_group_id) {
+      await supabase.from('batch_payments').delete().eq('payment_group_id', payment.payment_group_id)
+      await supabase.from('payment_group_orders').delete().eq('payment_group_id', payment.payment_group_id)
+      await supabase.from('payment_groups').delete().eq('id', payment.payment_group_id)
+      message.success('已删除合并收款记录及关联流水')
+    } else {
+      await supabase.from('batch_payments').delete().eq('id', payment.id)
+      message.success('已删除收款记录及对应流水')
+    }
     if (currentOrder.value) await loadPayments(currentOrder.value.id)
   } catch (e: any) {
     message.error('删除失败：' + e.message)
@@ -1048,13 +1295,8 @@ onMounted(loadOrders)
 .amount-divider-bold { height: 2px; background: #d1d5db; margin: 6px 0; }
 
 .feedback-panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 14px 18px;
-  background: #f9fafb;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 18px;
+  background: #f9fafb; display: flex; flex-direction: column; gap: 8px;
 }
 .feedback-info-row { display: flex; align-items: center; gap: 6px; }
 .feedback-key { font-size: 13px; color: #6b7280; flex-shrink: 0; }
@@ -1062,74 +1304,67 @@ onMounted(loadOrders)
 .feedback-notes-text { font-size: 13px; color: #374151; }
 
 .billing-panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 14px 18px;
-  background: #f9fafb;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 18px;
+  background: #f9fafb; display: flex; flex-direction: column; gap: 8px;
 }
 .billing-panel.billing-warn { background: #fff7ed; border-color: #fed7aa; }
 .billing-panel.billing-debt { background: #fffbeb; border-color: #fde68a; }
 .billing-panel.billing-warn.billing-debt { background: #fff1f2; border-color: #fecdd3; }
 .billing-info-row { display: flex; align-items: flex-start; gap: 6px; }
 .billing-notes-row { align-items: flex-start; }
-.billing-key { font-size: 13px; color: #6b7280; flex-shrink: 0; padding-top: 1px; }
+.billing-key { font-size: 13px; color: #6b7280; flex-shrink: 0; padding-top: 1px; min-width: 72px; }
 .billing-val { font-size: 13px; color: #374151; }
+.billing-diff { font-size: 12px; font-weight: 600; margin-left: 8px; padding: 1px 8px; border-radius: 4px; }
+.diff-surplus { background: #eff6ff; color: #2563eb; }
+.diff-deficit { background: #fff7ed; color: #d97706; }
 .debt-amount-text { font-size: 15px; font-weight: 700; color: #d97706; }
 .surplus-amount-text { font-size: 15px; font-weight: 700; color: #2563eb; }
 .debt-notes-text { font-size: 13px; color: #92400e; line-height: 1.6; }
-.billing-all-clear { font-size: 13px; color: #16a34a; text-align: center; padding: 4px 0; }
+
+.billing-type-breakdown {
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px;
+  display: flex; flex-direction: column; gap: 4px; margin: 2px 0;
+}
+.billing-type-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+.billing-type-label { color: #6b7280; }
+.billing-type-val { font-weight: 600; color: #374151; font-family: 'Courier New', monospace; }
+.supplement-label { color: #d97706; }
+.supplement-val { color: #d97706; }
+.refund-label { color: #dc2626; }
+.refund-val { color: #dc2626; }
 
 .payment-empty {
-  text-align: center;
-  color: #9ca3af;
-  padding: 20px;
-  font-size: 13px;
-  background: #f9fafb;
-  border-radius: 10px;
-  border: 1px dashed #e5e7eb;
+  text-align: center; color: #9ca3af; padding: 20px; font-size: 13px;
+  background: #f9fafb; border-radius: 10px; border: 1px dashed #e5e7eb;
 }
 .payment-list { display: flex; flex-direction: column; gap: 8px; }
 .payment-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 12px 16px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 16px;
   transition: border-color 0.2s;
 }
 .payment-card:hover { border-color: #93c5fd; }
+.payment-card-supplement { border-left: 3px solid #d97706; }
+.payment-card-refund { border-left: 3px solid #dc2626; background: #fef2f2; }
 .payment-main { flex: 1; min-width: 0; }
+.payment-top { display: flex; align-items: center; gap: 8px; }
 .payment-amount { font-size: 16px; font-weight: 700; color: #16a34a; font-family: 'Courier New', monospace; }
+.payment-amount-refund { color: #dc2626; }
 .payment-meta {
-  display: flex;
-  gap: 10px;
-  font-size: 12px;
-  color: #6b7280;
-  margin-top: 2px;
+  display: flex; gap: 10px; font-size: 12px; color: #6b7280; margin-top: 4px;
 }
 .payment-method { color: #2563eb; }
 .payment-payer { color: #374151; }
 .payment-notes { font-size: 12px; color: #9ca3af; margin-top: 2px; }
 .payment-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.payment-summary {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 10px 16px;
-  font-size: 13px;
-  color: #6b7280;
-  background: #f8fafc;
-  border-radius: 8px;
-  margin-top: 4px;
+
+.payment-group-info {
+  margin-top: 4px; padding: 6px 10px; background: #f0f9ff; border-radius: 6px;
+  font-size: 12px; color: #1e40af; border: 1px solid #bfdbfe;
 }
-.payment-summary-val { font-size: 16px; font-weight: 700; color: #16a34a; font-family: 'Courier New', monospace; }
+.payment-group-label { font-weight: 600; color: #1d4ed8; }
+.payment-group-order { font-weight: 500; }
+.payment-group-alloc { color: #6b7280; font-size: 11px; }
 
 .debt-form { display: flex; flex-direction: column; gap: 16px; padding: 4px 0; }
 .debt-field { display: flex; flex-direction: column; gap: 6px; }
@@ -1142,36 +1377,54 @@ onMounted(loadOrders)
 .feedback-field { display: flex; flex-direction: column; gap: 6px; }
 .feedback-form-label { font-size: 13px; font-weight: 500; color: #374151; }
 .feedback-date-field {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  background: #f9fafb;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  margin-top: 8px; display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;
 }
 .feedback-date-label { font-size: 12px; color: #6b7280; }
 
 .payment-form { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
 .payment-form-info {
-  display: flex; gap: 16px;
-  font-size: 13px; color: #374151; font-weight: 500;
-  padding: 10px 14px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  display: flex; gap: 16px; font-size: 13px; color: #374151; font-weight: 500;
+  padding: 10px 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e5e7eb;
 }
 .payment-form-field { display: flex; flex-direction: column; gap: 4px; }
 .payment-form-label { font-size: 13px; font-weight: 500; color: #374151; }
 .required { color: #ef4444; margin-left: 2px; }
 .payment-form-tip {
-  font-size: 12px;
-  color: #2563eb;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  padding: 8px 12px;
-  text-align: center;
+  font-size: 12px; color: #2563eb; background: #eff6ff;
+  border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px; text-align: center;
 }
+.payment-form-tip-refund { color: #dc2626; background: #fef2f2; border-color: #fecdd3; }
+
+.group-pay-section {
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;
+}
+.group-pay-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px; }
+.group-pay-list { display: flex; flex-direction: column; gap: 6px; }
+.group-pay-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+  cursor: pointer; transition: all 0.15s;
+}
+.group-pay-item:hover { border-color: #93c5fd; }
+.group-pay-selected { border-color: #2563eb; background: #eff6ff; }
+.group-pay-order-info { flex: 1; min-width: 0; }
+.group-pay-asin { font-size: 13px; font-weight: 600; color: #1e40af; }
+.group-pay-detail { font-size: 11px; color: #6b7280; margin-top: 1px; }
+.group-pay-amount { font-size: 14px; font-weight: 700; color: #374151; font-family: 'Courier New', monospace; }
+.group-pay-summary {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px;
+  padding: 8px 12px; background: #fff; border-radius: 8px; border: 1px solid #e5e7eb;
+  font-size: 13px; color: #6b7280;
+}
+.group-pay-total { font-size: 16px; font-weight: 700; color: #dc2626; font-family: 'Courier New', monospace; }
+.group-pay-count { font-size: 12px; color: #9ca3af; }
+
+.group-alloc-section { margin-top: 12px; }
+.group-alloc-title { font-size: 12px; color: #6b7280; margin-bottom: 8px; }
+.group-alloc-row {
+  display: flex; align-items: center; gap: 10px; padding: 6px 0;
+}
+.group-alloc-asin { font-size: 13px; font-weight: 600; color: #1e40af; min-width: 120px; }
+.group-alloc-expected { font-size: 12px; color: #6b7280; min-width: 100px; }
 </style>
