@@ -5,7 +5,7 @@ import {
   CreditCardOutlined, BankOutlined, SendOutlined, MessageOutlined,
   FileTextOutlined, WifiOutlined, CloudServerOutlined, CommentOutlined,
   LineChartOutlined, WarningOutlined, FundOutlined, AccountBookOutlined,
-  BarChartOutlined, SafetyOutlined, AuditOutlined, FilterOutlined,
+  BarChartOutlined, SafetyOutlined, AuditOutlined,
 } from '@ant-design/icons-vue'
 import type { StaffRole } from '../types'
 
@@ -57,7 +57,6 @@ export const allNavGroups: NavGroup[] = [
       { id: 'staff', label: '业务员管理', icon: UserOutlined },
       { id: 'buyers', label: '买手库', icon: TeamOutlined },
       { id: 'buyer-check', label: '买手校验', icon: AuditOutlined },
-      { id: 'buyer-restrictions', label: '校验规则管理', icon: FilterOutlined },
       { id: 'staff-analytics', label: '业务员数据分析', icon: BarChartOutlined },
       { id: 'after-sale', label: '售后问题单', icon: WarningOutlined },
       { id: 'buyer-profit', label: '买手盈亏分析', icon: FundOutlined },
