@@ -77,22 +77,29 @@
                 <span class="stat-val stat-total">{{ record.order_quantity || 0 }}</span>
               </div>
               <div class="stat-divider"></div>
-              <div class="stat-item">
+              <div class="stat-item stat-item-clickable" @click.stop="openScheduleModal(record)">
                 <span class="stat-label">排期</span>
-                <span class="stat-val stat-schedule">{{ record._schedule_count || 0 }}</span>
+                <span class="stat-val stat-schedule">{{ record._schedule_days || 0 }}<span class="stat-unit">天</span></span>
+                <span class="stat-daily">
+                  <template v-if="(record.fixed_daily_orders || 0) > 0">固定{{ record.fixed_daily_orders }}单/天</template>
+                  <template v-else-if="(record.new_daily_orders || 0) > 0">
+                    <span class="stat-daily-flex" @click.stop="openScheduleModal(record)">灵活排单 ›</span>
+                  </template>
+                  <template v-else>—</template>
+                </span>
               </div>
               <div class="stat-divider"></div>
               <div class="stat-item">
-                <span class="stat-label">已下单</span>
-                <span class="stat-val stat-sub">{{ record._ordered_count || 0 }}</span>
+                <span class="stat-label">已排单</span>
+                <span class="stat-val stat-sub">{{ record._scheduled_count || 0 }}</span>
               </div>
               <div class="stat-right-col">
                 <div class="stat-mini-row">
-                  <span class="stat-mini-label done-label">已排单{{ record._scheduled_count || 0 }}</span>
-                  <span class="stat-mini-label review-label">已留评{{ record._review_count || 0 }}</span>
+                  <span class="stat-mini-label done-label">已下单{{ record._ordered_count || 0 }}</span>
+                  <span class="stat-mini-label assign-label">已返款{{ record._refunded_count || 0 }}</span>
                 </div>
                 <div class="stat-mini-row">
-                  <span class="stat-mini-label assign-label">已返款{{ record._refunded_count || 0 }}</span>
+                  <span class="stat-mini-label review-label">已留评{{ record._review_count || 0 }}</span>
                 </div>
               </div>
             </div>
@@ -249,6 +256,57 @@
         />
       </div>
     </div>
+
+    <!-- 排期详情弹窗 -->
+    <a-modal
+      v-model:open="scheduleModalOpen"
+      :title="`排期详情 — ${scheduleModalOrder?.order_number || ''}`"
+      :footer="null"
+      width="640px"
+    >
+      <div v-if="scheduleModalOrder" class="sched-modal-body">
+        <div class="sched-modal-meta">
+          <span class="sched-meta-item">总量：<b>{{ scheduleModalOrder.order_quantity }}</b> 单</span>
+          <span class="sched-meta-item">
+            每日单数：
+            <template v-if="(scheduleModalOrder.fixed_daily_orders || 0) > 0">
+              <span class="sched-fixed-badge">固定 {{ scheduleModalOrder.fixed_daily_orders }} 单/天</span>
+            </template>
+            <template v-else-if="(scheduleModalOrder.new_daily_orders || 0) > 0">
+              <span class="sched-flex-badge">灵活排单</span>
+            </template>
+            <template v-else>
+              <span class="text-gray">未设置</span>
+            </template>
+          </span>
+          <span class="sched-meta-item">排期天数：<b>{{ scheduleModalSchedules.length }}</b> 天</span>
+        </div>
+        <div v-if="scheduleModalLoading" class="sched-loading"><a-spin /></div>
+        <div v-else-if="scheduleModalSchedules.length === 0" class="sched-empty">暂无排期数据</div>
+        <div v-else class="sched-list">
+          <div v-for="s in scheduleModalSchedules" :key="s.id" class="sched-row">
+            <div class="sched-row-date">
+              <span :class="isOverdue(s.schedule_date) ? 'sched-date-overdue' : 'sched-date-normal'">{{ s.schedule_date }}</span>
+            </div>
+            <div class="sched-row-qty">
+              <span class="sched-qty-badge">{{ s.quantity }} 单</span>
+            </div>
+            <div class="sched-row-types">
+              <span
+                v-for="t in (s.order_types && s.order_types.length ? s.order_types : [])"
+                :key="t"
+                class="spc-type-badge"
+                :style="{ background: getOrderTypeBg(t), color: getOrderTypeTextColor(t) }"
+              >{{ t }}</span>
+              <span v-if="!s.order_types || s.order_types.length === 0" class="text-gray" style="font-size:11px">未指定类型</span>
+            </div>
+            <div class="sched-row-kws">
+              <span v-for="kw in (s.keywords || [])" :key="kw" class="sched-kw-tag">{{ kw }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </a-modal>
 
     <!-- 关键词/链接编辑弹窗 -->
     <a-modal
@@ -797,31 +855,38 @@ async function load() {
 
     const orderIds = (data || []).map((o: any) => o.id)
     let statsMap: Record<string, { scheduled: number; ordered: number; reviewed: number; refunded: number; total: number }> = {}
-    let scheduleMap: Record<string, number> = {}
+    let scheduleDaysMap: Record<string, number> = {}
+    let scheduleQtyMap: Record<string, number> = {}
 
     if (orderIds.length > 0) {
       const { data: subData } = await supabase
         .from('sub_orders')
-        .select('order_id, status, buyer_id, amazon_order_id')
+        .select('order_id, status, buyer_name, amazon_order_id')
         .in('order_id', orderIds)
 
       const { data: schedData } = await supabase
         .from('order_schedules')
-        .select('order_id, quantity')
+        .select('order_id, quantity, schedule_date')
         .in('order_id', orderIds)
 
       ;(subData || []).forEach((s: any) => {
         if (!statsMap[s.order_id]) statsMap[s.order_id] = { scheduled: 0, ordered: 0, reviewed: 0, refunded: 0, total: 0 }
         statsMap[s.order_id].total++
-        if (s.buyer_id) statsMap[s.order_id].scheduled++
+        if (s.buyer_name) statsMap[s.order_id].scheduled++
         if (s.amazon_order_id) statsMap[s.order_id].ordered++
         if (['已完成', '已留评'].includes(s.status)) statsMap[s.order_id].reviewed++
         if (s.status === '已返款') statsMap[s.order_id].refunded++
       })
 
+      const daysCountMap: Record<string, Set<string>> = {}
       ;(schedData || []).forEach((s: any) => {
-        scheduleMap[s.order_id] = (scheduleMap[s.order_id] || 0) + (s.quantity || 0)
+        scheduleQtyMap[s.order_id] = (scheduleQtyMap[s.order_id] || 0) + (s.quantity || 0)
+        if (!daysCountMap[s.order_id]) daysCountMap[s.order_id] = new Set()
+        daysCountMap[s.order_id].add(s.schedule_date)
       })
+      for (const oid in daysCountMap) {
+        scheduleDaysMap[oid] = daysCountMap[oid].size
+      }
     }
 
     tasks.value = (data || []).map((o: any) => ({
@@ -831,7 +896,8 @@ async function load() {
       _review_count: statsMap[o.id]?.reviewed || 0,
       _refunded_count: statsMap[o.id]?.refunded || 0,
       _sub_total: statsMap[o.id]?.total || 0,
-      _schedule_count: scheduleMap[o.id] || 0,
+      _schedule_count: scheduleQtyMap[o.id] || 0,
+      _schedule_days: scheduleDaysMap[o.id] || 0,
     }))
     pagination.value.total = count || 0
   } catch (e: any) {
@@ -955,6 +1021,24 @@ function onPageChange(page: number, pageSize: number) {
   pagination.value.current = page
   pagination.value.pageSize = pageSize
   load()
+}
+
+const scheduleModalOpen = ref(false)
+const scheduleModalOrder = ref<any>(null)
+const scheduleModalSchedules = ref<any[]>([])
+const scheduleModalLoading = ref(false)
+
+async function openScheduleModal(record: any) {
+  scheduleModalOrder.value = record
+  scheduleModalOpen.value = true
+  scheduleModalLoading.value = true
+  const { data } = await supabase
+    .from('order_schedules')
+    .select('id, schedule_date, quantity, keywords, order_types')
+    .eq('order_id', record.id)
+    .order('schedule_date', { ascending: true })
+  scheduleModalSchedules.value = data || []
+  scheduleModalLoading.value = false
 }
 
 const kwEditOpen = ref(false)
@@ -1111,8 +1195,14 @@ onMounted(() => {
   border: 1px solid #e5e7eb;
 }
 .stat-item { display: flex; flex-direction: column; align-items: center; min-width: 48px; gap: 2px; }
+.stat-item-clickable { cursor: pointer; border-radius: 6px; padding: 4px 6px; margin: -4px -6px; transition: background 0.15s; }
+.stat-item-clickable:hover { background: #eff6ff; }
 .stat-label { font-size: 11px; color: #9ca3af; line-height: 1; }
 .stat-val { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.stat-unit { font-size: 12px; font-weight: 400; color: #9ca3af; margin-left: 1px; }
+.stat-daily { font-size: 11px; color: #6b7280; white-space: nowrap; margin-top: 1px; }
+.stat-daily-flex { color: #2563eb; cursor: pointer; font-weight: 500; }
+.stat-daily-flex:hover { text-decoration: underline; }
 .stat-total { color: #1a1a2e; }
 .stat-schedule { color: #f59e0b; }
 .stat-sub { color: #2563eb; }
@@ -1285,6 +1375,73 @@ onMounted(() => {
   background: #2563eb;
 }
 
+
+/* ===== 排期详情弹窗 ===== */
+.sched-modal-body { padding: 4px 0 8px; }
+.sched-modal-meta {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+}
+.sched-meta-item { font-size: 13px; color: #374151; }
+.sched-meta-item b { color: #1a1a2e; }
+.sched-fixed-badge {
+  display: inline-block;
+  background: #dcfce7;
+  color: #16a34a;
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sched-flex-badge {
+  display: inline-block;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sched-loading { display: flex; justify-content: center; padding: 24px; }
+.sched-empty { text-align: center; color: #9ca3af; padding: 24px; font-size: 13px; }
+.sched-list { display: flex; flex-direction: column; gap: 6px; }
+.sched-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.sched-row-date { min-width: 88px; }
+.sched-date-normal { font-family: monospace; font-size: 13px; color: #1d4ed8; font-weight: 600; }
+.sched-date-overdue { font-family: monospace; font-size: 13px; color: #dc2626; font-weight: 600; }
+.sched-row-qty { min-width: 52px; }
+.sched-qty-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sched-row-types { display: flex; gap: 4px; flex-wrap: wrap; min-width: 60px; }
+.sched-row-kws { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.sched-kw-tag {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
 
 /* ===== 排期一览 ===== */
 .schedules-preview {
