@@ -55,8 +55,7 @@
                 <template v-else-if="record.order_type">
                   <a-tag :color="getOrderTypeColor(record.order_type)" class="info-tag">{{ record.order_type }}</a-tag>
                 </template>
-                <a-tag v-if="record.review_level" color="default" class="info-tag">{{ record.review_level }}</a-tag>
-                <a-tag v-if="record.review_type" color="default" class="info-tag">{{ record.review_type }}</a-tag>
+                <a-tag v-if="record.review_level" :color="getReviewLevelColor(record.review_level)" class="info-tag">{{ record.review_level }}</a-tag>
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">产品：{{ record.product_name || record.asin }}</span>
@@ -67,7 +66,8 @@
               <div class="task-detail-row">
                 <span class="detail-item-text">类目：{{ record.category || '—' }}</span>
                 <span class="detail-sep">客户：{{ record.customer_name || '—' }}</span>
-                <span class="detail-sep">业务员：{{ record.sales_person || '—' }}</span>
+                <span class="detail-sep">商务：{{ record.sales_person || '—' }}</span>
+                <span class="detail-sep">售价：<span class="price-text">${{ Number(record.product_price || 0).toFixed(2) }}</span></span>
               </div>
             </div>
 
@@ -83,12 +83,12 @@
               </div>
               <div class="stat-divider"></div>
               <div class="stat-item">
-                <span class="stat-label">子单</span>
-                <span class="stat-val stat-sub">{{ record._sub_total || 0 }}</span>
+                <span class="stat-label">已下单</span>
+                <span class="stat-val stat-sub">{{ record._ordered_count || 0 }}</span>
               </div>
               <div class="stat-right-col">
                 <div class="stat-mini-row">
-                  <span class="stat-mini-label done-label">已完成{{ record._completed_count || 0 }}</span>
+                  <span class="stat-mini-label done-label">已排单{{ record._sub_total || 0 }}</span>
                   <span class="stat-mini-label review-label">已留评{{ record._review_count || 0 }}</span>
                 </div>
                 <div class="stat-mini-row">
@@ -602,6 +602,11 @@ function getSubStatusColor(status: string) {
   return map[status] || 'default'
 }
 
+function getReviewLevelColor(level: string) {
+  const map: Record<string, string> = { '普通': 'default', '高等': 'blue', '极高等': 'gold' }
+  return map[level] || 'default'
+}
+
 function getOrderTypeColor(t: string) {
   const map: Record<string, string> = { '免评': 'green', '文字评': 'cyan', '图片评': 'blue', '视频评': 'geekblue', 'Feedback': 'gold' }
   return map[t] || 'default'
@@ -791,7 +796,7 @@ async function load() {
     if (error) throw error
 
     const orderIds = (data || []).map((o: any) => o.id)
-    let statsMap: Record<string, { completed: number; reviewed: number; assigned: number; total: number }> = {}
+    let statsMap: Record<string, { completed: number; reviewed: number; assigned: number; total: number; ordered: number }> = {}
     let scheduleMap: Record<string, number> = {}
 
     if (orderIds.length > 0) {
@@ -806,11 +811,12 @@ async function load() {
         .in('order_id', orderIds)
 
       ;(subData || []).forEach((s: any) => {
-        if (!statsMap[s.order_id]) statsMap[s.order_id] = { completed: 0, reviewed: 0, assigned: 0, total: 0 }
+        if (!statsMap[s.order_id]) statsMap[s.order_id] = { completed: 0, reviewed: 0, assigned: 0, total: 0, ordered: 0 }
         statsMap[s.order_id].total++
         if (s.status === '已完成') statsMap[s.order_id].completed++
         if (s.status === '已留评') statsMap[s.order_id].reviewed++
         if (['已分配', '进行中', '已下单', '已留评', '已完成'].includes(s.status)) statsMap[s.order_id].assigned++
+        if (['已下单', '已留评', '已完成'].includes(s.status)) statsMap[s.order_id].ordered++
       })
 
       ;(schedData || []).forEach((s: any) => {
@@ -824,6 +830,7 @@ async function load() {
       _review_count: statsMap[o.id]?.reviewed || 0,
       _assigned_count: statsMap[o.id]?.assigned || 0,
       _sub_total: statsMap[o.id]?.total || 0,
+      _ordered_count: statsMap[o.id]?.ordered || 0,
       _schedule_count: scheduleMap[o.id] || 0,
     }))
     pagination.value.total = count || 0
