@@ -44,7 +44,6 @@ export const allNavGroups: NavGroup[] = [
     items: [
       { id: 'task-management', label: '任务管理', icon: AppstoreOutlined },
       { id: 'assignment', label: '分配管理', icon: UserAddOutlined },
-      { id: 'staff-workbench', label: '业务员工作台', icon: DesktopOutlined },
       { id: 'grab-hall', label: '抢单大厅', icon: ThunderboltOutlined },
       { id: 'sub-order-detail', label: '订单列表', icon: ProfileOutlined },
     ],
@@ -66,6 +65,7 @@ export const allNavGroups: NavGroup[] = [
     icon: UserOutlined,
     roles: ['业务员', '管理员'],
     items: [
+      { id: 'staff-workbench', label: '业务员工作台', icon: DesktopOutlined },
       { id: 'staff', label: '业务员管理', icon: UserOutlined },
       { id: 'staff-analytics', label: '业务员数据分析', icon: BarChartOutlined },
       { id: 'after-sale', label: '售后问题单', icon: WarningOutlined },
