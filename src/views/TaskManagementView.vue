@@ -94,10 +94,10 @@
                   <template v-else>点击查看详情</template>
                 </span>
               </div>
-              <!-- 右侧：买手分配 / 已返款 / 已留评 -->
+              <!-- 右侧：买手匹配 / 已返款 / 已留评 -->
               <div class="stat-right-col">
                 <div class="stat-mini-row">
-                  <span class="stat-mini-label assign-label">买手分配 {{ record._scheduled_count || 0 }}</span>
+                  <span class="stat-mini-label assign-label">买手匹配 {{ record._scheduled_count || 0 }}</span>
                   <span class="stat-mini-label refund-label">已返款 {{ record._refunded_count || 0 }}</span>
                 </div>
                 <div class="stat-mini-row">
