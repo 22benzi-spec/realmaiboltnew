@@ -69,6 +69,11 @@
                 <span class="detail-sep">商务：{{ record.sales_person || '—' }}</span>
                 <span class="detail-sep">售价：<span class="price-text">${{ Number(record.product_price || 0).toFixed(2) }}</span></span>
               </div>
+              <div class="task-detail-row">
+                <a-tag v-if="record.variant_info" color="blue" style="font-size:11px">指定变体：{{ record.variant_info }}</a-tag>
+                <a-tag v-else color="default" style="font-size:11px">变体随意</a-tag>
+                <span class="detail-sep remark-text">备注：一定要买跟卖店铺</span>
+              </div>
             </div>
 
             <div class="task-stats">
@@ -185,10 +190,6 @@
                     <EditOutlined class="kw-edit-icon" />
                   </div>
                 </template>
-                <template v-if="column.key === 'sub_variant'">
-                  <span v-if="sub.variant_info" class="variant-text">{{ sub.variant_info }}</span>
-                  <span v-else class="text-gray">—</span>
-                </template>
                 <template v-if="column.key === 'sub_scheduled'">
                   <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
                     {{ sub.scheduled_date }}
@@ -223,13 +224,7 @@
                   <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_progress'">
-                  <div class="sub-progress-cell">
-                    <span :class="['prog-dot', sub.buyer_id ? 'done' : 'pending']" title="已分买手"></span>
-                    <span :class="['prog-dot', sub.amazon_order_id ? 'done' : 'pending']" title="已下单"></span>
-                    <span :class="['prog-dot', sub.delivery_confirmed_at ? 'done' : 'pending']" title="已签收"></span>
-                    <span :class="['prog-dot', sub.review_screenshot_url ? 'done' : 'pending']" title="已留评"></span>
-                    <span class="prog-label">{{ getSubProgressLabel(sub) }}</span>
-                  </div>
+                  <a-tag :color="getSubStatusColor(getSubProgressLabel(sub))" size="small">{{ getSubProgressLabel(sub) }}</a-tag>
                 </template>
                 <template v-if="column.key === 'sub_order_status'">
                   <a-tag :color="getSubOrderStatusColor(sub.order_status)" size="small">{{ sub.order_status || '正常' }}</a-tag>
@@ -667,7 +662,6 @@ const countries = ['美国', '德国', '英国', '加拿大']
 const subColumns = [
   { title: '子订单号', key: 'sub_no', width: 165 },
   { title: '关键词', key: 'sub_keyword', width: 130 },
-  { title: '变体', key: 'sub_variant', width: 80 },
   { title: '排期日期', key: 'sub_scheduled', width: 95 },
   { title: '测评类型', key: 'sub_review_type', width: 80 },
   { title: '测评等级', key: 'sub_review_level', width: 75 },
@@ -1338,6 +1332,7 @@ onMounted(() => {
 .notes-text { font-size: 11px; color: #6b7280; max-width: 120px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .text-gray { color: #9ca3af; font-size: 12px; }
 .text-red { color: #dc2626; }
+.remark-text { color: #dc2626; font-weight: 500; font-size: 12px; }
 
 .empty-list { padding: 40px 0; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
