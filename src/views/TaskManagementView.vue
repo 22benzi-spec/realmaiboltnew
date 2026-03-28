@@ -72,34 +72,36 @@
             </div>
 
             <div class="task-stats">
+              <!-- 左侧：总量 / 已下单 / 排期 -->
               <div class="stat-item">
                 <span class="stat-label">总量</span>
                 <span class="stat-val stat-total">{{ record.order_quantity || 0 }}</span>
+              </div>
+              <div class="stat-divider"></div>
+              <div class="stat-item">
+                <span class="stat-label">已下单</span>
+                <span class="stat-val stat-ordered">{{ record._ordered_count || 0 }}</span>
               </div>
               <div class="stat-divider"></div>
               <div class="stat-item stat-item-clickable" @click.stop="openScheduleModal(record)">
                 <span class="stat-label">排期</span>
                 <span class="stat-val stat-schedule">{{ record._schedule_days || 0 }}<span class="stat-unit">天</span></span>
                 <span class="stat-daily">
-                  <template v-if="(record.fixed_daily_orders || 0) > 0">固定{{ record.fixed_daily_orders }}单/天</template>
+                  <template v-if="(record.fixed_daily_orders || 0) > 0">固定 {{ record.fixed_daily_orders }} 单/天</template>
                   <template v-else-if="(record.new_daily_orders || 0) > 0">
-                    <span class="stat-daily-flex" @click.stop="openScheduleModal(record)">灵活排单 ›</span>
+                    <span class="stat-daily-flex">灵活·点击查看</span>
                   </template>
-                  <template v-else>—</template>
+                  <template v-else>点击查看详情</template>
                 </span>
               </div>
-              <div class="stat-divider"></div>
-              <div class="stat-item">
-                <span class="stat-label">已排单</span>
-                <span class="stat-val stat-sub">{{ record._scheduled_count || 0 }}</span>
-              </div>
+              <!-- 右侧：买手分配 / 已返款 / 已留评 -->
               <div class="stat-right-col">
                 <div class="stat-mini-row">
-                  <span class="stat-mini-label done-label">已下单{{ record._ordered_count || 0 }}</span>
-                  <span class="stat-mini-label assign-label">已返款{{ record._refunded_count || 0 }}</span>
+                  <span class="stat-mini-label assign-label">买手分配 {{ record._scheduled_count || 0 }}</span>
+                  <span class="stat-mini-label refund-label">已返款 {{ record._refunded_count || 0 }}</span>
                 </div>
                 <div class="stat-mini-row">
-                  <span class="stat-mini-label review-label">已留评{{ record._review_count || 0 }}</span>
+                  <span class="stat-mini-label review-label">已留评 {{ record._review_count || 0 }}</span>
                 </div>
               </div>
             </div>
@@ -1204,6 +1206,7 @@ onMounted(() => {
 .stat-daily-flex { color: #2563eb; cursor: pointer; font-weight: 500; }
 .stat-daily-flex:hover { text-decoration: underline; }
 .stat-total { color: #1a1a2e; }
+.stat-ordered { color: #2563eb; }
 .stat-schedule { color: #f59e0b; }
 .stat-sub { color: #2563eb; }
 .stat-divider { width: 1px; height: 32px; background: #e5e7eb; margin: 0 10px; }
@@ -1223,9 +1226,9 @@ onMounted(() => {
   border-radius: 10px;
   font-weight: 500;
 }
-.done-label { background: #ecfdf5; color: #059669; }
+.assign-label { background: #ecfdf5; color: #059669; }
+.refund-label { background: #fef3c7; color: #d97706; }
 .review-label { background: #eff6ff; color: #3b82f6; }
-.assign-label { background: #fef3c7; color: #d97706; }
 
 .task-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding-left: 8px; }
 .gen-btn { font-size: 12px; }
