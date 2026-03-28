@@ -5,7 +5,7 @@ import {
   CreditCardOutlined, BankOutlined, SendOutlined, MessageOutlined,
   FileTextOutlined, WifiOutlined, CloudServerOutlined, CommentOutlined,
   LineChartOutlined, WarningOutlined, FundOutlined, AccountBookOutlined,
-  BarChartOutlined, SafetyOutlined, AuditOutlined,
+  BarChartOutlined, SafetyOutlined, AuditOutlined, ProfileOutlined,
 } from '@ant-design/icons-vue'
 import type { StaffRole } from '../types'
 
@@ -30,10 +30,11 @@ export const allNavGroups: NavGroup[] = [
     id: 'order-center',
     label: '订单中心',
     icon: ShopOutlined,
-    roles: ['商务', '管理员'],
+    roles: ['业务员', '商务', '管理员'],
     items: [
       { id: 'fba-orders', label: '创建任务', icon: InboxOutlined },
       { id: 'my-orders', label: '接单管理', icon: UnorderedListOutlined },
+      { id: 'sub-order-detail', label: '子订单明细', icon: ProfileOutlined },
     ],
   },
   {

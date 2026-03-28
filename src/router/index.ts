@@ -31,6 +31,7 @@ const router = createRouter({
     { path: '/user-management', name: 'user-management', component: () => import('../views/UserManagementView.vue') },
     { path: '/buyer-check', name: 'buyer-check', component: () => import('../views/BuyerCheckView.vue') },
     { path: '/buyer-restrictions', name: 'buyer-restrictions', component: () => import('../views/BuyerRestrictionView.vue') },
+    { path: '/sub-order-detail', name: 'sub-order-detail', component: () => import('../views/SubOrderDetailView.vue') },
   ],
 })
 
