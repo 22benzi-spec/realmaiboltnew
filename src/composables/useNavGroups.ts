@@ -28,13 +28,12 @@ const ALL_ROLES: StaffRole[] = ['业务员', '商务', '财务', '管理员']
 export const allNavGroups: NavGroup[] = [
   {
     id: 'order-center',
-    label: '订单中心',
+    label: '接单中心',
     icon: ShopOutlined,
     roles: ['业务员', '商务', '管理员'],
     items: [
       { id: 'fba-orders', label: '创建任务', icon: InboxOutlined },
       { id: 'my-orders', label: '接单管理', icon: UnorderedListOutlined },
-      { id: 'sub-order-detail', label: '子订单明细', icon: ProfileOutlined },
     ],
   },
   {
@@ -47,20 +46,29 @@ export const allNavGroups: NavGroup[] = [
       { id: 'assignment', label: '分配管理', icon: UserAddOutlined },
       { id: 'staff-workbench', label: '业务员工作台', icon: DesktopOutlined },
       { id: 'grab-hall', label: '抢单大厅', icon: ThunderboltOutlined },
+      { id: 'sub-order-detail', label: '订单列表', icon: ProfileOutlined },
+    ],
+  },
+  {
+    id: 'buyer-center',
+    label: '买手管理',
+    icon: TeamOutlined,
+    roles: ['业务员', '管理员'],
+    items: [
+      { id: 'buyers', label: '买手库', icon: TeamOutlined },
+      { id: 'buyer-check', label: '买手校验', icon: AuditOutlined },
+      { id: 'buyer-profit', label: '买手盈亏分析', icon: FundOutlined },
     ],
   },
   {
     id: 'people',
-    label: '人员管理',
-    icon: TeamOutlined,
+    label: '业务管理',
+    icon: UserOutlined,
     roles: ['业务员', '管理员'],
     items: [
       { id: 'staff', label: '业务员管理', icon: UserOutlined },
-      { id: 'buyers', label: '买手库', icon: TeamOutlined },
-      { id: 'buyer-check', label: '买手校验', icon: AuditOutlined },
       { id: 'staff-analytics', label: '业务员数据分析', icon: BarChartOutlined },
       { id: 'after-sale', label: '售后问题单', icon: WarningOutlined },
-      { id: 'buyer-profit', label: '买手盈亏分析', icon: FundOutlined },
     ],
   },
   {
