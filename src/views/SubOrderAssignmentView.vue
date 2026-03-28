@@ -140,7 +140,7 @@
                 <span class="detail-item-text">类目：{{ group.category || '—' }}</span>
                 <span class="detail-sep">单价：<span class="price-text">${{ Number(group.product_price || 0).toFixed(2) }}</span></span>
                 <span class="detail-sep">客户：{{ group.customer_name || '—' }}</span>
-                <span class="detail-sep">业务员：{{ group.sales_person || '—' }}</span>
+                <span class="detail-sep">商务：{{ group.sales_person || '—' }}</span>
               </div>
             </div>
 
@@ -229,10 +229,12 @@
                   <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_review_type'">
-                  <span style="font-size:12px">{{ sub.review_type || '—' }}</span>
+                  <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                  <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_review_level'">
-                  <span style="font-size:12px">{{ sub.review_level || '—' }}</span>
+                  <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
+                  <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_price'">
                   <span class="price-main">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
@@ -240,6 +242,10 @@
                 <template v-if="column.key === 'sub_staff'">
                   <span v-if="sub.staff_name" class="staff-assigned">{{ sub.staff_name }}</span>
                   <span v-else class="text-gray">未分配</span>
+                </template>
+                <template v-if="column.key === 'sub_notes'">
+                  <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
+                  <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_action'">
                   <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
@@ -294,12 +300,13 @@
             </template>
             <template v-if="column.key === 'flat_type'">
               <div class="flat-type-cell">
-                <span style="font-size:12px">{{ sub.review_type || '—' }}</span>
+                <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
                 <span v-if="sub.country" class="flat-country">{{ sub.country }}</span>
               </div>
             </template>
             <template v-if="column.key === 'flat_level'">
-              <span style="font-size:12px">{{ sub.review_level || '—' }}</span>
+              <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
+              <span v-else class="text-gray">—</span>
             </template>
             <template v-if="column.key === 'flat_scheduled'">
               <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
@@ -313,6 +320,10 @@
             <template v-if="column.key === 'flat_staff'">
               <span v-if="sub.staff_name" class="staff-assigned">{{ sub.staff_name }}</span>
               <span v-else class="text-gray">未分配</span>
+            </template>
+            <template v-if="column.key === 'flat_notes'">
+              <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
+              <span v-else class="text-gray">—</span>
             </template>
             <template v-if="column.key === 'flat_action'">
               <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
@@ -773,7 +784,8 @@ const subColumns = [
   { title: '测评类型', key: 'sub_review_type', width: 80 },
   { title: '测评等级', key: 'sub_review_level', width: 80 },
   { title: '产品售价', key: 'sub_price', width: 90 },
-  { title: '业务员', key: 'sub_staff', width: 90 },
+  { title: '商务', key: 'sub_staff', width: 90 },
+  { title: '备注', key: 'sub_notes', width: 130 },
   { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
 ]
 
@@ -786,7 +798,8 @@ const flatColumns = [
   { title: '测评等级', key: 'flat_level', width: 80 },
   { title: '排期日期', key: 'flat_scheduled', width: 95 },
   { title: '产品售价', key: 'flat_price', width: 90 },
-  { title: '业务员', key: 'flat_staff', width: 90 },
+  { title: '商务', key: 'flat_staff', width: 90 },
+  { title: '备注', key: 'flat_notes', width: 130 },
   { title: '操作', key: 'flat_action', width: 80, fixed: 'right' as const },
 ]
 
@@ -825,8 +838,13 @@ function getOrderStatusColor(status: string) {
 }
 
 function getOrderTypeTagColor(t: string) {
-  const map: Record<string, string> = { '免评': 'green', '文字评': 'cyan', '图片评': 'blue', '视频评': 'geekblue', 'Feedback': 'gold' }
+  const map: Record<string, string> = { '文字': 'cyan', '图片': 'blue', '视频': 'geekblue', '免评': 'green', 'FB': 'gold', 'Feedback': 'gold', '文字评': 'cyan', '图片评': 'blue', '视频评': 'geekblue' }
   return map[t] || 'default'
+}
+
+function getReviewLevelTagColor(level: string) {
+  const map: Record<string, string> = { '普通': 'default', '高等': 'blue', '极高等': 'gold' }
+  return map[level] || 'default'
 }
 
 function getSubStatusColor(status: string) {
@@ -1416,6 +1434,7 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 .price-main { font-size: 11px; font-weight: 600; color: #16a34a; }
 .price-sub { font-size: 11px; color: #6b7280; }
 .staff-assigned { font-size: 12px; color: #059669; font-weight: 500; }
+.notes-text { font-size: 11px; color: #6b7280; max-width: 120px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .text-gray { color: #9ca3af; font-size: 12px; }
 
 .empty-list { padding: 40px 0; }

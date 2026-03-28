@@ -210,13 +210,18 @@
           </template>
 
           <template v-if="column.key === 'sales_person'">
-            <div v-if="record.sales_person || record.customer_name" class="sales-cell">
-              <div v-if="record.sales_person" class="sales-name">
-                <UserOutlined style="font-size:11px;margin-right:3px;color:#6b7280" />{{ record.sales_person }}
-              </div>
-              <div v-if="record.customer_name" class="customer-name">{{ record.customer_name }}</div>
-            </div>
+            <span v-if="record.sales_person" class="sales-name">{{ record.sales_person }}</span>
             <span v-else class="text-empty">-</span>
+          </template>
+
+          <template v-if="column.key === 'customer'">
+            <span v-if="record.customer_name" class="customer-name-cell">{{ record.customer_name }}</span>
+            <span v-else class="text-empty">-</span>
+          </template>
+
+          <template v-if="column.key === 'notes'">
+            <span v-if="record.notes" class="notes-text">{{ record.notes }}</span>
+            <span v-else class="text-empty">—</span>
           </template>
 
           <template v-if="column.key === 'action'">
@@ -1071,7 +1076,9 @@ const columns = [
   { title: '账单状态', key: 'billing', width: 130 },
   { title: '返款', key: 'refund_summary', width: 140 },
   { title: '总金额', key: 'total_amount', width: 95 },
-  { title: '对接商务/客户', key: 'sales_person', width: 115 },
+  { title: '商务', key: 'sales_person', width: 90 },
+  { title: '客户', key: 'customer', width: 90 },
+  { title: '备注', key: 'notes', width: 120 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 100, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
   { title: '操作', key: 'action', width: 160, fixed: 'right' as const },
 ]
@@ -1988,8 +1995,10 @@ onMounted(loadOrders)
 .rs-date { font-size: 10px; color: #9ca3af; }
 
 .sales-cell { display: flex; flex-direction: column; gap: 2px; }
-.sales-name { font-size: 13px; font-weight: 500; color: #374151; display: flex; align-items: center; }
+.sales-name { font-size: 12px; font-weight: 500; color: #374151; }
 .customer-name { font-size: 11px; color: #9ca3af; }
+.customer-name-cell { font-size: 12px; color: #374151; }
+.notes-text { font-size: 11px; color: #6b7280; max-width: 110px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 
 :global(.row-batch-first td) { border-top: 2px solid #e2e8f0 !important; }
 :global(.row-batch-last td) { border-bottom: 2px solid #e2e8f0 !important; }

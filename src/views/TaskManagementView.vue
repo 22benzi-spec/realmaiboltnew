@@ -196,10 +196,12 @@
                   <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_review_type'">
-                  <span style="font-size:12px">{{ sub.review_type || '—' }}</span>
+                  <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                  <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_review_level'">
-                  <span style="font-size:12px">{{ sub.review_level || '—' }}</span>
+                  <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
+                  <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_price'">
                   <span class="price-text">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
@@ -249,6 +251,10 @@
                     <div class="refund-method-tag">{{ sub.refund_method || '—' }}</div>
                     <div v-if="sub.refund_amount" class="refund-amount">${{ Number(sub.refund_amount).toFixed(2) }}</div>
                   </div>
+                  <span v-else class="text-gray">—</span>
+                </template>
+                <template v-if="column.key === 'sub_notes'">
+                  <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
                   <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_action'">
@@ -675,6 +681,7 @@ const subColumns = [
   { title: '评价', key: 'sub_review', width: 70 },
   { title: 'FB', key: 'sub_fb', width: 60 },
   { title: '返款', key: 'sub_refund', width: 130 },
+  { title: '备注', key: 'sub_notes', width: 130 },
   { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
 ]
 
@@ -706,6 +713,16 @@ function getSubProgressLabel(sub: any): string {
 function getReviewLevelColor(level: string) {
   const map: Record<string, string> = { '普通': 'default', '高等': 'blue', '极高等': 'gold' }
   return map[level] || 'default'
+}
+
+function getReviewLevelTagColor(level: string) {
+  const map: Record<string, string> = { '普通': 'default', '高等': 'blue', '极高等': 'gold' }
+  return map[level] || 'default'
+}
+
+function getOrderTypeTagColor(t: string) {
+  const map: Record<string, string> = { '文字': 'cyan', '图片': 'blue', '视频': 'geekblue', '免评': 'green', 'FB': 'gold', 'Feedback': 'gold' }
+  return map[t] || 'default'
 }
 
 function getOrderTypeColor(t: string) {
@@ -1318,6 +1335,7 @@ onMounted(() => {
 .prog-dot.pending { background: #d1d5db; }
 .prog-label { font-size: 10px; color: #6b7280; margin-left: 2px; }
 .staff-name { color: #374151; font-size: 12px; }
+.notes-text { font-size: 11px; color: #6b7280; max-width: 120px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .text-gray { color: #9ca3af; font-size: 12px; }
 .text-red { color: #dc2626; }
 
