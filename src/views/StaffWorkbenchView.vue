@@ -56,6 +56,10 @@
                 allow-clear
                 size="small"
               />
+              <div class="wb-view-toggle">
+                <span :class="['wb-vbtn', wbViewMode === 'card' ? 'active' : '']" @click="wbViewMode = 'card'">卡片</span>
+                <span :class="['wb-vbtn', wbViewMode === 'table' ? 'active' : '']" @click="wbViewMode = 'table'">列表</span>
+              </div>
               <span class="total-hint">{{ filteredTasks.length }} 条任务</span>
             </div>
           </div>
@@ -64,6 +68,66 @@
 
           <div v-else-if="filteredTasks.length === 0" class="empty-list">
             <a-empty description="暂无任务数据" />
+          </div>
+
+          <!-- 列表视图 -->
+          <div v-else-if="wbViewMode === 'table'" class="wb-table-view">
+            <a-table
+              :columns="wbSubColumns"
+              :data-source="filteredTasks"
+              :pagination="false"
+              row-key="id"
+              size="small"
+              :scroll="{ x: 1500 }"
+            >
+              <template #bodyCell="{ column, record: task }">
+                <template v-if="column.key === 'wb_no'">
+                  <span class="sub-no">{{ task.sub_order_number }}</span>
+                </template>
+                <template v-if="column.key === 'wb_product'">
+                  <div class="sub-product-cell">
+                    <div v-if="task.product_name" class="sub-product-name">{{ task.product_name }}</div>
+                    <div class="sub-asin mono-sm">{{ task.asin || '—' }}</div>
+                  </div>
+                </template>
+                <template v-if="column.key === 'wb_keyword'">
+                  <template v-if="task.keyword_type === 'link' && task.search_link">
+                    <a :href="task.search_link" target="_blank" style="font-size:12px">链接</a>
+                  </template>
+                  <span v-else-if="task.keyword" class="keyword-tag">{{ task.keyword }}</span>
+                  <span v-else class="text-gray">—</span>
+                </template>
+                <template v-if="column.key === 'wb_variant'">
+                  <span v-if="task.variant_info" class="variant-text">{{ task.variant_info }}</span>
+                  <span v-else class="text-gray">—</span>
+                </template>
+                <template v-if="column.key === 'wb_scheduled'">
+                  <span v-if="task.scheduled_date" :class="isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-normal'">
+                    {{ task.scheduled_date }}
+                  </span>
+                  <span v-else class="text-gray">—</span>
+                </template>
+                <template v-if="column.key === 'wb_review_type'">
+                  <span style="font-size:12px">{{ task.review_type || '—' }}</span>
+                </template>
+                <template v-if="column.key === 'wb_review_level'">
+                  <span style="font-size:12px">{{ task.review_level || '—' }}</span>
+                </template>
+                <template v-if="column.key === 'wb_price'">
+                  <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
+                </template>
+                <template v-if="column.key === 'wb_status'">
+                  <a-tag :color="getStatusColor(task.status)" size="small">{{ task.status }}</a-tag>
+                </template>
+                <template v-if="column.key === 'wb_buyer'">
+                  <span v-if="task.buyer_name">{{ task.buyer_name }}</span>
+                  <span v-else class="text-gray">未分配</span>
+                </template>
+                <template v-if="column.key === 'wb_action'">
+                  <a-button type="link" size="small" @click="task._expanded = true; wbViewMode = 'card'">详情</a-button>
+                </template>
+              </template>
+            </a-table>
           </div>
 
           <!-- 任务卡片列表 -->
@@ -662,6 +726,21 @@ const rejectForm = ref<any>({ reason: '' })
 const rejectTarget = ref<any>(null)
 
 const workflowSteps = [0, 1, 2, 3, 4, 5]
+const wbViewMode = ref<'card' | 'table'>('card')
+
+const wbSubColumns = [
+  { title: '子订单号', key: 'wb_no', width: 165 },
+  { title: '产品名/ASIN', key: 'wb_product', width: 180 },
+  { title: '关键词', key: 'wb_keyword', width: 130 },
+  { title: '变体', key: 'wb_variant', width: 80 },
+  { title: '排期日期', key: 'wb_scheduled', width: 95 },
+  { title: '测评类型', key: 'wb_review_type', width: 80 },
+  { title: '测评等级', key: 'wb_review_level', width: 80 },
+  { title: '产品售价', key: 'wb_price', width: 90 },
+  { title: '状态', key: 'wb_status', width: 85 },
+  { title: '买手', key: 'wb_buyer', width: 90 },
+  { title: '操作', key: 'wb_action', width: 80, fixed: 'right' as const },
+]
 
 const filteredStaff = computed(() =>
   staffList.value.filter(s => !staffSearch.value || s.name.includes(staffSearch.value))
@@ -1475,6 +1554,16 @@ onMounted(() => { loadStaff(); loadBuyers() })
 .filter-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .overdue-label { color: #ef4444; font-weight: 600; }
 .total-hint { font-size: 12px; color: #9ca3af; white-space: nowrap; }
+
+.wb-view-toggle { display: flex; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
+.wb-vbtn { padding: 2px 10px; font-size: 12px; cursor: pointer; color: #6b7280; background: #fff; user-select: none; }
+.wb-vbtn.active { background: #2563eb; color: #fff; }
+.wb-table-view { margin-top: 8px; }
+.sub-product-cell { max-width: 180px; }
+.sub-product-name { font-size: 12px; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.sub-asin { font-family: 'Courier New', monospace; font-size: 11px; color: #6b7280; }
+.variant-text { font-size: 12px; color: #374151; }
+.keyword-tag { font-size: 12px; color: #2563eb; }
 
 .loading-wrap { display: flex; justify-content: center; padding: 60px 0; background: #fff; border-radius: 12px; }
 .empty-list { background: #fff; border-radius: 12px; padding: 40px 0; }

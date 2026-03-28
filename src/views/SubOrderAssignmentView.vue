@@ -196,6 +196,12 @@
                 <template v-if="column.key === 'sub_no'">
                   <span class="sub-no">{{ sub.sub_order_number }}</span>
                 </template>
+                <template v-if="column.key === 'sub_product'">
+                  <div class="sub-product-cell">
+                    <div v-if="sub.product_name" class="sub-product-name">{{ sub.product_name }}</div>
+                    <div class="sub-asin mono-sm">{{ sub.asin || '—' }}</div>
+                  </div>
+                </template>
                 <template v-if="column.key === 'sub_keyword'">
                   <div class="kw-cell" @click="openKwEdit(sub)">
                     <template v-if="sub.keyword_type === 'link'">
@@ -222,32 +228,21 @@
                   </span>
                   <span v-else class="text-gray">—</span>
                 </template>
-                <template v-if="column.key === 'sub_status'">
-                  <a-tag :color="getSubStatusColor(sub.status)" size="small">{{ sub.status || '待分配' }}</a-tag>
+                <template v-if="column.key === 'sub_review_type'">
+                  <span style="font-size:12px">{{ sub.review_type || '—' }}</span>
+                </template>
+                <template v-if="column.key === 'sub_review_level'">
+                  <span style="font-size:12px">{{ sub.review_level || '—' }}</span>
                 </template>
                 <template v-if="column.key === 'sub_price'">
-                  <div>
-                    <div class="price-main">${{ Number(sub.product_price || 0).toFixed(2) }}</div>
-                    <div class="price-sub">¥{{ Number(sub.unit_price || 0).toFixed(2) }}</div>
-                  </div>
+                  <span class="price-main">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
                 </template>
                 <template v-if="column.key === 'sub_staff'">
                   <span v-if="sub.staff_name" class="staff-assigned">{{ sub.staff_name }}</span>
                   <span v-else class="text-gray">未分配</span>
                 </template>
-                <template v-if="column.key === 'sub_buyer'">
-                  <span v-if="sub.buyer_name">{{ sub.buyer_name }}</span>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'sub_amazon_order'">
-                  <span v-if="sub.amazon_order_id" class="order-num-sm">{{ sub.amazon_order_id }}</span>
-                  <span v-else class="text-gray">—</span>
-                </template>
                 <template v-if="column.key === 'sub_action'">
-                  <a-space>
-                    <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
-                    <a-button type="link" size="small" danger @click="openMarkIssue(sub)">问题单</a-button>
-                  </a-space>
+                  <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
                 </template>
               </template>
             </a-table>
@@ -272,16 +267,16 @@
         >
           <template #bodyCell="{ column, record: sub }">
             <template v-if="column.key === 'flat_order'">
-              <div>
-                <span class="flat-order-num">{{ sub._order_number }}</span>
-                <div class="flat-order-meta">
-                  <span class="flat-asin">{{ sub.asin }}</span>
-                  <span v-if="sub.store_name" class="flat-store">{{ sub.store_name }}</span>
-                </div>
-              </div>
+              <span class="flat-order-num">{{ sub._order_number }}</span>
             </template>
             <template v-if="column.key === 'flat_sub_no'">
               <span class="sub-no">{{ sub.sub_order_number }}</span>
+            </template>
+            <template v-if="column.key === 'flat_product'">
+              <div class="sub-product-cell">
+                <div v-if="sub.product_name" class="sub-product-name">{{ sub.product_name }}</div>
+                <div class="sub-asin mono-sm">{{ sub.asin || '—' }}</div>
+              </div>
             </template>
             <template v-if="column.key === 'flat_keyword'">
               <div class="kw-cell" @click="openKwEdit(sub)">
@@ -299,9 +294,12 @@
             </template>
             <template v-if="column.key === 'flat_type'">
               <div class="flat-type-cell">
-                <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                <span style="font-size:12px">{{ sub.review_type || '—' }}</span>
                 <span v-if="sub.country" class="flat-country">{{ sub.country }}</span>
               </div>
+            </template>
+            <template v-if="column.key === 'flat_level'">
+              <span style="font-size:12px">{{ sub.review_level || '—' }}</span>
             </template>
             <template v-if="column.key === 'flat_scheduled'">
               <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
@@ -309,26 +307,15 @@
               </span>
               <span v-else class="text-gray">—</span>
             </template>
-            <template v-if="column.key === 'flat_status'">
-              <a-tag :color="getSubStatusColor(sub.status)" size="small">{{ sub.status || '待分配' }}</a-tag>
+            <template v-if="column.key === 'flat_price'">
+              <span class="price-main">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
             </template>
             <template v-if="column.key === 'flat_staff'">
               <span v-if="sub.staff_name" class="staff-assigned">{{ sub.staff_name }}</span>
               <span v-else class="text-gray">未分配</span>
             </template>
-            <template v-if="column.key === 'flat_buyer'">
-              <span v-if="sub.buyer_name">{{ sub.buyer_name }}</span>
-              <span v-else class="text-gray">—</span>
-            </template>
-            <template v-if="column.key === 'flat_amazon'">
-              <span v-if="sub.amazon_order_id" class="order-num-sm">{{ sub.amazon_order_id }}</span>
-              <span v-else class="text-gray">—</span>
-            </template>
             <template v-if="column.key === 'flat_action'">
-              <a-space>
-                <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
-                <a-button type="link" size="small" danger @click="openMarkIssue(sub)">问题单</a-button>
-              </a-space>
+              <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
             </template>
           </template>
         </a-table>
@@ -779,28 +766,28 @@ const countries = ['美国', '德国', '英国', '加拿大']
 
 const subColumns = [
   { title: '子订单号', key: 'sub_no', width: 165 },
+  { title: '产品名/ASIN', key: 'sub_product', width: 180 },
   { title: '关键词', key: 'sub_keyword', width: 130 },
-  { title: '变参', key: 'sub_variant', width: 80 },
+  { title: '变体', key: 'sub_variant', width: 80 },
   { title: '排期日期', key: 'sub_scheduled', width: 95 },
-  { title: '状态', key: 'sub_status', width: 85 },
-  { title: '产品价/单价', key: 'sub_price', width: 105 },
+  { title: '测评类型', key: 'sub_review_type', width: 80 },
+  { title: '测评等级', key: 'sub_review_level', width: 80 },
+  { title: '产品售价', key: 'sub_price', width: 90 },
   { title: '业务员', key: 'sub_staff', width: 90 },
-  { title: '买手', key: 'sub_buyer', width: 80 },
-  { title: '亚马逊订单号', key: 'sub_amazon_order', width: 145 },
-  { title: '操作', key: 'sub_action', width: 80, fixed: 'right' },
+  { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
 ]
 
 const flatColumns = [
-  { title: '主订单', key: 'flat_order', width: 180 },
+  { title: '主订单', key: 'flat_order', width: 160 },
   { title: '子订单号', key: 'flat_sub_no', width: 165 },
+  { title: '产品名/ASIN', key: 'flat_product', width: 180 },
   { title: '关键词', key: 'flat_keyword', width: 130 },
-  { title: '类型/国家', key: 'flat_type', width: 110 },
+  { title: '测评类型/国家', key: 'flat_type', width: 115 },
+  { title: '测评等级', key: 'flat_level', width: 80 },
   { title: '排期日期', key: 'flat_scheduled', width: 95 },
-  { title: '状态', key: 'flat_status', width: 85 },
+  { title: '产品售价', key: 'flat_price', width: 90 },
   { title: '业务员', key: 'flat_staff', width: 90 },
-  { title: '买手', key: 'flat_buyer', width: 80 },
-  { title: '亚马逊订单号', key: 'flat_amazon', width: 145 },
-  { title: '操作', key: 'flat_action', width: 80, fixed: 'right' },
+  { title: '操作', key: 'flat_action', width: 80, fixed: 'right' as const },
 ]
 
 const groupedOrders = computed(() => {
@@ -1623,6 +1610,9 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
   font-weight: 700;
   color: #2563eb;
 }
+.sub-product-cell { max-width: 180px; }
+.sub-product-name { font-size: 12px; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.sub-asin { font-family: 'Courier New', monospace; font-size: 11px; color: #6b7280; }
 .flat-order-meta {
   display: flex;
   gap: 6px;

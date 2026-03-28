@@ -195,18 +195,18 @@
                   </span>
                   <span v-else class="text-gray">—</span>
                 </template>
-                <template v-if="column.key === 'sub_status'">
-                  <a-tag :color="getSubStatusColor(sub.status)" size="small">{{ sub.status || '待分配' }}</a-tag>
-                </template>
-                <template v-if="column.key === 'sub_order_type'">
-                  <a-tag v-if="sub.order_type" :color="getOrderTypeColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
-                  <span v-else class="text-gray">—</span>
-                </template>
                 <template v-if="column.key === 'sub_review_type'">
                   <span style="font-size:12px">{{ sub.review_type || '—' }}</span>
                 </template>
                 <template v-if="column.key === 'sub_review_level'">
                   <span style="font-size:12px">{{ sub.review_level || '—' }}</span>
+                </template>
+                <template v-if="column.key === 'sub_price'">
+                  <span class="price-text">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
+                </template>
+                <template v-if="column.key === 'sub_actual_paid'">
+                  <span v-if="sub.actual_paid" class="price-text">${{ Number(sub.actual_paid).toFixed(2) }}</span>
+                  <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_staff'">
                   <span v-if="sub.staff_name" class="staff-name">{{ sub.staff_name }}</span>
@@ -220,10 +220,34 @@
                   <span v-if="sub.amazon_order_id" class="order-num-sm">{{ sub.amazon_order_id }}</span>
                   <span v-else class="text-gray">—</span>
                 </template>
+                <template v-if="column.key === 'sub_progress'">
+                  <div class="sub-progress-cell">
+                    <span :class="['prog-dot', sub.buyer_id ? 'done' : 'pending']" title="已分买手"></span>
+                    <span :class="['prog-dot', sub.amazon_order_id ? 'done' : 'pending']" title="已下单"></span>
+                    <span :class="['prog-dot', sub.delivery_confirmed_at ? 'done' : 'pending']" title="已签收"></span>
+                    <span :class="['prog-dot', sub.review_screenshot_url ? 'done' : 'pending']" title="已留评"></span>
+                    <span class="prog-label">{{ getSubProgressLabel(sub) }}</span>
+                  </div>
+                </template>
+                <template v-if="column.key === 'sub_order_status'">
+                  <a-tag :color="getSubOrderStatusColor(sub.order_status)" size="small">{{ sub.order_status || '正常' }}</a-tag>
+                </template>
+                <template v-if="column.key === 'sub_review'">
+                  <a v-if="sub.review_screenshot_url" :href="sub.review_screenshot_url" target="_blank" class="media-link">
+                    <PictureOutlined /> 查看
+                  </a>
+                  <span v-else class="text-gray">—</span>
+                </template>
+                <template v-if="column.key === 'sub_fb'">
+                  <a v-if="sub.fb_screenshot_url" :href="sub.fb_screenshot_url" target="_blank" class="media-link">
+                    <PictureOutlined /> 查看
+                  </a>
+                  <span v-else class="text-gray">—</span>
+                </template>
                 <template v-if="column.key === 'sub_refund'">
-                  <div v-if="sub.refund_status">
-                    <a-tag color="orange" size="small">{{ sub.refund_status }}</a-tag>
-                    <div v-if="sub.refund_amount" class="refund-amount">¥{{ Number(sub.refund_amount).toFixed(2) }}</div>
+                  <div v-if="sub.refund_method || sub.refund_amount">
+                    <div class="refund-method-tag">{{ sub.refund_method || '—' }}</div>
+                    <div v-if="sub.refund_amount" class="refund-amount">${{ Number(sub.refund_amount).toFixed(2) }}</div>
                   </div>
                   <span v-else class="text-gray">—</span>
                 </template>
@@ -637,17 +661,21 @@ const countries = ['美国', '德国', '英国', '加拿大']
 const subColumns = [
   { title: '子订单号', key: 'sub_no', width: 165 },
   { title: '关键词', key: 'sub_keyword', width: 130 },
-  { title: '变参', key: 'sub_variant', width: 80 },
+  { title: '变体', key: 'sub_variant', width: 80 },
   { title: '排期日期', key: 'sub_scheduled', width: 95 },
-  { title: '状态', key: 'sub_status', width: 85 },
-  { title: '下单类型', key: 'sub_order_type', width: 80 },
   { title: '测评类型', key: 'sub_review_type', width: 80 },
-  { title: '评价等级', key: 'sub_review_level', width: 75 },
+  { title: '测评等级', key: 'sub_review_level', width: 75 },
+  { title: '产品售价', key: 'sub_price', width: 90 },
+  { title: '实付金额', key: 'sub_actual_paid', width: 90 },
   { title: '业务员', key: 'sub_staff', width: 80 },
   { title: '买手', key: 'sub_buyer', width: 80 },
   { title: '亚马逊订单号', key: 'sub_amazon_order', width: 145 },
-  { title: '退款', key: 'sub_refund', width: 100 },
-  { title: '操作', key: 'sub_action', width: 100, fixed: 'right' },
+  { title: '订单进度', key: 'sub_progress', width: 120 },
+  { title: '订单状态', key: 'sub_order_status', width: 100 },
+  { title: '评价', key: 'sub_review', width: 70 },
+  { title: 'FB', key: 'sub_fb', width: 60 },
+  { title: '返款', key: 'sub_refund', width: 130 },
+  { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
 ]
 
 const schedulesMap = ref<Record<string, any[]>>({})
@@ -660,6 +688,19 @@ function getStatusColor(status: string) {
 function getSubStatusColor(status: string) {
   const map: Record<string, string> = { '待分配': 'default', '已分配': 'cyan', '进行中': 'blue', '已下单': 'orange', '已留评': 'geekblue', '已完成': 'green', '已取消': 'red' }
   return map[status] || 'default'
+}
+
+function getSubOrderStatusColor(status: string) {
+  const map: Record<string, string> = { '正常': 'green', '不下单': 'orange', '无此订单': 'red', '取消': 'red', '退款': 'gold' }
+  return map[status] || 'default'
+}
+
+function getSubProgressLabel(sub: any): string {
+  if (sub.review_screenshot_url) return '已留评'
+  if (sub.delivery_confirmed_at) return '已签收'
+  if (sub.amazon_order_id) return '已下单'
+  if (sub.buyer_id) return '已分配'
+  return '待分配'
 }
 
 function getReviewLevelColor(level: string) {
@@ -1269,6 +1310,13 @@ onMounted(() => {
 .price-sub { font-size: 11px; color: #6b7280; }
 .commission-val { font-size: 12px; font-weight: 600; color: #059669; }
 .refund-amount { font-size: 11px; color: #f59e0b; font-weight: 600; margin-top: 2px; }
+.refund-method-tag { font-size: 11px; color: #6b7280; }
+.media-link { font-size: 11px; color: #2563eb; display: inline-flex; align-items: center; gap: 2px; }
+.sub-progress-cell { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.prog-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.prog-dot.done { background: #16a34a; }
+.prog-dot.pending { background: #d1d5db; }
+.prog-label { font-size: 10px; color: #6b7280; margin-left: 2px; }
 .staff-name { color: #374151; font-size: 12px; }
 .text-gray { color: #9ca3af; font-size: 12px; }
 .text-red { color: #dc2626; }

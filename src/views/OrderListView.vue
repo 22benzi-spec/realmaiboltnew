@@ -103,6 +103,9 @@
 
           <template v-if="column.key === 'order_types'">
             <div class="order-types-cell">
+              <div class="review-type-line">
+                <a-tag :color="getReviewTypeColor(record.review_type)" size="small">{{ record.review_type || '—' }}</a-tag>
+              </div>
               <template v-if="hasMultipleTypes(record)">
                 <div v-for="t in record.order_types" :key="t" class="type-qty-row">
                   <a-tag :color="getOrderTypeColor(t)" size="small">{{ t }}</a-tag>
@@ -115,6 +118,37 @@
                 </a-tag>
                 <span class="type-qty">&times;{{ record.order_quantity }}</span>
               </template>
+            </div>
+          </template>
+
+          <template v-if="column.key === 'chat_order_id'">
+            <span v-if="record.chat_order_id" class="chat-order-id">{{ record.chat_order_id }}</span>
+            <a-button v-else type="link" size="small" class="set-link" @click="openEditChatId(record)">设置</a-button>
+          </template>
+
+          <template v-if="column.key === 'order_progress'">
+            <div class="order-progress-cell">
+              <div class="progress-bar-wrap">
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill" :style="{ width: getOrderProgressPct(record) + '%' }"></div>
+                </div>
+                <span class="progress-pct">{{ getOrderProgressPct(record) }}%</span>
+              </div>
+              <div class="progress-stats-row">
+                <span class="ps-item">已下单 <b>{{ record._ordered_count || 0 }}</b></span>
+                <span class="ps-sep">/</span>
+                <span class="ps-item">已留评 <b>{{ record._review_count || 0 }}</b></span>
+                <span class="ps-sep">/</span>
+                <span class="ps-total">{{ record.order_quantity || 0 }}</span>
+              </div>
+            </div>
+          </template>
+
+          <template v-if="column.key === 'sub_order_status'">
+            <div class="sub-status-summary">
+              <div v-if="(record._cancel_count || 0) > 0" class="ss-item ss-cancel">取消 {{ record._cancel_count }}</div>
+              <div v-if="(record._refund_count || 0) > 0" class="ss-item ss-refund">退款 {{ record._refund_count }}</div>
+              <div v-if="(record._cancel_count || 0) === 0 && (record._refund_count || 0) === 0" class="ss-item ss-normal">正常</div>
             </div>
           </template>
 
@@ -158,8 +192,13 @@
             </div>
           </template>
 
-          <template v-if="column.key === 'status'">
-            <a-tag :color="getStatusColor(record.status)">{{ record.status }}</a-tag>
+          <template v-if="column.key === 'refund_summary'">
+            <div v-if="record._refund_total > 0" class="refund-summary-cell">
+              <div class="rs-method">{{ record._refund_method_summary || '—' }}</div>
+              <div class="rs-amount">${{ Number(record._refund_total || 0).toFixed(2) }}</div>
+              <div v-if="record._refund_date_summary" class="rs-date">{{ record._refund_date_summary }}</div>
+            </div>
+            <span v-else class="text-empty">—</span>
           </template>
 
           <template v-if="column.key === 'total_amount'">
@@ -858,6 +897,17 @@
         <div v-if="groupDetailData.notes" class="gd-notes">备注：{{ groupDetailData.notes }}</div>
       </div>
     </a-modal>
+
+    <!-- 聊单号编辑弹窗 -->
+    <a-modal v-model:open="editChatIdOpen" title="设置聊单号" :footer="null" width="400px">
+      <div style="padding:8px 0 16px">
+        <a-input v-model:value="editChatIdValue" placeholder="输入聊单号..." allow-clear />
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <a-button @click="editChatIdOpen = false">取消</a-button>
+        <a-button type="primary" :loading="savingChatId" @click="saveChatId">保存</a-button>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -1012,17 +1062,57 @@ const rowSelection = computed(() => ({
 const columns = [
   { title: '任务号', key: 'order_number', dataIndex: 'order_number', width: 175 },
   { title: '产品信息', key: 'product', width: 220 },
-  { title: '国家', key: 'country', dataIndex: 'country', width: 75 },
-  { title: '测评类型', dataIndex: 'review_type', key: 'review_type', width: 95 },
-  { title: '下单类型/量', key: 'order_types', width: 150 },
-  { title: '反馈状态', key: 'feedback', width: 140 },
-  { title: '账单状态', key: 'billing', width: 140 },
-  { title: '总金额', key: 'total_amount', width: 100 },
-  { title: '状态', key: 'status', width: 85 },
-  { title: '对接商务/客户', key: 'sales_person', width: 125 },
-  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' as const },
+  { title: '国家', key: 'country', dataIndex: 'country', width: 65 },
+  { title: '测评类型/量', key: 'order_types', width: 135 },
+  { title: '聊单号', key: 'chat_order_id', width: 120 },
+  { title: '订单进度', key: 'order_progress', width: 130 },
+  { title: '订单状态', key: 'sub_order_status', width: 95 },
+  { title: '反馈状态', key: 'feedback', width: 130 },
+  { title: '账单状态', key: 'billing', width: 130 },
+  { title: '返款', key: 'refund_summary', width: 140 },
+  { title: '总金额', key: 'total_amount', width: 95 },
+  { title: '对接商务/客户', key: 'sales_person', width: 115 },
+  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 100, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
+  { title: '操作', key: 'action', width: 160, fixed: 'right' as const },
 ]
+
+const editChatIdOpen = ref(false)
+const editChatIdRecord = ref<any>(null)
+const editChatIdValue = ref('')
+const savingChatId = ref(false)
+
+function openEditChatId(record: any) {
+  editChatIdRecord.value = record
+  editChatIdValue.value = record.chat_order_id || ''
+  editChatIdOpen.value = true
+}
+
+async function saveChatId() {
+  if (!editChatIdRecord.value) return
+  savingChatId.value = true
+  try {
+    const { error } = await supabase.from('erp_orders').update({ chat_order_id: editChatIdValue.value || null }).eq('id', editChatIdRecord.value.id)
+    if (error) throw error
+    editChatIdRecord.value.chat_order_id = editChatIdValue.value
+    editChatIdOpen.value = false
+    message.success('聊单号已保存')
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    savingChatId.value = false
+  }
+}
+
+function getReviewTypeColor(type: string) {
+  const map: Record<string, string> = { '真人测评': 'blue', '自然测评': 'cyan', '催评': 'orange', 'Vine': 'green' }
+  return map[type] || 'default'
+}
+
+function getOrderProgressPct(record: any): number {
+  const total = Number(record.order_quantity || 0)
+  if (!total) return 0
+  return Math.round(((record._review_count || 0) / total) * 100)
+}
 
 function getStatusColor(status: string) {
   const map: Record<string, string> = { '待处理': 'default', '进行中': 'blue', '已完成': 'green', '已取消': 'red', '暂停': 'orange' }
@@ -1151,6 +1241,45 @@ async function loadOrders() {
       row._isFirstInBatch = group[0].id === row.id
       row._isLastInBatch = group[group.length - 1].id === row.id
     }
+    // 子订单统计
+    const orderIds = rows.map((r: any) => r.id)
+    if (orderIds.length > 0) {
+      const { data: subs } = await supabase
+        .from('sub_orders')
+        .select('order_id, status, order_status, refund_method, refund_amount, refund_date')
+        .in('order_id', orderIds)
+      if (subs) {
+        const statsMap: Record<string, any> = {}
+        for (const s of subs) {
+          if (!statsMap[s.order_id]) {
+            statsMap[s.order_id] = { ordered: 0, reviewed: 0, cancel: 0, refund_count: 0, refund_total: 0, methods: new Set<string>(), dates: [] }
+          }
+          const st = statsMap[s.order_id]
+          if (s.status && ['已下单', '已留评', '已完成'].includes(s.status)) st.ordered++
+          if (s.status && ['已留评', '已完成'].includes(s.status)) st.reviewed++
+          if (s.order_status === '取消') st.cancel++
+          if (s.order_status === '退款' || s.refund_amount) { st.refund_count++; st.refund_total += Number(s.refund_amount || 0) }
+          if (s.refund_method) st.methods.add(s.refund_method)
+          if (s.refund_date) st.dates.push(s.refund_date)
+        }
+        for (const row of rows) {
+          const st = statsMap[row.id]
+          if (st) {
+            row._ordered_count = st.ordered
+            row._review_count = st.reviewed
+            row._cancel_count = st.cancel
+            row._refund_count = st.refund_count
+            row._refund_total = st.refund_total
+            row._refund_method_summary = [...st.methods].join('/')
+            row._refund_date_summary = st.dates.length ? st.dates.sort().slice(-1)[0] : ''
+          } else {
+            row._ordered_count = 0; row._review_count = 0; row._cancel_count = 0
+            row._refund_count = 0; row._refund_total = 0
+          }
+        }
+      }
+    }
+
     orders.value = rows
     pagination.value.total = count || 0
   } catch (e: any) {
@@ -1832,6 +1961,31 @@ onMounted(loadOrders)
 
 .amount { font-weight: 600; color: #2563eb; }
 .text-empty { color: #d1d5db; font-size: 13px; }
+
+.review-type-line { margin-bottom: 3px; }
+.chat-order-id { font-size: 12px; color: #374151; font-family: 'Courier New', monospace; }
+.set-link { padding: 0; height: auto; font-size: 11px; }
+
+.order-progress-cell { display: flex; flex-direction: column; gap: 3px; min-width: 110px; }
+.progress-bar-wrap { display: flex; align-items: center; gap: 5px; }
+.progress-bar-bg { flex: 1; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+.progress-bar-fill { height: 100%; background: #16a34a; border-radius: 3px; transition: width 0.3s; }
+.progress-pct { font-size: 11px; font-weight: 600; color: #374151; min-width: 30px; }
+.progress-stats-row { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #6b7280; }
+.ps-item b { color: #374151; }
+.ps-sep { color: #d1d5db; }
+.ps-total { color: #9ca3af; }
+
+.sub-status-summary { display: flex; flex-direction: column; gap: 2px; }
+.ss-item { font-size: 11px; padding: 1px 6px; border-radius: 3px; display: inline-block; width: fit-content; }
+.ss-normal { background: #f0fdf4; color: #16a34a; }
+.ss-cancel { background: #fef2f2; color: #dc2626; }
+.ss-refund { background: #fffbeb; color: #d97706; }
+
+.refund-summary-cell { display: flex; flex-direction: column; gap: 2px; }
+.rs-method { font-size: 11px; color: #6b7280; }
+.rs-amount { font-size: 12px; font-weight: 600; color: #f59e0b; }
+.rs-date { font-size: 10px; color: #9ca3af; }
 
 .sales-cell { display: flex; flex-direction: column; gap: 2px; }
 .sales-name { font-size: 13px; font-weight: 500; color: #374151; display: flex; align-items: center; }
