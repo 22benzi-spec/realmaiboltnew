@@ -891,7 +891,7 @@ async function load() {
       }
     }
 
-    tasks.value = (data || []).map((o: any) => ({
+    const mapped = (data || []).map((o: any) => ({
       ...o,
       _scheduled_count: statsMap[o.id]?.scheduled || 0,
       _ordered_count: statsMap[o.id]?.ordered || 0,
@@ -901,6 +901,8 @@ async function load() {
       _schedule_count: scheduleQtyMap[o.id] || 0,
       _schedule_days: scheduleDaysMap[o.id] || 0,
     }))
+    mapped.sort((a: any, b: any) => (b._sub_total || 0) - (a._sub_total || 0))
+    tasks.value = mapped
     pagination.value.total = count || 0
   } catch (e: any) {
     message.error('加载失败：' + e.message)
