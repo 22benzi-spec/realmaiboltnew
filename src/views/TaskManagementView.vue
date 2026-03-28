@@ -66,7 +66,6 @@
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">类目：{{ record.category || '—' }}</span>
-                <span class="detail-sep">单价：<span class="price-text">${{ Number(record.product_price || 0).toFixed(2) }}</span></span>
                 <span class="detail-sep">客户：{{ record.customer_name || '—' }}</span>
                 <span class="detail-sep">业务员：{{ record.sales_person || '—' }}</span>
               </div>
@@ -162,8 +161,20 @@
                   <span class="sub-no">{{ sub.sub_order_number }}</span>
                 </template>
                 <template v-if="column.key === 'sub_keyword'">
-                  <span v-if="sub.keyword" class="keyword-tag">{{ sub.keyword }}</span>
-                  <span v-else class="text-gray">—</span>
+                  <div class="kw-cell" @click="openKwEdit(sub)">
+                    <template v-if="sub.keyword_type === 'link'">
+                      <a-tag color="cyan" size="small" style="cursor:pointer">
+                        <LinkOutlined /> 链接
+                      </a-tag>
+                    </template>
+                    <template v-else-if="sub.keyword">
+                      <span class="keyword-tag" style="cursor:pointer">{{ sub.keyword }}</span>
+                    </template>
+                    <template v-else>
+                      <span class="text-gray kw-empty" style="cursor:pointer">点击设置</span>
+                    </template>
+                    <EditOutlined class="kw-edit-icon" />
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_variant'">
                   <span v-if="sub.variant_info" class="variant-text">{{ sub.variant_info }}</span>
@@ -199,15 +210,6 @@
                 <template v-if="column.key === 'sub_amazon_order'">
                   <span v-if="sub.amazon_order_id" class="order-num-sm">{{ sub.amazon_order_id }}</span>
                   <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'sub_price'">
-                  <div>
-                    <div class="price-main">${{ Number(sub.product_price || 0).toFixed(2) }}</div>
-                    <div class="price-sub">¥{{ Number(sub.unit_price || 0).toFixed(2) }}</div>
-                  </div>
-                </template>
-                <template v-if="column.key === 'sub_commission'">
-                  <span class="commission-val">¥{{ Number(sub.commission_fee || 0).toFixed(2) }}</span>
                 </template>
                 <template v-if="column.key === 'sub_refund'">
                   <div v-if="sub.refund_status">
@@ -247,6 +249,40 @@
         />
       </div>
     </div>
+
+    <!-- 关键词/链接编辑弹窗 -->
+    <a-modal
+      v-model:open="kwEditOpen"
+      title="修改关键词 / 链接"
+      @ok="saveKwEdit"
+      :confirm-loading="kwEditSaving"
+      ok-text="保存"
+      cancel-text="取消"
+      width="460px"
+    >
+      <div class="kw-edit-modal-body">
+        <div class="kw-edit-sub-no" v-if="kwEditRecord">子单号：{{ kwEditRecord.sub_order_number }}</div>
+        <div class="kw-edit-mode-row">
+          <span class="kw-edit-label">类型：</span>
+          <div class="kw-mode-toggle">
+            <span :class="['kw-mode-btn', kwEditMode === 'keyword' ? 'active' : '']" @click="kwEditMode = 'keyword'">关键词搜索</span>
+            <span :class="['kw-mode-btn', kwEditMode === 'link' ? 'active kw-mode-link' : '']" @click="kwEditMode = 'link'">操作链接</span>
+          </div>
+        </div>
+        <div class="kw-edit-input-row">
+          <span class="kw-edit-label">{{ kwEditMode === 'keyword' ? '关键词：' : '链接：' }}</span>
+          <a-input
+            v-model:value="kwEditValue"
+            :placeholder="kwEditMode === 'keyword' ? '输入搜索关键词' : '粘贴操作链接 (https://...)'"
+            allow-clear
+            style="flex:1"
+          />
+        </div>
+        <div v-if="kwEditMode === 'link' && kwEditValue" class="kw-link-preview">
+          <a :href="kwEditValue" target="_blank" rel="noopener noreferrer">预览链接</a>
+        </div>
+      </div>
+    </a-modal>
 
     <!-- 子订单详情/编辑弹窗 -->
     <a-modal
@@ -331,28 +367,6 @@
               <div class="detail-item"><label>下单类型</label><span>{{ detailRecord.order_type || '—' }}</span></div>
               <div class="detail-item"><label>测评类型</label><span>{{ detailRecord.review_type || '—' }}</span></div>
               <div class="detail-item"><label>评价等级</label><span>{{ detailRecord.review_level || '—' }}</span></div>
-              <div class="detail-item">
-                <label>产品价格(USD)</label>
-                <template v-if="editMode">
-                  <a-input-number v-model:value="editForm.product_price" size="small" :min="0" :precision="2" prefix="$" style="width:100%" />
-                </template>
-                <span v-else class="price-usd">${{ Number(detailRecord.product_price || 0).toFixed(2) }}</span>
-              </div>
-              <div class="detail-item"><label>汇率</label><span>{{ detailRecord.exchange_rate || '—' }}</span></div>
-              <div class="detail-item">
-                <label>单价(CNY)</label>
-                <template v-if="editMode">
-                  <a-input-number v-model:value="editForm.unit_price" size="small" :min="0" :precision="2" prefix="¥" style="width:100%" />
-                </template>
-                <span v-else class="price-highlight">¥{{ Number(detailRecord.unit_price || 0).toFixed(2) }}</span>
-              </div>
-              <div class="detail-item">
-                <label>佣金</label>
-                <template v-if="editMode">
-                  <a-input-number v-model:value="editForm.commission_fee" size="small" :min="0" :precision="2" prefix="¥" style="width:100%" />
-                </template>
-                <span v-else class="commission-highlight">¥{{ Number(detailRecord.commission_fee || 0).toFixed(2) }}</span>
-              </div>
               <div class="detail-item">
                 <label>关键词</label>
                 <template v-if="editMode">
@@ -530,7 +544,7 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined, RightOutlined, ThunderboltOutlined,
-  DeleteOutlined, EditOutlined, SaveOutlined
+  DeleteOutlined, EditOutlined, SaveOutlined, LinkOutlined, PictureOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -572,8 +586,6 @@ const subColumns = [
   { title: '业务员', key: 'sub_staff', width: 80 },
   { title: '买手', key: 'sub_buyer', width: 80 },
   { title: '亚马逊订单号', key: 'sub_amazon_order', width: 145 },
-  { title: '产品价/单价', key: 'sub_price', width: 105 },
-  { title: '佣金', key: 'sub_commission', width: 80 },
   { title: '退款', key: 'sub_refund', width: 100 },
   { title: '操作', key: 'sub_action', width: 100, fixed: 'right' },
 ]
@@ -938,6 +950,45 @@ function onPageChange(page: number, pageSize: number) {
   load()
 }
 
+const kwEditOpen = ref(false)
+const kwEditRecord = ref<any>(null)
+const kwEditMode = ref<'keyword' | 'link'>('keyword')
+const kwEditValue = ref('')
+const kwEditSaving = ref(false)
+
+function openKwEdit(sub: any) {
+  kwEditRecord.value = sub
+  kwEditMode.value = (sub.keyword_type === 'link' ? 'link' : 'keyword') as 'keyword' | 'link'
+  kwEditValue.value = sub.keyword_type === 'link' ? (sub.search_link || '') : (sub.keyword || '')
+  kwEditOpen.value = true
+}
+
+async function saveKwEdit() {
+  if (!kwEditRecord.value) return
+  kwEditSaving.value = true
+  try {
+    const updates: Record<string, any> = {
+      keyword_type: kwEditMode.value,
+      keyword: kwEditMode.value === 'keyword' ? kwEditValue.value.trim() : '',
+      search_link: kwEditMode.value === 'link' ? kwEditValue.value.trim() : '',
+    }
+    const { error } = await supabase.from('sub_orders').update(updates).eq('id', kwEditRecord.value.id)
+    if (error) throw error
+    Object.assign(kwEditRecord.value, updates)
+    const orderId = kwEditRecord.value.order_id
+    if (orderId && subOrdersMap.value[orderId]) {
+      const sub = subOrdersMap.value[orderId].find((s: any) => s.id === kwEditRecord.value.id)
+      if (sub) Object.assign(sub, updates)
+    }
+    message.success('关键词/链接已更新')
+    kwEditOpen.value = false
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    kwEditSaving.value = false
+  }
+}
+
 onMounted(() => {
   load()
 })
@@ -1300,4 +1351,52 @@ onMounted(() => {
   font-size: 11px;
   border: 1px solid #e2e8f0;
 }
+
+.kw-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.kw-cell:hover .kw-edit-icon { opacity: 1; }
+.kw-edit-icon {
+  font-size: 11px;
+  color: #9ca3af;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.kw-empty { font-size: 11px; }
+.kw-mode-toggle {
+  display: flex;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.kw-mode-btn {
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #6b7280;
+  background: #f9fafb;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+.kw-mode-btn:first-child { border-right: 1px solid #d1d5db; }
+.kw-mode-btn.active { background: #2563eb; color: #fff; }
+.kw-mode-btn.active.kw-mode-link { background: #0891b2; }
+.kw-edit-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0;
+}
+.kw-edit-sub-no { font-size: 12px; color: #9ca3af; font-family: 'Courier New', monospace; }
+.kw-edit-mode-row, .kw-edit-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kw-edit-label { font-size: 13px; color: #374151; white-space: nowrap; min-width: 52px; }
+.kw-link-preview { font-size: 12px; color: #0891b2; padding-left: 62px; }
 </style>

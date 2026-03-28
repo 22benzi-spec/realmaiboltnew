@@ -24,6 +24,8 @@
             <span :class="['pill-remain', { 'remain-urgent': p.today_remaining >= 5, 'remain-ok': p.today_remaining === 0 && p.daily_target > 0 }]">
               {{ p.today_remaining === 0 && p.daily_target > 0 ? '已满' : '剩' + p.today_remaining }}
             </span>
+            <span class="pill-review-tag" title="测评单已分配">评{{ p.review_assigned }}</span>
+            <span class="pill-free-tag" title="免评单已分配">免{{ p.free_assigned }}</span>
           </div>
         </div>
       </div>
@@ -35,6 +37,8 @@
               <th>今日已分配</th>
               <th>今日目标</th>
               <th>今日剩余</th>
+              <th>测评单</th>
+              <th>免评单</th>
               <th>本月完成</th>
               <th>月度目标</th>
               <th>月完成率</th>
@@ -56,6 +60,8 @@
                   {{ p.today_remaining }}
                 </span>
               </td>
+              <td class="aob-t-center"><span class="review-badge">{{ p.review_assigned }}</span></td>
+              <td class="aob-t-center"><span class="free-badge">{{ p.free_assigned }}</span></td>
               <td class="aob-t-center">{{ p.month_done }}</td>
               <td class="aob-t-center">{{ p.monthly_target }}</td>
               <td class="aob-t-center">
@@ -73,7 +79,15 @@
 
     <div class="card-panel">
       <div class="toolbar">
-        <a-input-search v-model:value="searchText" placeholder="搜索订单号/ASIN/店铺" style="width:260px" @search="load" allow-clear />
+        <div class="view-toggle">
+          <span :class="['view-btn', viewMode === 'grouped' ? 'view-btn-active' : '']" @click="switchView('grouped')">
+            <AppstoreOutlined /> 主订单视图
+          </span>
+          <span :class="['view-btn', viewMode === 'flat' ? 'view-btn-active' : '']" @click="switchView('flat')">
+            <UnorderedListOutlined /> 子单平铺
+          </span>
+        </div>
+        <a-input-search v-model:value="searchText" placeholder="搜索订单号/ASIN/店铺" style="width:240px" @search="load" allow-clear />
         <a-select v-model:value="filterStatus" style="width:130px" @change="load" allow-clear placeholder="子单状态">
           <a-select-option value="">全部状态</a-select-option>
           <a-select-option v-for="s in subStatuses" :key="s" :value="s">{{ s }}</a-select-option>
@@ -95,7 +109,8 @@
 
       <div v-if="loading" class="loading-wrap"><a-spin /></div>
 
-      <div v-else class="task-list">
+      <!-- 主订单分组视图 -->
+      <div v-else-if="viewMode === 'grouped'" class="task-list">
         <div v-for="group in groupedOrders" :key="group.order_id" class="task-card">
           <div class="task-main-row">
             <div class="task-expand-btn" @click="toggleExpand(group.order_id)">
@@ -240,6 +255,84 @@
         </div>
 
         <div v-if="groupedOrders.length === 0" class="empty-list">
+          <a-empty description="暂无子单数据" />
+        </div>
+      </div>
+
+      <!-- 子单平铺视图 -->
+      <div v-else-if="viewMode === 'flat'">
+        <a-table
+          :columns="flatColumns"
+          :data-source="subOrders"
+          :row-selection="{ selectedRowKeys: selectedKeys, onChange: onSelectionChange, getCheckboxProps: () => ({}) }"
+          :pagination="false"
+          row-key="id"
+          size="small"
+          :scroll="{ x: 1600 }"
+        >
+          <template #bodyCell="{ column, record: sub }">
+            <template v-if="column.key === 'flat_order'">
+              <div>
+                <span class="flat-order-num">{{ sub._order_number }}</span>
+                <div class="flat-order-meta">
+                  <span class="flat-asin">{{ sub.asin }}</span>
+                  <span v-if="sub.store_name" class="flat-store">{{ sub.store_name }}</span>
+                </div>
+              </div>
+            </template>
+            <template v-if="column.key === 'flat_sub_no'">
+              <span class="sub-no">{{ sub.sub_order_number }}</span>
+            </template>
+            <template v-if="column.key === 'flat_keyword'">
+              <div class="kw-cell" @click="openKwEdit(sub)">
+                <template v-if="sub.keyword_type === 'link'">
+                  <a-tag color="cyan" size="small" style="cursor:pointer"><LinkOutlined /> 链接</a-tag>
+                </template>
+                <template v-else-if="sub.keyword">
+                  <span class="keyword-tag" style="cursor:pointer">{{ sub.keyword }}</span>
+                </template>
+                <template v-else>
+                  <span class="text-gray kw-empty" style="cursor:pointer">点击设置</span>
+                </template>
+                <EditOutlined class="kw-edit-icon" />
+              </div>
+            </template>
+            <template v-if="column.key === 'flat_type'">
+              <div class="flat-type-cell">
+                <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                <span v-if="sub.country" class="flat-country">{{ sub.country }}</span>
+              </div>
+            </template>
+            <template v-if="column.key === 'flat_scheduled'">
+              <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
+                {{ sub.scheduled_date }}
+              </span>
+              <span v-else class="text-gray">—</span>
+            </template>
+            <template v-if="column.key === 'flat_status'">
+              <a-tag :color="getSubStatusColor(sub.status)" size="small">{{ sub.status || '待分配' }}</a-tag>
+            </template>
+            <template v-if="column.key === 'flat_staff'">
+              <span v-if="sub.staff_name" class="staff-assigned">{{ sub.staff_name }}</span>
+              <span v-else class="text-gray">未分配</span>
+            </template>
+            <template v-if="column.key === 'flat_buyer'">
+              <span v-if="sub.buyer_name">{{ sub.buyer_name }}</span>
+              <span v-else class="text-gray">—</span>
+            </template>
+            <template v-if="column.key === 'flat_amazon'">
+              <span v-if="sub.amazon_order_id" class="order-num-sm">{{ sub.amazon_order_id }}</span>
+              <span v-else class="text-gray">—</span>
+            </template>
+            <template v-if="column.key === 'flat_action'">
+              <a-space>
+                <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
+                <a-button type="link" size="small" danger @click="openMarkIssue(sub)">问题单</a-button>
+              </a-space>
+            </template>
+          </template>
+        </a-table>
+        <div v-if="subOrders.length === 0" class="empty-list">
           <a-empty description="暂无子单数据" />
         </div>
       </div>
@@ -536,7 +629,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { UserAddOutlined, ReloadOutlined, RightOutlined, SearchOutlined, CheckCircleOutlined, EditOutlined, LinkOutlined } from '@ant-design/icons-vue'
+import { UserAddOutlined, ReloadOutlined, RightOutlined, SearchOutlined, CheckCircleOutlined, EditOutlined, LinkOutlined, AppstoreOutlined, UnorderedListOutlined } from '@ant-design/icons-vue'
 
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -544,6 +637,12 @@ import { supabase } from '../lib/supabase'
 const loading = ref(false)
 const subOrders = ref<any[]>([])
 const staffList = ref<any[]>([])
+const viewMode = ref<'grouped' | 'flat'>('grouped')
+
+function switchView(mode: 'grouped' | 'flat') {
+  viewMode.value = mode
+  selectedKeys.value = []
+}
 
 const perfList = ref<any[]>([])
 const perfExpanded = ref(false)
@@ -584,11 +683,12 @@ async function loadPerfPanel() {
 
   const staffIds = staffData.map(s => s.id)
 
-  const [{ data: targets }, { data: todaySubs }, { data: monthSubs }, { data: pendingSubs }] = await Promise.all([
+  const [{ data: targets }, { data: todaySubs }, { data: monthSubs }, { data: pendingSubs }, { data: assignedSubs }] = await Promise.all([
     supabase.from('staff_monthly_targets').select('staff_id, monthly_target').in('staff_id', staffIds).eq('year_month', thisMonth),
     supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).neq('status', '待分配').gte('updated_at', todayStart).lte('updated_at', todayEnd),
     supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).in('status', ['已完成', '已留评']).gte('updated_at', monthStart).lte('updated_at', monthEnd),
     supabase.from('sub_orders').select('staff_id').in('staff_id', staffIds).in('status', ['已分配', '进行中', '已下单']),
+    supabase.from('sub_orders').select('staff_id, order_type').in('staff_id', staffIds).neq('status', '待分配'),
   ])
 
   const targetMap: Record<string, number> = {}
@@ -602,6 +702,16 @@ async function loadPerfPanel() {
 
   const pendingMap: Record<string, number> = {}
   for (const s of pendingSubs || []) pendingMap[s.staff_id] = (pendingMap[s.staff_id] || 0) + 1
+
+  const reviewMap: Record<string, number> = {}
+  const freeMap: Record<string, number> = {}
+  for (const s of assignedSubs || []) {
+    if (s.order_type === '免评') {
+      freeMap[s.staff_id] = (freeMap[s.staff_id] || 0) + 1
+    } else {
+      reviewMap[s.staff_id] = (reviewMap[s.staff_id] || 0) + 1
+    }
+  }
 
   const daysInMonth = dayjs().daysInMonth()
 
@@ -620,6 +730,8 @@ async function loadPerfPanel() {
       today_remaining: Math.max(0, daily - todayDone),
       month_done: monthMap[s.id] || 0,
       pending: pendingMap[s.id] || 0,
+      review_assigned: reviewMap[s.id] || 0,
+      free_assigned: freeMap[s.id] || 0,
       is_priority: false,
     }
   }).filter(p => p.monthly_target > 0 || p.pending > 0 || p.month_done > 0)
@@ -678,6 +790,19 @@ const subColumns = [
   { title: '操作', key: 'sub_action', width: 80, fixed: 'right' },
 ]
 
+const flatColumns = [
+  { title: '主订单', key: 'flat_order', width: 180 },
+  { title: '子订单号', key: 'flat_sub_no', width: 165 },
+  { title: '关键词', key: 'flat_keyword', width: 130 },
+  { title: '类型/国家', key: 'flat_type', width: 110 },
+  { title: '排期日期', key: 'flat_scheduled', width: 95 },
+  { title: '状态', key: 'flat_status', width: 85 },
+  { title: '业务员', key: 'flat_staff', width: 90 },
+  { title: '买手', key: 'flat_buyer', width: 80 },
+  { title: '亚马逊订单号', key: 'flat_amazon', width: 145 },
+  { title: '操作', key: 'flat_action', width: 80, fixed: 'right' },
+]
+
 const groupedOrders = computed(() => {
   const map = new Map<string, any>()
   for (const sub of subOrders.value) {
@@ -710,6 +835,11 @@ const groupedOrders = computed(() => {
 function getOrderStatusColor(status: string) {
   const map: Record<string, string> = { '待处理': 'default', '进行中': 'blue', '已完成': 'green', '已取消': 'red', '暂停': 'orange' }
   return map[status] || 'default'
+}
+
+function getOrderTypeTagColor(t: string) {
+  const map: Record<string, string> = { '免评': 'green', '文字评': 'cyan', '图片评': 'blue', '视频评': 'geekblue', 'Feedback': 'gold' }
+  return map[t] || 'default'
 }
 
 function getSubStatusColor(status: string) {
@@ -1420,4 +1550,100 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 .issue-sub-val { font-size: 13px; color: #1c1917; }
 .issue-sub-val.mono { font-family: 'Courier New', monospace; font-size: 12px; }
 .issue-price { font-weight: 700; color: #dc2626; }
+
+/* 视图切换 */
+.view-toggle {
+  display: flex;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.view-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #6b7280;
+  background: #f9fafb;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+.view-btn:first-child { border-right: 1px solid #e5e7eb; }
+.view-btn-active { background: #2563eb; color: #fff; }
+.view-btn-active:hover { background: #1d4ed8; }
+
+/* 概览面板 - 测评/免评标签 */
+.pill-review-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+.pill-free-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: #dcfce7;
+  color: #166534;
+  white-space: nowrap;
+}
+
+/* 详情表格 - 测评/免评徽章 */
+.review-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 12px;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.free-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 12px;
+  background: #dcfce7;
+  color: #166534;
+}
+
+/* 平铺视图 */
+.flat-order-num {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2563eb;
+}
+.flat-order-meta {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.flat-asin {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #6b7280;
+}
+.flat-store {
+  font-size: 11px;
+  color: #9ca3af;
+}
+.flat-type-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.flat-country {
+  font-size: 11px;
+  color: #6b7280;
+}
 </style>
