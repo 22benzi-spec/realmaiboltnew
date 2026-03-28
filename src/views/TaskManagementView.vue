@@ -88,11 +88,11 @@
               </div>
               <div class="stat-right-col">
                 <div class="stat-mini-row">
-                  <span class="stat-mini-label done-label">已排单{{ record._sub_total || 0 }}</span>
+                  <span class="stat-mini-label done-label">已排单{{ record._scheduled_count || 0 }}</span>
                   <span class="stat-mini-label review-label">已留评{{ record._review_count || 0 }}</span>
                 </div>
                 <div class="stat-mini-row">
-                  <span class="stat-mini-label assign-label">已分配{{ record._assigned_count || 0 }}</span>
+                  <span class="stat-mini-label assign-label">已返款{{ record._refunded_count || 0 }}</span>
                 </div>
               </div>
             </div>
@@ -796,13 +796,13 @@ async function load() {
     if (error) throw error
 
     const orderIds = (data || []).map((o: any) => o.id)
-    let statsMap: Record<string, { completed: number; reviewed: number; assigned: number; total: number; ordered: number }> = {}
+    let statsMap: Record<string, { scheduled: number; ordered: number; reviewed: number; refunded: number; total: number }> = {}
     let scheduleMap: Record<string, number> = {}
 
     if (orderIds.length > 0) {
       const { data: subData } = await supabase
         .from('sub_orders')
-        .select('order_id, status')
+        .select('order_id, status, buyer_id, amazon_order_id')
         .in('order_id', orderIds)
 
       const { data: schedData } = await supabase
@@ -811,12 +811,12 @@ async function load() {
         .in('order_id', orderIds)
 
       ;(subData || []).forEach((s: any) => {
-        if (!statsMap[s.order_id]) statsMap[s.order_id] = { completed: 0, reviewed: 0, assigned: 0, total: 0, ordered: 0 }
+        if (!statsMap[s.order_id]) statsMap[s.order_id] = { scheduled: 0, ordered: 0, reviewed: 0, refunded: 0, total: 0 }
         statsMap[s.order_id].total++
-        if (s.status === '已完成') statsMap[s.order_id].completed++
-        if (s.status === '已留评') statsMap[s.order_id].reviewed++
-        if (['已分配', '进行中', '已下单', '已留评', '已完成'].includes(s.status)) statsMap[s.order_id].assigned++
-        if (['已下单', '已留评', '已完成'].includes(s.status)) statsMap[s.order_id].ordered++
+        if (s.buyer_id) statsMap[s.order_id].scheduled++
+        if (s.amazon_order_id) statsMap[s.order_id].ordered++
+        if (['已完成', '已留评'].includes(s.status)) statsMap[s.order_id].reviewed++
+        if (s.status === '已返款') statsMap[s.order_id].refunded++
       })
 
       ;(schedData || []).forEach((s: any) => {
@@ -826,11 +826,11 @@ async function load() {
 
     tasks.value = (data || []).map((o: any) => ({
       ...o,
-      _completed_count: statsMap[o.id]?.completed || 0,
-      _review_count: statsMap[o.id]?.reviewed || 0,
-      _assigned_count: statsMap[o.id]?.assigned || 0,
-      _sub_total: statsMap[o.id]?.total || 0,
+      _scheduled_count: statsMap[o.id]?.scheduled || 0,
       _ordered_count: statsMap[o.id]?.ordered || 0,
+      _review_count: statsMap[o.id]?.reviewed || 0,
+      _refunded_count: statsMap[o.id]?.refunded || 0,
+      _sub_total: statsMap[o.id]?.total || 0,
       _schedule_count: scheduleMap[o.id] || 0,
     }))
     pagination.value.total = count || 0
