@@ -23,12 +23,12 @@
         <div class="gbh-right">
           <div class="gbh-trio">
             <div class="trio-item">
-              <div class="trio-label">组合计应收</div>
+              <div class="trio-label">签单应收（合计）</div>
               <div class="trio-val">¥{{ groupTotalExpected.toFixed(2) }}</div>
             </div>
             <div class="trio-div"></div>
             <div class="trio-item">
-              <div class="trio-label">已到账</div>
+              <div class="trio-label">累计已收</div>
               <div class="trio-val" :style="{ color: groupTotalPaid > 0 ? '#16a34a' : '#9ca3af' }">
                 ¥{{ groupTotalPaid.toFixed(2) }}
               </div>
@@ -61,8 +61,8 @@
             <div class="orders-table-head">
               <span class="col-num">订单号</span>
               <span class="col-asin">ASIN</span>
-              <span class="col-amt">应收</span>
-              <span class="col-paid">已到账</span>
+              <span class="col-amt">签单应收</span>
+              <span class="col-paid">累计已收</span>
               <span class="col-status">入账状态</span>
               <span class="col-debt">账款情况</span>
               <span class="col-action">操作</span>
@@ -163,7 +163,7 @@
           <div class="batch-form">
             <div class="bf-row">
               <div class="bf-field">
-                <label class="bf-label">{{ batchRecordType === '退款' ? '退款总额（元）' : '补款总额（元）' }} <span class="required">*</span></label>
+                <label class="bf-label">{{ batchRecordType === '退款' ? '退款金额（元）' : '补款金额（元）' }} <span class="required">*</span></label>
                 <a-input-number
                   v-model:value="batchTotalAmount"
                   style="width: 200px"
@@ -221,7 +221,7 @@
             <div class="bf-alloc-list">
               <div v-for="row in allocRows" :key="row.orderId" class="bf-alloc-row">
                 <span class="alloc-order-num">{{ row.orderNumber }}</span>
-                <span class="alloc-expected">应收¥{{ Number(row.expected).toFixed(2) }}</span>
+                <span class="alloc-expected">签单¥{{ Number(row.expected).toFixed(2) }}</span>
                 <a-input-number
                   v-model:value="row.allocated"
                   :min="0"
@@ -339,9 +339,9 @@ const groupTotalPaid = computed(() =>
 const groupDiff = computed(() => groupTotalExpected.value - groupTotalPaid.value)
 
 const groupDiffLabel = computed(() => {
-  if (groupDiff.value > 0.005) return '待补款'
-  if (groupDiff.value < -0.005) return '待退款'
-  return '结清差额'
+  if (groupDiff.value > 0.005) return '待收差额'
+  if (groupDiff.value < -0.005) return '待退差额'
+  return '已结清'
 })
 
 const groupDiffColor = computed(() => {

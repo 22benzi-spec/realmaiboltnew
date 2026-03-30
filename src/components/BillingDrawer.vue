@@ -21,12 +21,12 @@
         <div class="billing-header-right">
           <div class="billing-summary-trio">
             <div class="trio-item">
-              <div class="trio-label">应收</div>
+              <div class="trio-label">签单应收</div>
               <div class="trio-val trio-expect">¥{{ Number(order.total_amount || 0).toFixed(2) }}</div>
             </div>
             <div class="trio-divider"></div>
             <div class="trio-item">
-              <div class="trio-label">已到账</div>
+              <div class="trio-label">累计已收</div>
               <div class="trio-val trio-received" :style="{ color: paymentTotal > 0 ? '#16a34a' : '#9ca3af' }">
                 ¥{{ paymentTotal.toFixed(2) }}
               </div>
@@ -361,9 +361,9 @@ const paymentDiff = computed(() => {
 })
 
 const diffLabel = computed(() => {
-  if (paymentDiff.value > 0) return '待补款'
-  if (paymentDiff.value < 0) return '待退款'
-  return '结清差额'
+  if (paymentDiff.value > 0.005) return '待收差额'
+  if (paymentDiff.value < -0.005) return '待退差额'
+  return '已结清'
 })
 
 const diffColor = computed(() => {
@@ -391,8 +391,8 @@ const needsAttention = computed(() => {
 
 const alertText = computed(() => {
   if (!props.order) return ''
-  if (props.order.debt_status === 'owed') return '补款金额已满足欠款，建议将账款状态标记为已结清'
-  if (props.order.debt_status === 'surplus') return '退款已处理，建议将账款状态标记为已结清'
+  if (props.order.debt_status === 'owed') return '累计已收金额已覆盖欠款，建议将账款情况标记为已结清'
+  if (props.order.debt_status === 'surplus') return '退款已处理，建议将账款情况标记为已结清'
   return ''
 })
 
