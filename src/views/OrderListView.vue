@@ -150,7 +150,9 @@
           <template v-if="column.key === 'sales_person'">
             <div v-if="record.sales_person" class="sales-cell">
               <span class="sales-name">{{ record.sales_person }}</span>
-              <span v-if="managerWechatMap[record.sales_person]" class="sales-wechat">{{ managerWechatMap[record.sales_person] }}</span>
+              <template v-if="managerWechatMap[record.sales_person]?.length">
+                <span v-for="wx in managerWechatMap[record.sales_person]" :key="wx" class="sales-wechat">{{ wx }}</span>
+              </template>
             </div>
             <span v-else class="text-empty">-</span>
           </template>
@@ -834,7 +836,7 @@ const columns = [
   { title: '账单状态', key: 'billing', width: 130 },
   { title: '反馈状态', key: 'feedback', width: 130 },
   { title: '商务备注', key: 'notes', width: 140 },
-  { title: '商务', key: 'sales_person', width: 90 },
+  { title: '商务', key: 'sales_person', width: 110 },
   { title: '任务状态', key: 'task_status', width: 95 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 100, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
   { title: '操作', key: 'action', width: 160, fixed: 'right' as const },
@@ -1452,13 +1454,22 @@ async function batchUpdateStatus(status: string) {
   loadOrders()
 }
 
-const managerWechatMap = ref<Record<string, string>>({})
+const managerWechatMap = ref<Record<string, string[]>>({})
 
 async function loadManagerWechat() {
-  const { data } = await supabase.from('business_managers').select('name, wechat_id')
+  const { data } = await supabase
+    .from('business_wechat_accounts')
+    .select('wechat_id, wechat_nickname, business_managers(name)')
+    .eq('status', '在用')
   if (data) {
-    const map: Record<string, string> = {}
-    data.forEach(m => { if (m.name && m.wechat_id) map[m.name] = m.wechat_id })
+    const map: Record<string, string[]> = {}
+    data.forEach((row: any) => {
+      const managerName = row.business_managers?.name
+      if (!managerName) return
+      if (!map[managerName]) map[managerName] = []
+      const label = row.wechat_nickname || row.wechat_id
+      if (label && !map[managerName].includes(label)) map[managerName].push(label)
+    })
     managerWechatMap.value = map
   }
 }
