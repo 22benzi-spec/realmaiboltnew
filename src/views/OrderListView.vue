@@ -178,6 +178,13 @@
             </div>
           </template>
 
+          <template v-if="column.key === 'product_price'">
+            <div v-if="record.product_price" class="price-cell">
+              <span class="price-usd">$ {{ Number(record.product_price).toFixed(2) }}</span>
+            </div>
+            <span v-else class="text-empty">—</span>
+          </template>
+
           <template v-if="column.key === 'notes'">
             <span v-if="record.notes" class="notes-text">{{ record.notes }}</span>
             <span v-else class="text-empty">—</span>
@@ -190,9 +197,8 @@
 
           <template v-if="column.key === 'receivable_amount'">
             <div class="amount-cell">
-              <div v-if="(record.product_price || 0) > 0 && (record.exchange_rate || 0) > 0" class="amount-usd-part">
+              <div v-if="(record.product_price || 0) > 0" class="amount-usd-part">
                 <span class="amount-usd-tag">$ {{ (Number(record.product_price || 0) * Number(record.order_quantity || 1)).toFixed(2) }}</span>
-                <span class="amount-rate-hint">× {{ Number(record.exchange_rate).toFixed(2) }}</span>
               </div>
               <div class="amount-cny-main">&yen;{{ Number(record.total_amount || 0).toFixed(2) }}</div>
             </div>
@@ -1059,14 +1065,15 @@ const columns = [
   { title: '任务号', key: 'order_number', dataIndex: 'order_number', width: 175 },
   { title: '产品信息', key: 'product', width: 220 },
   { title: '国家', key: 'country', dataIndex: 'country', width: 65 },
-  { title: '测评类型/量', key: 'order_types', width: 135 },
-  { title: '反馈状态', key: 'feedback', width: 130 },
-  { title: '账单状态', key: 'billing', width: 130 },
   { title: '客户', key: 'customer', width: 120 },
   { title: '商务', key: 'sales_person', width: 90 },
-  { title: '汇率', key: 'exchange_rate', width: 70 },
+  { title: '测评类型/量', key: 'order_types', width: 135 },
+  { title: '产品售价', key: 'product_price', width: 90 },
+  { title: '接单汇率', key: 'exchange_rate', width: 80 },
   { title: '应收基础款项', key: 'receivable_amount', width: 130 },
   { title: '实收基础款项', key: 'actual_received', width: 130 },
+  { title: '账单状态', key: 'billing', width: 130 },
+  { title: '反馈状态', key: 'feedback', width: 130 },
   { title: '商务备注', key: 'notes', width: 140 },
   { title: '任务状态', key: 'task_status', width: 95 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 100, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
@@ -2018,6 +2025,8 @@ onMounted(loadOrders)
 .amount-rate-hint { font-size: 10px; color: #9ca3af; }
 .amount-cny-main { font-size: 13px; font-weight: 600; color: #16a34a; }
 .amount-received { color: #2563eb; }
+.price-cell { display: inline-block; }
+.price-usd { font-size: 12px; color: #1d4ed8; font-weight: 600; }
 
 :global(.row-batch-first td) { border-top: 2px solid #e2e8f0 !important; }
 :global(.row-batch-last td) { border-bottom: 2px solid #e2e8f0 !important; }
