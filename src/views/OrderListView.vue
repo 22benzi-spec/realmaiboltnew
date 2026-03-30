@@ -41,13 +41,7 @@
             </a-menu>
           </template>
         </a-dropdown>
-        <a-button :disabled="selectedRowKeys.length === 0" @click="openBatchPayModal('补款')">
-          <DollarOutlined /> 批量补款<template v-if="selectedRowKeys.length > 0">（{{ selectedRowKeys.length }}）</template>
-        </a-button>
-        <a-button :disabled="selectedRowKeys.length === 0" danger @click="openBatchPayModal('退款')">
-          <RollbackOutlined /> 批量退款<template v-if="selectedRowKeys.length > 0">（{{ selectedRowKeys.length }}）</template>
-        </a-button>
-        <a-button :disabled="selectedRowKeys.length < 2" @click="openCreateGroupModal" style="color:#7c3aed;border-color:#7c3aed" :style="selectedRowKeys.length >= 2 ? '' : ''">
+        <a-button :disabled="selectedRowKeys.length < 2" @click="openCreateGroupModal" style="color:#1d4ed8;border-color:#1d4ed8">
           <LinkOutlined /> 创建任务组<template v-if="selectedRowKeys.length >= 2">（{{ selectedRowKeys.length }}）</template>
         </a-button>
         <a-popconfirm v-if="selectedRowKeys.length > 0" title="确定批量删除选中的订单吗?" @confirm="batchDelete">
@@ -229,9 +223,7 @@
             <a-space>
               <a-button type="link" size="small" @click="viewDetail(record)">详情</a-button>
               <a-button type="link" size="small" @click="openFeedbackModal(record)">反馈</a-button>
-              <a-button type="link" size="small" @click="openDebtModal(record)">账单</a-button>
-              <a-button type="link" size="small" style="color:#059669" @click="openSinglePayModal(record, '补款')">补款</a-button>
-              <a-button type="link" size="small" style="color:#dc2626" @click="openSinglePayModal(record, '退款')">退款</a-button>
+              <a-button type="link" size="small" @click="openBillingDrawer(record)">账单</a-button>
               <a-popconfirm title="确定删除这条任务吗?" @confirm="deleteOrder(record.id)">
                 <a-button type="link" size="small" danger>删除</a-button>
               </a-popconfirm>
@@ -393,7 +385,7 @@
         <a-divider style="margin: 20px 0 16px" />
         <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>账单 & 收款记录</span>
-          <a-button size="small" type="link" @click="openDebtModal(currentOrder)">编辑账单</a-button>
+          <a-button size="small" type="link" @click="openBillingDrawer(currentOrder)">账单管理</a-button>
         </div>
 
         <!-- Billing Summary -->
@@ -497,59 +489,6 @@
         </div>
       </template>
     </a-drawer>
-
-    <!-- Debt Modal -->
-    <a-modal
-      v-model:open="debtModalOpen"
-      title="编辑任务账单"
-      :confirm-loading="debtSaving"
-      @ok="saveDebt"
-      ok-text="保存"
-      cancel-text="取消"
-      width="500px"
-    >
-      <div class="debt-form">
-        <div class="debt-field">
-          <label class="debt-label">基础入账状态</label>
-          <a-radio-group v-model:value="debtForm.billing_status">
-            <a-radio-button value="已完成">已完成</a-radio-button>
-            <a-radio-button value="未完成">未完成</a-radio-button>
-          </a-radio-group>
-        </div>
-        <div class="debt-field">
-          <label class="debt-label">欠款/溢款状态</label>
-          <a-radio-group v-model:value="debtForm.debt_status">
-            <a-radio-button value="none">无异常</a-radio-button>
-            <a-radio-button value="owed">客户欠款</a-radio-button>
-            <a-radio-button value="surplus">我方溢收</a-radio-button>
-            <a-radio-button value="cleared" :disabled="!canMarkCleared">已结清</a-radio-button>
-          </a-radio-group>
-          <div v-if="!canMarkCleared && debtForm.debt_status !== 'cleared'" class="debt-status-hint" style="background:#f9fafb;color:#6b7280;border:1px solid #e5e7eb">
-            需要有收款记录后才能标记为已结清
-          </div>
-          <div v-if="debtForm.debt_status === 'surplus'" class="debt-status-hint debt-hint-surplus">
-            溢款：我方多收了客户的钱，需退还给客户
-          </div>
-          <div v-if="debtForm.debt_status === 'owed'" class="debt-status-hint debt-hint-owed">
-            欠款：客户还需补付款项给我方
-          </div>
-        </div>
-        <template v-if="debtForm.debt_status === 'owed' || debtForm.debt_status === 'surplus'">
-          <div class="debt-field">
-            <label class="debt-label">{{ debtForm.debt_status === 'surplus' ? '溢收金额（元）' : '欠款金额（元）' }}</label>
-            <a-input-number v-model:value="debtForm.debt_amount" style="width:100%" :min="0" :precision="2" :placeholder="debtForm.debt_status === 'surplus' ? '多收的金额' : '欠款金额'" />
-          </div>
-          <div class="debt-field">
-            <label class="debt-label">{{ debtForm.debt_status === 'surplus' ? '溢款明细备注' : '欠款明细备注' }}</label>
-            <a-textarea v-model:value="debtForm.debt_notes" :rows="3" :placeholder="debtForm.debt_status === 'surplus' ? '如：预收超出实际 ¥150，需退还' : '如：税费 ¥120 + 本金差价 ¥200'" />
-          </div>
-          <div class="debt-field">
-            <label class="debt-label">标记商务</label>
-            <a-input v-model:value="debtForm.debt_marked_by" placeholder="输入商务姓名" />
-          </div>
-        </template>
-      </div>
-    </a-modal>
 
     <!-- Feedback Modal -->
     <a-modal
@@ -702,120 +641,6 @@
       </div>
     </a-modal>
 
-    <!-- Batch Payment Modal -->
-    <a-modal
-      v-model:open="batchPayModalOpen"
-      :title="batchPayForm.payment_type === '退款' ? '批量退款' : '批量补款'"
-      :confirm-loading="batchPaySaving"
-      @ok="saveBatchPay"
-      :ok-text="batchPayForm.payment_type === '退款' ? '确认退款' : '确认补款'"
-      cancel-text="取消"
-      width="720px"
-      :ok-button-props="{ danger: batchPayForm.payment_type === '退款' }"
-    >
-      <div class="batch-pay-form">
-        <div class="batch-pay-info-bar" :class="batchPayForm.payment_type === '退款' ? 'batch-pay-info-refund' : ''">
-          {{ batchPayForm.payment_type === '退款' ? '退款将生成待审批的退款流水，需财务审批后执行' : '补款将直接生成收款记录和交易流水' }}
-        </div>
-
-        <div class="batch-pay-order-list">
-          <div class="batch-pay-list-header">
-            <span>已选订单（{{ batchPayOrders.length }} 个）</span>
-            <div class="batch-pay-summary-tags">
-              <span v-if="batchPayTotalOwed > 0" class="batch-summary-owed">客户补款 ¥{{ batchPayTotalOwed.toFixed(2) }}</span>
-              <span v-if="batchPayTotalSurplus > 0" class="batch-summary-surplus">应退客户 ¥{{ batchPayTotalSurplus.toFixed(2) }}</span>
-              <span class="batch-summary-net" :class="batchPayNetBalance >= 0 ? 'batch-summary-net-pos' : 'batch-summary-net-neg'">
-                净：{{ batchPayNetBalance >= 0 ? '补' : '退' }} ¥{{ Math.abs(batchPayNetBalance).toFixed(2) }}
-              </span>
-            </div>
-          </div>
-          <div v-for="o in batchPayOrders" :key="o.id" class="batch-pay-order-row">
-            <div class="batch-pay-order-left">
-              <div class="batch-pay-asin">{{ o.asin }}</div>
-              <div class="batch-pay-order-detail">{{ o.order_number }} | {{ o.customer_name || '-' }}</div>
-            </div>
-            <div class="batch-pay-order-right">
-              <span v-if="o.debt_status === 'surplus'" class="batch-pay-surplus-label">
-                应退 ¥{{ Number(o.debt_amount || 0).toFixed(0) }}
-              </span>
-              <span v-else-if="o.debt_status === 'owed'" class="batch-pay-debt-label">
-                欠款 ¥{{ Number(o.debt_amount || 0).toFixed(0) }}
-              </span>
-              <span v-else class="batch-pay-no-debt">无欠款</span>
-              <a-input-number
-                v-model:value="batchPayAllocations[o.id]"
-                :min="0" :precision="2" size="small" style="width:110px"
-                @change="onAllocationChange"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div class="batch-pay-fields">
-          <div class="batch-pay-field">
-            <label class="batch-pay-label">{{ batchPayForm.payment_type === '退款' ? '退款总金额（元）' : '补款总金额（元）' }} <span class="required">*</span></label>
-            <a-input-number v-model:value="batchPayForm.amount_cny" style="width:100%" :min="0.01" :precision="2" />
-          </div>
-          <div class="batch-pay-field-row">
-            <div class="batch-pay-field" style="flex:1">
-              <label class="batch-pay-label">日期 <span class="required">*</span></label>
-              <a-date-picker v-model:value="batchPayForm.payment_date_picker" style="width:100%" placeholder="选择日期" value-format="YYYY-MM-DD" />
-            </div>
-            <div class="batch-pay-field" style="flex:1">
-              <label class="batch-pay-label">方式</label>
-              <a-select v-model:value="batchPayForm.payment_method" style="width:100%">
-                <a-select-option value="银行转账">银行转账</a-select-option>
-                <a-select-option value="微信">微信</a-select-option>
-                <a-select-option value="支付宝">支付宝</a-select-option>
-                <a-select-option value="现金">现金</a-select-option>
-                <a-select-option value="其他">其他</a-select-option>
-              </a-select>
-            </div>
-          </div>
-          <div class="batch-pay-field-row">
-            <div class="batch-pay-field" style="flex:1">
-              <label class="batch-pay-label">{{ batchPayForm.payment_type === '退款' ? '退款对象' : '付款人' }}</label>
-              <a-input v-model:value="batchPayForm.payer_name" placeholder="付款方名称" />
-            </div>
-            <div class="batch-pay-field" style="flex:1">
-              <label class="batch-pay-label">操作人</label>
-              <a-input v-model:value="batchPayForm.recorded_by" placeholder="录入人姓名" />
-            </div>
-          </div>
-          <div class="batch-pay-field">
-            <label class="batch-pay-label">上传流水单</label>
-            <div class="batch-pay-upload-area">
-              <a-upload
-                v-model:file-list="batchPayReceiptFiles"
-                list-type="picture-card"
-                :before-upload="() => false"
-                accept="image/*,.pdf"
-                :multiple="true"
-              >
-                <div v-if="batchPayReceiptFiles.length < 5" class="batch-pay-upload-btn">
-                  <plus-outlined />
-                  <div style="margin-top:4px;font-size:12px">上传凭证</div>
-                </div>
-              </a-upload>
-            </div>
-          </div>
-          <div class="batch-pay-field">
-            <label class="batch-pay-label">账单状态变更</label>
-            <a-radio-group v-model:value="batchPayForm.update_debt_status">
-              <a-radio-button value="none">不变更</a-radio-button>
-              <a-radio-button value="cleared">标记已结清</a-radio-button>
-              <a-radio-button value="owed" v-if="batchPayForm.payment_type !== '退款'">标记有欠款</a-radio-button>
-              <a-radio-button value="surplus" v-if="batchPayForm.payment_type === '退款'">标记溢收</a-radio-button>
-            </a-radio-group>
-          </div>
-          <div class="batch-pay-field">
-            <label class="batch-pay-label">备注</label>
-            <a-textarea v-model:value="batchPayForm.notes" :rows="2" placeholder="备注（可选）" />
-          </div>
-        </div>
-      </div>
-    </a-modal>
-
     <!-- Create Task Group Modal -->
     <a-modal
       v-model:open="createGroupModalOpen"
@@ -907,6 +732,14 @@
       </div>
     </a-modal>
 
+    <!-- 统一账单抽屉 -->
+    <BillingDrawer
+      :open="billingDrawerOpen"
+      :order="billingDrawerOrder"
+      @close="billingDrawerOpen = false"
+      @updated="onBillingUpdated"
+    />
+
     <!-- 聊单号编辑弹窗 -->
     <a-modal v-model:open="editChatIdOpen" title="设置聊单号" :footer="null" width="400px">
       <div style="padding:8px 0 16px">
@@ -927,6 +760,7 @@ import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutl
 import { useCurrentUser } from '../composables/useCurrentUser'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
+import BillingDrawer from '../components/BillingDrawer.vue'
 
 const loading = ref(false)
 const orders = ref<any[]>([])
@@ -937,17 +771,6 @@ const filterOrderType = ref('')
 const filterBilling = ref('')
 const drawerOpen = ref(false)
 const currentOrder = ref<any>(null)
-
-const debtModalOpen = ref(false)
-const debtSaving = ref(false)
-const debtTargetId = ref<string | null>(null)
-const debtForm = ref({
-  billing_status: '已完成',
-  debt_status: 'none',
-  debt_amount: 0,
-  debt_notes: '',
-  debt_marked_by: '',
-})
 
 const feedbackModalOpen = ref(false)
 const feedbackSaving = ref(false)
@@ -975,35 +798,19 @@ const paymentForm = ref({
 
 const { currentUser } = useCurrentUser()
 
-const batchPayModalOpen = ref(false)
-const batchPaySaving = ref(false)
-const batchPayOrders = ref<any[]>([])
-const batchPayAllocations = reactive<Record<string, number | null>>({})
-const batchPayReceiptFiles = ref<any[]>([])
-const batchPayForm = ref({
-  payment_type: '补款',
-  amount_cny: 0,
-  payment_date_picker: null as any,
-  payment_method: '银行转账',
-  payer_name: '',
-  recorded_by: '',
-  notes: '',
-  update_debt_status: 'none',
-})
+const billingDrawerOpen = ref(false)
+const billingDrawerOrder = ref<any>(null)
 
-const batchPayTotalOwed = computed(() =>
-  batchPayOrders.value.filter(o => o.debt_status === 'owed').reduce((s, o) => s + Number(o.debt_amount || 0), 0)
-)
+function openBillingDrawer(record: any) {
+  billingDrawerOrder.value = record
+  billingDrawerOpen.value = true
+}
 
-const batchPayTotalSurplus = computed(() =>
-  batchPayOrders.value.filter(o => o.debt_status === 'surplus').reduce((s, o) => s + Number(o.debt_amount || 0), 0)
-)
-
-const batchPayNetBalance = computed(() => batchPayTotalOwed.value - batchPayTotalSurplus.value)
-
-function onAllocationChange() {
-  const sum = Object.values(batchPayAllocations).reduce((s: number, v) => s + Number(v || 0), 0 as number)
-  batchPayForm.value.amount_cny = Number((sum as number).toFixed(2))
+function onBillingUpdated(payload: any) {
+  const idx = orders.value.findIndex(o => o.id === payload.id)
+  if (idx !== -1) Object.assign(orders.value[idx], payload)
+  if (currentOrder.value?.id === payload.id) Object.assign(currentOrder.value, payload)
+  if (billingDrawerOrder.value?.id === payload.id) Object.assign(billingDrawerOrder.value, payload)
 }
 
 const batchPayments = ref<any[]>([])
@@ -1362,48 +1169,6 @@ async function loadPayments(orderId: string) {
   batchPayments.value = payments
 }
 
-function openDebtModal(record: any) {
-  debtTargetId.value = record.id
-  debtForm.value = {
-    billing_status: record.billing_status || '已完成',
-    debt_status: record.debt_status || 'none',
-    debt_amount: record.debt_amount || 0,
-    debt_notes: record.debt_notes || '',
-    debt_marked_by: record.debt_marked_by || '',
-  }
-  debtModalOpen.value = true
-}
-
-async function saveDebt() {
-  if (!debtTargetId.value) return
-  debtSaving.value = true
-  try {
-    const hasIssue = debtForm.value.debt_status === 'owed' || debtForm.value.debt_status === 'surplus'
-    const payload: any = {
-      billing_status: debtForm.value.billing_status,
-      debt_status: debtForm.value.debt_status,
-      debt_amount: hasIssue ? debtForm.value.debt_amount : 0,
-      debt_notes: hasIssue ? debtForm.value.debt_notes : null,
-      debt_marked_by: hasIssue ? debtForm.value.debt_marked_by : null,
-      debt_marked_at: hasIssue ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    }
-    const { error } = await supabase.from('erp_orders').update(payload).eq('id', debtTargetId.value)
-    if (error) throw error
-
-    const idx = orders.value.findIndex(o => o.id === debtTargetId.value)
-    if (idx !== -1) Object.assign(orders.value[idx], payload)
-    if (currentOrder.value?.id === debtTargetId.value) Object.assign(currentOrder.value, payload)
-
-    message.success('账单已保存')
-    debtModalOpen.value = false
-  } catch (e: any) {
-    message.error('保存失败：' + e.message)
-  } finally {
-    debtSaving.value = false
-  }
-}
-
 function openFeedbackModal(record: any) {
   feedbackTargetId.value = record.id
   feedbackForm.value = {
@@ -1696,37 +1461,11 @@ async function showGroupDetail(record: any) {
   groupDetailModalOpen.value = true
 }
 
-function batchPayGroupOrders(type: string) {
+function batchPayGroupOrders(_type: string) {
   groupDetailModalOpen.value = false
-  batchPayOrders.value = groupDetailOrders.value
-  Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
-  let netAmount = 0
-  for (const o of groupDetailOrders.value) {
-    const amt = Number(o.debt_amount || 0)
-    if (o.debt_status === 'owed' && amt > 0) {
-      batchPayAllocations[o.id] = amt
-      netAmount += amt
-    } else if (o.debt_status === 'surplus' && amt > 0) {
-      batchPayAllocations[o.id] = amt
-      netAmount -= amt
-    } else {
-      batchPayAllocations[o.id] = null
-    }
+  if (groupDetailOrders.value.length > 0) {
+    openBillingDrawer(groupDetailOrders.value[0])
   }
-  const firstOrder = groupDetailOrders.value[0]
-  const autoType = netAmount >= 0 ? '补款' : '退款'
-  batchPayReceiptFiles.value = []
-  batchPayForm.value = {
-    payment_type: type === '混合' ? autoType : type,
-    amount_cny: Number(Math.abs(netAmount).toFixed(2)),
-    payment_date_picker: dayjs(),
-    payment_method: '银行转账',
-    payer_name: firstOrder?.customer_name || '',
-    recorded_by: firstOrder?.sales_person || currentUser.value.name || '',
-    notes: '',
-    update_debt_status: 'none',
-  }
-  batchPayModalOpen.value = true
 }
 
 async function dissolveGroup() {
@@ -1741,190 +1480,6 @@ async function dissolveGroup() {
   loadOrders()
 }
 
-function openSinglePayModal(record: any, type: string) {
-  batchPayOrders.value = [record]
-  Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
-  const amt = Number(record.debt_amount || 0)
-  batchPayAllocations[record.id] = amt > 0 ? amt : null
-  const netAmount = type === '补款' ? amt : -amt
-  batchPayReceiptFiles.value = []
-  batchPayForm.value = {
-    payment_type: type,
-    amount_cny: Number(Math.abs(netAmount).toFixed(2)),
-    payment_date_picker: dayjs(),
-    payment_method: '银行转账',
-    payer_name: record.customer_name || '',
-    recorded_by: record.sales_person || currentUser.value.name || '',
-    notes: '',
-    update_debt_status: 'none',
-  }
-  batchPayModalOpen.value = true
-}
-
-function openBatchPayModal(type: string) {
-  const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id))
-  if (!selected.length) { message.warning('请先勾选订单'); return }
-  batchPayOrders.value = selected
-  Object.keys(batchPayAllocations).forEach(k => delete batchPayAllocations[k])
-  let netAmount = 0
-  for (const o of selected) {
-    const amt = Number(o.debt_amount || 0)
-    if (o.debt_status === 'owed' && amt > 0) {
-      batchPayAllocations[o.id] = amt
-      netAmount += amt
-    } else if (o.debt_status === 'surplus' && amt > 0) {
-      batchPayAllocations[o.id] = amt
-      netAmount -= amt
-    } else {
-      batchPayAllocations[o.id] = null
-    }
-  }
-  const firstCustomer = selected[0]?.customer_name || ''
-  const defaultOperator = selected[0]?.sales_person || currentUser.value.name || ''
-  batchPayReceiptFiles.value = []
-  const autoType = netAmount >= 0 ? '补款' : '退款'
-  batchPayForm.value = {
-    payment_type: type === '混合' ? autoType : type,
-    amount_cny: Number(Math.abs(netAmount).toFixed(2)),
-    payment_date_picker: dayjs(),
-    payment_method: '银行转账',
-    payer_name: firstCustomer,
-    recorded_by: defaultOperator,
-    notes: '',
-    update_debt_status: 'none',
-  }
-  batchPayModalOpen.value = true
-}
-
-async function saveBatchPay() {
-  if (!batchPayOrders.value.length) return
-  if (!batchPayForm.value.amount_cny || batchPayForm.value.amount_cny <= 0) {
-    message.warning('请输入金额')
-    return
-  }
-  if (!batchPayForm.value.payment_date_picker) {
-    message.warning('请选择日期')
-    return
-  }
-  batchPaySaving.value = true
-  try {
-    const paymentDate = typeof batchPayForm.value.payment_date_picker === 'string'
-      ? batchPayForm.value.payment_date_picker
-      : batchPayForm.value.payment_date_picker?.format('YYYY-MM-DD')
-    const isRefund = batchPayForm.value.payment_type === '退款'
-    let receiptUrls: string[] = []
-    if (batchPayReceiptFiles.value.length > 0) {
-      for (const f of batchPayReceiptFiles.value) {
-        if (f.originFileObj) {
-          const ext = f.name.split('.').pop()
-          const path = `receipts/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-          const { data: upData, error: upErr } = await supabase.storage
-            .from('payment-receipts')
-            .upload(path, f.originFileObj, { upsert: true })
-          if (!upErr && upData) {
-            const { data: urlData } = supabase.storage.from('payment-receipts').getPublicUrl(upData.path)
-            receiptUrls.push(urlData.publicUrl)
-          }
-        }
-      }
-    }
-
-    const { data: gData, error: gErr } = await supabase.from('payment_groups').insert({
-      group_number: `PG-${Date.now()}`,
-      customer_name: batchPayForm.value.payer_name,
-      total_amount: batchPayForm.value.amount_cny,
-      payment_date: paymentDate,
-      payment_method: batchPayForm.value.payment_method,
-      payer_name: batchPayForm.value.payer_name,
-      recorded_by: batchPayForm.value.recorded_by,
-      notes: batchPayForm.value.notes,
-    }).select('id').maybeSingle()
-    if (gErr) throw gErr
-    const groupId = gData?.id
-
-    const totalAllocated = Object.values(batchPayAllocations).reduce((s: number, v) => s + Number(v || 0), 0 as number) as number
-    const groupOrderEntries = batchPayOrders.value.map(o => {
-      const manual = batchPayAllocations[o.id]
-      const fallback = totalAllocated > 0
-        ? (Number(o.debt_amount || o.total_amount) / totalAllocated) * batchPayForm.value.amount_cny
-        : batchPayForm.value.amount_cny / batchPayOrders.value.length
-      return {
-        payment_group_id: groupId,
-        order_id: o.id,
-        allocated_amount: manual != null ? manual : Number(fallback.toFixed(2)),
-      }
-    })
-    const { error: goErr } = await supabase.from('payment_group_orders').insert(groupOrderEntries)
-    if (goErr) throw goErr
-
-    const { data: txNo } = await supabase.rpc('generate_transaction_no')
-    const transactionNo = txNo || `FT-${Date.now()}`
-    const firstOrder = batchPayOrders.value[0]
-    const txType = isRefund ? '退款' : '批次收款'
-    const txDirection = isRefund ? '支出' : '收入'
-    const txStatus = isRefund ? '待审批' : '已确认'
-    const txNotes = `批量${batchPayForm.value.payment_type} - ${batchPayForm.value.payment_method} | ${batchPayOrders.value.length}个订单${batchPayForm.value.notes ? ' | ' + batchPayForm.value.notes : ''}`
-
-    const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
-      transaction_no: transactionNo,
-      transaction_type: txType,
-      direction: txDirection,
-      amount_cny: batchPayForm.value.amount_cny,
-      exchange_rate: firstOrder.exchange_rate || 7.25,
-      customer_name: batchPayForm.value.payer_name,
-      customer_id_str: firstOrder.customer_id_str || '',
-      order_id: firstOrder.id,
-      order_number: firstOrder.order_number,
-      staff_name: batchPayForm.value.recorded_by,
-      status: txStatus,
-      notes: txNotes,
-      transaction_date: paymentDate,
-      receipt_urls: receiptUrls,
-    }).select('id').maybeSingle()
-    if (txErr) throw txErr
-
-    for (const entry of groupOrderEntries) {
-      const order = batchPayOrders.value.find(o => o.id === entry.order_id)
-      await supabase.from('batch_payments').insert({
-        batch_id: entry.order_id,
-        batch_number: order?.order_number || '',
-        transaction_id: txData?.id || null,
-        amount_cny: entry.allocated_amount,
-        payment_date: paymentDate,
-        payment_method: batchPayForm.value.payment_method,
-        payer_name: batchPayForm.value.payer_name,
-        recorded_by: batchPayForm.value.recorded_by,
-        notes: batchPayForm.value.notes,
-        payment_type: batchPayForm.value.payment_type,
-        payment_group_id: groupId,
-        receipt_urls: receiptUrls,
-      })
-    }
-
-    if (batchPayForm.value.update_debt_status !== 'none') {
-      const statusPayload: any = {
-        debt_status: batchPayForm.value.update_debt_status,
-        updated_at: new Date().toISOString(),
-      }
-      if (batchPayForm.value.update_debt_status === 'cleared') {
-        statusPayload.debt_amount = 0
-      }
-      const ids = batchPayOrders.value.map(o => o.id)
-      await supabase.from('erp_orders').update(statusPayload).in('id', ids)
-    }
-
-    const label = isRefund ? '退款' : '补款'
-    const extra = isRefund ? '，退款流水已进入待审批' : ''
-    message.success(`批量${label}已完成（${batchPayOrders.value.length} 个订单）${extra}`)
-    batchPayModalOpen.value = false
-    selectedRowKeys.value = []
-    loadOrders()
-  } catch (e: any) {
-    message.error('操作失败：' + e.message)
-  } finally {
-    batchPaySaving.value = false
-  }
-}
 
 async function deleteOrder(id: string) {
   const { error } = await supabase.from('erp_orders').delete().eq('id', id)
