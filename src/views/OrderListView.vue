@@ -172,9 +172,14 @@
 
           <template v-if="column.key === 'customer'">
             <div class="customer-cell">
-              <span v-if="record.customer_name" class="customer-name-cell">{{ record.customer_name }}</span>
-              <span v-else class="text-empty">-</span>
-              <a-tag v-if="record.feedback_channel" :color="record.feedback_channel === '群组' ? 'blue' : 'cyan'" size="small" class="feedback-channel-tag">{{ record.feedback_channel }}</a-tag>
+              <div class="customer-name-row">
+                <span v-if="record.customer_name" class="customer-name-cell">{{ record.customer_name }}</span>
+                <span v-else class="text-empty">-</span>
+                <a-tag v-if="record.feedback_channel" :color="record.feedback_channel === '群组' ? 'blue' : 'cyan'" size="small" class="feedback-channel-tag">{{ record.feedback_channel }}</a-tag>
+              </div>
+              <div v-if="record.sales_person" class="customer-sales-row">
+                <span class="customer-sales-name">{{ record.sales_person }}</span>
+              </div>
             </div>
           </template>
 
@@ -1065,8 +1070,7 @@ const columns = [
   { title: '任务号', key: 'order_number', dataIndex: 'order_number', width: 175 },
   { title: '产品信息', key: 'product', width: 220 },
   { title: '国家', key: 'country', dataIndex: 'country', width: 65 },
-  { title: '客户', key: 'customer', width: 120 },
-  { title: '商务', key: 'sales_person', width: 90 },
+  { title: '客户/商务', key: 'customer', width: 140 },
   { title: '测评类型/量', key: 'order_types', width: 135 },
   { title: '产品售价', key: 'product_price', width: 90 },
   { title: '接单汇率', key: 'exchange_rate', width: 80 },
@@ -2027,6 +2031,9 @@ onMounted(loadOrders)
 .amount-received { color: #2563eb; }
 .price-cell { display: inline-block; }
 .price-usd { font-size: 12px; color: #1d4ed8; font-weight: 600; }
+.customer-name-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.customer-sales-row { margin-top: 2px; }
+.customer-sales-name { font-size: 11px; color: #6b7280; background: #f3f4f6; border-radius: 3px; padding: 1px 6px; }
 
 :global(.row-batch-first td) { border-top: 2px solid #e2e8f0 !important; }
 :global(.row-batch-last td) { border-bottom: 2px solid #e2e8f0 !important; }
