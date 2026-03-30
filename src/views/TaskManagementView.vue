@@ -173,12 +173,18 @@
               :pagination="false"
               row-key="id"
               size="small"
-              :scroll="{ x: 1800 }"
+              :scroll="{ x: 2200 }"
               style="margin-top:10px"
             >
               <template #bodyCell="{ column, record: sub }">
                 <template v-if="column.key === 'sub_no'">
                   <span class="sub-no">{{ sub.sub_order_number }}</span>
+                </template>
+                <template v-if="column.key === 'sub_asin'">
+                  <div class="asin-cell">
+                    <div class="asin-code">{{ sub.asin || '—' }}</div>
+                    <div v-if="sub.product_name" class="asin-name">{{ sub.product_name }}</div>
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_keyword'">
                   <div class="kw-cell" @click="openKwEdit(sub)">
@@ -264,6 +270,13 @@
                     </div>
                   </div>
                   <span v-else class="text-gray">—</span>
+                </template>
+                <template v-if="column.key === 'sub_refund_method'">
+                  <span v-if="sub.refund_method" class="refund-method-tag">{{ sub.refund_method }}</span>
+                  <span v-else class="text-gray">—</span>
+                </template>
+                <template v-if="column.key === 'sub_created_at'">
+                  <span class="created-at-text">{{ sub.created_at ? dayjs(sub.created_at).format('MM-DD HH:mm') : '—' }}</span>
                 </template>
                 <template v-if="column.key === 'sub_notes'">
                   <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
@@ -638,116 +651,106 @@
       </div>
     </a-modal>
 
-    <!-- 修改子订单弹窗 -->
+    <!-- 批量修改子订单弹窗 -->
     <a-modal
       v-model:open="editSubModalOpen"
-      title="修改子订单"
+      title="批量修改子订单"
       :footer="null"
-      width="780px"
+      width="860px"
       :destroy-on-close="true"
     >
-      <div v-if="editSubRecord" class="edit-sub-modal-body">
-        <div v-if="editSubHasRefund" class="edit-sub-warning">
-          <a-alert type="warning" show-icon message="该子订单已有返款记录，不允许修改" />
+      <div class="batch-edit-modal-body">
+        <div class="batch-edit-tip">
+          <span class="batch-tip-text">仅显示无返款记录的子订单，可多选后批量修改</span>
+          <a-space>
+            <a-button size="small" @click="batchSelectAll">全选</a-button>
+            <a-button size="small" @click="batchSelectNone">取消全选</a-button>
+          </a-space>
         </div>
-        <template v-else>
-          <a-form layout="vertical">
-            <a-row :gutter="16">
-              <a-col :span="8">
-                <a-form-item label="状态">
-                  <a-select v-model:value="editSubForm.status" size="small" style="width:100%">
-                    <a-select-option v-for="s in subStatuses" :key="s" :value="s">{{ s }}</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="排期日期">
-                  <a-input v-model:value="editSubForm.scheduled_date" size="small" placeholder="YYYY-MM-DD" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="亚马逊订单号">
-                  <a-input v-model:value="editSubForm.amazon_order_id" size="small" placeholder="亚马逊订单号" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="产品售价">
-                  <a-input-number v-model:value="editSubForm.product_price" size="small" :min="0" :precision="2" prefix="$" style="width:100%" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="实付金额">
-                  <a-input-number v-model:value="editSubForm.actual_paid" size="small" :min="0" :precision="2" prefix="$" style="width:100%" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="测评类型">
-                  <a-input v-model:value="editSubForm.order_type" size="small" placeholder="测评类型" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="测评等级">
-                  <a-select v-model:value="editSubForm.review_level" size="small" style="width:100%" allow-clear>
-                    <a-select-option value="普通">普通</a-select-option>
-                    <a-select-option value="高等">高等</a-select-option>
-                    <a-select-option value="极高等">极高等</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="业务员">
-                  <a-input v-model:value="editSubForm.staff_name" size="small" placeholder="业务员姓名" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="买手">
-                  <a-input v-model:value="editSubForm.buyer_name" size="small" placeholder="买手姓名" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="16">
-                <a-form-item label="关键词">
-                  <a-input v-model:value="editSubForm.keyword" size="small" placeholder="搜索关键词" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="24">
-                <a-form-item label="备注">
-                  <a-textarea v-model:value="editSubForm.task_notes" :rows="2" size="small" placeholder="备注内容" />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </a-form>
-          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
-            <a-button @click="editSubModalOpen = false">取消</a-button>
-            <a-button type="primary" :loading="editSubSaving" @click="saveEditSub">保存</a-button>
+
+        <div class="batch-sub-list">
+          <div
+            v-for="sub in editableSubList"
+            :key="sub.id"
+            :class="['batch-sub-item', { 'batch-sub-selected': batchSelectedIds.includes(sub.id) }]"
+            @click="toggleBatchSelect(sub.id)"
+          >
+            <a-checkbox :checked="batchSelectedIds.includes(sub.id)" @click.stop="toggleBatchSelect(sub.id)" />
+            <span class="batch-sub-no">{{ sub.sub_order_number }}</span>
+            <span class="batch-sub-date">{{ sub.scheduled_date || '—' }}</span>
+            <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+            <span v-else class="text-gray batch-sub-type">无类型</span>
+            <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
+            <span class="batch-sub-kw">{{ sub.keyword || '—' }}</span>
+            <span class="batch-sub-price" v-if="sub.product_price">${{ Number(sub.product_price).toFixed(2) }}</span>
           </div>
-        </template>
+          <div v-if="editableSubList.length === 0" class="batch-sub-empty">暂无可修改的子订单（所有子订单均有返款记录）</div>
+        </div>
+
+        <a-divider style="margin: 12px 0" />
+        <div class="batch-edit-form-label">批量修改字段（留空表示不修改该字段）：</div>
+        <a-form layout="vertical">
+          <a-row :gutter="16">
+            <a-col :span="8">
+              <a-form-item label="关键词">
+                <a-input v-model:value="batchEditForm.keyword" size="small" placeholder="留空不修改" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="测评类型">
+                <a-select v-model:value="batchEditForm.order_type" size="small" style="width:100%" allow-clear placeholder="留空不修改">
+                  <a-select-option value="文字">文字</a-select-option>
+                  <a-select-option value="图片">图片</a-select-option>
+                  <a-select-option value="视频">视频</a-select-option>
+                  <a-select-option value="免评">免评</a-select-option>
+                  <a-select-option value="FB">FB</a-select-option>
+                  <a-select-option value="Feedback">Feedback</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="测评等级">
+                <a-select v-model:value="batchEditForm.review_level" size="small" style="width:100%" allow-clear placeholder="留空不修改">
+                  <a-select-option value="普通">普通</a-select-option>
+                  <a-select-option value="高等">高等</a-select-option>
+                  <a-select-option value="极高等">极高等</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="排单日期">
+                <a-input v-model:value="batchEditForm.scheduled_date" size="small" placeholder="YYYY-MM-DD，留空不修改" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="产品售价">
+                <a-input-number v-model:value="batchEditForm.product_price" size="small" :min="0" :precision="2" prefix="$" style="width:100%" placeholder="留空不修改" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-form>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+          <span class="batch-selected-count">已选 {{ batchSelectedIds.length }} 条</span>
+          <a-space>
+            <a-button @click="editSubModalOpen = false">取消</a-button>
+            <a-button type="primary" :loading="editSubSaving" :disabled="batchSelectedIds.length === 0" @click="saveBatchEdit">保存修改</a-button>
+          </a-space>
+        </div>
       </div>
     </a-modal>
 
-    <!-- 复制弹窗 -->
+    <!-- 复制弹窗（复制主任务信息） -->
     <a-modal
       v-model:open="copyModalOpen"
-      title="复制子订单信息"
-      width="540px"
-      ok-text="复制"
+      title="复制任务信息"
+      width="560px"
+      ok-text="复制到剪贴板"
       cancel-text="取消"
       @ok="doConfirmCopy"
     >
       <div class="copy-modal-body">
-        <div class="copy-sub-selector">
-          <div class="copy-field-label">选择子订单：</div>
-          <a-select
-            v-model:value="copySelectedSubId"
-            style="width:100%"
-            placeholder="选择子订单"
-            allow-clear
-          >
-            <a-select-option v-for="sub in copySubList" :key="sub.id" :value="sub.id">
-              {{ sub.sub_order_number }}
-            </a-select-option>
-          </a-select>
-        </div>
-        <div class="copy-fields-label">选择要复制的字段（默认勾选 ASIN 和订单号）：</div>
+        <div class="copy-fields-label">选择要复制的字段（默认 ASIN 和订单号）：</div>
         <a-checkbox-group v-model:value="copyCheckedFields" class="copy-checkbox-group">
           <a-row :gutter="[8,8]">
             <a-col :span="12" v-for="f in copyFieldOptions" :key="f.key">
@@ -802,8 +805,9 @@ const countries = ['美国', '德国', '英国', '加拿大']
 
 const subColumns = [
   { title: '子订单号', key: 'sub_no', width: 165 },
+  { title: '排单日期', key: 'sub_scheduled', width: 95 },
+  { title: 'ASIN / 产品名', key: 'sub_asin', width: 160 },
   { title: '关键词', key: 'sub_keyword', width: 130 },
-  { title: '排期日期', key: 'sub_scheduled', width: 95 },
   { title: '测评类型', key: 'sub_review_type', width: 80 },
   { title: '测评等级', key: 'sub_review_level', width: 75 },
   { title: '售价 / 实付', key: 'sub_price_paid', width: 110 },
@@ -815,6 +819,8 @@ const subColumns = [
   { title: '评价', key: 'sub_review', width: 70 },
   { title: 'FB', key: 'sub_fb', width: 60 },
   { title: '应返 / 实返', key: 'sub_refund', width: 130 },
+  { title: '返款方式', key: 'sub_refund_method', width: 90 },
+  { title: '创建时间', key: 'sub_created_at', width: 115 },
   { title: '备注', key: 'sub_notes', width: 130 },
   { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
 ]
@@ -1276,65 +1282,67 @@ async function saveKwEdit() {
   }
 }
 
-// ===== 修改子订单弹窗 =====
+// ===== 批量修改子订单弹窗 =====
 const editSubModalOpen = ref(false)
-const editSubRecord = ref<any>(null)
-const editSubHasRefund = ref(false)
 const editSubSaving = ref(false)
-const editSubForm = ref<any>({})
+const editableSubList = ref<any[]>([])
+const batchSelectedIds = ref<string[]>([])
+const batchEditOrderId = ref<string>('')
+const batchEditForm = ref<any>({
+  keyword: '',
+  order_type: undefined,
+  review_level: undefined,
+  scheduled_date: '',
+  product_price: undefined,
+})
 
 async function openEditSubModal(record: any) {
+  batchEditOrderId.value = record.id
   if (!subOrdersMap.value[record.id]) {
     await loadSubOrders(record.id)
-    if (!expandedRowKeys.value.includes(record.id)) {
-      expandedRowKeys.value = [...expandedRowKeys.value, record.id]
-      await loadSchedules(record.id)
-    }
   }
   const subs = subOrdersMap.value[record.id] || []
   if (subs.length === 0) { message.info('暂无子订单'); return }
-  const sub = subs[0]
-  editSubRecord.value = sub
-  editSubHasRefund.value = !!(sub.refund_amount || sub.refund_status)
-  editSubForm.value = {
-    status: sub.status || '待分配',
-    scheduled_date: sub.scheduled_date || '',
-    amazon_order_id: sub.amazon_order_id || '',
-    product_price: sub.product_price != null ? Number(sub.product_price) : undefined,
-    actual_paid: sub.actual_paid != null ? Number(sub.actual_paid) : undefined,
-    order_type: sub.order_type || '',
-    review_level: sub.review_level || '',
-    staff_name: sub.staff_name || '',
-    buyer_name: sub.buyer_name || '',
-    keyword: sub.keyword || '',
-    task_notes: sub.task_notes || '',
-  }
+  editableSubList.value = subs.filter((s: any) => !s.refund_amount && !s.refund_status)
+  batchSelectedIds.value = editableSubList.value.map((s: any) => s.id)
+  batchEditForm.value = { keyword: '', order_type: undefined, review_level: undefined, scheduled_date: '', product_price: undefined }
   editSubModalOpen.value = true
 }
 
-async function saveEditSub() {
-  if (!editSubRecord.value?.id) return
+function toggleBatchSelect(id: string) {
+  if (batchSelectedIds.value.includes(id)) {
+    batchSelectedIds.value = batchSelectedIds.value.filter(i => i !== id)
+  } else {
+    batchSelectedIds.value = [...batchSelectedIds.value, id]
+  }
+}
+
+function batchSelectAll() {
+  batchSelectedIds.value = editableSubList.value.map((s: any) => s.id)
+}
+
+function batchSelectNone() {
+  batchSelectedIds.value = []
+}
+
+async function saveBatchEdit() {
+  if (batchSelectedIds.value.length === 0) return
   editSubSaving.value = true
   try {
-    const f = editSubForm.value
-    const payload: any = {
-      status: f.status,
-      scheduled_date: f.scheduled_date || null,
-      amazon_order_id: f.amazon_order_id || null,
-      product_price: f.product_price,
-      actual_paid: f.actual_paid,
-      order_type: f.order_type || null,
-      review_level: f.review_level || null,
-      staff_name: f.staff_name || null,
-      buyer_name: f.buyer_name || null,
-      keyword: f.keyword || null,
-      task_notes: f.task_notes || null,
-    }
-    const { error } = await supabase.from('sub_orders').update(payload).eq('id', editSubRecord.value.id)
+    const f = batchEditForm.value
+    const payload: any = {}
+    if (f.keyword !== '' && f.keyword != null) payload.keyword = f.keyword
+    if (f.order_type) payload.order_type = f.order_type
+    if (f.review_level) payload.review_level = f.review_level
+    if (f.scheduled_date) payload.scheduled_date = f.scheduled_date
+    if (f.product_price != null) payload.product_price = f.product_price
+
+    if (Object.keys(payload).length === 0) { message.warning('请至少填写一个修改字段'); return }
+
+    const { error } = await supabase.from('sub_orders').update(payload).in('id', batchSelectedIds.value)
     if (error) throw error
-    const orderId = editSubRecord.value.order_id
-    if (orderId) await loadSubOrders(orderId)
-    message.success('子订单已保存')
+    await loadSubOrders(batchEditOrderId.value)
+    message.success(`已批量修改 ${batchSelectedIds.value.length} 条子订单`)
     editSubModalOpen.value = false
   } catch (e: any) {
     message.error('保存失败：' + e.message)
@@ -1343,56 +1351,50 @@ async function saveEditSub() {
   }
 }
 
-// ===== 复制弹窗 =====
+// ===== 复制弹窗（复制主任务信息）=====
 const copyModalOpen = ref(false)
-const copySubList = ref<any[]>([])
-const copySelectedSubId = ref<string>('')
-const copyCheckedFields = ref<string[]>(['asin', 'amazon_order_id'])
 const copyOrderRecord = ref<any>(null)
+const copyCheckedFields = ref<string[]>(['asin', 'order_number'])
+const copyPreviewText = ref('')
 
 const copyFieldOptions = [
   { key: 'asin', label: 'ASIN' },
-  { key: 'amazon_order_id', label: '订单号' },
-  { key: 'amazon_order_placed_at', label: '订单上传时间' },
-  { key: 'review_link', label: '评论链接' },
-  { key: 'order_status', label: '订单状态' },
+  { key: 'order_number', label: '订单号' },
+  { key: 'product_name', label: '产品名称' },
+  { key: 'store_name', label: '店铺名称' },
+  { key: 'brand_name', label: '品牌名称' },
+  { key: 'country', label: '国家/站点' },
   { key: 'order_type', label: '测评类型' },
   { key: 'review_level', label: '测评等级' },
-  { key: 'product_price', label: '售价' },
-  { key: 'actual_paid', label: '实付金额' },
-  { key: 'task_notes', label: '备注' },
+  { key: 'product_price', label: '产品售价' },
+  { key: 'order_quantity', label: '订单数量' },
+  { key: 'category', label: '类目' },
+  { key: 'customer_name', label: '客户名称' },
+  { key: 'variant_info', label: '变参信息' },
+  { key: 'status', label: '任务状态' },
 ]
 
-const copyPreviewText = ref('')
-
-async function openCopyModal(record: any) {
+function openCopyModal(record: any) {
   copyOrderRecord.value = record
-  if (!subOrdersMap.value[record.id]) {
-    await loadSubOrders(record.id)
-  }
-  copySubList.value = subOrdersMap.value[record.id] || []
-  copySelectedSubId.value = copySubList.value[0]?.id || ''
-  copyCheckedFields.value = ['asin', 'amazon_order_id']
+  copyCheckedFields.value = ['asin', 'order_number']
   updateCopyPreview()
   copyModalOpen.value = true
 }
 
 function updateCopyPreview() {
-  const sub = copySubList.value.find(s => s.id === copySelectedSubId.value)
-  if (!sub) { copyPreviewText.value = ''; return }
+  const rec = copyOrderRecord.value
+  if (!rec) { copyPreviewText.value = ''; return }
   const parts: string[] = []
   for (const f of copyFieldOptions) {
     if (!copyCheckedFields.value.includes(f.key)) continue
-    let val = sub[f.key]
-    if (f.key === 'amazon_order_placed_at' && val) val = dayjs(val).format('YYYY-MM-DD HH:mm')
+    let val = rec[f.key]
     if (f.key === 'product_price' && val != null) val = '$' + Number(val).toFixed(2)
-    if (f.key === 'actual_paid' && val != null) val = '$' + Number(val).toFixed(2)
-    if (val) parts.push(`${f.label}：${val}`)
+    if (val != null && val !== '') parts.push(`${f.label}：${val}`)
   }
   copyPreviewText.value = parts.join('\n')
 }
 
-watch([copySelectedSubId, copyCheckedFields], updateCopyPreview, { deep: true })
+watch(copyCheckedFields, updateCopyPreview, { deep: true })
 
 function doConfirmCopy() {
   updateCopyPreview()
@@ -1910,9 +1912,54 @@ onMounted(() => {
 .edit-sub-btn { font-size: 12px; color: #374151; }
 .copy-sub-btn { font-size: 12px; color: #374151; }
 
-/* ===== 修改弹窗 ===== */
-.edit-sub-modal-body { padding: 4px 0; }
-.edit-sub-warning { margin-bottom: 12px; }
+/* ===== ASIN列 ===== */
+.asin-cell { display: flex; flex-direction: column; gap: 1px; }
+.asin-code { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; font-weight: 600; }
+.asin-name { font-size: 10px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.created-at-text { font-size: 11px; color: #6b7280; }
+
+/* ===== 批量修改弹窗 ===== */
+.batch-edit-modal-body { padding: 4px 0; }
+.batch-edit-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border-radius: 6px;
+  border: 1px solid #bfdbfe;
+}
+.batch-tip-text { font-size: 12px; color: #1d4ed8; }
+.batch-sub-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.batch-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.12s;
+}
+.batch-sub-item:last-child { border-bottom: none; }
+.batch-sub-item:hover { background: #f8fafc; }
+.batch-sub-selected { background: #eff6ff !important; }
+.batch-sub-no { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; min-width: 155px; }
+.batch-sub-date { font-size: 11px; color: #6b7280; min-width: 80px; }
+.batch-sub-type { font-size: 11px; }
+.batch-sub-kw { font-size: 11px; color: #2563eb; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-sub-price { font-size: 11px; color: #16a34a; font-weight: 600; }
+.batch-sub-empty { padding: 20px; text-align: center; color: #9ca3af; font-size: 13px; }
+.batch-edit-form-label { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+.batch-selected-count { font-size: 13px; color: #374151; font-weight: 500; }
 
 /* ===== 复制弹窗 ===== */
 .copy-modal-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
