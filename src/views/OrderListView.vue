@@ -31,19 +31,6 @@
         <a-button type="primary" @click="loadOrders"><ReloadOutlined /> 刷新</a-button>
 
         <a-divider type="vertical" />
-        <a-dropdown>
-          <a-button type="default" :disabled="selectedRowKeys.length === 0">
-            批量改状态 <DownOutlined />
-          </a-button>
-          <template #overlay>
-            <a-menu @click="(info: any) => batchUpdateStatus(info.key as string)">
-              <a-menu-item v-for="s in statuses" :key="s">{{ s }}</a-menu-item>
-            </a-menu>
-          </template>
-        </a-dropdown>
-        <a-button :disabled="selectedRowKeys.length < 2" @click="openCreateGroupModal" style="color:#1d4ed8;border-color:#1d4ed8">
-          <LinkOutlined /> 创建任务组<template v-if="selectedRowKeys.length >= 2">（{{ selectedRowKeys.length }}）</template>
-        </a-button>
         <a-popconfirm v-if="selectedRowKeys.length > 0" title="确定批量删除选中的订单吗?" @confirm="batchDelete">
           <a-button danger>批量删除（{{ selectedRowKeys.length }}）</a-button>
         </a-popconfirm>
@@ -161,7 +148,10 @@
           </template>
 
           <template v-if="column.key === 'sales_person'">
-            <span v-if="record.sales_person" class="sales-name">{{ record.sales_person }}</span>
+            <div v-if="record.sales_person" class="sales-cell">
+              <span class="sales-name">{{ record.sales_person }}</span>
+              <span v-if="managerWechatMap[record.sales_person]" class="sales-wechat">{{ managerWechatMap[record.sales_person] }}</span>
+            </div>
             <span v-else class="text-empty">-</span>
           </template>
 
@@ -1462,7 +1452,21 @@ async function batchUpdateStatus(status: string) {
   loadOrders()
 }
 
-onMounted(loadOrders)
+const managerWechatMap = ref<Record<string, string>>({})
+
+async function loadManagerWechat() {
+  const { data } = await supabase.from('business_managers').select('name, wechat_id')
+  if (data) {
+    const map: Record<string, string> = {}
+    data.forEach(m => { if (m.name && m.wechat_id) map[m.name] = m.wechat_id })
+    managerWechatMap.value = map
+  }
+}
+
+onMounted(() => {
+  loadOrders()
+  loadManagerWechat()
+})
 </script>
 
 <style scoped>
@@ -1531,6 +1535,7 @@ onMounted(loadOrders)
 
 .sales-cell { display: flex; flex-direction: column; gap: 2px; }
 .sales-name { font-size: 12px; font-weight: 500; color: #374151; }
+.sales-wechat { font-size: 11px; color: #6b7280; }
 .customer-name { font-size: 11px; color: #9ca3af; }
 .customer-name-cell { font-size: 12px; color: #374151; }
 .customer-cell { display: flex; flex-direction: column; gap: 3px; }
