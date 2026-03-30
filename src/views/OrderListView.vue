@@ -105,6 +105,7 @@
             <div class="order-types-cell">
               <div class="review-type-line">
                 <a-tag :color="getReviewTypeColor(record.review_type)" size="small">{{ record.review_type || '—' }}</a-tag>
+                <span class="total-qty-badge">共{{ record.order_quantity || 0 }}单</span>
               </div>
               <template v-if="hasMultipleTypes(record)">
                 <div v-for="t in record.order_types" :key="t" class="type-qty-row">
@@ -172,14 +173,15 @@
 
           <template v-if="column.key === 'customer'">
             <div class="customer-cell">
-              <div class="customer-name-row">
+              <template v-if="record.feedback_channel === '群组'">
+                <span class="customer-group-name">{{ record.group_name || record.customer_name || '-' }}</span>
+                <a-tag color="blue" size="small" class="feedback-channel-tag" style="margin-top:2px;display:inline-block">群组</a-tag>
+              </template>
+              <template v-else>
                 <span v-if="record.customer_name" class="customer-name-cell">{{ record.customer_name }}</span>
                 <span v-else class="text-empty">-</span>
-                <a-tag v-if="record.feedback_channel" :color="record.feedback_channel === '群组' ? 'blue' : 'cyan'" size="small" class="feedback-channel-tag">{{ record.feedback_channel }}</a-tag>
-              </div>
-              <div v-if="record.sales_person" class="customer-sales-row">
-                <span class="customer-sales-name">{{ record.sales_person }}</span>
-              </div>
+                <a-tag v-if="record.feedback_channel" color="cyan" size="small" class="feedback-channel-tag" style="margin-left:4px">私聊</a-tag>
+              </template>
             </div>
           </template>
 
@@ -1068,9 +1070,9 @@ const rowSelection = computed(() => ({
 
 const columns = [
   { title: '任务号', key: 'order_number', dataIndex: 'order_number', width: 175 },
+  { title: '客户', key: 'customer', width: 160 },
   { title: '产品信息', key: 'product', width: 220 },
   { title: '国家', key: 'country', dataIndex: 'country', width: 65 },
-  { title: '客户/商务', key: 'customer', width: 140 },
   { title: '测评类型/量', key: 'order_types', width: 135 },
   { title: '产品售价', key: 'product_price', width: 90 },
   { title: '接单汇率', key: 'exchange_rate', width: 80 },
@@ -1079,6 +1081,7 @@ const columns = [
   { title: '账单状态', key: 'billing', width: 130 },
   { title: '反馈状态', key: 'feedback', width: 130 },
   { title: '商务备注', key: 'notes', width: 140 },
+  { title: '商务', key: 'sales_person', width: 90 },
   { title: '任务状态', key: 'task_status', width: 95 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 100, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
   { title: '操作', key: 'action', width: 160, fixed: 'right' as const },
@@ -2031,9 +2034,8 @@ onMounted(loadOrders)
 .amount-received { color: #2563eb; }
 .price-cell { display: inline-block; }
 .price-usd { font-size: 12px; color: #1d4ed8; font-weight: 600; }
-.customer-name-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.customer-sales-row { margin-top: 2px; }
-.customer-sales-name { font-size: 11px; color: #6b7280; background: #f3f4f6; border-radius: 3px; padding: 1px 6px; }
+.customer-group-name { font-size: 12px; color: #1d4ed8; font-weight: 500; display: block; line-height: 1.4; }
+.total-qty-badge { font-size: 11px; color: #374151; font-weight: 600; background: #f3f4f6; border-radius: 3px; padding: 1px 5px; margin-left: 4px; }
 
 :global(.row-batch-first td) { border-top: 2px solid #e2e8f0 !important; }
 :global(.row-batch-last td) { border-bottom: 2px solid #e2e8f0 !important; }
