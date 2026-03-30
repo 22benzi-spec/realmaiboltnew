@@ -122,6 +122,12 @@
               >
                 <ThunderboltOutlined /> 生成
               </a-button>
+              <a-button size="small" class="edit-sub-btn" @click.stop="openEditSubModal(record)">
+                <EditOutlined /> 修改
+              </a-button>
+              <a-button size="small" class="copy-sub-btn" @click.stop="openCopyModal(record)">
+                <CopyOutlined /> 复制
+              </a-button>
               <a-popconfirm title="确定删除此任务及所有子订单吗?" @confirm="deleteTask(record.id)">
                 <a-button size="small" type="text" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
               </a-popconfirm>
@@ -204,12 +210,17 @@
                   <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
                   <span v-else class="text-gray">—</span>
                 </template>
-                <template v-if="column.key === 'sub_price'">
-                  <span class="price-text">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
-                </template>
-                <template v-if="column.key === 'sub_actual_paid'">
-                  <span v-if="sub.actual_paid" class="price-text">${{ Number(sub.actual_paid).toFixed(2) }}</span>
-                  <span v-else class="text-gray">—</span>
+                <template v-if="column.key === 'sub_price_paid'">
+                  <div class="price-pair-cell">
+                    <div class="price-pair-row">
+                      <span class="price-pair-label">售价</span>
+                      <span class="price-text">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
+                    </div>
+                    <div v-if="sub.actual_paid" class="price-pair-row">
+                      <span class="price-pair-label">实付</span>
+                      <span class="price-text actual-paid-text">${{ Number(sub.actual_paid).toFixed(2) }}</span>
+                    </div>
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_staff'">
                   <span v-if="sub.staff_name" class="staff-name">{{ sub.staff_name }}</span>
@@ -242,9 +253,15 @@
                   <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_refund'">
-                  <div v-if="sub.refund_method || sub.refund_amount">
-                    <div class="refund-method-tag">{{ sub.refund_method || '—' }}</div>
-                    <div v-if="sub.refund_amount" class="refund-amount">${{ Number(sub.refund_amount).toFixed(2) }}</div>
+                  <div v-if="sub.commission_fee || sub.refund_amount" class="price-pair-cell">
+                    <div v-if="sub.commission_fee" class="price-pair-row">
+                      <span class="price-pair-label">应返</span>
+                      <span class="refund-amount">¥{{ Number(sub.commission_fee).toFixed(2) }}</span>
+                    </div>
+                    <div v-if="sub.refund_amount" class="price-pair-row">
+                      <span class="price-pair-label">实返</span>
+                      <span class="refund-amount refund-actual">¥{{ Number(sub.refund_amount).toFixed(2) }}</span>
+                    </div>
                   </div>
                   <span v-else class="text-gray">—</span>
                 </template>
@@ -621,15 +638,139 @@
       </div>
     </a-modal>
 
+    <!-- 修改子订单弹窗 -->
+    <a-modal
+      v-model:open="editSubModalOpen"
+      title="修改子订单"
+      :footer="null"
+      width="780px"
+      :destroy-on-close="true"
+    >
+      <div v-if="editSubRecord" class="edit-sub-modal-body">
+        <div v-if="editSubHasRefund" class="edit-sub-warning">
+          <a-alert type="warning" show-icon message="该子订单已有返款记录，不允许修改" />
+        </div>
+        <template v-else>
+          <a-form layout="vertical">
+            <a-row :gutter="16">
+              <a-col :span="8">
+                <a-form-item label="状态">
+                  <a-select v-model:value="editSubForm.status" size="small" style="width:100%">
+                    <a-select-option v-for="s in subStatuses" :key="s" :value="s">{{ s }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="排期日期">
+                  <a-input v-model:value="editSubForm.scheduled_date" size="small" placeholder="YYYY-MM-DD" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="亚马逊订单号">
+                  <a-input v-model:value="editSubForm.amazon_order_id" size="small" placeholder="亚马逊订单号" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="产品售价">
+                  <a-input-number v-model:value="editSubForm.product_price" size="small" :min="0" :precision="2" prefix="$" style="width:100%" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="实付金额">
+                  <a-input-number v-model:value="editSubForm.actual_paid" size="small" :min="0" :precision="2" prefix="$" style="width:100%" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="测评类型">
+                  <a-input v-model:value="editSubForm.order_type" size="small" placeholder="测评类型" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="测评等级">
+                  <a-select v-model:value="editSubForm.review_level" size="small" style="width:100%" allow-clear>
+                    <a-select-option value="普通">普通</a-select-option>
+                    <a-select-option value="高等">高等</a-select-option>
+                    <a-select-option value="极高等">极高等</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="业务员">
+                  <a-input v-model:value="editSubForm.staff_name" size="small" placeholder="业务员姓名" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="买手">
+                  <a-input v-model:value="editSubForm.buyer_name" size="small" placeholder="买手姓名" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="16">
+                <a-form-item label="关键词">
+                  <a-input v-model:value="editSubForm.keyword" size="small" placeholder="搜索关键词" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="24">
+                <a-form-item label="备注">
+                  <a-textarea v-model:value="editSubForm.task_notes" :rows="2" size="small" placeholder="备注内容" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-form>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+            <a-button @click="editSubModalOpen = false">取消</a-button>
+            <a-button type="primary" :loading="editSubSaving" @click="saveEditSub">保存</a-button>
+          </div>
+        </template>
+      </div>
+    </a-modal>
+
+    <!-- 复制弹窗 -->
+    <a-modal
+      v-model:open="copyModalOpen"
+      title="复制子订单信息"
+      width="540px"
+      ok-text="复制"
+      cancel-text="取消"
+      @ok="doConfirmCopy"
+    >
+      <div class="copy-modal-body">
+        <div class="copy-sub-selector">
+          <div class="copy-field-label">选择子订单：</div>
+          <a-select
+            v-model:value="copySelectedSubId"
+            style="width:100%"
+            placeholder="选择子订单"
+            allow-clear
+          >
+            <a-select-option v-for="sub in copySubList" :key="sub.id" :value="sub.id">
+              {{ sub.sub_order_number }}
+            </a-select-option>
+          </a-select>
+        </div>
+        <div class="copy-fields-label">选择要复制的字段（默认勾选 ASIN 和订单号）：</div>
+        <a-checkbox-group v-model:value="copyCheckedFields" class="copy-checkbox-group">
+          <a-row :gutter="[8,8]">
+            <a-col :span="12" v-for="f in copyFieldOptions" :key="f.key">
+              <a-checkbox :value="f.key">{{ f.label }}</a-checkbox>
+            </a-col>
+          </a-row>
+        </a-checkbox-group>
+        <div v-if="copyPreviewText" class="copy-preview">
+          <div class="copy-preview-label">预览：</div>
+          <div class="copy-preview-text">{{ copyPreviewText }}</div>
+        </div>
+      </div>
+    </a-modal>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined, RightOutlined, ThunderboltOutlined,
-  DeleteOutlined, EditOutlined, SaveOutlined, LinkOutlined, PictureOutlined
+  DeleteOutlined, EditOutlined, SaveOutlined, LinkOutlined, PictureOutlined, CopyOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -665,8 +806,7 @@ const subColumns = [
   { title: '排期日期', key: 'sub_scheduled', width: 95 },
   { title: '测评类型', key: 'sub_review_type', width: 80 },
   { title: '测评等级', key: 'sub_review_level', width: 75 },
-  { title: '产品售价', key: 'sub_price', width: 90 },
-  { title: '实付金额', key: 'sub_actual_paid', width: 90 },
+  { title: '售价 / 实付', key: 'sub_price_paid', width: 110 },
   { title: '业务员', key: 'sub_staff', width: 80 },
   { title: '买手', key: 'sub_buyer', width: 80 },
   { title: '亚马逊订单号', key: 'sub_amazon_order', width: 145 },
@@ -674,7 +814,7 @@ const subColumns = [
   { title: '订单状态', key: 'sub_order_status', width: 100 },
   { title: '评价', key: 'sub_review', width: 70 },
   { title: 'FB', key: 'sub_fb', width: 60 },
-  { title: '返款', key: 'sub_refund', width: 130 },
+  { title: '应返 / 实返', key: 'sub_refund', width: 130 },
   { title: '备注', key: 'sub_notes', width: 130 },
   { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
 ]
@@ -1134,6 +1274,135 @@ async function saveKwEdit() {
   } finally {
     kwEditSaving.value = false
   }
+}
+
+// ===== 修改子订单弹窗 =====
+const editSubModalOpen = ref(false)
+const editSubRecord = ref<any>(null)
+const editSubHasRefund = ref(false)
+const editSubSaving = ref(false)
+const editSubForm = ref<any>({})
+
+async function openEditSubModal(record: any) {
+  if (!subOrdersMap.value[record.id]) {
+    await loadSubOrders(record.id)
+    if (!expandedRowKeys.value.includes(record.id)) {
+      expandedRowKeys.value = [...expandedRowKeys.value, record.id]
+      await loadSchedules(record.id)
+    }
+  }
+  const subs = subOrdersMap.value[record.id] || []
+  if (subs.length === 0) { message.info('暂无子订单'); return }
+  const sub = subs[0]
+  editSubRecord.value = sub
+  editSubHasRefund.value = !!(sub.refund_amount || sub.refund_status)
+  editSubForm.value = {
+    status: sub.status || '待分配',
+    scheduled_date: sub.scheduled_date || '',
+    amazon_order_id: sub.amazon_order_id || '',
+    product_price: sub.product_price != null ? Number(sub.product_price) : undefined,
+    actual_paid: sub.actual_paid != null ? Number(sub.actual_paid) : undefined,
+    order_type: sub.order_type || '',
+    review_level: sub.review_level || '',
+    staff_name: sub.staff_name || '',
+    buyer_name: sub.buyer_name || '',
+    keyword: sub.keyword || '',
+    task_notes: sub.task_notes || '',
+  }
+  editSubModalOpen.value = true
+}
+
+async function saveEditSub() {
+  if (!editSubRecord.value?.id) return
+  editSubSaving.value = true
+  try {
+    const f = editSubForm.value
+    const payload: any = {
+      status: f.status,
+      scheduled_date: f.scheduled_date || null,
+      amazon_order_id: f.amazon_order_id || null,
+      product_price: f.product_price,
+      actual_paid: f.actual_paid,
+      order_type: f.order_type || null,
+      review_level: f.review_level || null,
+      staff_name: f.staff_name || null,
+      buyer_name: f.buyer_name || null,
+      keyword: f.keyword || null,
+      task_notes: f.task_notes || null,
+    }
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', editSubRecord.value.id)
+    if (error) throw error
+    const orderId = editSubRecord.value.order_id
+    if (orderId) await loadSubOrders(orderId)
+    message.success('子订单已保存')
+    editSubModalOpen.value = false
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    editSubSaving.value = false
+  }
+}
+
+// ===== 复制弹窗 =====
+const copyModalOpen = ref(false)
+const copySubList = ref<any[]>([])
+const copySelectedSubId = ref<string>('')
+const copyCheckedFields = ref<string[]>(['asin', 'amazon_order_id'])
+const copyOrderRecord = ref<any>(null)
+
+const copyFieldOptions = [
+  { key: 'asin', label: 'ASIN' },
+  { key: 'amazon_order_id', label: '订单号' },
+  { key: 'amazon_order_placed_at', label: '订单上传时间' },
+  { key: 'review_link', label: '评论链接' },
+  { key: 'order_status', label: '订单状态' },
+  { key: 'order_type', label: '测评类型' },
+  { key: 'review_level', label: '测评等级' },
+  { key: 'product_price', label: '售价' },
+  { key: 'actual_paid', label: '实付金额' },
+  { key: 'task_notes', label: '备注' },
+]
+
+const copyPreviewText = ref('')
+
+async function openCopyModal(record: any) {
+  copyOrderRecord.value = record
+  if (!subOrdersMap.value[record.id]) {
+    await loadSubOrders(record.id)
+  }
+  copySubList.value = subOrdersMap.value[record.id] || []
+  copySelectedSubId.value = copySubList.value[0]?.id || ''
+  copyCheckedFields.value = ['asin', 'amazon_order_id']
+  updateCopyPreview()
+  copyModalOpen.value = true
+}
+
+function updateCopyPreview() {
+  const sub = copySubList.value.find(s => s.id === copySelectedSubId.value)
+  if (!sub) { copyPreviewText.value = ''; return }
+  const parts: string[] = []
+  for (const f of copyFieldOptions) {
+    if (!copyCheckedFields.value.includes(f.key)) continue
+    let val = sub[f.key]
+    if (f.key === 'amazon_order_placed_at' && val) val = dayjs(val).format('YYYY-MM-DD HH:mm')
+    if (f.key === 'product_price' && val != null) val = '$' + Number(val).toFixed(2)
+    if (f.key === 'actual_paid' && val != null) val = '$' + Number(val).toFixed(2)
+    if (val) parts.push(`${f.label}：${val}`)
+  }
+  copyPreviewText.value = parts.join('\n')
+}
+
+watch([copySelectedSubId, copyCheckedFields], updateCopyPreview, { deep: true })
+
+function doConfirmCopy() {
+  updateCopyPreview()
+  if (!copyPreviewText.value) { message.warning('没有可复制的内容'); return }
+  navigator.clipboard.writeText(copyPreviewText.value).then(() => {
+    message.success('已复制到剪贴板')
+    copyModalOpen.value = false
+  }).catch(() => {
+    message.error('复制失败，请手动复制')
+  })
 }
 
 onMounted(() => {
@@ -1629,4 +1898,34 @@ onMounted(() => {
 }
 .kw-edit-label { font-size: 13px; color: #374151; white-space: nowrap; min-width: 52px; }
 .kw-link-preview { font-size: 12px; color: #0891b2; padding-left: 62px; }
+
+/* ===== 价格对列 ===== */
+.price-pair-cell { display: flex; flex-direction: column; gap: 2px; }
+.price-pair-row { display: flex; align-items: center; gap: 4px; }
+.price-pair-label { font-size: 10px; color: #9ca3af; min-width: 24px; }
+.actual-paid-text { color: #2563eb; }
+.refund-actual { color: #16a34a; }
+
+/* ===== 修改/复制按钮 ===== */
+.edit-sub-btn { font-size: 12px; color: #374151; }
+.copy-sub-btn { font-size: 12px; color: #374151; }
+
+/* ===== 修改弹窗 ===== */
+.edit-sub-modal-body { padding: 4px 0; }
+.edit-sub-warning { margin-bottom: 12px; }
+
+/* ===== 复制弹窗 ===== */
+.copy-modal-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
+.copy-sub-selector { display: flex; flex-direction: column; gap: 6px; }
+.copy-field-label { font-size: 13px; color: #374151; font-weight: 500; }
+.copy-fields-label { font-size: 13px; color: #374151; font-weight: 500; }
+.copy-checkbox-group { width: 100%; }
+.copy-preview {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.copy-preview-label { font-size: 11px; color: #9ca3af; margin-bottom: 6px; }
+.copy-preview-text { font-size: 13px; color: #374151; white-space: pre-line; line-height: 1.7; }
 </style>
