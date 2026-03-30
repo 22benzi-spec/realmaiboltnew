@@ -121,37 +121,6 @@
             </div>
           </template>
 
-          <template v-if="column.key === 'chat_order_id'">
-            <span v-if="record.chat_order_id" class="chat-order-id">{{ record.chat_order_id }}</span>
-            <a-button v-else type="link" size="small" class="set-link" @click="openEditChatId(record)">设置</a-button>
-          </template>
-
-          <template v-if="column.key === 'order_progress'">
-            <div class="order-progress-cell">
-              <div class="progress-bar-wrap">
-                <div class="progress-bar-bg">
-                  <div class="progress-bar-fill" :style="{ width: getOrderProgressPct(record) + '%' }"></div>
-                </div>
-                <span class="progress-pct">{{ getOrderProgressPct(record) }}%</span>
-              </div>
-              <div class="progress-stats-row">
-                <span class="ps-item">已下单 <b>{{ record._ordered_count || 0 }}</b></span>
-                <span class="ps-sep">/</span>
-                <span class="ps-item">已留评 <b>{{ record._review_count || 0 }}</b></span>
-                <span class="ps-sep">/</span>
-                <span class="ps-total">{{ record.order_quantity || 0 }}</span>
-              </div>
-            </div>
-          </template>
-
-          <template v-if="column.key === 'sub_order_status'">
-            <div class="sub-status-summary">
-              <div v-if="(record._cancel_count || 0) > 0" class="ss-item ss-cancel">取消 {{ record._cancel_count }}</div>
-              <div v-if="(record._refund_count || 0) > 0" class="ss-item ss-refund">退款 {{ record._refund_count }}</div>
-              <div v-if="(record._cancel_count || 0) === 0 && (record._refund_count || 0) === 0" class="ss-item ss-normal">正常</div>
-            </div>
-          </template>
-
           <template v-if="column.key === 'feedback'">
             <div class="feedback-cell">
               <div class="feedback-row">
@@ -192,19 +161,6 @@
             </div>
           </template>
 
-          <template v-if="column.key === 'refund_summary'">
-            <div v-if="record._refund_total > 0" class="refund-summary-cell">
-              <div class="rs-method">{{ record._refund_method_summary || '—' }}</div>
-              <div class="rs-amount">${{ Number(record._refund_total || 0).toFixed(2) }}</div>
-              <div v-if="record._refund_date_summary" class="rs-date">{{ record._refund_date_summary }}</div>
-            </div>
-            <span v-else class="text-empty">—</span>
-          </template>
-
-          <template v-if="column.key === 'total_amount'">
-            <span class="amount">&yen;{{ Number(record.total_amount).toFixed(2) }}</span>
-          </template>
-
           <template v-if="column.key === 'country'">
             <a-tag>{{ record.country }}</a-tag>
           </template>
@@ -215,13 +171,45 @@
           </template>
 
           <template v-if="column.key === 'customer'">
-            <span v-if="record.customer_name" class="customer-name-cell">{{ record.customer_name }}</span>
-            <span v-else class="text-empty">-</span>
+            <div class="customer-cell">
+              <span v-if="record.customer_name" class="customer-name-cell">{{ record.customer_name }}</span>
+              <span v-else class="text-empty">-</span>
+              <a-tag v-if="record.feedback_channel" :color="record.feedback_channel === '群组' ? 'blue' : 'cyan'" size="small" class="feedback-channel-tag">{{ record.feedback_channel }}</a-tag>
+            </div>
           </template>
 
           <template v-if="column.key === 'notes'">
             <span v-if="record.notes" class="notes-text">{{ record.notes }}</span>
             <span v-else class="text-empty">—</span>
+          </template>
+
+          <template v-if="column.key === 'exchange_rate'">
+            <span v-if="record.exchange_rate" class="rate-text">{{ Number(record.exchange_rate).toFixed(2) }}</span>
+            <span v-else class="text-empty">—</span>
+          </template>
+
+          <template v-if="column.key === 'receivable_amount'">
+            <div class="amount-cell">
+              <div v-if="(record.product_price || 0) > 0 && (record.exchange_rate || 0) > 0" class="amount-usd-part">
+                <span class="amount-usd-tag">$ {{ (Number(record.product_price || 0) * Number(record.order_quantity || 1)).toFixed(2) }}</span>
+                <span class="amount-rate-hint">× {{ Number(record.exchange_rate).toFixed(2) }}</span>
+              </div>
+              <div class="amount-cny-main">&yen;{{ Number(record.total_amount || 0).toFixed(2) }}</div>
+            </div>
+          </template>
+
+          <template v-if="column.key === 'actual_received'">
+            <div class="amount-cell">
+              <div v-if="(record._payment_total_usd || 0) > 0" class="amount-usd-part">
+                <span class="amount-usd-tag">$ {{ Number(record._payment_total_usd || 0).toFixed(2) }}</span>
+              </div>
+              <div v-if="(record._payment_total_cny || 0) > 0" class="amount-cny-main amount-received">&yen;{{ Number(record._payment_total_cny || 0).toFixed(2) }}</div>
+              <div v-else class="text-empty">—</div>
+            </div>
+          </template>
+
+          <template v-if="column.key === 'task_status'">
+            <a-tag :color="getStatusColor(record.status)" size="small">{{ record.status || '待处理' }}</a-tag>
           </template>
 
           <template v-if="column.key === 'action'">
@@ -308,7 +296,10 @@
             <a-tag :color="getStatusColor(currentOrder.status)">{{ currentOrder.status }}</a-tag>
           </a-descriptions-item>
           <a-descriptions-item label="对接商务">{{ currentOrder.sales_person || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="客户名称">{{ currentOrder.customer_name || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="客户名称">
+            <span>{{ currentOrder.customer_name || '-' }}</span>
+            <a-tag v-if="currentOrder.feedback_channel" :color="currentOrder.feedback_channel === '群组' ? 'blue' : 'cyan'" size="small" style="margin-left:6px">{{ currentOrder.feedback_channel }}</a-tag>
+          </a-descriptions-item>
           <a-descriptions-item label="创建时间" :span="2">{{ dayjs(currentOrder.created_at).format('YYYY-MM-DD HH:mm') }}</a-descriptions-item>
           <a-descriptions-item label="备注" :span="2">{{ currentOrder.notes || '-' }}</a-descriptions-item>
         </a-descriptions>
@@ -1069,16 +1060,15 @@ const columns = [
   { title: '产品信息', key: 'product', width: 220 },
   { title: '国家', key: 'country', dataIndex: 'country', width: 65 },
   { title: '测评类型/量', key: 'order_types', width: 135 },
-  { title: '聊单号', key: 'chat_order_id', width: 120 },
-  { title: '订单进度', key: 'order_progress', width: 130 },
-  { title: '订单状态', key: 'sub_order_status', width: 95 },
   { title: '反馈状态', key: 'feedback', width: 130 },
   { title: '账单状态', key: 'billing', width: 130 },
-  { title: '返款', key: 'refund_summary', width: 140 },
-  { title: '总金额', key: 'total_amount', width: 95 },
+  { title: '客户', key: 'customer', width: 120 },
   { title: '商务', key: 'sales_person', width: 90 },
-  { title: '客户', key: 'customer', width: 90 },
-  { title: '备注', key: 'notes', width: 120 },
+  { title: '汇率', key: 'exchange_rate', width: 70 },
+  { title: '应收基础款项', key: 'receivable_amount', width: 130 },
+  { title: '实收基础款项', key: 'actual_received', width: 130 },
+  { title: '商务备注', key: 'notes', width: 140 },
+  { title: '任务状态', key: 'task_status', width: 95 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 100, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
   { title: '操作', key: 'action', width: 160, fixed: 'right' as const },
 ]
@@ -1283,6 +1273,26 @@ async function loadOrders() {
             row._ordered_count = 0; row._review_count = 0; row._cancel_count = 0
             row._refund_count = 0; row._refund_total = 0
           }
+        }
+      }
+    }
+
+    // 支付款项汇总（实收基础款项）
+    if (orderIds.length > 0) {
+      const { data: payments } = await supabase
+        .from('batch_payments')
+        .select('batch_id, amount_cny, payment_type')
+        .in('batch_id', orderIds)
+      if (payments) {
+        const payMap: Record<string, number> = {}
+        for (const p of payments) {
+          if (!payMap[p.batch_id]) payMap[p.batch_id] = 0
+          const amt = Number(p.amount_cny || 0)
+          payMap[p.batch_id] += p.payment_type === '退款' ? -amt : amt
+        }
+        for (const row of rows) {
+          row._payment_total_cny = payMap[row.id] || 0
+          row._payment_total_usd = 0
         }
       }
     }
@@ -1998,7 +2008,16 @@ onMounted(loadOrders)
 .sales-name { font-size: 12px; font-weight: 500; color: #374151; }
 .customer-name { font-size: 11px; color: #9ca3af; }
 .customer-name-cell { font-size: 12px; color: #374151; }
-.notes-text { font-size: 11px; color: #6b7280; max-width: 110px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.customer-cell { display: flex; flex-direction: column; gap: 3px; }
+.feedback-channel-tag { margin-top: 2px; }
+.notes-text { font-size: 11px; color: #6b7280; max-width: 130px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.rate-text { font-size: 12px; color: #374151; font-family: monospace; }
+.amount-cell { display: flex; flex-direction: column; gap: 2px; }
+.amount-usd-part { display: flex; align-items: center; gap: 4px; }
+.amount-usd-tag { font-size: 11px; color: #2563eb; font-weight: 600; background: #eff6ff; border-radius: 3px; padding: 1px 5px; }
+.amount-rate-hint { font-size: 10px; color: #9ca3af; }
+.amount-cny-main { font-size: 13px; font-weight: 600; color: #16a34a; }
+.amount-received { color: #2563eb; }
 
 :global(.row-batch-first td) { border-top: 2px solid #e2e8f0 !important; }
 :global(.row-batch-last td) { border-bottom: 2px solid #e2e8f0 !important; }
