@@ -678,59 +678,14 @@
       </div>
     </a-modal>
 
-    <!-- Group Detail Modal -->
-    <a-modal
-      v-model:open="groupDetailModalOpen"
-      :title="`任务组：${groupDetailData?.label || groupDetailData?.batch_number}`"
-      :footer="null"
-      width="600px"
-    >
-      <div v-if="groupDetailData" class="group-detail-body">
-        <div class="group-detail-meta">
-          <span class="group-detail-item"><span class="gd-label">日期：</span>{{ groupDetailData.batch_date || '-' }}</span>
-          <span class="group-detail-item"><span class="gd-label">客户：</span>{{ groupDetailData.customer_name || '-' }}</span>
-          <span class="group-detail-item"><span class="gd-label">商务：</span>{{ groupDetailData.sales_person || '-' }}</span>
-          <span class="group-detail-item"><span class="gd-label">状态：</span>
-            <a-tag :color="groupDetailData.batch_status === '已结清' ? 'green' : groupDetailData.batch_status === '进行中' ? 'blue' : 'default'" size="small">
-              {{ groupDetailData.batch_status || '进行中' }}
-            </a-tag>
-          </span>
-        </div>
-        <div class="group-detail-orders">
-          <div class="gd-section-title">关联订单</div>
-          <div v-for="o in groupDetailOrders" :key="o.id" class="gd-order-row">
-            <div class="gd-order-left">
-              <a class="order-number-link" @click="viewDetail(o); groupDetailModalOpen=false">{{ o.order_number }}</a>
-              <span class="gd-order-asin">{{ o.asin }}</span>
-            </div>
-            <div class="gd-order-right">
-              <span class="gd-order-amount">¥{{ Number(o.total_amount).toFixed(2) }}</span>
-              <a-tag :color="o.billing_status === '未完成' ? 'red' : 'green'" size="small">{{ o.billing_status || '已完成' }}</a-tag>
-              <a-tag v-if="o.debt_status === 'owed'" color="orange" size="small">欠款¥{{ Number(o.debt_amount).toFixed(0) }}</a-tag>
-              <a-tag v-else-if="o.debt_status === 'surplus'" color="blue" size="small">应退¥{{ Number(o.debt_amount).toFixed(0) }}</a-tag>
-              <a-tag v-else-if="o.debt_status === 'cleared'" color="green" size="small">已结清</a-tag>
-            </div>
-          </div>
-        </div>
-        <div class="group-detail-summary">
-          <span>合计应收：<strong>¥{{ groupDetailOrders.reduce((s,o)=>s+Number(o.total_amount||0),0).toFixed(2) }}</strong></span>
-          <span v-if="groupDetailOrders.some(o=>o.debt_status==='owed')" class="gd-debt">
-            待补款：¥{{ groupDetailOrders.filter(o=>o.debt_status==='owed').reduce((s,o)=>s+Number(o.debt_amount||0),0).toFixed(2) }}
-          </span>
-          <span v-if="groupDetailOrders.some(o=>o.debt_status==='surplus')" class="gd-surplus">
-            待退款：¥{{ groupDetailOrders.filter(o=>o.debt_status==='surplus').reduce((s,o)=>s+Number(o.debt_amount||0),0).toFixed(2) }}
-          </span>
-        </div>
-        <div class="group-detail-actions">
-          <a-button size="small" @click="batchPayGroupOrders('补款')"><DollarOutlined /> 批量补款</a-button>
-          <a-button size="small" danger @click="batchPayGroupOrders('退款')"><RollbackOutlined /> 批量退款</a-button>
-          <a-popconfirm title="确认解散任务组？订单将不再关联" @confirm="dissolveGroup">
-            <a-button size="small" danger type="text">解散任务组</a-button>
-          </a-popconfirm>
-        </div>
-        <div v-if="groupDetailData.notes" class="gd-notes">备注：{{ groupDetailData.notes }}</div>
-      </div>
-    </a-modal>
+    <!-- Group Billing Drawer -->
+    <GroupBillingDrawer
+      :open="groupDetailModalOpen"
+      :group-data="groupDetailData"
+      :group-orders="groupDetailOrders"
+      @close="groupDetailModalOpen = false"
+      @updated="loadOrders"
+    />
 
     <!-- 统一账单抽屉 -->
     <BillingDrawer
@@ -761,6 +716,7 @@ import { useCurrentUser } from '../composables/useCurrentUser'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import BillingDrawer from '../components/BillingDrawer.vue'
+import GroupBillingDrawer from '../components/GroupBillingDrawer.vue'
 
 const loading = ref(false)
 const orders = ref<any[]>([])
