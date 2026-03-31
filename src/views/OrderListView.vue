@@ -705,7 +705,7 @@
     <a-modal
       v-model:open="billModalOpen"
       title="生成催款账单"
-      width="600px"
+      width="620px"
       ok-text="复制账单"
       cancel-text="关闭"
       @ok="doCopyBill"
@@ -716,38 +716,44 @@
           <span class="bill-customer-text" v-if="billCustomerName">客户：{{ billCustomerName }}</span>
         </div>
 
-        <div class="bill-format-row">
-          <span class="bill-format-label">日期格式：</span>
-          <a-radio-group v-model:value="billDateFormat" size="small">
-            <a-radio-button value="MMDD">月日（0326）</a-radio-button>
-            <a-radio-button value="MM-DD">月-日（03-26）</a-radio-button>
-            <a-radio-button value="YYYY-MM-DD">完整日期</a-radio-button>
-          </a-radio-group>
-          <span class="bill-format-label" style="margin-left:16px">金额字段：</span>
-          <a-radio-group v-model:value="billAmountField" size="small">
-            <a-radio-button value="debt">欠款金额</a-radio-button>
-            <a-radio-button value="total">应收总额</a-radio-button>
-          </a-radio-group>
-        </div>
-
         <div class="bill-lines-wrap">
-          <div v-for="(line, i) in billLines" :key="i" :class="['bill-line', line.type === 'total' ? 'bill-line-total' : line.amount <= 0 ? 'bill-line-ok' : '']">
+          <div
+            v-for="(line, i) in billLines"
+            :key="i"
+            :class="['bill-line', line.type === 'total' ? 'bill-line-total' : line.needAmount <= 0 ? 'bill-line-ok' : '']"
+          >
             <template v-if="line.type === 'total'">
-              <span class="bill-total-text">{{ line.text }}</span>
+              <div class="bill-total-row">
+                <span class="bill-total-label">共需补款</span>
+                <span class="bill-total-text">¥{{ line.totalAmount.toFixed(0) }}</span>
+              </div>
             </template>
             <template v-else>
               <span class="bill-line-date">{{ line.date }}</span>
               <span class="bill-line-asin">{{ line.asin }}</span>
-              <span :class="['bill-line-amount', line.amount <= 0 ? 'bill-amount-ok' : 'bill-amount-owed']">
-                {{ line.amount <= 0 ? '已结清' : `需补 ¥${line.amount.toFixed(0)}` }}
-              </span>
+              <div class="bill-line-right">
+                <div class="bill-line-breakdown">
+                  <span class="bill-breakdown-item">签单 ¥{{ line.totalAmount.toFixed(0) }}</span>
+                  <span class="bill-breakdown-sep">已收 ¥{{ line.receivedAmount.toFixed(0) }}</span>
+                </div>
+                <span :class="['bill-line-amount', line.needAmount <= 0 ? 'bill-amount-ok' : 'bill-amount-owed']">
+                  {{ line.needAmount <= 0 ? '已结清' : `需补 ¥${line.needAmount.toFixed(0)}` }}
+                </span>
+              </div>
             </template>
           </div>
           <div v-if="billLines.length === 0" class="bill-empty">暂无账单数据</div>
         </div>
 
-        <div class="bill-preview-label">预览复制内容：</div>
-        <div class="bill-preview-text">{{ billText }}</div>
+        <div class="bill-edit-label">
+          <span>复制内容（可直接编辑后再复制）：</span>
+        </div>
+        <a-textarea
+          v-model:value="billEditableText"
+          :rows="Math.max(4, billLines.length + 1)"
+          class="bill-editable-text"
+          placeholder="账单内容..."
+        />
       </div>
     </a-modal>
 
@@ -1542,43 +1548,46 @@ async function loadManagerWechat() {
 const billModalOpen = ref(false)
 const billBatchNumber = ref('')
 const billCustomerName = ref('')
-const billDateFormat = ref<'MMDD' | 'MM-DD' | 'YYYY-MM-DD'>('MMDD')
-const billAmountField = ref<'debt' | 'total'>('debt')
 const billOrders = ref<any[]>([])
+const billEditableText = ref('')
 
-interface BillLine {
-  type: 'order' | 'total'
+interface BillOrderLine {
+  type: 'order'
   date: string
   asin: string
-  amount: number
-  text?: string
+  totalAmount: number
+  receivedAmount: number
+  needAmount: number
 }
+interface BillTotalLine {
+  type: 'total'
+  totalAmount: number
+}
+type BillLine = BillOrderLine | BillTotalLine
 
 const billLines = computed<BillLine[]>(() => {
-  const lines: BillLine[] = billOrders.value.map(o => {
-    const dateStr = o.created_at ? dayjs(o.created_at).format(
-      billDateFormat.value === 'MMDD' ? 'MMDD' :
-      billDateFormat.value === 'MM-DD' ? 'MM-DD' : 'YYYY-MM-DD'
-    ) : '—'
-    const amount = billAmountField.value === 'debt'
-      ? (hasRealDebt(o) ? Number(o.debt_amount || 0) : 0)
-      : Number(o.total_amount || 0)
-    return { type: 'order', date: dateStr, asin: o.asin || o.order_number, amount }
+  const lines: BillOrderLine[] = billOrders.value.map(o => {
+    const dateStr = o.created_at ? dayjs(o.created_at).format('MMDD') : '—'
+    const totalAmount = Number(o.total_amount || 0)
+    const receivedAmount = Number(o._payment_total_cny || 0)
+    const needAmount = totalAmount - receivedAmount
+    return { type: 'order', date: dateStr, asin: o.asin || o.order_number, totalAmount, receivedAmount, needAmount }
   })
-  const totalOwed = lines.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0)
+  const grandTotal = lines.filter(l => l.needAmount > 0).reduce((s, l) => s + l.needAmount, 0)
+  const result: BillLine[] = [...lines]
   if (lines.length > 0) {
-    lines.push({ type: 'total', date: '', asin: '', amount: totalOwed, text: `共需补款：¥${totalOwed.toFixed(0)}` })
+    result.push({ type: 'total', totalAmount: grandTotal })
   }
-  return lines
+  return result
 })
 
-const billText = computed(() => {
-  const orderLines = billLines.value.filter(l => l.type === 'order' && l.amount > 0)
-  const totalLine = billLines.value.find(l => l.type === 'total')
-  const parts = orderLines.map(l => `${l.date} ${l.asin} 需补${l.amount.toFixed(0)}元`)
-  if (totalLine) parts.push(totalLine.text || '')
+function buildBillText(): string {
+  const orderLines = billLines.value.filter((l): l is BillOrderLine => l.type === 'order' && l.needAmount > 0)
+  const totalLine = billLines.value.find((l): l is BillTotalLine => l.type === 'total')
+  const parts = orderLines.map(l => `${l.date} ${l.asin} 需补${l.needAmount.toFixed(0)}元`)
+  if (totalLine && totalLine.totalAmount > 0) parts.push(`共需补款：¥${totalLine.totalAmount.toFixed(0)}`)
   return parts.join('\n')
-})
+}
 
 function openBillModal(batchNumber: string) {
   billBatchNumber.value = batchNumber
@@ -1586,6 +1595,7 @@ function openBillModal(batchNumber: string) {
   billOrders.value = batchOrders
   billCustomerName.value = batchOrders[0]?.customer_name || batchOrders[0]?.group_name || ''
   billModalOpen.value = true
+  billEditableText.value = buildBillText()
 }
 
 function openBillModalFromSelection() {
@@ -1594,10 +1604,11 @@ function openBillModalFromSelection() {
   billOrders.value = selected
   billCustomerName.value = selected[0]?.customer_name || selected[0]?.group_name || ''
   billModalOpen.value = true
+  billEditableText.value = buildBillText()
 }
 
 function doCopyBill() {
-  const text = billText.value
+  const text = billEditableText.value.trim()
   if (!text) { message.warning('没有欠款数据可复制'); return }
   navigator.clipboard.writeText(text).then(() => {
     message.success('账单已复制到剪贴板')
@@ -2039,8 +2050,6 @@ onMounted(() => {
 .bill-header-row { display: flex; align-items: center; gap: 12px; }
 .bill-title-text { font-size: 13px; font-weight: 600; color: #374151; }
 .bill-customer-text { font-size: 12px; color: #6b7280; }
-.bill-format-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e5e7eb; }
-.bill-format-label { font-size: 12px; color: #6b7280; }
 .bill-lines-wrap {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -2049,31 +2058,31 @@ onMounted(() => {
 .bill-line {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 8px 14px;
   border-bottom: 1px solid #f3f4f6;
   font-size: 13px;
 }
 .bill-line:last-child { border-bottom: none; }
 .bill-line-ok { background: #f0fdf4; }
-.bill-line-total { background: #fff7ed; justify-content: flex-end; }
-.bill-total-text { font-size: 14px; font-weight: 700; color: #dc2626; }
-.bill-line-date { font-family: monospace; font-size: 13px; color: #374151; min-width: 50px; font-weight: 600; }
-.bill-line-asin { font-family: monospace; font-size: 13px; color: #2563eb; font-weight: 600; flex: 1; }
-.bill-line-amount { font-size: 13px; font-weight: 600; min-width: 90px; text-align: right; }
+.bill-line-total { background: #fff7ed; }
+.bill-total-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; width: 100%; }
+.bill-total-label { font-size: 13px; color: #92400e; font-weight: 500; }
+.bill-total-text { font-size: 16px; font-weight: 700; color: #dc2626; }
+.bill-line-date { font-family: monospace; font-size: 13px; color: #374151; min-width: 46px; font-weight: 600; flex-shrink: 0; }
+.bill-line-asin { font-family: monospace; font-size: 13px; color: #2563eb; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bill-line-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
+.bill-line-breakdown { display: flex; gap: 8px; font-size: 11px; color: #9ca3af; }
+.bill-breakdown-sep { color: #d1d5db; }
+.bill-line-amount { font-size: 13px; font-weight: 600; }
 .bill-amount-owed { color: #dc2626; }
 .bill-amount-ok { color: #16a34a; }
 .bill-empty { padding: 20px; text-align: center; color: #9ca3af; font-size: 13px; }
-.bill-preview-label { font-size: 11px; color: #9ca3af; }
-.bill-preview-text {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px 14px;
-  font-size: 13px;
-  color: #374151;
-  white-space: pre-line;
-  line-height: 1.8;
-  font-family: monospace;
+.bill-edit-label { font-size: 12px; color: #6b7280; }
+.bill-editable-text {
+  font-family: monospace !important;
+  font-size: 13px !important;
+  line-height: 1.8 !important;
+  resize: vertical;
 }
 </style>
