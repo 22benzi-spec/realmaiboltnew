@@ -31,9 +31,14 @@
         <a-button type="primary" @click="loadOrders"><ReloadOutlined /> 刷新</a-button>
 
         <a-divider type="vertical" />
-        <a-popconfirm v-if="selectedRowKeys.length > 0" title="确定批量删除选中的订单吗?" @confirm="batchDelete">
-          <a-button danger>批量删除（{{ selectedRowKeys.length }}）</a-button>
-        </a-popconfirm>
+        <template v-if="selectedRowKeys.length > 0">
+          <a-button @click="openBillModalFromSelection" style="margin-right:8px">
+            <FileTextOutlined /> 生成账单（{{ selectedRowKeys.length }}）
+          </a-button>
+          <a-popconfirm title="确定批量删除选中的订单吗?" @confirm="batchDelete">
+            <a-button danger>批量删除（{{ selectedRowKeys.length }}）</a-button>
+          </a-popconfirm>
+        </template>
       </div>
 
       <a-table
@@ -51,9 +56,18 @@
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'order_number'">
             <div class="order-number-cell">
-              <div v-if="record._isMultiBatch && record._isFirstInBatch" class="batch-group-header" @click.stop="showGroupDetail(record)">
-                <span class="batch-group-icon"><LinkOutlined /></span>
-                <span class="batch-group-name">{{ record.batch_number }}</span>
+              <div v-if="record._isMultiBatch && record._isFirstInBatch" class="batch-group-header">
+                <div class="batch-group-left" @click.stop="showGroupDetail(record)">
+                  <span class="batch-group-icon"><LinkOutlined /></span>
+                  <span class="batch-group-name">{{ record.batch_number }}</span>
+                </div>
+                <a-button
+                  size="small"
+                  class="batch-bill-btn"
+                  @click.stop="openBillModal(record.batch_number)"
+                >
+                  <FileTextOutlined /> 账单
+                </a-button>
               </div>
               <div class="order-number-row">
                 <div v-if="record._isMultiBatch" class="batch-side-bar" :style="{ background: record._batchColor }"></div>
@@ -687,6 +701,56 @@
       @updated="onBillingUpdated"
     />
 
+    <!-- 账单生成弹窗 -->
+    <a-modal
+      v-model:open="billModalOpen"
+      title="生成催款账单"
+      width="600px"
+      ok-text="复制账单"
+      cancel-text="关闭"
+      @ok="doCopyBill"
+    >
+      <div class="bill-modal-body">
+        <div class="bill-header-row">
+          <span class="bill-title-text">{{ billBatchNumber ? `批次：${billBatchNumber}` : '选中订单账单' }}</span>
+          <span class="bill-customer-text" v-if="billCustomerName">客户：{{ billCustomerName }}</span>
+        </div>
+
+        <div class="bill-format-row">
+          <span class="bill-format-label">日期格式：</span>
+          <a-radio-group v-model:value="billDateFormat" size="small">
+            <a-radio-button value="MMDD">月日（0326）</a-radio-button>
+            <a-radio-button value="MM-DD">月-日（03-26）</a-radio-button>
+            <a-radio-button value="YYYY-MM-DD">完整日期</a-radio-button>
+          </a-radio-group>
+          <span class="bill-format-label" style="margin-left:16px">金额字段：</span>
+          <a-radio-group v-model:value="billAmountField" size="small">
+            <a-radio-button value="debt">欠款金额</a-radio-button>
+            <a-radio-button value="total">应收总额</a-radio-button>
+          </a-radio-group>
+        </div>
+
+        <div class="bill-lines-wrap">
+          <div v-for="(line, i) in billLines" :key="i" :class="['bill-line', line.type === 'total' ? 'bill-line-total' : line.amount <= 0 ? 'bill-line-ok' : '']">
+            <template v-if="line.type === 'total'">
+              <span class="bill-total-text">{{ line.text }}</span>
+            </template>
+            <template v-else>
+              <span class="bill-line-date">{{ line.date }}</span>
+              <span class="bill-line-asin">{{ line.asin }}</span>
+              <span :class="['bill-line-amount', line.amount <= 0 ? 'bill-amount-ok' : 'bill-amount-owed']">
+                {{ line.amount <= 0 ? '已结清' : `需补 ¥${line.amount.toFixed(0)}` }}
+              </span>
+            </template>
+          </div>
+          <div v-if="billLines.length === 0" class="bill-empty">暂无账单数据</div>
+        </div>
+
+        <div class="bill-preview-label">预览复制内容：</div>
+        <div class="bill-preview-text">{{ billText }}</div>
+      </div>
+    </a-modal>
+
     <!-- 聊单号编辑弹窗 -->
     <a-modal v-model:open="editChatIdOpen" title="设置聊单号" :footer="null" width="400px">
       <div style="padding:8px 0 16px">
@@ -703,7 +767,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined, DollarOutlined, RollbackOutlined, PlusOutlined, LinkOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, DownOutlined, PictureOutlined, UserOutlined, DeleteOutlined, DollarOutlined, RollbackOutlined, PlusOutlined, LinkOutlined, FileTextOutlined } from '@ant-design/icons-vue'
 import { useCurrentUser } from '../composables/useCurrentUser'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -1474,6 +1538,75 @@ async function loadManagerWechat() {
   }
 }
 
+// ===== 账单生成 =====
+const billModalOpen = ref(false)
+const billBatchNumber = ref('')
+const billCustomerName = ref('')
+const billDateFormat = ref<'MMDD' | 'MM-DD' | 'YYYY-MM-DD'>('MMDD')
+const billAmountField = ref<'debt' | 'total'>('debt')
+const billOrders = ref<any[]>([])
+
+interface BillLine {
+  type: 'order' | 'total'
+  date: string
+  asin: string
+  amount: number
+  text?: string
+}
+
+const billLines = computed<BillLine[]>(() => {
+  const lines: BillLine[] = billOrders.value.map(o => {
+    const dateStr = o.created_at ? dayjs(o.created_at).format(
+      billDateFormat.value === 'MMDD' ? 'MMDD' :
+      billDateFormat.value === 'MM-DD' ? 'MM-DD' : 'YYYY-MM-DD'
+    ) : '—'
+    const amount = billAmountField.value === 'debt'
+      ? (hasRealDebt(o) ? Number(o.debt_amount || 0) : 0)
+      : Number(o.total_amount || 0)
+    return { type: 'order', date: dateStr, asin: o.asin || o.order_number, amount }
+  })
+  const totalOwed = lines.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0)
+  if (lines.length > 0) {
+    lines.push({ type: 'total', date: '', asin: '', amount: totalOwed, text: `共需补款：¥${totalOwed.toFixed(0)}` })
+  }
+  return lines
+})
+
+const billText = computed(() => {
+  const orderLines = billLines.value.filter(l => l.type === 'order' && l.amount > 0)
+  const totalLine = billLines.value.find(l => l.type === 'total')
+  const parts = orderLines.map(l => `${l.date} ${l.asin} 需补${l.amount.toFixed(0)}元`)
+  if (totalLine) parts.push(totalLine.text || '')
+  return parts.join('\n')
+})
+
+function openBillModal(batchNumber: string) {
+  billBatchNumber.value = batchNumber
+  const batchOrders = orders.value.filter(o => o.batch_number === batchNumber)
+  billOrders.value = batchOrders
+  billCustomerName.value = batchOrders[0]?.customer_name || batchOrders[0]?.group_name || ''
+  billModalOpen.value = true
+}
+
+function openBillModalFromSelection() {
+  billBatchNumber.value = ''
+  const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id))
+  billOrders.value = selected
+  billCustomerName.value = selected[0]?.customer_name || selected[0]?.group_name || ''
+  billModalOpen.value = true
+}
+
+function doCopyBill() {
+  const text = billText.value
+  if (!text) { message.warning('没有欠款数据可复制'); return }
+  navigator.clipboard.writeText(text).then(() => {
+    message.success('账单已复制到剪贴板')
+    billModalOpen.value = false
+  }).catch(() => {
+    message.error('复制失败，请手动复制')
+  })
+}
+
 onMounted(() => {
   loadOrders()
   loadManagerWechat()
@@ -1576,19 +1709,44 @@ onMounted(() => {
 .batch-group-header {
   display: inline-flex;
   align-items: center;
+  justify-content: space-between;
   gap: 4px;
   background: #f0f4ff;
   border: 1px solid #c7d7fd;
   border-radius: 5px;
-  padding: 2px 8px 2px 6px;
-  cursor: pointer;
+  padding: 2px 4px 2px 6px;
   transition: background 0.15s;
   max-width: 100%;
+  overflow: hidden;
+  width: 100%;
+}
+.batch-group-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
 }
 .batch-group-header:hover {
   background: #dbeafe;
   border-color: #93c5fd;
+}
+.batch-bill-btn {
+  font-size: 11px;
+  padding: 0 6px;
+  height: 20px;
+  line-height: 20px;
+  flex-shrink: 0;
+  color: #d97706;
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+.batch-bill-btn:hover {
+  color: #b45309 !important;
+  border-color: #fbbf24 !important;
+  background: #fef3c7 !important;
 }
 .batch-group-icon {
   font-size: 10px;
@@ -1875,4 +2033,47 @@ onMounted(() => {
 .gd-surplus { color: #2563eb; font-weight: 600; }
 .group-detail-actions { display: flex; gap: 8px; align-items: center; }
 .gd-notes { font-size: 12px; color: #6b7280; padding: 8px 12px; background: #f9fafb; border-radius: 6px; }
+
+/* ===== 账单弹窗 ===== */
+.bill-modal-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
+.bill-header-row { display: flex; align-items: center; gap: 12px; }
+.bill-title-text { font-size: 13px; font-weight: 600; color: #374151; }
+.bill-customer-text { font-size: 12px; color: #6b7280; }
+.bill-format-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e5e7eb; }
+.bill-format-label { font-size: 12px; color: #6b7280; }
+.bill-lines-wrap {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.bill-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 13px;
+}
+.bill-line:last-child { border-bottom: none; }
+.bill-line-ok { background: #f0fdf4; }
+.bill-line-total { background: #fff7ed; justify-content: flex-end; }
+.bill-total-text { font-size: 14px; font-weight: 700; color: #dc2626; }
+.bill-line-date { font-family: monospace; font-size: 13px; color: #374151; min-width: 50px; font-weight: 600; }
+.bill-line-asin { font-family: monospace; font-size: 13px; color: #2563eb; font-weight: 600; flex: 1; }
+.bill-line-amount { font-size: 13px; font-weight: 600; min-width: 90px; text-align: right; }
+.bill-amount-owed { color: #dc2626; }
+.bill-amount-ok { color: #16a34a; }
+.bill-empty { padding: 20px; text-align: center; color: #9ca3af; font-size: 13px; }
+.bill-preview-label { font-size: 11px; color: #9ca3af; }
+.bill-preview-text {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #374151;
+  white-space: pre-line;
+  line-height: 1.8;
+  font-family: monospace;
+}
 </style>
