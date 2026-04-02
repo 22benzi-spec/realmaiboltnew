@@ -87,19 +87,29 @@
             <UnorderedListOutlined /> 子单平铺
           </span>
         </div>
-        <a-input-search v-model:value="searchText" placeholder="搜索订单号/ASIN/店铺" style="width:240px" @search="load" allow-clear />
-        <a-select v-model:value="filterStatus" style="width:130px" @change="load" allow-clear placeholder="子单状态">
+        <a-input-search v-model:value="searchText" placeholder="搜索订单号/ASIN/店铺" style="width:220px" @search="load" allow-clear />
+        <a-select v-model:value="filterStatus" style="width:110px" @change="load" allow-clear placeholder="子单状态">
           <a-select-option value="">全部状态</a-select-option>
           <a-select-option v-for="s in subStatuses" :key="s" :value="s">{{ s }}</a-select-option>
         </a-select>
-        <a-select v-model:value="filterCountry" style="width:100px" @change="load" allow-clear placeholder="国家">
+        <a-select v-model:value="filterOrderType" style="width:105px" @change="load" allow-clear placeholder="测评类型">
+          <a-select-option value="">全部类型</a-select-option>
+          <a-select-option v-for="t in orderTypeOptions" :key="t" :value="t">{{ t }}</a-select-option>
+        </a-select>
+        <a-select v-model:value="filterReviewLevel" style="width:95px" @change="load" allow-clear placeholder="等级">
+          <a-select-option value="">全部等级</a-select-option>
+          <a-select-option value="普通">普通</a-select-option>
+          <a-select-option value="高等">高等</a-select-option>
+          <a-select-option value="极高等">极高等</a-select-option>
+        </a-select>
+        <a-select v-model:value="filterCountry" style="width:90px" @change="load" allow-clear placeholder="国家">
           <a-select-option value="">全部</a-select-option>
           <a-select-option v-for="c in countries" :key="c" :value="c">{{ c }}</a-select-option>
         </a-select>
         <a-button
           type="primary"
           :disabled="!selectedKeys.length"
-          @click="batchAssignOpen = true"
+          @click="openBatchAssign"
         >
           <UserAddOutlined /> 批量分配 ({{ selectedKeys.length }})
         </a-button>
@@ -262,6 +272,60 @@
 
       <!-- 子单平铺视图 -->
       <div v-else-if="viewMode === 'flat'">
+        <!-- 快捷筛选胶囊行 -->
+        <div class="qf-bar">
+          <div class="qf-group">
+            <span class="qf-label">排期</span>
+            <span
+              v-for="d in quickDateOptions"
+              :key="d.value"
+              :class="['qf-pill', { 'qf-pill-active': quickDate === d.value }]"
+              @click="toggleQuickDate(d.value)"
+            >{{ d.label }}</span>
+          </div>
+          <div class="qf-divider"></div>
+          <div class="qf-group">
+            <span class="qf-label">类型</span>
+            <span
+              v-for="t in quickTypeOptions"
+              :key="t.value"
+              :class="['qf-pill', { 'qf-pill-active qf-pill-type': quickType === t.value }]"
+              @click="toggleQuickType(t.value)"
+            >{{ t.label }}</span>
+          </div>
+          <div class="qf-divider"></div>
+          <div class="qf-group">
+            <span class="qf-label">等级</span>
+            <span
+              v-for="l in quickLevelOptions"
+              :key="l.value"
+              :class="['qf-pill', { 'qf-pill-active qf-pill-level': quickLevel === l.value }]"
+              @click="toggleQuickLevel(l.value)"
+            >{{ l.label }}</span>
+          </div>
+          <div class="qf-divider"></div>
+          <div class="qf-group">
+            <span class="qf-label">国家</span>
+            <span
+              v-for="c in quickCountryOptions"
+              :key="c"
+              :class="['qf-pill', { 'qf-pill-active qf-pill-country': quickCountry === c }]"
+              @click="toggleQuickCountry(c)"
+            >{{ c }}</span>
+          </div>
+          <div class="qf-divider"></div>
+          <span v-if="hasQuickFilter" class="qf-clear" @click="clearQuickFilters">
+            清除筛选
+          </span>
+          <div class="qf-select-all-wrap">
+            <a-checkbox
+              :checked="isAllPageSelected"
+              :indeterminate="isPageIndeterminate"
+              @change="(e: any) => toggleSelectAllPage(e.target.checked)"
+            >全选本页 ({{ subOrders.length }})</a-checkbox>
+          </div>
+        </div>
+
         <a-table
           :columns="flatColumns"
           :data-source="subOrders"
@@ -355,40 +419,94 @@
       @ok="handleBatchAssign"
       :confirm-loading="assigning"
       ok-text="确认分配"
-      width="600px"
+      :width="880"
+      :body-style="{ padding: '0' }"
     >
-      <div class="assign-modal-body">
-        <div class="assign-count-tip">
-          已选择 <strong>{{ selectedKeys.length }}</strong> 条子单，将按顺序轮流分配给所选业务员
-        </div>
-        <a-form layout="vertical">
-          <a-form-item label="选择业务员（可多选，轮流分配）">
-            <a-select
-              v-model:value="selectedStaffIds"
-              mode="multiple"
-              placeholder="请选择业务员（可多选）"
-              style="width:100%"
-              show-search
-              option-filter-prop="label"
-              :max-tag-count="6"
-            >
-              <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">
-                {{ s.name }}
-                <span v-if="s.today_remaining !== undefined" style="color:#9ca3af;font-size:11px;margin-left:6px">(剩{{ s.today_remaining }})</span>
-              </a-select-option>
+      <div class="ba-wrap">
+        <div class="ba-left">
+          <div class="ba-filter-bar">
+            <a-select v-model:value="baFilterType" placeholder="测评类型" allow-clear size="small" style="width:110px">
+              <a-select-option v-for="t in baOrderTypes" :key="t" :value="t">{{ t }}</a-select-option>
             </a-select>
-          </a-form-item>
-          <div v-if="selectedStaffIds.length > 1 && selectedKeys.length > 0" class="batch-preview">
-            <div class="batch-preview-title">分配预览</div>
-            <div class="batch-preview-list">
-              <div v-for="(s, i) in batchAssignPreview" :key="s.staffId" class="batch-preview-item">
-                <div class="batch-preview-av" :style="{ background: getStaffColor(s.staffId) }">{{ s.staffName.charAt(0) }}</div>
-                <span class="batch-preview-name">{{ s.staffName }}</span>
-                <span class="batch-preview-count">{{ s.count }} 条</span>
-              </div>
+            <a-select v-model:value="baFilterLevel" placeholder="等级" allow-clear size="small" style="width:90px">
+              <a-select-option value="普通">普通</a-select-option>
+              <a-select-option value="高等">高等</a-select-option>
+              <a-select-option value="极高等">极高等</a-select-option>
+            </a-select>
+            <a-select v-model:value="baFilterCountry" placeholder="国家" allow-clear size="small" style="width:90px">
+              <a-select-option v-for="c in countries" :key="c" :value="c">{{ c }}</a-select-option>
+            </a-select>
+            <span class="ba-filter-count">筛选出 <strong>{{ baFilteredSubs.length }}</strong> / {{ baSubs.length }} 条</span>
+          </div>
+          <div class="ba-bulk-row">
+            <a-checkbox
+              :checked="isBaFilterAllChecked"
+              :indeterminate="isBaFilterIndeterminate"
+              @change="(e: any) => toggleBaFilterAll(e.target.checked)"
+            >全选筛选结果</a-checkbox>
+            <div class="ba-bulk-assign">
+              <a-select v-model:value="baBulkStaffId" placeholder="选业务员" size="small" style="width:130px" show-search option-filter-prop="label" allow-clear>
+                <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">
+                  {{ s.name }}<span v-if="s.today_remaining !== undefined" style="color:#9ca3af;font-size:11px;margin-left:4px">({{ s.today_remaining }})</span>
+                </a-select-option>
+              </a-select>
+              <a-button size="small" type="primary" ghost @click="applyBulkStaff" :disabled="!baBulkStaffId || baCheckedIds.size === 0">
+                批量设置 ({{ baCheckedIds.size }})
+              </a-button>
             </div>
           </div>
-        </a-form>
+          <div class="ba-sub-list">
+            <div
+              v-for="sub in baFilteredSubs"
+              :key="sub.id"
+              class="ba-sub-item"
+              :class="{ 'ba-sub-checked': baCheckedIds.has(sub.id) }"
+              @click="toggleBaCheck(sub.id)"
+            >
+              <a-checkbox :checked="baCheckedIds.has(sub.id)" @click.stop />
+              <div class="ba-sub-info">
+                <span class="ba-sub-no">{{ sub.sub_order_number }}</span>
+                <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
+                <span v-if="sub.country" class="ba-sub-country">{{ sub.country }}</span>
+                <span v-if="sub.keyword" class="ba-sub-kw">{{ sub.keyword }}</span>
+              </div>
+              <div class="ba-sub-staff-pick" @click.stop>
+                <a-select
+                  :value="baAssignMap[sub.id]"
+                  @change="(v: string) => setBaSubStaff(sub.id, v)"
+                  placeholder="指定业务员"
+                  size="small"
+                  style="width:120px"
+                  show-search
+                  option-filter-prop="label"
+                  allow-clear
+                >
+                  <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
+                </a-select>
+              </div>
+            </div>
+            <div v-if="baFilteredSubs.length === 0" class="ba-empty">暂无符合筛选条件的子单</div>
+          </div>
+        </div>
+        <div class="ba-right">
+          <div class="ba-summary-title">分配汇总</div>
+          <div class="ba-summary-total">
+            <span class="ba-st-num">{{ baAssignedCount }}</span>
+            <span class="ba-st-label">/ {{ baSubs.length }} 条已分配</span>
+          </div>
+          <div class="ba-summary-list">
+            <div v-if="baSummaryList.length === 0" class="ba-summary-empty">尚未分配任何业务员</div>
+            <div v-for="item in baSummaryList" :key="item.staffId" class="ba-summary-item">
+              <div class="ba-summary-av" :style="{ background: getStaffColor(item.staffId) }">{{ item.staffName.charAt(0) }}</div>
+              <span class="ba-summary-name">{{ item.staffName }}</span>
+              <span class="ba-summary-count">{{ item.count }}</span>
+            </div>
+          </div>
+          <div v-if="baUnassignedCount > 0" class="ba-unassigned-tip">
+            还有 <strong>{{ baUnassignedCount }}</strong> 条未分配，提交后将跳过
+          </div>
+        </div>
       </div>
     </a-modal>
 
@@ -641,6 +759,100 @@ async function loadPerfPanel() {
 const searchText = ref('')
 const filterStatus = ref('待分配')
 const filterCountry = ref('')
+const filterOrderType = ref('')
+const filterReviewLevel = ref('')
+
+const orderTypeOptions = ['文字评', '图片评', '视频评', '免评', 'FB', 'Feedback']
+
+const quickDate = ref('')
+const quickType = ref('')
+const quickLevel = ref('')
+const quickCountry = ref('')
+
+const today = dayjs().format('YYYY-MM-DD')
+const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD')
+
+const quickDateOptions = [
+  { label: '今日', value: today },
+  { label: '明日', value: tomorrow },
+  { label: '本周', value: 'this_week' },
+  { label: '逾期', value: 'overdue' },
+  { label: '无排期', value: 'none' },
+]
+
+const quickTypeOptions = [
+  { label: '文字评', value: '文字评' },
+  { label: '图片评', value: '图片评' },
+  { label: '视频评', value: '视频评' },
+  { label: '免评', value: '免评' },
+]
+
+const quickLevelOptions = [
+  { label: '普通', value: '普通' },
+  { label: '高等', value: '高等' },
+  { label: '极高等', value: '极高等' },
+]
+
+const quickCountryOptions = ['美国', '德国', '英国', '加拿大', '日本', '法国']
+
+const hasQuickFilter = computed(() => !!(quickDate.value || quickType.value || quickLevel.value || quickCountry.value))
+
+function toggleQuickDate(v: string) {
+  quickDate.value = quickDate.value === v ? '' : v
+  applyQuickFilters()
+}
+function toggleQuickType(v: string) {
+  quickType.value = quickType.value === v ? '' : v
+  applyQuickFilters()
+}
+function toggleQuickLevel(v: string) {
+  quickLevel.value = quickLevel.value === v ? '' : v
+  applyQuickFilters()
+}
+function toggleQuickCountry(v: string) {
+  quickCountry.value = quickCountry.value === v ? '' : v
+  applyQuickFilters()
+}
+
+function clearQuickFilters() {
+  quickDate.value = ''
+  quickType.value = ''
+  quickLevel.value = ''
+  quickCountry.value = ''
+  filterOrderType.value = ''
+  filterReviewLevel.value = ''
+  filterCountry.value = ''
+  pagination.value.current = 1
+  load()
+}
+
+function applyQuickFilters() {
+  filterOrderType.value = quickType.value
+  filterReviewLevel.value = quickLevel.value
+  filterCountry.value = quickCountry.value
+  pagination.value.current = 1
+  load()
+}
+
+const isAllPageSelected = computed(() =>
+  subOrders.value.length > 0 && subOrders.value.every((s: any) => selectedKeys.value.includes(s.id))
+)
+
+const isPageIndeterminate = computed(() => {
+  const some = subOrders.value.some((s: any) => selectedKeys.value.includes(s.id))
+  return some && !isAllPageSelected.value
+})
+
+function toggleSelectAllPage(checked: boolean) {
+  const ids = subOrders.value.map((s: any) => s.id)
+  if (checked) {
+    const set = new Set([...selectedKeys.value, ...ids])
+    selectedKeys.value = Array.from(set)
+  } else {
+    selectedKeys.value = selectedKeys.value.filter((k: string) => !ids.includes(k))
+  }
+}
+
 const selectedKeys = ref<string[]>([])
 const batchAssignOpen = ref(false)
 const singleAssignOpen = ref(false)
@@ -659,20 +871,118 @@ function getStaffColor(staffId: string): string {
   return avatarColors[idx % avatarColors.length] || '#2563eb'
 }
 
-const batchAssignPreview = computed(() => {
-  if (!selectedStaffIds.value.length || !selectedKeys.value.length) return []
-  const counts: Record<string, number> = {}
-  selectedStaffIds.value.forEach(id => { counts[id] = 0 })
-  selectedKeys.value.forEach((_, i) => {
-    const staffId = selectedStaffIds.value[i % selectedStaffIds.value.length]
-    counts[staffId]++
-  })
-  return selectedStaffIds.value.map(id => ({
-    staffId: id,
-    staffName: staffList.value.find(s => s.id === id)?.name || id,
-    count: counts[id],
-  }))
+const baSubs = ref<any[]>([])
+const baAssignMap = ref<Record<string, string>>({})
+const baCheckedIds = ref<Set<string>>(new Set())
+const baFilterType = ref('')
+const baFilterLevel = ref('')
+const baFilterCountry = ref('')
+const baBulkStaffId = ref('')
+
+const baOrderTypes = computed(() => {
+  const types = new Set(baSubs.value.map((s: any) => s.order_type).filter(Boolean))
+  return Array.from(types)
 })
+
+const baFilteredSubs = computed(() => {
+  return baSubs.value.filter((s: any) => {
+    if (baFilterType.value && s.order_type !== baFilterType.value) return false
+    if (baFilterLevel.value && s.review_level !== baFilterLevel.value) return false
+    if (baFilterCountry.value && s.country !== baFilterCountry.value) return false
+    return true
+  })
+})
+
+const isBaFilterAllChecked = computed(() =>
+  baFilteredSubs.value.length > 0 && baFilteredSubs.value.every((s: any) => baCheckedIds.value.has(s.id))
+)
+
+const isBaFilterIndeterminate = computed(() => {
+  const some = baFilteredSubs.value.some((s: any) => baCheckedIds.value.has(s.id))
+  return some && !isBaFilterAllChecked.value
+})
+
+const baAssignedCount = computed(() => Object.values(baAssignMap.value).filter(Boolean).length)
+const baUnassignedCount = computed(() => baSubs.value.length - baAssignedCount.value)
+
+const baSummaryList = computed(() => {
+  const map: Record<string, number> = {}
+  for (const [, staffId] of Object.entries(baAssignMap.value)) {
+    if (staffId) map[staffId] = (map[staffId] || 0) + 1
+  }
+  return Object.entries(map).map(([staffId, count]) => ({
+    staffId,
+    staffName: staffList.value.find(s => s.id === staffId)?.name || staffId,
+    count,
+  })).sort((a, b) => b.count - a.count)
+})
+
+function toggleBaCheck(id: string) {
+  const next = new Set(baCheckedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  baCheckedIds.value = next
+}
+
+function toggleBaFilterAll(checked: boolean) {
+  const next = new Set(baCheckedIds.value)
+  for (const s of baFilteredSubs.value) {
+    if (checked) next.add(s.id)
+    else next.delete(s.id)
+  }
+  baCheckedIds.value = next
+}
+
+function applyBulkStaff() {
+  if (!baBulkStaffId.value || baCheckedIds.value.size === 0) return
+  const next = { ...baAssignMap.value }
+  for (const id of baCheckedIds.value) {
+    next[id] = baBulkStaffId.value
+  }
+  baAssignMap.value = next
+  baCheckedIds.value = new Set()
+  baBulkStaffId.value = ''
+}
+
+function setBaSubStaff(subId: string, staffId: string) {
+  baAssignMap.value = { ...baAssignMap.value, [subId]: staffId }
+}
+
+function openBatchAssign() {
+  const subs = subOrders.value.filter((s: any) => selectedKeys.value.includes(s.id))
+  baSubs.value = subs
+  baAssignMap.value = {}
+  baCheckedIds.value = new Set()
+  baFilterType.value = ''
+  baFilterLevel.value = ''
+  baFilterCountry.value = ''
+  baBulkStaffId.value = ''
+  batchAssignOpen.value = true
+}
+
+async function handleBatchAssign() {
+  const toAssign = Object.entries(baAssignMap.value).filter(([, staffId]) => !!staffId)
+  if (toAssign.length === 0) { message.warning('至少为一条子单分配业务员'); return }
+  assigning.value = true
+  try {
+    await Promise.all(toAssign.map(([subId, staffId]) => {
+      const staff = staffList.value.find(s => s.id === staffId)
+      return supabase.from('sub_orders').update({
+        staff_id: staffId,
+        staff_name: staff?.name || '',
+        status: '已分配',
+      }).eq('id', subId)
+    }))
+    message.success(`成功分配 ${toAssign.length} 条子单`)
+    batchAssignOpen.value = false
+    selectedKeys.value = []
+    load()
+  } catch (e: any) {
+    message.error('分配失败：' + e.message)
+  } finally {
+    assigning.value = false
+  }
+}
 
 const kwEditOpen = ref(false)
 const kwEditRecord = ref<any>(null)
@@ -858,6 +1168,23 @@ async function load() {
 
     if (filterStatus.value) query = query.eq('status', filterStatus.value)
     if (filterCountry.value) query = query.eq('country', filterCountry.value)
+    if (filterOrderType.value) query = query.eq('order_type', filterOrderType.value)
+    if (filterReviewLevel.value) query = query.eq('review_level', filterReviewLevel.value)
+
+    if (quickDate.value) {
+      if (quickDate.value === 'overdue') {
+        query = query.lt('scheduled_date', today).not('scheduled_date', 'is', null)
+      } else if (quickDate.value === 'none') {
+        query = query.is('scheduled_date', null)
+      } else if (quickDate.value === 'this_week') {
+        const weekStart = dayjs().startOf('week').format('YYYY-MM-DD')
+        const weekEnd = dayjs().endOf('week').format('YYYY-MM-DD')
+        query = query.gte('scheduled_date', weekStart).lte('scheduled_date', weekEnd)
+      } else {
+        query = query.eq('scheduled_date', quickDate.value)
+      }
+    }
+
     if (searchText.value) {
       query = query.or(`asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%`)
     }
@@ -915,32 +1242,6 @@ const staffListWithPerf = computed(() => {
 async function loadStaff() {
   const { data } = await supabase.from('staff').select('id, name').eq('status', '在职')
   staffList.value = data || []
-}
-
-async function handleBatchAssign() {
-  if (!selectedStaffIds.value.length) { message.warning('请选择业务员'); return }
-  assigning.value = true
-  try {
-    const updates = selectedKeys.value.map((id, i) => {
-      const staffId = selectedStaffIds.value[i % selectedStaffIds.value.length]
-      const staff = staffList.value.find(s => s.id === staffId)
-      return supabase.from('sub_orders').update({
-        staff_id: staffId,
-        staff_name: staff?.name || '',
-        status: '已分配',
-      }).eq('id', id)
-    })
-    await Promise.all(updates)
-    message.success(`成功分配 ${selectedKeys.value.length} 条子单`)
-    batchAssignOpen.value = false
-    selectedKeys.value = []
-    selectedStaffIds.value = []
-    load()
-  } catch (e: any) {
-    message.error('分配失败：' + e.message)
-  } finally {
-    assigning.value = false
-  }
 }
 
 async function handleSingleAssign() {
@@ -1306,38 +1607,66 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 .assign-info-item { font-size: 12px; color: #6b7280; }
 .assign-info-item strong { color: #374151; }
 
-.batch-preview {
-  background: #f0f7ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-top: 4px;
+/* 批量分配弹窗 */
+.ba-wrap { display: flex; height: 560px; overflow: hidden; }
+.ba-left { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #f0f0f0; overflow: hidden; }
+.ba-filter-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0; flex-wrap: wrap;
 }
-.batch-preview-title { font-size: 11px; color: #1d4ed8; font-weight: 600; margin-bottom: 8px; }
-.batch-preview-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.batch-preview-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff;
-  border: 1px solid #dbeafe;
-  border-radius: 20px;
-  padding: 4px 10px 4px 4px;
+.ba-filter-count { font-size: 12px; color: #6b7280; margin-left: 4px; }
+.ba-filter-count strong { color: #2563eb; }
+.ba-bulk-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; background: #f8fafc; border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0; gap: 8px;
 }
-.batch-preview-av {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+.ba-bulk-assign { display: flex; align-items: center; gap: 6px; }
+.ba-sub-list { flex: 1; overflow-y: auto; }
+.ba-sub-list::-webkit-scrollbar { width: 4px; }
+.ba-sub-list::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+.ba-sub-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; border-bottom: 1px solid #f3f4f6;
+  cursor: pointer; transition: background 0.12s;
 }
-.batch-preview-name { font-size: 12px; font-weight: 600; color: #1e40af; }
-.batch-preview-count { font-size: 12px; color: #dc2626; font-weight: 700; }
+.ba-sub-item:hover { background: #f9fafb; }
+.ba-sub-checked { background: #eff6ff !important; }
+.ba-sub-info { flex: 1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.ba-sub-no { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; font-weight: 600; flex-shrink: 0; }
+.ba-sub-country { font-size: 11px; color: #6b7280; }
+.ba-sub-kw {
+  font-size: 11px; color: #2563eb; background: #eff6ff; border-radius: 3px;
+  padding: 1px 5px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ba-sub-staff-pick { flex-shrink: 0; }
+.ba-empty { padding: 32px 16px; text-align: center; font-size: 13px; color: #9ca3af; }
+.ba-right {
+  width: 185px; flex-shrink: 0; padding: 16px 14px; background: #f8fafc;
+  display: flex; flex-direction: column; gap: 12px; overflow-y: auto;
+}
+.ba-summary-title { font-size: 12px; font-weight: 700; color: #374151; }
+.ba-summary-total { display: flex; align-items: baseline; gap: 4px; }
+.ba-st-num { font-size: 28px; font-weight: 800; color: #2563eb; line-height: 1; }
+.ba-st-label { font-size: 11px; color: #6b7280; }
+.ba-summary-list { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.ba-summary-empty { font-size: 11px; color: #9ca3af; }
+.ba-summary-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; background: #fff; border-radius: 6px; border: 1px solid #e5e7eb;
+}
+.ba-summary-av {
+  width: 20px; height: 20px; border-radius: 50%; color: #fff;
+  font-size: 9px; font-weight: 700; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0;
+}
+.ba-summary-name { flex: 1; font-size: 12px; font-weight: 600; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ba-summary-count { font-size: 13px; font-weight: 800; color: #2563eb; background: #eff6ff; border-radius: 10px; padding: 1px 7px; }
+.ba-unassigned-tip {
+  font-size: 11px; color: #d97706; background: #fffbeb;
+  border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; line-height: 1.5;
+}
 
 .issue-modal-body { padding: 4px 0; }
 .issue-sub-info {
@@ -1354,6 +1683,88 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 .issue-sub-val { font-size: 13px; color: #1c1917; }
 .issue-sub-val.mono { font-family: 'Courier New', monospace; font-size: 12px; }
 .issue-price { font-weight: 700; color: #dc2626; }
+
+/* 快捷筛选胶囊行 */
+.qf-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+}
+.qf-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.qf-label {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 500;
+  white-space: nowrap;
+  padding-right: 2px;
+}
+.qf-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  background: #fff;
+  border: 1.5px solid #e5e7eb;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+.qf-pill:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+.qf-pill-active {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #fff !important;
+}
+.qf-pill-active.qf-pill-type {
+  background: #0891b2 !important;
+  border-color: #0891b2 !important;
+}
+.qf-pill-active.qf-pill-level {
+  background: #059669 !important;
+  border-color: #059669 !important;
+}
+.qf-pill-active.qf-pill-country {
+  background: #d97706 !important;
+  border-color: #d97706 !important;
+}
+.qf-divider {
+  width: 1px;
+  height: 18px;
+  background: #e5e7eb;
+  margin: 0 8px;
+  flex-shrink: 0;
+}
+.qf-clear {
+  font-size: 12px;
+  color: #dc2626;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+.qf-clear:hover { background: #fee2e2; }
+.qf-select-all-wrap {
+  margin-left: auto;
+  padding-left: 12px;
+}
 
 /* 视图切换 */
 .view-toggle {
