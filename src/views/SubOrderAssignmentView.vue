@@ -116,6 +116,12 @@
         >
           <UserAddOutlined /> 批量分配 ({{ selectedKeys.length }})
         </a-button>
+        <a-button
+          v-if="viewMode === 'flat' && selectedKeys.length > 0"
+          @click="openBatchEdit"
+        >
+          批量修改 ({{ selectedKeys.length }})
+        </a-button>
         <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
         <span class="total-hint">共 {{ pagination.total }} 条子单</span>
       </div>
@@ -358,36 +364,101 @@
                 <div class="sub-asin mono-sm">{{ sub.asin || '—' }}</div>
               </div>
             </template>
+
+            <!-- 关键词：行内可编辑 -->
             <template v-if="column.key === 'flat_keyword'">
-              <div class="kw-cell" @click="openKwEdit(sub)">
+              <div v-if="isEditing(sub.id, 'keyword')" class="ice-wrap" @click.stop>
+                <a-input
+                  :ref="(el: any) => setEditRef(el)"
+                  v-model:value="editingValue"
+                  size="small"
+                  style="width:100%"
+                  @blur="saveInlineEdit(sub, 'keyword')"
+                  @keyup.enter="saveInlineEdit(sub, 'keyword')"
+                  @keyup.esc="cancelEdit"
+                />
+              </div>
+              <div v-else class="ice-cell" @click="startEdit(sub.id, 'keyword', sub.keyword || '')">
                 <template v-if="sub.keyword_type === 'link'">
-                  <a-tag color="cyan" size="small" style="cursor:pointer"><LinkOutlined /> 链接</a-tag>
+                  <a-tag color="cyan" size="small"><LinkOutlined /> 链接</a-tag>
                 </template>
                 <template v-else-if="sub.keyword">
-                  <span class="keyword-tag" style="cursor:pointer">{{ sub.keyword }}</span>
+                  <span class="keyword-tag">{{ sub.keyword }}</span>
                 </template>
                 <template v-else>
-                  <span class="text-gray kw-empty" style="cursor:pointer">点击设置</span>
+                  <span class="ice-placeholder">点击编辑</span>
                 </template>
-                <EditOutlined class="kw-edit-icon" />
+                <EditOutlined class="ice-icon" />
               </div>
             </template>
+
+            <!-- 测评类型：行内 select -->
             <template v-if="column.key === 'flat_type'">
-              <div class="flat-type-cell">
+              <div v-if="isEditing(sub.id, 'order_type')" class="ice-wrap" @click.stop>
+                <a-select
+                  :ref="(el: any) => setEditRef(el)"
+                  v-model:value="editingValue"
+                  size="small"
+                  style="width:90px"
+                  @change="saveInlineEdit(sub, 'order_type')"
+                  @blur="cancelEdit"
+                >
+                  <a-select-option v-for="t in orderTypeOptions" :key="t" :value="t">{{ t }}</a-select-option>
+                </a-select>
+              </div>
+              <div v-else class="ice-cell" @click="startEdit(sub.id, 'order_type', sub.order_type || '')">
                 <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
-                <span v-if="sub.country" class="flat-country">{{ sub.country }}</span>
+                <span v-else class="ice-placeholder">类型</span>
+                <EditOutlined class="ice-icon" />
+              </div>
+              <span v-if="sub.country" class="flat-country">{{ sub.country }}</span>
+            </template>
+
+            <!-- 测评等级：行内 select -->
+            <template v-if="column.key === 'flat_level'">
+              <div v-if="isEditing(sub.id, 'review_level')" class="ice-wrap" @click.stop>
+                <a-select
+                  :ref="(el: any) => setEditRef(el)"
+                  v-model:value="editingValue"
+                  size="small"
+                  style="width:80px"
+                  @change="saveInlineEdit(sub, 'review_level')"
+                  @blur="cancelEdit"
+                >
+                  <a-select-option value="普通">普通</a-select-option>
+                  <a-select-option value="高等">高等</a-select-option>
+                  <a-select-option value="极高等">极高等</a-select-option>
+                </a-select>
+              </div>
+              <div v-else class="ice-cell" @click="startEdit(sub.id, 'review_level', sub.review_level || '')">
+                <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
+                <span v-else class="ice-placeholder">等级</span>
+                <EditOutlined class="ice-icon" />
               </div>
             </template>
-            <template v-if="column.key === 'flat_level'">
-              <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
-              <span v-else class="text-gray">—</span>
-            </template>
+
+            <!-- 排期日期：行内 date input -->
             <template v-if="column.key === 'flat_scheduled'">
-              <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
-                {{ sub.scheduled_date }}
-              </span>
-              <span v-else class="text-gray">—</span>
+              <div v-if="isEditing(sub.id, 'scheduled_date')" class="ice-wrap" @click.stop>
+                <input
+                  :ref="(el: any) => setEditRef(el)"
+                  type="date"
+                  v-model="editingValue"
+                  class="ice-date-input"
+                  @blur="saveInlineEdit(sub, 'scheduled_date')"
+                  @keyup.enter="saveInlineEdit(sub, 'scheduled_date')"
+                  @keyup.esc="cancelEdit"
+                />
+              </div>
+              <div v-else class="ice-cell" @click="startEdit(sub.id, 'scheduled_date', sub.scheduled_date || '')">
+                <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
+                  {{ sub.scheduled_date }}
+                </span>
+                <span v-else class="ice-placeholder">设置排期</span>
+                <EditOutlined class="ice-icon" />
+              </div>
             </template>
+
             <template v-if="column.key === 'flat_price'">
               <span class="price-main">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
             </template>
@@ -395,10 +466,27 @@
               <span v-if="sub.staff_name" class="staff-assigned">{{ sub.staff_name }}</span>
               <span v-else class="text-gray">未分配</span>
             </template>
+
+            <!-- 备注：行内编辑 -->
             <template v-if="column.key === 'flat_notes'">
-              <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
-              <span v-else class="text-gray">—</span>
+              <div v-if="isEditing(sub.id, 'task_notes')" class="ice-wrap" @click.stop>
+                <a-input
+                  :ref="(el: any) => setEditRef(el)"
+                  v-model:value="editingValue"
+                  size="small"
+                  style="width:100%"
+                  @blur="saveInlineEdit(sub, 'task_notes')"
+                  @keyup.enter="saveInlineEdit(sub, 'task_notes')"
+                  @keyup.esc="cancelEdit"
+                />
+              </div>
+              <div v-else class="ice-cell" @click="startEdit(sub.id, 'task_notes', sub.task_notes || '')">
+                <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
+                <span v-else class="ice-placeholder">点击添加备注</span>
+                <EditOutlined class="ice-icon" />
+              </div>
             </template>
+
             <template v-if="column.key === 'flat_action'">
               <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
             </template>
@@ -494,6 +582,65 @@
             <span v-if="baManualTotal < selectedKeys.length" style="color:#d97706;margin-left:8px">（{{ selectedKeys.length - baManualTotal }} 条将被跳过）</span>
             <span v-if="baManualTotal > selectedKeys.length" style="color:#dc2626;margin-left:8px">（超出 {{ baManualTotal - selectedKeys.length }} 条，将只分配前 {{ selectedKeys.length }} 条）</span>
           </div>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- 批量修改弹窗 -->
+    <a-modal
+      v-model:open="batchEditOpen"
+      title="批量修改子单字段"
+      @ok="handleBatchEdit"
+      :confirm-loading="batchEditSaving"
+      ok-text="确认修改"
+      width="560px"
+    >
+      <div class="bme-wrap">
+        <div class="bme-count-bar">
+          已选 <strong>{{ selectedKeys.length }}</strong> 条子单，选择要修改的字段后统一设置新值
+        </div>
+        <div class="bme-fields">
+          <div v-for="f in batchEditFields" :key="f.key" class="bme-field-row">
+            <a-checkbox v-model:checked="f.enabled" class="bme-chk">{{ f.label }}</a-checkbox>
+            <div class="bme-field-input" :class="{ 'bme-disabled': !f.enabled }">
+              <a-input
+                v-if="f.type === 'text'"
+                v-model:value="f.value"
+                :disabled="!f.enabled"
+                :placeholder="`输入新的${f.label}`"
+                size="small"
+                style="width:200px"
+              />
+              <a-select
+                v-else-if="f.type === 'select'"
+                v-model:value="f.value"
+                :disabled="!f.enabled"
+                :placeholder="`选择${f.label}`"
+                size="small"
+                style="width:140px"
+                allow-clear
+              >
+                <a-select-option v-for="opt in f.options" :key="opt" :value="opt">{{ opt }}</a-select-option>
+              </a-select>
+              <input
+                v-else-if="f.type === 'date'"
+                type="date"
+                v-model="f.value"
+                :disabled="!f.enabled"
+                class="bme-date-input"
+              />
+            </div>
+            <span v-if="f.enabled && !f.value && f.type !== 'date'" class="bme-hint">留空则清除该字段</span>
+          </div>
+        </div>
+        <div class="bme-preview">
+          <span class="bme-preview-label">将修改：</span>
+          <template v-if="batchEditActiveFields.length">
+            <a-tag v-for="f in batchEditActiveFields" :key="f.key" color="blue" size="small">
+              {{ f.label }} → {{ f.value || '（清空）' }}
+            </a-tag>
+          </template>
+          <span v-else style="color:#9ca3af;font-size:12px">请先勾选要修改的字段</span>
         </div>
       </div>
     </a-modal>
@@ -625,7 +772,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
 import { UserAddOutlined, ReloadOutlined, RightOutlined, EditOutlined, LinkOutlined, AppstoreOutlined, UnorderedListOutlined } from '@ant-design/icons-vue'
 
@@ -1037,6 +1184,89 @@ async function handleBatchAssign() {
     message.error('分配失败：' + e.message)
   } finally {
     assigning.value = false
+  }
+}
+
+// ---- 行内编辑 (Inline Cell Edit) ----
+const editingCell = ref<{ id: string; field: string } | null>(null)
+const editingValue = ref<any>('')
+let editingRef: any = null
+
+function setEditRef(el: any) {
+  if (el) {
+    editingRef = el
+    nextTick(() => {
+      const input = el.$el?.querySelector('input') || el.$el || el
+      input?.focus?.()
+    })
+  }
+}
+
+function isEditing(id: string, field: string) {
+  return editingCell.value?.id === id && editingCell.value?.field === field
+}
+
+function startEdit(id: string, field: string, currentVal: any) {
+  editingCell.value = { id, field }
+  editingValue.value = currentVal
+}
+
+function cancelEdit() {
+  editingCell.value = null
+  editingValue.value = ''
+}
+
+async function saveInlineEdit(sub: any, field: string) {
+  if (!editingCell.value) return
+  const val = editingValue.value
+  editingCell.value = null
+  try {
+    const { error } = await supabase.from('sub_orders').update({ [field]: val || null }).eq('id', sub.id)
+    if (error) throw error
+    const row = subOrders.value.find((s: any) => s.id === sub.id)
+    if (row) row[field] = val || null
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  }
+}
+
+// ---- 批量修改 ----
+const batchEditOpen = ref(false)
+const batchEditSaving = ref(false)
+const batchEditFields = ref([
+  { key: 'keyword', label: '关键词', type: 'text', value: '', enabled: false, options: [] as string[] },
+  { key: 'order_type', label: '测评类型', type: 'select', value: '', enabled: false, options: ['文字评', '图片评', '视频评', '免评', 'FB', 'Feedback'] },
+  { key: 'review_level', label: '测评等级', type: 'select', value: '', enabled: false, options: ['普通', '高等', '极高等'] },
+  { key: 'scheduled_date', label: '排期日期', type: 'date', value: '', enabled: false, options: [] as string[] },
+  { key: 'country', label: '国家', type: 'select', value: '', enabled: false, options: ['美国', '德国', '英国', '加拿大', '日本', '法国'] },
+  { key: 'task_notes', label: '备注', type: 'text', value: '', enabled: false, options: [] as string[] },
+])
+
+const batchEditActiveFields = computed(() => batchEditFields.value.filter(f => f.enabled))
+
+function openBatchEdit() {
+  batchEditFields.value.forEach(f => { f.value = ''; f.enabled = false })
+  batchEditOpen.value = true
+}
+
+async function handleBatchEdit() {
+  const active = batchEditActiveFields.value
+  if (!active.length) { message.warning('请至少勾选一个要修改的字段'); return }
+  batchEditSaving.value = true
+  try {
+    const updates: Record<string, any> = {}
+    for (const f of active) updates[f.key] = f.value || null
+    await Promise.all(
+      selectedKeys.value.map(id => supabase.from('sub_orders').update(updates).eq('id', id))
+    )
+    message.success(`已批量修改 ${selectedKeys.value.length} 条子单`)
+    batchEditOpen.value = false
+    selectedKeys.value = []
+    load()
+  } catch (e: any) {
+    message.error('批量修改失败：' + e.message)
+  } finally {
+    batchEditSaving.value = false
   }
 }
 
@@ -1584,6 +1814,82 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
   white-space: nowrap;
 }
 .variant-text { font-size: 11px; color: #6b7280; }
+/* 行内编辑 cell */
+.ice-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  transition: background 0.12s;
+  min-height: 22px;
+}
+.ice-cell:hover {
+  background: #f0f7ff;
+}
+.ice-cell:hover .ice-icon { opacity: 1; }
+.ice-icon {
+  font-size: 11px;
+  color: #9ca3af;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.ice-placeholder {
+  font-size: 11px;
+  color: #d1d5db;
+  font-style: italic;
+}
+.ice-wrap {
+  display: flex;
+  align-items: center;
+}
+.ice-date-input {
+  height: 24px;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  outline: none;
+  color: #374151;
+  background: #fff;
+  width: 120px;
+}
+.ice-date-input:focus { box-shadow: 0 0 0 2px #bfdbfe; }
+
+/* 批量修改弹窗 */
+.bme-wrap { padding: 4px 0; }
+.bme-count-bar {
+  font-size: 13px; color: #6b7280; margin-bottom: 16px;
+  padding: 8px 12px; background: #fafafa; border-radius: 6px; border: 1px solid #e5e7eb;
+}
+.bme-count-bar strong { color: #374151; }
+.bme-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.bme-field-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.bme-field-row:has(.ant-checkbox-checked) {
+  border-color: #2563eb; background: #f0f7ff;
+}
+.bme-chk { min-width: 90px; font-weight: 600; font-size: 13px; }
+.bme-field-input { flex: 1; }
+.bme-disabled { opacity: 0.4; pointer-events: none; }
+.bme-hint { font-size: 11px; color: #9ca3af; white-space: nowrap; }
+.bme-date-input {
+  height: 28px; border: 1px solid #d1d5db; border-radius: 6px;
+  padding: 0 8px; font-size: 12px; color: #374151; background: #fff; outline: none; width: 140px;
+}
+.bme-date-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; }
+.bme-preview {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 8px 12px; background: #f9fafb; border-radius: 6px; border: 1px dashed #d1d5db;
+}
+.bme-preview-label { font-size: 12px; font-weight: 600; color: #374151; margin-right: 4px; }
+
 .kw-cell {
   display: flex;
   align-items: center;
