@@ -289,7 +289,7 @@
             <span
               v-for="t in quickTypeOptions"
               :key="t.value"
-              :class="['qf-pill', { 'qf-pill-active qf-pill-type': quickType === t.value }]"
+              :class="['qf-pill', 'qf-pill-type', quickType === t.value ? 'qf-pill-active' : '']"
               @click="toggleQuickType(t.value)"
             >{{ t.label }}</span>
           </div>
@@ -299,7 +299,7 @@
             <span
               v-for="l in quickLevelOptions"
               :key="l.value"
-              :class="['qf-pill', { 'qf-pill-active qf-pill-level': quickLevel === l.value }]"
+              :class="['qf-pill', 'qf-pill-level', quickLevel === l.value ? 'qf-pill-active' : '']"
               @click="toggleQuickLevel(l.value)"
             >{{ l.label }}</span>
           </div>
@@ -309,7 +309,7 @@
             <span
               v-for="c in quickCountryOptions"
               :key="c"
-              :class="['qf-pill', { 'qf-pill-active qf-pill-country': quickCountry === c }]"
+              :class="['qf-pill', 'qf-pill-country', quickCountry === c ? 'qf-pill-active' : '']"
               @click="toggleQuickCountry(c)"
             >{{ c }}</span>
           </div>
@@ -419,92 +419,40 @@
       @ok="handleBatchAssign"
       :confirm-loading="assigning"
       ok-text="确认分配"
-      :width="880"
-      :body-style="{ padding: '0' }"
+      width="480px"
     >
-      <div class="ba-wrap">
-        <div class="ba-left">
-          <div class="ba-filter-bar">
-            <a-select v-model:value="baFilterType" placeholder="测评类型" allow-clear size="small" style="width:110px">
-              <a-select-option v-for="t in baOrderTypes" :key="t" :value="t">{{ t }}</a-select-option>
-            </a-select>
-            <a-select v-model:value="baFilterLevel" placeholder="等级" allow-clear size="small" style="width:90px">
-              <a-select-option value="普通">普通</a-select-option>
-              <a-select-option value="高等">高等</a-select-option>
-              <a-select-option value="极高等">极高等</a-select-option>
-            </a-select>
-            <a-select v-model:value="baFilterCountry" placeholder="国家" allow-clear size="small" style="width:90px">
-              <a-select-option v-for="c in countries" :key="c" :value="c">{{ c }}</a-select-option>
-            </a-select>
-            <span class="ba-filter-count">筛选出 <strong>{{ baFilteredSubs.length }}</strong> / {{ baSubs.length }} 条</span>
-          </div>
-          <div class="ba-bulk-row">
-            <a-checkbox
-              :checked="isBaFilterAllChecked"
-              :indeterminate="isBaFilterIndeterminate"
-              @change="(e: any) => toggleBaFilterAll(e.target.checked)"
-            >全选筛选结果</a-checkbox>
-            <div class="ba-bulk-assign">
-              <a-select v-model:value="baBulkStaffId" placeholder="选业务员" size="small" style="width:130px" show-search option-filter-prop="label" allow-clear>
-                <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">
-                  {{ s.name }}<span v-if="s.today_remaining !== undefined" style="color:#9ca3af;font-size:11px;margin-left:4px">({{ s.today_remaining }})</span>
-                </a-select-option>
-              </a-select>
-              <a-button size="small" type="primary" ghost @click="applyBulkStaff" :disabled="!baBulkStaffId || baCheckedIds.size === 0">
-                批量设置 ({{ baCheckedIds.size }})
-              </a-button>
-            </div>
-          </div>
-          <div class="ba-sub-list">
-            <div
-              v-for="sub in baFilteredSubs"
-              :key="sub.id"
-              class="ba-sub-item"
-              :class="{ 'ba-sub-checked': baCheckedIds.has(sub.id) }"
-              @click="toggleBaCheck(sub.id)"
-            >
-              <a-checkbox :checked="baCheckedIds.has(sub.id)" @click.stop />
-              <div class="ba-sub-info">
-                <span class="ba-sub-no">{{ sub.sub_order_number }}</span>
-                <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
-                <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
-                <span v-if="sub.country" class="ba-sub-country">{{ sub.country }}</span>
-                <span v-if="sub.keyword" class="ba-sub-kw">{{ sub.keyword }}</span>
-              </div>
-              <div class="ba-sub-staff-pick" @click.stop>
-                <a-select
-                  :value="baAssignMap[sub.id]"
-                  @change="(v: string) => setBaSubStaff(sub.id, v)"
-                  placeholder="指定业务员"
-                  size="small"
-                  style="width:120px"
-                  show-search
-                  option-filter-prop="label"
-                  allow-clear
-                >
-                  <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
-                </a-select>
-              </div>
-            </div>
-            <div v-if="baFilteredSubs.length === 0" class="ba-empty">暂无符合筛选条件的子单</div>
-          </div>
+      <div class="ba-simple-wrap">
+        <div class="ba-simple-count">
+          已选择 <strong>{{ selectedKeys.length }}</strong> 条子单，将全部分配给所选业务员
         </div>
-        <div class="ba-right">
-          <div class="ba-summary-title">分配汇总</div>
-          <div class="ba-summary-total">
-            <span class="ba-st-num">{{ baAssignedCount }}</span>
-            <span class="ba-st-label">/ {{ baSubs.length }} 条已分配</span>
-          </div>
-          <div class="ba-summary-list">
-            <div v-if="baSummaryList.length === 0" class="ba-summary-empty">尚未分配任何业务员</div>
-            <div v-for="item in baSummaryList" :key="item.staffId" class="ba-summary-item">
-              <div class="ba-summary-av" :style="{ background: getStaffColor(item.staffId) }">{{ item.staffName.charAt(0) }}</div>
-              <span class="ba-summary-name">{{ item.staffName }}</span>
-              <span class="ba-summary-count">{{ item.count }}</span>
+        <div class="ba-simple-field">
+          <div class="ba-simple-label">选择业务员（可多选，轮流均分）</div>
+          <a-select
+            v-model:value="selectedStaffIds"
+            mode="multiple"
+            placeholder="请选择一名或多名业务员"
+            style="width:100%"
+            show-search
+            option-filter-prop="label"
+            :max-tag-count="5"
+          >
+            <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div :style="{ width:'8px', height:'8px', borderRadius:'50%', background: getStaffColor(s.id), flexShrink: 0 }"></div>
+                {{ s.name }}
+                <span v-if="s.today_remaining !== undefined" style="color:#9ca3af;font-size:11px;margin-left:auto">(剩 {{ s.today_remaining }})</span>
+              </div>
+            </a-select-option>
+          </a-select>
+        </div>
+        <div v-if="selectedStaffIds.length > 0 && selectedKeys.length > 0" class="ba-simple-preview">
+          <div class="ba-sp-title">分配预览</div>
+          <div class="ba-sp-list">
+            <div v-for="item in baBatchPreviewList" :key="item.staffId" class="ba-sp-item">
+              <div class="ba-sp-av" :style="{ background: getStaffColor(item.staffId) }">{{ item.staffName.charAt(0) }}</div>
+              <span class="ba-sp-name">{{ item.staffName }}</span>
+              <span class="ba-sp-count">{{ item.count }} 条</span>
             </div>
-          </div>
-          <div v-if="baUnassignedCount > 0" class="ba-unassigned-tip">
-            还有 <strong>{{ baUnassignedCount }}</strong> 条未分配，提交后将跳过
           </div>
         </div>
       </div>
@@ -948,34 +896,44 @@ function setBaSubStaff(subId: string, staffId: string) {
   baAssignMap.value = { ...baAssignMap.value, [subId]: staffId }
 }
 
+const baBatchPreviewList = computed(() => {
+  if (!selectedStaffIds.value.length || !selectedKeys.value.length) return []
+  const counts: Record<string, number> = {}
+  selectedStaffIds.value.forEach(id => { counts[id] = 0 })
+  selectedKeys.value.forEach((_, i) => {
+    const staffId = selectedStaffIds.value[i % selectedStaffIds.value.length]
+    counts[staffId]++
+  })
+  return selectedStaffIds.value.map(id => ({
+    staffId: id,
+    staffName: staffList.value.find(s => s.id === id)?.name || id,
+    count: counts[id],
+  }))
+})
+
 function openBatchAssign() {
-  const subs = subOrders.value.filter((s: any) => selectedKeys.value.includes(s.id))
-  baSubs.value = subs
-  baAssignMap.value = {}
-  baCheckedIds.value = new Set()
-  baFilterType.value = ''
-  baFilterLevel.value = ''
-  baFilterCountry.value = ''
-  baBulkStaffId.value = ''
+  selectedStaffIds.value = []
   batchAssignOpen.value = true
 }
 
 async function handleBatchAssign() {
-  const toAssign = Object.entries(baAssignMap.value).filter(([, staffId]) => !!staffId)
-  if (toAssign.length === 0) { message.warning('至少为一条子单分配业务员'); return }
+  if (!selectedStaffIds.value.length) { message.warning('请选择业务员'); return }
   assigning.value = true
   try {
-    await Promise.all(toAssign.map(([subId, staffId]) => {
+    const updates = selectedKeys.value.map((id, i) => {
+      const staffId = selectedStaffIds.value[i % selectedStaffIds.value.length]
       const staff = staffList.value.find(s => s.id === staffId)
       return supabase.from('sub_orders').update({
         staff_id: staffId,
         staff_name: staff?.name || '',
         status: '已分配',
-      }).eq('id', subId)
-    }))
-    message.success(`成功分配 ${toAssign.length} 条子单`)
+      }).eq('id', id)
+    })
+    await Promise.all(updates)
+    message.success(`成功分配 ${selectedKeys.value.length} 条子单`)
     batchAssignOpen.value = false
     selectedKeys.value = []
+    selectedStaffIds.value = []
     load()
   } catch (e: any) {
     message.error('分配失败：' + e.message)
@@ -1607,7 +1565,34 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 .assign-info-item { font-size: 12px; color: #6b7280; }
 .assign-info-item strong { color: #374151; }
 
-/* 批量分配弹窗 */
+/* 批量分配弹窗简洁版 */
+.ba-simple-wrap { padding: 4px 0; }
+.ba-simple-count {
+  font-size: 13px; color: #6b7280; margin-bottom: 16px;
+  padding: 10px 14px; background: #f0f7ff; border-radius: 8px; border: 1px solid #bfdbfe;
+}
+.ba-simple-count strong { color: #2563eb; font-size: 15px; }
+.ba-simple-field { margin-bottom: 12px; }
+.ba-simple-label { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.ba-simple-preview {
+  background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;
+  padding: 10px 14px; margin-top: 8px;
+}
+.ba-sp-title { font-size: 11px; font-weight: 600; color: #6b7280; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.ba-sp-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ba-sp-item {
+  display: flex; align-items: center; gap: 6px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 20px;
+  padding: 4px 12px 4px 5px;
+}
+.ba-sp-av {
+  width: 22px; height: 22px; border-radius: 50%; color: #fff;
+  font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.ba-sp-name { font-size: 12px; font-weight: 600; color: #374151; }
+.ba-sp-count { font-size: 12px; font-weight: 700; color: #2563eb; background: #eff6ff; border-radius: 8px; padding: 1px 6px; }
+
+/* 旧批量分配（保留 CSS 以防万一） */
 .ba-wrap { display: flex; height: 560px; overflow: hidden; }
 .ba-left { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #f0f0f0; overflow: hidden; }
 .ba-filter-bar {
@@ -1728,21 +1713,24 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
   background: #eff6ff;
 }
 .qf-pill-active {
-  background: #2563eb !important;
-  border-color: #2563eb !important;
-  color: #fff !important;
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
 }
-.qf-pill-active.qf-pill-type {
-  background: #0891b2 !important;
-  border-color: #0891b2 !important;
+.qf-pill.qf-pill-type.qf-pill-active {
+  background: #0891b2;
+  border-color: #0891b2;
+  color: #fff;
 }
-.qf-pill-active.qf-pill-level {
-  background: #059669 !important;
-  border-color: #059669 !important;
+.qf-pill.qf-pill-level.qf-pill-active {
+  background: #059669;
+  border-color: #059669;
+  color: #fff;
 }
-.qf-pill-active.qf-pill-country {
-  background: #d97706 !important;
-  border-color: #d97706 !important;
+.qf-pill.qf-pill-country.qf-pill-active {
+  background: #d97706;
+  border-color: #d97706;
+  color: #fff;
 }
 .qf-divider {
   width: 1px;
