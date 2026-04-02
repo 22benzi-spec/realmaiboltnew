@@ -37,12 +37,9 @@
               <th>今日已分配</th>
               <th>今日目标</th>
               <th>今日剩余</th>
-              <th>测评单</th>
-              <th>免评单</th>
               <th>本月完成</th>
               <th>月度目标</th>
               <th>月完成率</th>
-              <th>待处理</th>
             </tr>
           </thead>
           <tbody>
@@ -53,15 +50,22 @@
                   {{ p.name }}
                 </div>
               </td>
-              <td class="aob-t-center">{{ p.today_done }}</td>
+              <td class="aob-t-center">
+                <div class="aob-today-cell">
+                  <span class="aob-today-total">{{ p.today_done }}</span>
+                  <div class="aob-today-breakdown">
+                    <span class="breakdown-item review">测评 {{ p.review_assigned }}</span>
+                    <span class="breakdown-item free">免评 {{ p.free_assigned }}</span>
+                    <span v-if="p.fb_assigned > 0" class="breakdown-item fb">FB {{ p.fb_assigned }}</span>
+                  </div>
+                </div>
+              </td>
               <td class="aob-t-center">{{ p.daily_target }}</td>
               <td class="aob-t-center">
                 <span :class="['remain-badge', { 'remain-badge-urgent': p.today_remaining >= 5, 'remain-badge-ok': p.today_remaining === 0 && p.daily_target > 0 }]">
                   {{ p.today_remaining }}
                 </span>
               </td>
-              <td class="aob-t-center"><span class="review-badge">{{ p.review_assigned }}</span></td>
-              <td class="aob-t-center"><span class="free-badge">{{ p.free_assigned }}</span></td>
               <td class="aob-t-center">{{ p.month_done }}</td>
               <td class="aob-t-center">{{ p.monthly_target }}</td>
               <td class="aob-t-center">
@@ -70,7 +74,6 @@
                   <span class="aob-t-pct" :style="{ color: getProgressColor(p) }">{{ getProgressPct(p) }}%</span>
                 </div>
               </td>
-              <td class="aob-t-center"><span class="pending-badge">{{ p.pending }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -274,7 +277,7 @@
       <div v-else-if="viewMode === 'flat'">
         <!-- 快捷筛选胶囊行 -->
         <div class="qf-bar">
-          <div class="qf-group">
+          <div class="qf-group qf-group-date">
             <span class="qf-label">排期</span>
             <span
               v-for="d in quickDateOptions"
@@ -282,6 +285,13 @@
               :class="['qf-pill', { 'qf-pill-active': quickDate === d.value }]"
               @click="toggleQuickDate(d.value)"
             >{{ d.label }}</span>
+            <span class="qf-date-sep">|</span>
+            <span
+              v-for="sd in specificDateOptions.slice(2, 10)"
+              :key="sd.value"
+              :class="['qf-pill', 'qf-pill-date', quickDateSpecific === sd.value ? 'qf-pill-active' : '']"
+              @click="toggleSpecificDate(sd.value)"
+            >{{ sd.shortLabel }}</span>
           </div>
           <div class="qf-divider"></div>
           <div class="qf-group">
@@ -419,14 +429,15 @@
       @ok="handleBatchAssign"
       :confirm-loading="assigning"
       ok-text="确认分配"
-      width="480px"
+      width="560px"
     >
       <div class="ba-simple-wrap">
         <div class="ba-simple-count">
-          已选择 <strong>{{ selectedKeys.length }}</strong> 条子单，将全部分配给所选业务员
+          已选择 <strong>{{ selectedKeys.length }}</strong> 条子单
+          <span v-if="baManualTotal !== selectedKeys.length" style="color:#d97706;font-size:12px;margin-left:6px">（手动调整后实际分配：{{ baManualTotal }} 条）</span>
         </div>
         <div class="ba-simple-field">
-          <div class="ba-simple-label">选择业务员（可多选，轮流均分）</div>
+          <div class="ba-simple-label">选择业务员（可多选，均分分配）</div>
           <a-select
             v-model:value="selectedStaffIds"
             mode="multiple"
@@ -435,6 +446,7 @@
             show-search
             option-filter-prop="label"
             :max-tag-count="5"
+            @change="resetManualCounts"
           >
             <a-select-option v-for="s in staffListWithPerf" :key="s.id" :value="s.id" :label="s.name">
               <div style="display:flex;align-items:center;gap:6px">
@@ -445,14 +457,42 @@
             </a-select-option>
           </a-select>
         </div>
-        <div v-if="selectedStaffIds.length > 0 && selectedKeys.length > 0" class="ba-simple-preview">
-          <div class="ba-sp-title">分配预览</div>
-          <div class="ba-sp-list">
-            <div v-for="item in baBatchPreviewList" :key="item.staffId" class="ba-sp-item">
-              <div class="ba-sp-av" :style="{ background: getStaffColor(item.staffId) }">{{ item.staffName.charAt(0) }}</div>
-              <span class="ba-sp-name">{{ item.staffName }}</span>
-              <span class="ba-sp-count">{{ item.count }} 条</span>
+        <div v-if="selectedStaffIds.length > 0 && selectedKeys.length > 0" class="ba-detail-preview">
+          <div class="ba-dp-header">
+            <span class="ba-dp-title">分配预览</span>
+            <span class="ba-dp-hint">可手动调整本次分配数量</span>
+          </div>
+          <div class="ba-dp-table">
+            <div class="ba-dp-thead">
+              <span class="ba-dp-col-name">业务员</span>
+              <span class="ba-dp-col-stat">今日已有</span>
+              <span class="ba-dp-col-add">本次新增</span>
+              <span class="ba-dp-col-total">分配后总量</span>
             </div>
+            <div v-for="item in baBatchPreviewList" :key="item.staffId" class="ba-dp-row">
+              <div class="ba-dp-col-name">
+                <div class="ba-dp-av" :style="{ background: getStaffColor(item.staffId) }">{{ item.staffName.charAt(0) }}</div>
+                <span class="ba-dp-name">{{ item.staffName }}</span>
+              </div>
+              <div class="ba-dp-col-stat">
+                <span class="ba-dp-existing">{{ item.todayExisting }} 单</span>
+              </div>
+              <div class="ba-dp-col-add">
+                <div class="ba-dp-counter">
+                  <button class="ba-cnt-btn" @click="adjustManualCount(item.staffId, -1)" :disabled="(baManualCounts[item.staffId] || 0) <= 0">-</button>
+                  <span class="ba-cnt-num">+{{ baManualCounts[item.staffId] ?? item.count }}</span>
+                  <button class="ba-cnt-btn" @click="adjustManualCount(item.staffId, 1)">+</button>
+                </div>
+              </div>
+              <div class="ba-dp-col-total">
+                <span class="ba-dp-total-num">{{ item.todayExisting + (baManualCounts[item.staffId] ?? item.count) }} 单</span>
+              </div>
+            </div>
+          </div>
+          <div class="ba-dp-sum">
+            合计本次分配 <strong>{{ baManualTotal }}</strong> 条
+            <span v-if="baManualTotal < selectedKeys.length" style="color:#d97706;margin-left:8px">（{{ selectedKeys.length - baManualTotal }} 条将被跳过）</span>
+            <span v-if="baManualTotal > selectedKeys.length" style="color:#dc2626;margin-left:8px">（超出 {{ baManualTotal - selectedKeys.length }} 条，将只分配前 {{ selectedKeys.length }} 条）</span>
           </div>
         </div>
       </div>
@@ -663,9 +703,12 @@ async function loadPerfPanel() {
 
   const reviewMap: Record<string, number> = {}
   const freeMap: Record<string, number> = {}
+  const fbMap: Record<string, number> = {}
   for (const s of assignedSubs || []) {
     if (s.order_type === '免评') {
       freeMap[s.staff_id] = (freeMap[s.staff_id] || 0) + 1
+    } else if (s.order_type === 'FB' || s.order_type === 'Feedback') {
+      fbMap[s.staff_id] = (fbMap[s.staff_id] || 0) + 1
     } else {
       reviewMap[s.staff_id] = (reviewMap[s.staff_id] || 0) + 1
     }
@@ -690,6 +733,7 @@ async function loadPerfPanel() {
       pending: pendingMap[s.id] || 0,
       review_assigned: reviewMap[s.id] || 0,
       free_assigned: freeMap[s.id] || 0,
+      fb_assigned: fbMap[s.id] || 0,
       is_priority: false,
     }
   }).filter(p => p.monthly_target > 0 || p.pending > 0 || p.month_done > 0)
@@ -720,6 +764,23 @@ const quickCountry = ref('')
 const today = dayjs().format('YYYY-MM-DD')
 const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD')
 
+const quickDateSpecific = ref('')
+
+function buildSpecificDateOptions() {
+  const opts = []
+  for (let i = 0; i < 14; i++) {
+    const d = dayjs().add(i, 'day')
+    opts.push({
+      label: i === 0 ? `今日 ${d.format('M.D')}` : i === 1 ? `明日 ${d.format('M.D')}` : d.format('M.D'),
+      value: d.format('YYYY-MM-DD'),
+      shortLabel: i === 0 ? '今' : i === 1 ? '明' : d.format('M.D'),
+    })
+  }
+  return opts
+}
+
+const specificDateOptions = buildSpecificDateOptions()
+
 const quickDateOptions = [
   { label: '今日', value: today },
   { label: '明日', value: tomorrow },
@@ -743,10 +804,17 @@ const quickLevelOptions = [
 
 const quickCountryOptions = ['美国', '德国', '英国', '加拿大', '日本', '法国']
 
-const hasQuickFilter = computed(() => !!(quickDate.value || quickType.value || quickLevel.value || quickCountry.value))
+const hasQuickFilter = computed(() => !!(quickDate.value || quickDateSpecific.value || quickType.value || quickLevel.value || quickCountry.value))
 
 function toggleQuickDate(v: string) {
   quickDate.value = quickDate.value === v ? '' : v
+  if (quickDate.value) quickDateSpecific.value = ''
+  applyQuickFilters()
+}
+
+function toggleSpecificDate(v: string) {
+  quickDateSpecific.value = quickDateSpecific.value === v ? '' : v
+  if (quickDateSpecific.value) quickDate.value = ''
   applyQuickFilters()
 }
 function toggleQuickType(v: string) {
@@ -764,6 +832,7 @@ function toggleQuickCountry(v: string) {
 
 function clearQuickFilters() {
   quickDate.value = ''
+  quickDateSpecific.value = ''
   quickType.value = ''
   quickLevel.value = ''
   quickCountry.value = ''
@@ -896,23 +965,44 @@ function setBaSubStaff(subId: string, staffId: string) {
   baAssignMap.value = { ...baAssignMap.value, [subId]: staffId }
 }
 
+const baManualCounts = ref<Record<string, number>>({})
+
 const baBatchPreviewList = computed(() => {
   if (!selectedStaffIds.value.length || !selectedKeys.value.length) return []
-  const counts: Record<string, number> = {}
-  selectedStaffIds.value.forEach(id => { counts[id] = 0 })
-  selectedKeys.value.forEach((_, i) => {
-    const staffId = selectedStaffIds.value[i % selectedStaffIds.value.length]
-    counts[staffId]++
+  const autoCount = Math.floor(selectedKeys.value.length / selectedStaffIds.value.length)
+  const remainder = selectedKeys.value.length % selectedStaffIds.value.length
+  return selectedStaffIds.value.map((id, idx) => {
+    const perf = perfList.value.find(p => p.staff_id === id)
+    return {
+      staffId: id,
+      staffName: staffList.value.find(s => s.id === id)?.name || id,
+      count: autoCount + (idx < remainder ? 1 : 0),
+      todayExisting: perf?.today_done || 0,
+    }
   })
-  return selectedStaffIds.value.map(id => ({
-    staffId: id,
-    staffName: staffList.value.find(s => s.id === id)?.name || id,
-    count: counts[id],
-  }))
 })
+
+const baManualTotal = computed(() => {
+  if (!baBatchPreviewList.value.length) return 0
+  return baBatchPreviewList.value.reduce((sum, item) => {
+    return sum + (baManualCounts.value[item.staffId] ?? item.count)
+  }, 0)
+})
+
+function resetManualCounts() {
+  baManualCounts.value = {}
+}
+
+function adjustManualCount(staffId: string, delta: number) {
+  const item = baBatchPreviewList.value.find(i => i.staffId === staffId)
+  const current = baManualCounts.value[staffId] ?? (item?.count || 0)
+  const next = Math.max(0, current + delta)
+  baManualCounts.value = { ...baManualCounts.value, [staffId]: next }
+}
 
 function openBatchAssign() {
   selectedStaffIds.value = []
+  baManualCounts.value = {}
   batchAssignOpen.value = true
 }
 
@@ -920,20 +1010,28 @@ async function handleBatchAssign() {
   if (!selectedStaffIds.value.length) { message.warning('请选择业务员'); return }
   assigning.value = true
   try {
-    const updates = selectedKeys.value.map((id, i) => {
-      const staffId = selectedStaffIds.value[i % selectedStaffIds.value.length]
+    const assignments: Array<{ subId: string; staffId: string }> = []
+    let pos = 0
+    for (const item of baBatchPreviewList.value) {
+      const qty = baManualCounts.value[item.staffId] ?? item.count
+      for (let i = 0; i < qty && pos < selectedKeys.value.length; i++, pos++) {
+        assignments.push({ subId: selectedKeys.value[pos], staffId: item.staffId })
+      }
+    }
+    const updates = assignments.map(({ subId, staffId }) => {
       const staff = staffList.value.find(s => s.id === staffId)
       return supabase.from('sub_orders').update({
         staff_id: staffId,
         staff_name: staff?.name || '',
         status: '已分配',
-      }).eq('id', id)
+      }).eq('id', subId)
     })
     await Promise.all(updates)
-    message.success(`成功分配 ${selectedKeys.value.length} 条子单`)
+    message.success(`成功分配 ${assignments.length} 条子单`)
     batchAssignOpen.value = false
     selectedKeys.value = []
     selectedStaffIds.value = []
+    baManualCounts.value = {}
     load()
   } catch (e: any) {
     message.error('分配失败：' + e.message)
@@ -1129,7 +1227,9 @@ async function load() {
     if (filterOrderType.value) query = query.eq('order_type', filterOrderType.value)
     if (filterReviewLevel.value) query = query.eq('review_level', filterReviewLevel.value)
 
-    if (quickDate.value) {
+    if (quickDateSpecific.value) {
+      query = query.eq('scheduled_date', quickDateSpecific.value)
+    } else if (quickDate.value) {
       if (quickDate.value === 'overdue') {
         query = query.lt('scheduled_date', today).not('scheduled_date', 'is', null)
       } else if (quickDate.value === 'none') {
@@ -1591,6 +1691,66 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 }
 .ba-sp-name { font-size: 12px; font-weight: 600; color: #374151; }
 .ba-sp-count { font-size: 12px; font-weight: 700; color: #2563eb; background: #eff6ff; border-radius: 8px; padding: 1px 6px; }
+
+/* 详细分配预览 */
+.ba-detail-preview {
+  background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px;
+  padding: 12px 14px; margin-top: 8px;
+}
+.ba-dp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.ba-dp-title { font-size: 12px; font-weight: 700; color: #374151; }
+.ba-dp-hint { font-size: 11px; color: #9ca3af; }
+.ba-dp-table { width: 100%; }
+.ba-dp-thead {
+  display: grid; grid-template-columns: 1fr 80px 100px 90px;
+  padding: 4px 6px; font-size: 11px; font-weight: 600; color: #9ca3af;
+  text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 1px solid #e5e7eb; margin-bottom: 4px;
+}
+.ba-dp-row {
+  display: grid; grid-template-columns: 1fr 80px 100px 90px;
+  align-items: center; padding: 8px 6px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.ba-dp-row:last-child { border-bottom: none; }
+.ba-dp-col-name { display: flex; align-items: center; gap: 8px; }
+.ba-dp-col-stat { text-align: center; }
+.ba-dp-col-add { text-align: center; }
+.ba-dp-col-total { text-align: center; }
+.ba-dp-av {
+  width: 26px; height: 26px; border-radius: 50%; color: #fff;
+  font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.ba-dp-name { font-size: 13px; font-weight: 600; color: #111827; }
+.ba-dp-existing { font-size: 13px; color: #6b7280; }
+.ba-dp-counter { display: flex; align-items: center; gap: 4px; justify-content: center; }
+.ba-cnt-btn {
+  width: 22px; height: 22px; border-radius: 6px; border: 1px solid #d1d5db;
+  background: #fff; cursor: pointer; font-size: 14px; font-weight: 600;
+  color: #374151; display: flex; align-items: center; justify-content: center;
+  padding: 0; line-height: 1; transition: all 0.15s;
+}
+.ba-cnt-btn:hover:not(:disabled) { background: #2563eb; border-color: #2563eb; color: #fff; }
+.ba-cnt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ba-cnt-num { font-size: 13px; font-weight: 700; color: #2563eb; min-width: 28px; text-align: center; }
+.ba-dp-total-num { font-size: 14px; font-weight: 700; color: #059669; }
+.ba-dp-sum {
+  margin-top: 10px; padding-top: 8px; border-top: 1px dashed #e5e7eb;
+  font-size: 12px; color: #6b7280;
+}
+.ba-dp-sum strong { color: #2563eb; font-size: 14px; }
+
+/* 日期分隔 */
+.qf-date-sep { color: #d1d5db; font-size: 12px; margin: 0 2px; }
+.qf-pill-date { font-size: 11px; padding: 2px 7px; }
+
+/* 今日分配明细 */
+.aob-today-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.aob-today-total { font-size: 15px; font-weight: 700; color: #111827; }
+.aob-today-breakdown { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.breakdown-item { font-size: 10px; padding: 1px 5px; border-radius: 8px; font-weight: 600; }
+.breakdown-item.review { background: #eff6ff; color: #2563eb; }
+.breakdown-item.free { background: #f0fdf4; color: #059669; }
+.breakdown-item.fb { background: #fffbeb; color: #d97706; }
 
 /* 旧批量分配（保留 CSS 以防万一） */
 .ba-wrap { display: flex; height: 560px; overflow: hidden; }
