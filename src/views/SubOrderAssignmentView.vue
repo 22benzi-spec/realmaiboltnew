@@ -281,6 +281,14 @@
 
       <!-- 子单平铺视图 -->
       <div v-else-if="viewMode === 'flat'">
+        <!-- 操作提示条 -->
+        <div class="flat-hint-bar">
+          <span class="flat-hint-item"><span class="flat-hint-icon">✓</span> 勾选左侧复选框可多选，选中后工具栏出现"批量分配"和"批量修改"按钮</span>
+          <span class="flat-hint-sep">|</span>
+          <span class="flat-hint-item"><span class="flat-hint-icon">✎</span> 点击行末"编辑"按钮修改单条子单的关键词、类型、排期等</span>
+          <span class="flat-hint-sep">|</span>
+          <span class="flat-hint-item"><span class="flat-hint-icon">☰</span> 也可直接点击表格中的字段单元格行内编辑</span>
+        </div>
         <!-- 快捷筛选胶囊行 -->
         <div class="qf-bar">
           <div class="qf-group qf-group-date">
@@ -488,7 +496,10 @@
             </template>
 
             <template v-if="column.key === 'flat_action'">
-              <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
+              <div class="flat-action-btns">
+                <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
+                <a-button type="link" size="small" style="color:#059669" @click="openRowEdit(sub)">编辑</a-button>
+              </div>
             </template>
           </template>
         </a-table>
@@ -645,6 +656,52 @@
       </div>
     </a-modal>
 
+    <!-- 单行编辑弹窗 -->
+    <a-modal
+      v-model:open="rowEditOpen"
+      :title="`编辑子单 - ${rowEditRecord?.sub_order_number}`"
+      @ok="saveRowEdit"
+      :confirm-loading="rowEditSaving"
+      ok-text="保存"
+      cancel-text="取消"
+      width="500px"
+    >
+      <div v-if="rowEditRecord" class="re-wrap">
+        <div class="re-row">
+          <label class="re-label">关键词</label>
+          <a-input v-model:value="rowEditData.keyword" placeholder="输入搜索关键词" />
+        </div>
+        <div class="re-row">
+          <label class="re-label">测评类型</label>
+          <a-select v-model:value="rowEditData.order_type" style="width:100%" allow-clear placeholder="选择类型">
+            <a-select-option v-for="t in orderTypeOptions" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="re-row">
+          <label class="re-label">测评等级</label>
+          <a-select v-model:value="rowEditData.review_level" style="width:100%" allow-clear placeholder="选择等级">
+            <a-select-option value="普通">普通</a-select-option>
+            <a-select-option value="高等">高等</a-select-option>
+            <a-select-option value="极高等">极高等</a-select-option>
+          </a-select>
+        </div>
+        <div class="re-row">
+          <label class="re-label">国家</label>
+          <a-select v-model:value="rowEditData.country" style="width:100%" allow-clear placeholder="选择国家">
+            <a-select-option v-for="c in quickCountryOptions" :key="c" :value="c">{{ c }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="re-row">
+          <label class="re-label">排期日期</label>
+          <input type="date" v-model="rowEditData.scheduled_date" class="re-date-input" />
+        </div>
+        <div class="re-row">
+          <label class="re-label">备注</label>
+          <a-input v-model:value="rowEditData.task_notes" placeholder="输入备注" />
+        </div>
+      </div>
+    </a-modal>
+
     <!-- 单条分配弹窗 -->
     <a-modal
       v-model:open="singleAssignOpen"
@@ -782,7 +839,7 @@ import { supabase } from '../lib/supabase'
 const loading = ref(false)
 const subOrders = ref<any[]>([])
 const staffList = ref<any[]>([])
-const viewMode = ref<'grouped' | 'flat'>('grouped')
+const viewMode = ref<'grouped' | 'flat'>('flat')
 
 function switchView(mode: 'grouped' | 'flat') {
   viewMode.value = mode
@@ -1270,6 +1327,46 @@ async function handleBatchEdit() {
   }
 }
 
+// ---- 单行编辑弹窗 ----
+const rowEditOpen = ref(false)
+const rowEditRecord = ref<any>(null)
+const rowEditSaving = ref(false)
+const rowEditData = ref<Record<string, any>>({})
+
+function openRowEdit(sub: any) {
+  rowEditRecord.value = sub
+  rowEditData.value = {
+    keyword: sub.keyword || '',
+    order_type: sub.order_type || '',
+    review_level: sub.review_level || '',
+    country: sub.country || '',
+    scheduled_date: sub.scheduled_date || '',
+    task_notes: sub.task_notes || '',
+  }
+  rowEditOpen.value = true
+}
+
+async function saveRowEdit() {
+  if (!rowEditRecord.value) return
+  rowEditSaving.value = true
+  try {
+    const updates: Record<string, any> = {}
+    for (const [k, v] of Object.entries(rowEditData.value)) {
+      updates[k] = v || null
+    }
+    const { error } = await supabase.from('sub_orders').update(updates).eq('id', rowEditRecord.value.id)
+    if (error) throw error
+    const row = subOrders.value.find((s: any) => s.id === rowEditRecord.value.id)
+    if (row) Object.assign(row, updates)
+    message.success('保存成功')
+    rowEditOpen.value = false
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    rowEditSaving.value = false
+  }
+}
+
 const kwEditOpen = ref(false)
 const kwEditRecord = ref<any>(null)
 const kwEditMode = ref<'keyword' | 'link'>('keyword')
@@ -1294,17 +1391,16 @@ const subColumns = [
 ]
 
 const flatColumns = [
-  { title: '主订单', key: 'flat_order', width: 160 },
+  { title: '主订单', key: 'flat_order', width: 150 },
   { title: '子订单号', key: 'flat_sub_no', width: 165 },
-  { title: '产品名/ASIN', key: 'flat_product', width: 180 },
-  { title: '关键词', key: 'flat_keyword', width: 130 },
-  { title: '测评类型/国家', key: 'flat_type', width: 115 },
-  { title: '测评等级', key: 'flat_level', width: 80 },
-  { title: '排期日期', key: 'flat_scheduled', width: 95 },
-  { title: '产品售价', key: 'flat_price', width: 90 },
-  { title: '商务', key: 'flat_staff', width: 90 },
-  { title: '备注', key: 'flat_notes', width: 130 },
-  { title: '操作', key: 'flat_action', width: 80, fixed: 'right' as const },
+  { title: '产品名/ASIN', key: 'flat_product', width: 170 },
+  { title: '关键词 (点击编辑)', key: 'flat_keyword', width: 140 },
+  { title: '类型/国家 (点击编辑)', key: 'flat_type', width: 130 },
+  { title: '等级 (点击编辑)', key: 'flat_level', width: 100 },
+  { title: '排期 (点击编辑)', key: 'flat_scheduled', width: 110 },
+  { title: '商务', key: 'flat_staff', width: 80 },
+  { title: '备注 (点击编辑)', key: 'flat_notes', width: 130 },
+  { title: '操作', key: 'flat_action', width: 100, fixed: 'right' as const },
 ]
 
 const groupedOrders = computed(() => {
@@ -2044,6 +2140,29 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
   font-size: 12px; color: #6b7280;
 }
 .ba-dp-sum strong { color: #2563eb; font-size: 14px; }
+
+/* 单行编辑弹窗 */
+.re-wrap { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
+.re-row { display: flex; align-items: center; gap: 12px; }
+.re-label { width: 72px; font-size: 13px; font-weight: 600; color: #374151; flex-shrink: 0; text-align: right; }
+.re-date-input {
+  flex: 1; height: 32px; border: 1px solid #d1d5db; border-radius: 6px;
+  padding: 0 10px; font-size: 13px; color: #374151; background: #fff; outline: none;
+}
+.re-date-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; }
+
+/* 操作列按钮 */
+.flat-action-btns { display: flex; align-items: center; gap: 0; }
+
+/* 操作提示条 */
+.flat-hint-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 8px 14px; background: #fffbeb; border: 1px solid #fde68a;
+  border-radius: 8px; margin-bottom: 10px; font-size: 12px; color: #92400e;
+}
+.flat-hint-item { display: flex; align-items: center; gap: 4px; }
+.flat-hint-icon { font-size: 13px; font-weight: 700; color: #d97706; }
+.flat-hint-sep { color: #fcd34d; font-weight: 300; }
 
 /* 日期分隔 */
 .qf-date-sep { color: #d1d5db; font-size: 12px; margin: 0 2px; }
