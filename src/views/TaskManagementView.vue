@@ -138,13 +138,15 @@
                 <a-checkbox
                   :checked="isAllSubSelected(record.id)"
                   :indeterminate="isSubSelectionIndeterminate(record.id)"
+                  :disabled="getSelectableSubCount(record.id) === 0"
                   @change="(e: any) => toggleAllSubSelection(record.id, e.target.checked)"
                 >
-                  全选本组
+                  全选未匹配买手
                 </a-checkbox>
                 <span v-if="getSelectedSubCount(record.id) > 0" class="sub-orders-selected">
                   已选 {{ getSelectedSubCount(record.id) }} 条
                 </span>
+                <span v-else class="sub-orders-eligible">可选 {{ getSelectableSubCount(record.id) }} 条</span>
                 <a-button size="small" :disabled="getSelectedSubCount(record.id) === 0" @click="openBatchEdit(record)">
                   批量修改 ({{ getSelectedSubCount(record.id) }})
                 </a-button>
@@ -194,9 +196,10 @@
                   <span class="sub-no">{{ sub.sub_order_number }}</span>
                 </template>
                 <template v-if="column.key === 'sub_asin'">
-                  <div class="asin-cell">
+                  <div class="editable-cell editable-cell-stack" @click="openQuickEdit(sub, 'asin')">
                     <div class="asin-code">{{ sub.asin || '—' }}</div>
                     <div v-if="sub.product_name" class="asin-name">{{ sub.product_name }}</div>
+                    <EditOutlined class="kw-edit-icon" />
                   </div>
                 </template>
                 <template v-if="column.key === 'sub_keyword'">
@@ -216,24 +219,34 @@
                   </div>
                 </template>
                 <template v-if="column.key === 'sub_scheduled'">
-                  <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
-                    {{ sub.scheduled_date }}
-                  </span>
-                  <span v-else class="text-gray">—</span>
+                  <div class="editable-cell" @click="openQuickEdit(sub, 'scheduled_date')">
+                    <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
+                      {{ sub.scheduled_date }}
+                    </span>
+                    <span v-else class="text-gray">—</span>
+                    <EditOutlined class="kw-edit-icon" />
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_review_type'">
-                  <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
-                  <span v-else class="text-gray">—</span>
+                  <div class="editable-cell" @click="openQuickEdit(sub, 'order_type')">
+                    <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                    <span v-else class="text-gray">—</span>
+                    <EditOutlined class="kw-edit-icon" />
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_review_level'">
-                  <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
-                  <span v-else class="text-gray">—</span>
+                  <div class="editable-cell" @click="openQuickEdit(sub, 'review_level')">
+                    <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
+                    <span v-else class="text-gray">—</span>
+                    <EditOutlined class="kw-edit-icon" />
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_price_paid'">
-                  <div class="price-pair-cell">
+                  <div class="price-pair-cell editable-cell-stack" @click="openQuickEdit(sub, 'product_price')">
                     <div class="price-pair-row">
                       <span class="price-pair-label">售价</span>
                       <span class="price-text">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
+                      <EditOutlined class="kw-edit-icon" />
                     </div>
                     <div v-if="sub.actual_paid" class="price-pair-row">
                       <span class="price-pair-label">实付</span>
@@ -408,6 +421,56 @@
         </div>
         <div v-if="kwEditMode === 'link' && kwEditValue" class="kw-link-preview">
           <a :href="kwEditValue" target="_blank" rel="noopener noreferrer">预览链接</a>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- 单字段快捷编辑弹窗 -->
+    <a-modal
+      v-model:open="quickEditOpen"
+      :title="`修改${quickEditMeta?.label || ''}`"
+      @ok="saveQuickEdit"
+      :confirm-loading="quickEditSaving"
+      ok-text="保存"
+      cancel-text="取消"
+      width="420px"
+    >
+      <div class="kw-edit-modal-body">
+        <div class="kw-edit-sub-no" v-if="quickEditRecord">子单号：{{ quickEditRecord.sub_order_number }}</div>
+        <div class="kw-edit-input-row" v-if="quickEditMeta">
+          <span class="kw-edit-label">{{ quickEditMeta.label }}：</span>
+          <a-input
+            v-if="quickEditMeta.type === 'text'"
+            v-model:value="quickEditValue"
+            :placeholder="`输入${quickEditMeta.label}`"
+            allow-clear
+            style="flex:1"
+          />
+          <a-select
+            v-else-if="quickEditMeta.type === 'select'"
+            v-model:value="quickEditValue"
+            :placeholder="`选择${quickEditMeta.label}`"
+            allow-clear
+            style="flex:1"
+          >
+            <a-select-option v-for="opt in quickEditMeta.options || []" :key="opt" :value="opt">{{ opt }}</a-select-option>
+          </a-select>
+          <input
+            v-else-if="quickEditMeta.type === 'date'"
+            v-model="quickEditValue"
+            type="date"
+            class="bme-date-input"
+            style="flex:1;width:auto"
+          />
+          <a-input-number
+            v-else-if="quickEditMeta.type === 'number'"
+            v-model:value="quickEditValue"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            :placeholder="`输入${quickEditMeta.label}`"
+            style="flex:1"
+          />
         </div>
       </div>
     </a-modal>
@@ -670,69 +733,76 @@
       title="批量修改子订单"
       @ok="saveBatchEdit"
       :confirm-loading="editSubSaving"
-      :ok-button-props="{ disabled: currentBatchSelectedIds.length === 0 }"
+      :ok-button-props="{ disabled: activeBatchEditFields.length === 0 }"
       ok-text="确认修改"
       cancel-text="取消"
-      width="620px"
+      width="760px"
     >
       <div class="bme-wrap">
         <div class="bme-count-bar">
-          已选 <strong>{{ currentBatchSelectedIds.length }}</strong> 条子订单，勾选要修改的字段后统一设置新值
+          已选 <strong>{{ currentBatchSelectedIds.length }}</strong> 条子订单，填写的内容会统一应用到本次选中的记录
         </div>
-        <div class="bme-fields">
-          <div v-for="field in batchEditFields" :key="field.key" class="bme-field-row">
-            <a-checkbox v-model:checked="field.enabled" class="bme-chk">{{ field.label }}</a-checkbox>
-            <div class="bme-field-input" :class="{ 'bme-disabled': !field.enabled }">
+        <div class="bme-picker">
+          <span class="bme-picker-label">选择要修改的字段：</span>
+          <a-button
+            v-for="field in inactiveBatchEditFields"
+            :key="field.key"
+            size="small"
+            @click="activateBatchField(field.key)"
+          >
+            {{ field.label }}
+          </a-button>
+        </div>
+        <div v-if="activeBatchEditFields.length" class="bme-fields">
+          <div v-for="field in activeBatchEditFields" :key="field.key" class="bme-field-row">
+            <div class="bme-field-label">{{ field.label }}</div>
+            <div class="bme-field-input">
               <a-input
                 v-if="field.type === 'text'"
-                v-model:value="field.value"
-                :disabled="!field.enabled"
-                :placeholder="`输入新的${field.label}`"
+                v-model:value="batchEditForm[field.key]"
                 size="small"
-                style="width:220px"
+                :placeholder="`输入新的${field.label}`"
                 allow-clear
               />
               <a-select
                 v-else-if="field.type === 'select'"
-                v-model:value="field.value"
-                :disabled="!field.enabled"
-                :placeholder="`选择${field.label}`"
+                v-model:value="batchEditForm[field.key]"
                 size="small"
-                style="width:160px"
+                :placeholder="`选择${field.label}`"
+                style="width:100%"
                 allow-clear
               >
                 <a-select-option v-for="opt in field.options" :key="opt" :value="opt">{{ opt }}</a-select-option>
               </a-select>
               <input
                 v-else-if="field.type === 'date'"
-                v-model="field.value"
-                :disabled="!field.enabled"
+                v-model="batchEditForm[field.key]"
                 type="date"
-                class="bme-date-input"
+                class="bme-date-input bme-date-input-full"
               />
               <a-input-number
                 v-else-if="field.type === 'number'"
-                v-model:value="field.value"
-                :disabled="!field.enabled"
+                v-model:value="batchEditForm[field.key]"
                 size="small"
                 :min="0"
                 :precision="2"
                 :controls="false"
-                style="width:160px"
-                placeholder="输入新的产品售价"
+                style="width:100%"
+                :placeholder="`输入新的${field.label}`"
               />
             </div>
-            <span v-if="field.enabled" class="bme-hint">留空则清空该字段</span>
+            <a-button type="text" size="small" @click="deactivateBatchField(field.key)">移除</a-button>
           </div>
         </div>
+        <div v-else class="bme-empty">请先选择要修改的字段</div>
         <div class="bme-preview">
-          <span class="bme-preview-label">将修改：</span>
-          <template v-if="batchEditActiveFields.length">
-            <a-tag v-for="field in batchEditActiveFields" :key="field.key" color="blue" size="small">
-              {{ field.label }} → {{ getBatchFieldPreview(field) }}
+          <span class="bme-preview-label">说明：</span>
+          <template v-if="activeBatchEditFields.length">
+            <a-tag v-for="field in activeBatchEditFields" :key="field.key" color="blue" size="small">
+              {{ field.label }}
             </a-tag>
           </template>
-          <span v-else class="bme-preview-empty">请先勾选要修改的字段</span>
+          <span class="bme-preview-empty">未添加的字段不会修改；已添加字段留空时会清空对应值</span>
         </div>
       </div>
     </a-modal>
@@ -1114,7 +1184,7 @@ async function loadSubOrders(orderId: string) {
     .order('created_at', { ascending: true })
   if (error) { message.error('加载子订单失败'); return }
   subOrdersMap.value[orderId] = data || []
-  const validIds = new Set((data || []).map((sub: any) => sub.id))
+  const validIds = new Set((data || []).filter((sub: any) => canBatchEditSub(sub)).map((sub: any) => sub.id))
   selectedSubIdsMap.value[orderId] = getSelectedSubIds(orderId).filter(id => validIds.has(id))
 }
 
@@ -1248,12 +1318,34 @@ const kwEditRecord = ref<any>(null)
 const kwEditMode = ref<'keyword' | 'link'>('keyword')
 const kwEditValue = ref('')
 const kwEditSaving = ref(false)
+const quickEditOpen = ref(false)
+const quickEditRecord = ref<any>(null)
+const quickEditField = ref<'asin' | 'scheduled_date' | 'order_type' | 'review_level' | 'product_price' | ''>('')
+const quickEditValue = ref<any>('')
+const quickEditSaving = ref(false)
+const quickEditConfigs: Record<string, { label: string; type: 'text' | 'select' | 'date' | 'number'; options?: string[] }> = {
+  asin: { label: 'ASIN', type: 'text' },
+  scheduled_date: { label: '排单日期', type: 'date' },
+  order_type: { label: '测评类型', type: 'select', options: ['文字', '图片', '视频', '免评', 'FB', 'Feedback'] },
+  review_level: { label: '测评等级', type: 'select', options: ['普通', '高等', '极高等'] },
+  product_price: { label: '售价', type: 'number' },
+}
+const quickEditMeta = computed(() => quickEditField.value ? quickEditConfigs[quickEditField.value] : null)
 
 function openKwEdit(sub: any) {
   kwEditRecord.value = sub
   kwEditMode.value = (sub.keyword_type === 'link' ? 'link' : 'keyword') as 'keyword' | 'link'
   kwEditValue.value = sub.keyword_type === 'link' ? (sub.search_link || '') : (sub.keyword || '')
   kwEditOpen.value = true
+}
+
+function openQuickEdit(sub: any, field: 'asin' | 'scheduled_date' | 'order_type' | 'review_level' | 'product_price') {
+  quickEditRecord.value = sub
+  quickEditField.value = field
+  quickEditValue.value = field === 'product_price'
+    ? (sub[field] != null ? Number(sub[field]) : undefined)
+    : (sub[field] || '')
+  quickEditOpen.value = true
 }
 
 async function saveKwEdit() {
@@ -1282,31 +1374,75 @@ async function saveKwEdit() {
   }
 }
 
+async function saveQuickEdit() {
+  if (!quickEditRecord.value || !quickEditField.value) return
+  quickEditSaving.value = true
+  try {
+    const field = quickEditField.value
+    const value = field === 'product_price'
+      ? (quickEditValue.value == null || quickEditValue.value === '' ? null : Number(quickEditValue.value))
+      : (typeof quickEditValue.value === 'string' ? quickEditValue.value.trim() : quickEditValue.value) || null
+    const updates = { [field]: value }
+    const { error } = await supabase.from('sub_orders').update(updates).eq('id', quickEditRecord.value.id)
+    if (error) throw error
+    Object.assign(quickEditRecord.value, updates)
+    const orderId = quickEditRecord.value.order_id
+    if (orderId && subOrdersMap.value[orderId]) {
+      const sub = subOrdersMap.value[orderId].find((s: any) => s.id === quickEditRecord.value.id)
+      if (sub) Object.assign(sub, updates)
+    }
+    message.success(`${quickEditMeta.value?.label || '字段'}已更新`)
+    quickEditOpen.value = false
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    quickEditSaving.value = false
+  }
+}
+
 // ===== 批量修改子订单弹窗 =====
 const editSubModalOpen = ref(false)
 const editSubSaving = ref(false)
 const selectedSubIdsMap = ref<Record<string, string[]>>({})
 const batchEditOrderId = ref<string>('')
-function createBatchEditFields() {
-  return [
-    { key: 'keyword', label: '关键词', type: 'text', value: '', enabled: false, options: [] as string[] },
-    { key: 'order_type', label: '测评类型', type: 'select', value: undefined as string | undefined, enabled: false, options: ['文字', '图片', '视频', '免评', 'FB', 'Feedback'] },
-    { key: 'review_level', label: '测评等级', type: 'select', value: undefined as string | undefined, enabled: false, options: ['普通', '高等', '极高等'] },
-    { key: 'scheduled_date', label: '排单日期', type: 'date', value: '', enabled: false, options: [] as string[] },
-    { key: 'country', label: '国家', type: 'select', value: undefined as string | undefined, enabled: false, options: countries },
-    { key: 'product_price', label: '产品售价', type: 'number', value: undefined as number | undefined, enabled: false, options: [] as string[] },
-    { key: 'task_notes', label: '备注', type: 'text', value: '', enabled: false, options: [] as string[] },
-  ]
-}
-
-const batchEditFields = ref(createBatchEditFields())
-const batchEditActiveFields = computed(() => batchEditFields.value.filter(field => field.enabled))
+const batchEditFieldOptions = [
+  { key: 'keyword', label: '关键词', type: 'text', options: [] as string[] },
+  { key: 'order_type', label: '测评类型', type: 'select', options: ['文字', '图片', '视频', '免评', 'FB', 'Feedback'] },
+  { key: 'review_level', label: '测评等级', type: 'select', options: ['普通', '高等', '极高等'] },
+  { key: 'scheduled_date', label: '排单日期', type: 'date', options: [] as string[] },
+  { key: 'asin', label: 'ASIN', type: 'text', options: [] as string[] },
+  { key: 'product_price', label: '产品售价', type: 'number', options: [] as string[] },
+  { key: 'task_notes', label: '备注', type: 'text', options: [] as string[] },
+] as const
+const activeBatchEditKeys = ref<string[]>([])
+const batchEditForm = ref<Record<string, any>>({})
 const currentBatchSelectedIds = computed(() => {
   return batchEditOrderId.value ? (selectedSubIdsMap.value[batchEditOrderId.value] || []) : []
 })
+const activeBatchEditFields = computed(() => batchEditFieldOptions.filter(field => activeBatchEditKeys.value.includes(field.key)))
+const inactiveBatchEditFields = computed(() => batchEditFieldOptions.filter(field => !activeBatchEditKeys.value.includes(field.key)))
 
-function resetBatchEditFields() {
-  batchEditFields.value = createBatchEditFields()
+function resetBatchEditForm() {
+  activeBatchEditKeys.value = []
+  batchEditForm.value = {
+    keyword: '',
+    order_type: undefined,
+    review_level: undefined,
+    scheduled_date: '',
+    asin: '',
+    product_price: undefined,
+    task_notes: '',
+  }
+}
+
+function activateBatchField(key: string) {
+  if (activeBatchEditKeys.value.includes(key)) return
+  activeBatchEditKeys.value = [...activeBatchEditKeys.value, key]
+}
+
+function deactivateBatchField(key: string) {
+  activeBatchEditKeys.value = activeBatchEditKeys.value.filter(item => item !== key)
+  batchEditForm.value[key] = key === 'product_price' ? undefined : key === 'order_type' || key === 'review_level' ? undefined : ''
 }
 
 function getSelectedSubIds(orderId: string) {
@@ -1317,30 +1453,43 @@ function getSelectedSubCount(orderId: string) {
   return getSelectedSubIds(orderId).length
 }
 
+function canBatchEditSub(sub: any) {
+  return !sub?.buyer_id && !sub?.buyer_name
+}
+
+function getSelectableSubOrders(orderId: string) {
+  return (subOrdersMap.value[orderId] || []).filter((sub: any) => canBatchEditSub(sub))
+}
+
+function getSelectableSubCount(orderId: string) {
+  return getSelectableSubOrders(orderId).length
+}
+
 function setSelectedSubIds(orderId: string, ids: string[]) {
   selectedSubIdsMap.value[orderId] = ids
 }
 
 function isAllSubSelected(orderId: string) {
-  const subs = subOrdersMap.value[orderId] || []
-  return subs.length > 0 && getSelectedSubCount(orderId) === subs.length
+  const selectableSubs = getSelectableSubOrders(orderId)
+  return selectableSubs.length > 0 && getSelectedSubCount(orderId) === selectableSubs.length
 }
 
 function isSubSelectionIndeterminate(orderId: string) {
   const count = getSelectedSubCount(orderId)
-  const total = (subOrdersMap.value[orderId] || []).length
+  const total = getSelectableSubCount(orderId)
   return count > 0 && count < total
 }
 
 function toggleAllSubSelection(orderId: string, checked: boolean) {
-  const subs = subOrdersMap.value[orderId] || []
-  setSelectedSubIds(orderId, checked ? subs.map((sub: any) => sub.id) : [])
+  const selectableSubs = getSelectableSubOrders(orderId)
+  setSelectedSubIds(orderId, checked ? selectableSubs.map((sub: any) => sub.id) : [])
 }
 
 function getSubRowSelection(orderId: string) {
   return {
     selectedRowKeys: getSelectedSubIds(orderId),
     onChange: (keys: (string | number)[]) => setSelectedSubIds(orderId, keys.map(key => String(key))),
+    getCheckboxProps: (record: any) => ({ disabled: !canBatchEditSub(record) }),
   }
 }
 
@@ -1353,30 +1502,30 @@ async function openBatchEdit(record: any) {
     return
   }
   batchEditOrderId.value = record.id
-  resetBatchEditFields()
+  resetBatchEditForm()
   editSubModalOpen.value = true
-}
-
-function getBatchFieldPreview(field: any) {
-  return field.value === '' || field.value == null ? '（清空）' : field.value
 }
 
 async function saveBatchEdit() {
   if (currentBatchSelectedIds.value.length === 0) return
   editSubSaving.value = true
   try {
-    const payload: any = {}
-    const selectedCount = currentBatchSelectedIds.value.length
-    for (const field of batchEditActiveFields.value) {
-      payload[field.key] = field.value === '' ? null : field.value
-    }
+    if (activeBatchEditFields.value.length === 0) { message.warning('请先选择至少一个修改字段'); return }
 
-    if (Object.keys(payload).length === 0) { message.warning('请至少勾选一个修改字段'); return }
+    const selectedCount = currentBatchSelectedIds.value.length
+    const payload: Record<string, any> = {}
+    for (const field of activeBatchEditFields.value) {
+      const value = batchEditForm.value[field.key]
+      payload[field.key] = field.key === 'product_price'
+        ? (value == null || value === '' ? null : Number(value))
+        : (value ?? '') || null
+    }
 
     const { error } = await supabase.from('sub_orders').update(payload).in('id', currentBatchSelectedIds.value)
     if (error) throw error
     await loadSubOrders(batchEditOrderId.value)
     selectedSubIdsMap.value[batchEditOrderId.value] = []
+    resetBatchEditForm()
     message.success(`已批量修改 ${selectedCount} 条子订单`)
     editSubModalOpen.value = false
   } catch (e: any) {
@@ -1604,6 +1753,7 @@ onMounted(() => {
 .sub-orders-title { font-size: 12px; font-weight: 600; color: #374151; }
 .sub-orders-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sub-orders-selected { font-size: 12px; color: #2563eb; font-weight: 600; }
+.sub-orders-eligible { font-size: 12px; color: #6b7280; }
 .no-sub-orders { margin-top: 10px; color: #9ca3af; font-size: 13px; text-align: center; padding: 12px 0; }
 
 .sub-no { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
@@ -1890,13 +2040,23 @@ onMounted(() => {
   border: 1px solid #e2e8f0;
 }
 
-.kw-cell {
+.kw-cell,
+.editable-cell {
   display: flex;
   align-items: center;
   gap: 4px;
   cursor: pointer;
 }
-.kw-cell:hover .kw-edit-icon { opacity: 1; }
+.editable-cell-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  cursor: pointer;
+}
+.kw-cell:hover .kw-edit-icon,
+.editable-cell:hover .kw-edit-icon,
+.editable-cell-stack:hover .kw-edit-icon { opacity: 1; }
 .kw-edit-icon {
   font-size: 11px;
   color: #9ca3af;
@@ -1960,31 +2120,47 @@ onMounted(() => {
 .bme-count-bar {
   font-size: 13px;
   color: #6b7280;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   padding: 8px 12px;
   background: #fafafa;
   border-radius: 6px;
   border: 1px solid #e5e7eb;
 }
 .bme-count-bar strong { color: #374151; }
-.bme-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-.bme-field-row {
+.bme-picker {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.bme-picker-label { font-size: 12px; color: #374151; font-weight: 600; }
+.bme-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bme-field-row {
+  display: grid;
+  grid-template-columns: 92px 1fr 56px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  transition: border-color 0.15s, background 0.15s;
+  background: #fafafa;
 }
-.bme-field-row:has(.ant-checkbox-checked) {
-  border-color: #2563eb;
-  background: #f0f7ff;
+.bme-field-label { font-size: 13px; color: #374151; font-weight: 600; }
+.bme-field-input { min-width: 0; }
+.bme-empty {
+  padding: 28px 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  background: #fafafa;
 }
-.bme-chk { min-width: 90px; font-weight: 600; font-size: 13px; }
-.bme-field-input { flex: 1; }
-.bme-disabled { opacity: 0.4; pointer-events: none; }
-.bme-hint { font-size: 11px; color: #9ca3af; white-space: nowrap; }
 .bme-date-input {
   height: 28px;
   border: 1px solid #d1d5db;
@@ -1996,6 +2172,7 @@ onMounted(() => {
   outline: none;
   width: 160px;
 }
+.bme-date-input-full { width: 100%; }
 .bme-date-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; }
 .bme-preview {
   display: flex;
@@ -2006,6 +2183,7 @@ onMounted(() => {
   background: #f9fafb;
   border-radius: 6px;
   border: 1px dashed #d1d5db;
+  margin-top: 12px;
 }
 .bme-preview-label { font-size: 12px; font-weight: 600; color: #374151; margin-right: 4px; }
 .bme-preview-empty { color: #9ca3af; font-size: 12px; }
