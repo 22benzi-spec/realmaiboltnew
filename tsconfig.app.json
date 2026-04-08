@@ -5,6 +5,10 @@
     "module": "ESNext",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "vue": ["./node_modules/vue/dist/vue.d.mts"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",
