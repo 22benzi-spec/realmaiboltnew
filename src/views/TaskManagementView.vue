@@ -122,9 +122,6 @@
               >
                 <ThunderboltOutlined /> 生成
               </a-button>
-              <a-button size="small" class="edit-sub-btn" @click.stop="openEditSubModal(record)">
-                <EditOutlined /> 修改
-              </a-button>
               <a-button size="small" class="copy-sub-btn" @click.stop="openCopyModal(record)">
                 <CopyOutlined /> 复制
               </a-button>
@@ -137,6 +134,21 @@
           <div v-if="expandedRowKeys.includes(record.id)" class="sub-orders-panel">
             <div class="sub-orders-header">
               <span class="sub-orders-title">子订单列表（{{ subOrdersMap[record.id]?.length || 0 }} / {{ record.order_quantity }} 单）</span>
+              <div v-if="subOrdersMap[record.id]?.length" class="sub-orders-header-actions">
+                <a-checkbox
+                  :checked="isAllSubSelected(record.id)"
+                  :indeterminate="isSubSelectionIndeterminate(record.id)"
+                  @change="(e: any) => toggleAllSubSelection(record.id, e.target.checked)"
+                >
+                  全选本组
+                </a-checkbox>
+                <span v-if="getSelectedSubCount(record.id) > 0" class="sub-orders-selected">
+                  已选 {{ getSelectedSubCount(record.id) }} 条
+                </span>
+                <a-button size="small" :disabled="getSelectedSubCount(record.id) === 0" @click="openBatchEdit(record)">
+                  批量修改 ({{ getSelectedSubCount(record.id) }})
+                </a-button>
+              </div>
             </div>
 
             <!-- 排期一览 -->
@@ -170,6 +182,7 @@
               v-if="subOrdersMap[record.id]?.length"
               :columns="subColumns"
               :data-source="subOrdersMap[record.id]"
+              :row-selection="getSubRowSelection(record.id)"
               :pagination="false"
               row-key="id"
               size="small"
@@ -655,87 +668,71 @@
     <a-modal
       v-model:open="editSubModalOpen"
       title="批量修改子订单"
-      :footer="null"
-      width="860px"
-      :destroy-on-close="true"
+      @ok="saveBatchEdit"
+      :confirm-loading="editSubSaving"
+      :ok-button-props="{ disabled: currentBatchSelectedIds.length === 0 }"
+      ok-text="确认修改"
+      cancel-text="取消"
+      width="620px"
     >
-      <div class="batch-edit-modal-body">
-        <div class="batch-edit-tip">
-          <span class="batch-tip-text">仅显示无返款记录的子订单，可多选后批量修改</span>
-          <a-space>
-            <a-button size="small" @click="batchSelectAll">全选</a-button>
-            <a-button size="small" @click="batchSelectNone">取消全选</a-button>
-          </a-space>
+      <div class="bme-wrap">
+        <div class="bme-count-bar">
+          已选 <strong>{{ currentBatchSelectedIds.length }}</strong> 条子订单，勾选要修改的字段后统一设置新值
         </div>
-
-        <div class="batch-sub-list">
-          <div
-            v-for="sub in editableSubList"
-            :key="sub.id"
-            :class="['batch-sub-item', { 'batch-sub-selected': batchSelectedIds.includes(sub.id) }]"
-            @click="toggleBatchSelect(sub.id)"
-          >
-            <a-checkbox :checked="batchSelectedIds.includes(sub.id)" @click.stop="toggleBatchSelect(sub.id)" />
-            <span class="batch-sub-no">{{ sub.sub_order_number }}</span>
-            <span class="batch-sub-date">{{ sub.scheduled_date || '—' }}</span>
-            <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
-            <span v-else class="text-gray batch-sub-type">无类型</span>
-            <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
-            <span class="batch-sub-kw">{{ sub.keyword || '—' }}</span>
-            <span class="batch-sub-price" v-if="sub.product_price">${{ Number(sub.product_price).toFixed(2) }}</span>
+        <div class="bme-fields">
+          <div v-for="field in batchEditFields" :key="field.key" class="bme-field-row">
+            <a-checkbox v-model:checked="field.enabled" class="bme-chk">{{ field.label }}</a-checkbox>
+            <div class="bme-field-input" :class="{ 'bme-disabled': !field.enabled }">
+              <a-input
+                v-if="field.type === 'text'"
+                v-model:value="field.value"
+                :disabled="!field.enabled"
+                :placeholder="`输入新的${field.label}`"
+                size="small"
+                style="width:220px"
+                allow-clear
+              />
+              <a-select
+                v-else-if="field.type === 'select'"
+                v-model:value="field.value"
+                :disabled="!field.enabled"
+                :placeholder="`选择${field.label}`"
+                size="small"
+                style="width:160px"
+                allow-clear
+              >
+                <a-select-option v-for="opt in field.options" :key="opt" :value="opt">{{ opt }}</a-select-option>
+              </a-select>
+              <input
+                v-else-if="field.type === 'date'"
+                v-model="field.value"
+                :disabled="!field.enabled"
+                type="date"
+                class="bme-date-input"
+              />
+              <a-input-number
+                v-else-if="field.type === 'number'"
+                v-model:value="field.value"
+                :disabled="!field.enabled"
+                size="small"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                style="width:160px"
+                placeholder="输入新的产品售价"
+              />
+            </div>
+            <span v-if="field.enabled" class="bme-hint">留空则清空该字段</span>
           </div>
-          <div v-if="editableSubList.length === 0" class="batch-sub-empty">暂无可修改的子订单（所有子订单均有返款记录）</div>
         </div>
-
-        <a-divider style="margin: 12px 0" />
-        <div class="batch-edit-form-label">批量修改字段（留空表示不修改该字段）：</div>
-        <a-form layout="vertical">
-          <a-row :gutter="16">
-            <a-col :span="8">
-              <a-form-item label="关键词">
-                <a-input v-model:value="batchEditForm.keyword" size="small" placeholder="留空不修改" allow-clear />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="测评类型">
-                <a-select v-model:value="batchEditForm.order_type" size="small" style="width:100%" allow-clear placeholder="留空不修改">
-                  <a-select-option value="文字">文字</a-select-option>
-                  <a-select-option value="图片">图片</a-select-option>
-                  <a-select-option value="视频">视频</a-select-option>
-                  <a-select-option value="免评">免评</a-select-option>
-                  <a-select-option value="FB">FB</a-select-option>
-                  <a-select-option value="Feedback">Feedback</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="测评等级">
-                <a-select v-model:value="batchEditForm.review_level" size="small" style="width:100%" allow-clear placeholder="留空不修改">
-                  <a-select-option value="普通">普通</a-select-option>
-                  <a-select-option value="高等">高等</a-select-option>
-                  <a-select-option value="极高等">极高等</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="排单日期">
-                <a-input v-model:value="batchEditForm.scheduled_date" size="small" placeholder="YYYY-MM-DD，留空不修改" allow-clear />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="产品售价">
-                <a-input-number v-model:value="batchEditForm.product_price" size="small" :min="0" :precision="2" prefix="$" style="width:100%" placeholder="留空不修改" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </a-form>
-
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
-          <span class="batch-selected-count">已选 {{ batchSelectedIds.length }} 条</span>
-          <a-space>
-            <a-button @click="editSubModalOpen = false">取消</a-button>
-            <a-button type="primary" :loading="editSubSaving" :disabled="batchSelectedIds.length === 0" @click="saveBatchEdit">保存修改</a-button>
-          </a-space>
+        <div class="bme-preview">
+          <span class="bme-preview-label">将修改：</span>
+          <template v-if="batchEditActiveFields.length">
+            <a-tag v-for="field in batchEditActiveFields" :key="field.key" color="blue" size="small">
+              {{ field.label }} → {{ getBatchFieldPreview(field) }}
+            </a-tag>
+          </template>
+          <span v-else class="bme-preview-empty">请先勾选要修改的字段</span>
         </div>
       </div>
     </a-modal>
@@ -769,7 +766,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined, RightOutlined, ThunderboltOutlined,
@@ -1117,6 +1114,8 @@ async function loadSubOrders(orderId: string) {
     .order('created_at', { ascending: true })
   if (error) { message.error('加载子订单失败'); return }
   subOrdersMap.value[orderId] = data || []
+  const validIds = new Set((data || []).map((sub: any) => sub.id))
+  selectedSubIdsMap.value[orderId] = getSelectedSubIds(orderId).filter(id => validIds.has(id))
 }
 
 async function generateSubOrders(record: any) {
@@ -1215,6 +1214,7 @@ async function deleteTask(id: string) {
   if (error) { message.error('删除任务失败'); return }
   message.success('任务及子订单已全部删除')
   delete subOrdersMap.value[id]
+  delete selectedSubIdsMap.value[id]
   expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== id)
   load()
 }
@@ -1285,64 +1285,99 @@ async function saveKwEdit() {
 // ===== 批量修改子订单弹窗 =====
 const editSubModalOpen = ref(false)
 const editSubSaving = ref(false)
-const editableSubList = ref<any[]>([])
-const batchSelectedIds = ref<string[]>([])
+const selectedSubIdsMap = ref<Record<string, string[]>>({})
 const batchEditOrderId = ref<string>('')
-const batchEditForm = ref<any>({
-  keyword: '',
-  order_type: undefined,
-  review_level: undefined,
-  scheduled_date: '',
-  product_price: undefined,
+function createBatchEditFields() {
+  return [
+    { key: 'keyword', label: '关键词', type: 'text', value: '', enabled: false, options: [] as string[] },
+    { key: 'order_type', label: '测评类型', type: 'select', value: undefined as string | undefined, enabled: false, options: ['文字', '图片', '视频', '免评', 'FB', 'Feedback'] },
+    { key: 'review_level', label: '测评等级', type: 'select', value: undefined as string | undefined, enabled: false, options: ['普通', '高等', '极高等'] },
+    { key: 'scheduled_date', label: '排单日期', type: 'date', value: '', enabled: false, options: [] as string[] },
+    { key: 'country', label: '国家', type: 'select', value: undefined as string | undefined, enabled: false, options: countries },
+    { key: 'product_price', label: '产品售价', type: 'number', value: undefined as number | undefined, enabled: false, options: [] as string[] },
+    { key: 'task_notes', label: '备注', type: 'text', value: '', enabled: false, options: [] as string[] },
+  ]
+}
+
+const batchEditFields = ref(createBatchEditFields())
+const batchEditActiveFields = computed(() => batchEditFields.value.filter(field => field.enabled))
+const currentBatchSelectedIds = computed(() => {
+  return batchEditOrderId.value ? (selectedSubIdsMap.value[batchEditOrderId.value] || []) : []
 })
 
-async function openEditSubModal(record: any) {
-  batchEditOrderId.value = record.id
+function resetBatchEditFields() {
+  batchEditFields.value = createBatchEditFields()
+}
+
+function getSelectedSubIds(orderId: string) {
+  return selectedSubIdsMap.value[orderId] || []
+}
+
+function getSelectedSubCount(orderId: string) {
+  return getSelectedSubIds(orderId).length
+}
+
+function setSelectedSubIds(orderId: string, ids: string[]) {
+  selectedSubIdsMap.value[orderId] = ids
+}
+
+function isAllSubSelected(orderId: string) {
+  const subs = subOrdersMap.value[orderId] || []
+  return subs.length > 0 && getSelectedSubCount(orderId) === subs.length
+}
+
+function isSubSelectionIndeterminate(orderId: string) {
+  const count = getSelectedSubCount(orderId)
+  const total = (subOrdersMap.value[orderId] || []).length
+  return count > 0 && count < total
+}
+
+function toggleAllSubSelection(orderId: string, checked: boolean) {
+  const subs = subOrdersMap.value[orderId] || []
+  setSelectedSubIds(orderId, checked ? subs.map((sub: any) => sub.id) : [])
+}
+
+function getSubRowSelection(orderId: string) {
+  return {
+    selectedRowKeys: getSelectedSubIds(orderId),
+    onChange: (keys: (string | number)[]) => setSelectedSubIds(orderId, keys.map(key => String(key))),
+  }
+}
+
+async function openBatchEdit(record: any) {
   if (!subOrdersMap.value[record.id]) {
     await loadSubOrders(record.id)
   }
-  const subs = subOrdersMap.value[record.id] || []
-  if (subs.length === 0) { message.info('暂无子订单'); return }
-  editableSubList.value = subs.filter((s: any) => !s.refund_amount && !s.refund_status)
-  batchSelectedIds.value = editableSubList.value.map((s: any) => s.id)
-  batchEditForm.value = { keyword: '', order_type: undefined, review_level: undefined, scheduled_date: '', product_price: undefined }
+  if (getSelectedSubCount(record.id) === 0) {
+    message.warning('请先在子订单列表中选择要修改的记录')
+    return
+  }
+  batchEditOrderId.value = record.id
+  resetBatchEditFields()
   editSubModalOpen.value = true
 }
 
-function toggleBatchSelect(id: string) {
-  if (batchSelectedIds.value.includes(id)) {
-    batchSelectedIds.value = batchSelectedIds.value.filter(i => i !== id)
-  } else {
-    batchSelectedIds.value = [...batchSelectedIds.value, id]
-  }
-}
-
-function batchSelectAll() {
-  batchSelectedIds.value = editableSubList.value.map((s: any) => s.id)
-}
-
-function batchSelectNone() {
-  batchSelectedIds.value = []
+function getBatchFieldPreview(field: any) {
+  return field.value === '' || field.value == null ? '（清空）' : field.value
 }
 
 async function saveBatchEdit() {
-  if (batchSelectedIds.value.length === 0) return
+  if (currentBatchSelectedIds.value.length === 0) return
   editSubSaving.value = true
   try {
-    const f = batchEditForm.value
     const payload: any = {}
-    if (f.keyword !== '' && f.keyword != null) payload.keyword = f.keyword
-    if (f.order_type) payload.order_type = f.order_type
-    if (f.review_level) payload.review_level = f.review_level
-    if (f.scheduled_date) payload.scheduled_date = f.scheduled_date
-    if (f.product_price != null) payload.product_price = f.product_price
+    const selectedCount = currentBatchSelectedIds.value.length
+    for (const field of batchEditActiveFields.value) {
+      payload[field.key] = field.value === '' ? null : field.value
+    }
 
-    if (Object.keys(payload).length === 0) { message.warning('请至少填写一个修改字段'); return }
+    if (Object.keys(payload).length === 0) { message.warning('请至少勾选一个修改字段'); return }
 
-    const { error } = await supabase.from('sub_orders').update(payload).in('id', batchSelectedIds.value)
+    const { error } = await supabase.from('sub_orders').update(payload).in('id', currentBatchSelectedIds.value)
     if (error) throw error
     await loadSubOrders(batchEditOrderId.value)
-    message.success(`已批量修改 ${batchSelectedIds.value.length} 条子订单`)
+    selectedSubIdsMap.value[batchEditOrderId.value] = []
+    message.success(`已批量修改 ${selectedCount} 条子订单`)
     editSubModalOpen.value = false
   } catch (e: any) {
     message.error('保存失败：' + e.message)
@@ -1565,8 +1600,10 @@ onMounted(() => {
   border-top: 1px dashed #e5e7eb;
   padding: 12px 16px 16px 32px;
 }
-.sub-orders-header { display: flex; align-items: center; justify-content: space-between; }
+.sub-orders-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .sub-orders-title { font-size: 12px; font-weight: 600; color: #374151; }
+.sub-orders-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sub-orders-selected { font-size: 12px; color: #2563eb; font-weight: 600; }
 .no-sub-orders { margin-top: 10px; color: #9ca3af; font-size: 13px; text-align: center; padding: 12px 0; }
 
 .sub-no { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
@@ -1919,47 +1956,59 @@ onMounted(() => {
 .created-at-text { font-size: 11px; color: #6b7280; }
 
 /* ===== 批量修改弹窗 ===== */
-.batch-edit-modal-body { padding: 4px 0; }
-.batch-edit-tip {
+.bme-wrap { padding: 4px 0; }
+.bme-count-bar {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+.bme-count-bar strong { color: #374151; }
+.bme-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.bme-field-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
+  gap: 12px;
   padding: 8px 12px;
-  background: #eff6ff;
-  border-radius: 6px;
-  border: 1px solid #bfdbfe;
-}
-.batch-tip-text { font-size: 12px; color: #1d4ed8; }
-.batch-sub-list {
-  max-height: 220px;
-  overflow-y: auto;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  transition: border-color 0.15s, background 0.15s;
 }
-.batch-sub-item {
+.bme-field-row:has(.ant-checkbox-checked) {
+  border-color: #2563eb;
+  background: #f0f7ff;
+}
+.bme-chk { min-width: 90px; font-weight: 600; font-size: 13px; }
+.bme-field-input { flex: 1; }
+.bme-disabled { opacity: 0.4; pointer-events: none; }
+.bme-hint { font-size: 11px; color: #9ca3af; white-space: nowrap; }
+.bme-date-input {
+  height: 28px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: #374151;
+  background: #fff;
+  outline: none;
+  width: 160px;
+}
+.bme-date-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; }
+.bme-preview {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 7px 12px;
-  cursor: pointer;
-  border-bottom: 1px solid #f3f4f6;
-  transition: background 0.12s;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px dashed #d1d5db;
 }
-.batch-sub-item:last-child { border-bottom: none; }
-.batch-sub-item:hover { background: #f8fafc; }
-.batch-sub-selected { background: #eff6ff !important; }
-.batch-sub-no { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; min-width: 155px; }
-.batch-sub-date { font-size: 11px; color: #6b7280; min-width: 80px; }
-.batch-sub-type { font-size: 11px; }
-.batch-sub-kw { font-size: 11px; color: #2563eb; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.batch-sub-price { font-size: 11px; color: #16a34a; font-weight: 600; }
-.batch-sub-empty { padding: 20px; text-align: center; color: #9ca3af; font-size: 13px; }
-.batch-edit-form-label { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
-.batch-selected-count { font-size: 13px; color: #374151; font-weight: 500; }
+.bme-preview-label { font-size: 12px; font-weight: 600; color: #374151; margin-right: 4px; }
+.bme-preview-empty { color: #9ca3af; font-size: 12px; }
 
 /* ===== 复制弹窗 ===== */
 .copy-modal-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
