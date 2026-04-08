@@ -4,9 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "dev": "node scripts/check-supabase-env.mjs && vite",
+    "build": "node scripts/check-supabase-env.mjs && vue-tsc -b && vite build",
+    "preview": "node scripts/check-supabase-env.mjs && vite preview",
+    "env:init": "node scripts/check-supabase-env.mjs"
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
