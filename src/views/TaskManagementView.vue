@@ -865,7 +865,7 @@ const editMode = ref(false)
 const saveLoading = ref(false)
 const editForm = ref<any>({})
 
-const taskStatuses = ['待处理', '进行中', '已完成', '已取消', '暂停']
+const taskStatuses = ['待分配', '进行中', '已完成', '已截单', '暂停中']
 const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留评', '已完成', '已取消']
 const refundStatuses = ['待退款', '退款中', '已退款', '退款失败']
 const countries = ['美国', '德国', '英国', '加拿大']
@@ -895,7 +895,7 @@ const subColumns = [
 const schedulesMap = ref<Record<string, any[]>>({})
 
 function getStatusColor(status: string) {
-  const map: Record<string, string> = { '待处理': 'default', '进行中': 'blue', '已完成': 'green', '已取消': 'red', '暂停': 'orange' }
+  const map: Record<string, string> = { '待分配': 'default', '进行中': 'blue', '已完成': 'green', '已截单': 'red', '暂停中': 'orange' }
   return map[status] || 'default'
 }
 
@@ -1110,7 +1110,7 @@ async function load() {
     if (filterStatus.value) {
       query = query.eq('status', filterStatus.value)
     } else {
-      query = query.in('status', ['进行中', '待处理', '暂停'])
+      query = query.in('status', ['待分配', '进行中', '已截单', '暂停中'])
     }
     if (filterCountry.value) query = query.eq('country', filterCountry.value)
 

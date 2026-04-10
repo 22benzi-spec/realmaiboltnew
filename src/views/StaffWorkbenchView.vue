@@ -3,26 +3,19 @@
     <h1 class="page-title">业务员工作台</h1>
 
     <div class="workbench-layout">
-      <!-- 左侧业务员列表 -->
+      <!-- 左侧工作导航 -->
       <div class="staff-sidebar">
-        <div class="staff-search">
-          <a-input-search v-model:value="staffSearch" placeholder="搜索业务员" allow-clear size="small" />
-        </div>
-        <div class="staff-list">
+        <div class="wb-nav-title">工作导航</div>
+        <div class="wb-nav-list">
           <div
-            v-for="s in filteredStaff"
-            :key="s.id"
-            :class="['staff-item', selectedStaffId === s.id ? 'active' : '']"
-            @click="selectStaff(s.id)"
+            v-for="item in wbNavItems"
+            :key="item.key"
+            :class="['wb-nav-item', wbNav === item.key ? 'active' : '']"
+            @click="wbNav = item.key"
           >
-            <div class="staff-avatar" :style="{ background: s.avatar_color || '#2563eb' }">{{ s.name.charAt(0) }}</div>
-            <div class="staff-info">
-              <div class="staff-name">{{ s.name }}</div>
-              <div class="staff-role">{{ s.role || '业务员' }}</div>
-            </div>
-            <a-badge :count="s.pending_count" :overflow-count="99" />
+            <span class="wb-nav-label">{{ item.label }}</span>
+            <span class="wb-nav-count">{{ item.count }}</span>
           </div>
-          <div v-if="filteredStaff.length === 0" class="no-staff">暂无业务员</div>
         </div>
       </div>
 
@@ -50,17 +43,40 @@
               <a-checkbox v-model:checked="filterSoon" @change="filterTaskList">即将到期</a-checkbox>
               <a-input-search
                 v-model:value="taskSearch"
-                placeholder="搜索子订单号/ASIN/买手/关键词..."
+                placeholder="搜索主订单号/子订单号/ASIN/买手/关键词..."
                 style="width:260px"
                 @search="filterTaskList"
                 allow-clear
                 size="small"
               />
               <div class="wb-view-toggle">
-                <span :class="['wb-vbtn', wbViewMode === 'card' ? 'active' : '']" @click="wbViewMode = 'card'">卡片</span>
-                <span :class="['wb-vbtn', wbViewMode === 'table' ? 'active' : '']" @click="wbViewMode = 'table'">列表</span>
+                <span :class="['wb-vbtn', wbViewMode === 'order' ? 'active' : '']" @click="wbViewMode = 'order'">主订单视角</span>
+                <span :class="['wb-vbtn', wbViewMode === 'sub' ? 'active' : '']" @click="wbViewMode = 'sub'">子订单平铺</span>
               </div>
-              <span class="total-hint">{{ filteredTasks.length }} 条任务</span>
+              <span class="total-hint">{{ workbenchSummary.resultCount }} 条结果</span>
+            </div>
+          </div>
+
+          <div class="workbench-overview">
+            <div class="overview-card">
+              <span class="overview-label">待操作主订单</span>
+              <strong class="overview-value">{{ workbenchSummary.actionableOrderCount }}</strong>
+            </div>
+            <div class="overview-card">
+              <span class="overview-label">待完善主订单</span>
+              <strong class="overview-value">{{ workbenchSummary.improvingOrderCount }}</strong>
+            </div>
+            <div class="overview-card">
+              <span class="overview-label">今日</span>
+              <strong class="overview-value">{{ workbenchSummary.todayCount }}</strong>
+            </div>
+            <div class="overview-card">
+              <span class="overview-label">明日</span>
+              <strong class="overview-value">{{ workbenchSummary.tomorrowCount }}</strong>
+            </div>
+            <div class="overview-card">
+              <span class="overview-label">后日</span>
+              <strong class="overview-value">{{ workbenchSummary.dayAfterTomorrowCount }}</strong>
             </div>
           </div>
 
@@ -70,70 +86,138 @@
             <a-empty description="暂无任务数据" />
           </div>
 
-          <!-- 列表视图 -->
-          <div v-else-if="wbViewMode === 'table'" class="wb-table-view">
-            <a-table
-              :columns="wbSubColumns"
-              :data-source="filteredTasks"
-              :pagination="false"
-              row-key="id"
-              size="small"
-              :scroll="{ x: 1500 }"
-            >
-              <template #bodyCell="{ column, record: task }">
-                <template v-if="column.key === 'wb_no'">
-                  <span class="sub-no">{{ task.sub_order_number }}</span>
-                </template>
-                <template v-if="column.key === 'wb_product'">
-                  <div class="sub-product-cell">
-                    <div v-if="task.product_name" class="sub-product-name">{{ task.product_name }}</div>
-                    <div class="sub-asin mono-sm">{{ task.asin || '—' }}</div>
+          <div v-else>
+            <div v-if="wbViewMode === 'order' && wbNav === 'pending'" class="workbench-sections">
+              <div class="wb-section">
+                <div class="wb-section-header">
+                  <div>
+                    <div class="wb-section-title">待操作订单</div>
+                    <div class="wb-section-desc">0操作订单，先按主订单启动分配</div>
                   </div>
-                </template>
-                <template v-if="column.key === 'wb_keyword'">
-                  <template v-if="task.keyword_type === 'link' && task.search_link">
-                    <a :href="task.search_link" target="_blank" style="font-size:12px">链接</a>
-                  </template>
-                  <span v-else-if="task.keyword" class="keyword-tag">{{ task.keyword }}</span>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'wb_variant'">
-                  <span v-if="task.variant_info" class="variant-text">{{ task.variant_info }}</span>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'wb_scheduled'">
-                  <span v-if="task.scheduled_date" :class="isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-normal'">
-                    {{ task.scheduled_date }}
-                  </span>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'wb_review_type'">
-                  <span style="font-size:12px">{{ task.review_type || '—' }}</span>
-                </template>
-                <template v-if="column.key === 'wb_review_level'">
-                  <span style="font-size:12px">{{ task.review_level || '—' }}</span>
-                </template>
-                <template v-if="column.key === 'wb_price'">
-                  <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
-                </template>
-                <template v-if="column.key === 'wb_status'">
-                  <a-tag :color="getStatusColor(task.status)" size="small">{{ task.status }}</a-tag>
-                </template>
-                <template v-if="column.key === 'wb_buyer'">
-                  <span v-if="task.buyer_name">{{ task.buyer_name }}</span>
-                  <span v-else class="text-gray">未分配</span>
-                </template>
-                <template v-if="column.key === 'wb_action'">
-                  <a-button type="link" size="small" @click="task._expanded = true; wbViewMode = 'card'">详情</a-button>
-                </template>
-              </template>
-            </a-table>
-          </div>
+                  <span class="wb-section-count">{{ pendingOrderGroups.length }} 个主订单</span>
+                </div>
+                <div v-if="pendingOrderGroups.length === 0" class="empty-list compact-empty">
+                  <a-empty description="暂无待操作订单" />
+                </div>
+                <div v-else class="main-order-list">
+                  <div
+                    v-for="group in pendingOrderGroups"
+                    :key="group.order_id"
+                    class="main-order-card"
+                  >
+                    <div class="main-order-main-row">
+                      <div class="main-order-product-img">
+                        <img
+                          v-if="group.product_image"
+                          :src="group.product_image"
+                          class="main-order-thumb"
+                          referrerpolicy="no-referrer"
+                          @error="onImgError"
+                        />
+                        <div v-else class="main-order-thumb-placeholder">?</div>
+                      </div>
 
-          <!-- 任务卡片列表 -->
-          <div v-else class="task-card-list">
+                      <div class="main-order-info">
+                        <div class="main-order-title-row">
+                          <span class="main-order-number">{{ group.order_number || '未关联主订单' }}</span>
+                          <a-tag :color="getMainOrderStatusColor(group.order_status)" class="status-tag">{{ group.order_status || '进行中' }}</a-tag>
+                          <a-tag v-if="group.country" color="default" class="info-tag">{{ group.country }}</a-tag>
+                          <a-tag v-if="group.order_type" color="default" class="info-tag">{{ group.order_type }}</a-tag>
+                          <a-tag v-if="group.review_level" color="default" class="info-tag">{{ group.review_level }}</a-tag>
+                          <a-tag v-if="group.review_type" color="default" class="info-tag">{{ group.review_type }}</a-tag>
+                        </div>
+                        <div class="main-order-detail-row">
+                          <span class="detail-item-text">产品：{{ group.product_name || group.asin || '—' }}</span>
+                          <span class="detail-sep">ASIN：<span class="mono-sm">{{ group.asin || '—' }}</span></span>
+                          <span class="detail-sep">店铺：{{ group.store_name || '—' }}</span>
+                          <span class="detail-sep">品牌：{{ group.brand_name || '—' }}</span>
+                        </div>
+                        <div class="main-order-detail-row">
+                          <span class="detail-item-text">类目：{{ group.category || '—' }}</span>
+                          <span class="detail-sep">客户：{{ group.customer_name || '—' }}</span>
+                          <span class="detail-sep">商务：{{ group.sales_person || '—' }}</span>
+                          <span class="detail-sep">售价：<span class="price-text">${{ Number(group.product_price || 0).toFixed(2) }}</span></span>
+                        </div>
+                        <div class="main-order-detail-row">
+                          <span class="detail-item-text">最早截止：{{ group.nextDate || '—' }}</span>
+                          <span class="detail-sep">今日 {{ group.todayCount }}</span>
+                          <span class="detail-sep">明日 {{ group.tomorrowCount }}</span>
+                          <span class="detail-sep">后日 {{ group.dayAfterTomorrowCount }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="main-order-footer">
+                      <div class="main-order-progress">
+                        <span class="main-order-progress-text">待操作 {{ group.actionableSubCount }} / 总子单 {{ group.subs.length }}</span>
+                        <div class="main-order-progress-bar">
+                          <div class="main-order-progress-fill" :style="{ width: `${getGroupCompletionPct(group)}%` }"></div>
+                        </div>
+                      </div>
+                      <div class="main-order-sub-preview">
+                        <span v-for="sub in group.subs.slice(0, 3)" :key="sub.id" class="sub-preview-chip">
+                          {{ sub.sub_order_number }}
+                        </span>
+                        <span v-if="group.subs.length > 3" class="sub-preview-chip more">+{{ group.subs.length - 3 }} 个子单</span>
+                      </div>
+                      <a-button type="primary" ghost size="small" @click="toggleOrderExpand(group.order_id)">
+                        {{ expandedOrderIds.includes(group.order_id) ? '收起子订单' : '展开子订单' }}
+                      </a-button>
+                    </div>
+
+                    <div v-if="expandedOrderIds.includes(group.order_id)" class="inline-sub-list">
+                      <div v-for="sub in group.subs" :key="sub.id" class="inline-sub-row">
+                        <div class="inline-sub-main">
+                          <div class="inline-sub-line">
+                            <span class="inline-sub-no">{{ sub.sub_order_number }}</span>
+                            <a-tag :color="getStatusColor(sub.status)" size="small">{{ sub.status }}</a-tag>
+                            <span class="inline-sub-checkpoint">{{ getTaskCheckpoint(sub) }}</span>
+                          </div>
+                          <div class="inline-sub-meta">
+                            <span>ASIN：{{ sub.asin || '—' }}</span>
+                            <span>买手：{{ sub.buyer_name || '未分配' }}</span>
+                            <span>截止：{{ sub.scheduled_date || '—' }}</span>
+                          </div>
+                        </div>
+                        <a-button size="small" type="primary" ghost @click="focusTask(sub)">去处理</a-button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+            <div v-if="wbViewMode === 'order' && wbNav === 'improving'" class="workbench-sections">
+              <div class="wb-section">
+                <div class="wb-section-header">
+                  <div>
+                    <div class="wb-section-title">待完善订单</div>
+                    <div class="wb-section-desc">已分配买手后进入这里，按子订单平铺处理</div>
+                  </div>
+                  <span class="wb-section-count">{{ improvingTasks.length }} 个子订单</span>
+                </div>
+              </div>
+            </div>
+            <div v-if="wbViewMode === 'order' && wbNav === 'afterSale'" class="workbench-sections">
+              <div class="wb-section">
+                <div class="wb-section-header">
+                  <div>
+                    <div class="wb-section-title">问题单售后</div>
+                    <div class="wb-section-desc">聚合退款/售后相关子订单，优先跟进异常处理</div>
+                  </div>
+                  <span class="wb-section-count">{{ afterSaleTasks.length }} 个子订单</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="wbNav !== 'pending' && displayedTaskCards.length === 0" class="empty-list compact-empty">
+              <a-empty :description="wbNav === 'afterSale' ? '暂无问题单售后' : '暂无待完善订单'" />
+            </div>
+
+            <!-- 任务卡片列表 -->
+            <div v-if="wbNav !== 'pending' && displayedTaskCards.length > 0" class="task-card-list">
             <div
-              v-for="task in filteredTasks"
+              v-for="task in displayedTaskCards"
               :key="task.id"
               :class="['task-card', task._expanded ? 'expanded' : '', getDangerClass(task)]"
             >
@@ -147,6 +231,7 @@
                   <div class="task-meta">
                     <div class="meta-row1">
                       <span class="sub-no-text">{{ task.sub_order_number }}</span>
+                      <a-tag v-if="task._is_mock" color="purple" style="font-size:10px">模拟数据</a-tag>
                       <a-tag :color="getStatusColor(task.status)" style="margin-left:6px;font-size:11px">{{ task.status }}</a-tag>
                       <a-tag v-if="isOverdue(task.scheduled_date) && !isDone(task.status)" color="error" style="font-size:10px">日超期 {{ overdayCount(task.scheduled_date) }} 天</a-tag>
                       <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px">{{ task.refund_status }}</a-tag>
@@ -154,6 +239,7 @@
                       <span v-if="task.product_name" class="product-name-sm">{{ task.product_name }}</span>
                     </div>
                     <div class="meta-row2">
+                      <span v-if="task._order_number" class="order-chip">{{ task._order_number }}</span>
                       <span class="mono-sm">{{ task.asin }}</span>
                       <span class="sep">{{ task.store_name }}</span>
                       <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
@@ -204,322 +290,253 @@
                   </div>
                 </div>
 
-                <!-- 步骤流程 -->
-                <div class="workflow-steps">
-                  <!-- Step 1: 分配买手 -->
-                  <div :class="['step-block', getStepDone(task, 0) ? 'step-done' : 'step-active']">
-                    <div class="step-number" :class="getStepDone(task, 0) ? 'num-done' : 'num-active'">
-                      <CheckCircleFilled v-if="getStepDone(task, 0)" />
-                      <span v-else>1</span>
+                <!-- 流程面板（直接平铺） -->
+                <div class="workflow-steps-modern">
+                  <div class="wf-panel">
+                    <div class="wf-panel-head">
+                      <div class="wf-panel-header">
+                        <span class="wf-panel-index">1.</span>
+                        <span>匹配买手</span>
+                        <span v-if="task.buyer_name" class="wf-panel-status done">已匹配</span>
+                        <span v-else class="wf-panel-status todo">待处理</span>
+                      </div>
+                      <a class="re-edit" @click.stop="task._editing_buyer = true; task._buyer_validation = null">更换买手</a>
                     </div>
-                    <div class="step-content">
-                      <div class="step-title">分配买手</div>
-                      <div v-if="task.buyer_id && !task._editing_buyer" class="step-done-info">
-                        <UserOutlined />
-                        <span class="buyer-name-text">{{ task.buyer_name }}</span>
-                        <a class="re-edit" @click.stop="task._editing_buyer = true; task._buyer_validation = null">更换</a>
-                      </div>
-                      <div v-if="!task.buyer_id || task._editing_buyer" class="buyer-assign-area">
-                        <div class="step-input-row">
-                          <a-select
-                            v-model:value="task._sel_buyer_id"
-                            style="width:220px"
-                            show-search
-                            option-filter-prop="label"
-                            placeholder="选择买手"
-                            size="small"
-                            allow-clear
-                            @change="(val: string) => onBuyerSelect(task, val)"
-                          >
-                            <a-select-option v-for="b in buyerList" :key="b.id" :value="b.id" :label="b.name" :disabled="!!getBuyerBlockReason(task, b.id)">
-                              <div class="buyer-opt-row">
-                                <span>{{ b.name }}</span>
-                                <span class="buyer-opt-meta"> · {{ b.country || '—' }} · {{ b.level }}</span>
-                                <span v-if="getBuyerBlockReason(task, b.id)" class="buyer-opt-blocked">{{ getBuyerBlockReason(task, b.id) }}</span>
-                              </div>
-                            </a-select-option>
-                          </a-select>
-                          <a-button
-                            type="primary" size="small"
-                            :loading="task._saving_buyer || task._validating_buyer"
-                            :disabled="!task._sel_buyer_id || task._buyer_validation?.blocked"
-                            @click="assignBuyer(task)"
-                          >确认分配</a-button>
+                    <div class="wf-panel-body">
+                        <div v-if="task.buyer_id && !task._editing_buyer" class="buyer-brief-row">
+                          <UserOutlined />
+                          <span class="buyer-name-text">{{ task.buyer_name }}</span>
                         </div>
-                        <!-- 验证结果提示 -->
-                        <div v-if="task._validating_buyer" class="buyer-validation-hint checking">
-                          <LoadingOutlined /> 验证买手资格...
+                        <div v-if="task.buyer_id && !task._editing_buyer" class="buyer-brief-desc">
+                          {{ task.buyer?.country || '—' }} · {{ task.buyer?.level || '—' }}
                         </div>
-                        <div v-else-if="task._buyer_validation?.blocked" class="buyer-validation-hint blocked">
-                          <ExclamationCircleOutlined />
-                          <span>{{ task._buyer_validation.reason }}</span>
+                        <div v-if="!task.buyer_id || task._editing_buyer" class="buyer-assign-area">
+                          <div class="step-input-row">
+                            <a-select
+                              v-model:value="task._sel_buyer_id"
+                              style="width:220px"
+                              show-search
+                              option-filter-prop="label"
+                              placeholder="选择买手"
+                              size="small"
+                              allow-clear
+                              @change="(val: string) => onBuyerSelect(task, val)"
+                            >
+                              <a-select-option v-for="b in buyerList" :key="b.id" :value="b.id" :label="b.name" :disabled="!!getBuyerBlockReason(task, b.id)">
+                                <div class="buyer-opt-row">
+                                  <span>{{ b.name }}</span>
+                                  <span class="buyer-opt-meta"> · {{ b.country || '—' }} · {{ b.level }}</span>
+                                  <span v-if="getBuyerBlockReason(task, b.id)" class="buyer-opt-blocked">{{ getBuyerBlockReason(task, b.id) }}</span>
+                                </div>
+                              </a-select-option>
+                            </a-select>
+                            <a-button
+                              type="primary" size="small"
+                              :loading="task._saving_buyer || task._validating_buyer"
+                              :disabled="!task._sel_buyer_id || task._buyer_validation?.blocked"
+                              @click="assignBuyer(task)"
+                            >确认分配</a-button>
+                          </div>
+                          <div v-if="task._validating_buyer" class="buyer-validation-hint checking">
+                            <LoadingOutlined /> 验证买手资格...
+                          </div>
+                          <div v-else-if="task._buyer_validation?.blocked" class="buyer-validation-hint blocked">
+                            <ExclamationCircleOutlined />
+                            <span>{{ task._buyer_validation.reason }}</span>
+                          </div>
+                          <div v-else-if="task._buyer_validation && !task._buyer_validation.blocked" class="buyer-validation-hint passed">
+                            <CheckCircleFilled /> 买手资格验证通过
+                            <span v-if="task._buyer_validation.monthlyCount !== undefined" class="val-detail">· 本月已接单 {{ task._buyer_validation.monthlyCount }}/2</span>
+                          </div>
                         </div>
-                        <div v-else-if="task._buyer_validation && !task._buyer_validation.blocked" class="buyer-validation-hint passed">
-                          <CheckCircleFilled /> 买手资格验证通过
-                          <span v-if="task._buyer_validation.monthlyCount !== undefined" class="val-detail">· 本月已接单 {{ task._buyer_validation.monthlyCount }}/2</span>
-                        </div>
-                      </div>
                     </div>
                   </div>
 
-                  <!-- Step 2: 退款设置（时序 + 渠道） -->
-                  <div :class="['step-block', getStepDone(task, 1) ? 'step-done' : getStepDone(task, 0) ? 'step-active' : 'step-locked']">
-                    <div class="step-number" :class="getStepDone(task, 1) ? 'num-done' : getStepDone(task, 0) ? 'num-active' : 'num-locked'">
-                      <CheckCircleFilled v-if="getStepDone(task, 1)" />
-                      <span v-else>2</span>
-                    </div>
-                    <div class="step-content">
-                      <div class="step-title">退款设置</div>
-                      <div v-if="task.refund_sequence && task.refund_method && !task._editing_refund_method" class="step-done-info">
-                        <span class="refund-seq-badge">{{ task.refund_sequence }}</span>
-                        <span class="sep-dot">·</span>
-                        <span class="refund-method-badge">{{ task.refund_method }}</span>
-                        <a class="re-edit" @click.stop="task._editing_refund_method = true">修改</a>
-                      </div>
-                      <div v-if="!task.refund_sequence || !task.refund_method || task._editing_refund_method" class="refund-setup-panel">
-                        <div class="refund-setup-row">
-                          <span class="refund-setup-label">退款时序</span>
-                          <a-radio-group v-model:value="task._sel_refund_sequence" size="small" button-style="solid">
-                            <a-radio-button value="先退款后给单">先退款后给单</a-radio-button>
-                            <a-radio-button value="先给单后退款">先给单后退款</a-radio-button>
-                          </a-radio-group>
-                        </div>
-                        <div class="refund-setup-row">
-                          <span class="refund-setup-label">退款渠道</span>
-                          <a-radio-group v-model:value="task._sel_refund_method" size="small" button-style="solid">
-                            <a-radio-button value="礼品卡">礼品卡</a-radio-button>
-                            <a-radio-button value="PayPal">PayPal</a-radio-button>
-                          </a-radio-group>
-                        </div>
-                        <a-button
-                          type="primary" size="small"
-                          :loading="task._saving_refund_method"
-                          :disabled="!task._sel_refund_sequence || !task._sel_refund_method"
-                          @click="saveRefundMethod(task)"
-                          style="margin-top:4px"
-                        >确认</a-button>
+                  <div class="wf-panel">
+                    <div class="wf-panel-head">
+                      <div class="wf-panel-header">
+                        <span class="wf-panel-index">2.</span>
+                        <span>{{ isRefundStepReadonly(task) ? '财务返款申请' : '返款申请' }}</span>
+                        <span v-if="isRefundStepReadonly(task)" class="wf-panel-status done">已完成</span>
+                        <span v-else class="wf-panel-status todo">当前待办</span>
                       </div>
                     </div>
-                  </div>
-
-                  <!-- Step 3: 申请退款（向财务） -->
-                  <div :class="['step-block', getStepDone(task, 2) ? 'step-done' : getStepDone(task, 1) ? 'step-active' : 'step-locked']">
-                    <div class="step-number" :class="getStepDone(task, 2) ? 'num-done' : getStepDone(task, 1) ? 'num-active' : 'num-locked'">
-                      <CheckCircleFilled v-if="getStepDone(task, 2)" />
-                      <span v-else>3</span>
-                    </div>
-                    <div class="step-content">
-                      <div class="step-title">申请退款</div>
-
-                      <!-- 已有退款申请，显示状态 -->
-                      <div v-if="task._refund_request" class="refund-request-status">
-                        <div v-if="task._refund_request.status === '待处理'" class="refund-pending-box">
-                          <span class="refund-pending-icon">⏳</span>
-                          <div>
-                            <div class="refund-pending-title">退款申请已提交，等待财务处理</div>
-                            <div class="refund-pending-meta">
-                              申请金额 <strong>${{ Number(task._refund_request.refund_amount_usd || 0).toFixed(2) }}</strong>
-                              · 渠道 <strong>{{ task._refund_request.refund_method }}</strong>
-                              <span v-if="task._refund_request.buyer_paypal_email"> · 买手PayPal: {{ task._refund_request.buyer_paypal_email }}</span>
-                            </div>
+                    <div class="wf-panel-body">
+                        <template v-if="isRefundStepReadonly(task)">
+                          <div class="refund-readonly-summary">
+                            <span>{{ task._refund_request?.refund_method || task.refund_method || '—' }}</span>
+                            <span>🔒 ${{ Number(task._refund_request?.refund_amount_usd || task.refund_amount || 0).toFixed(2) }}</span>
+                            <span>返款时间: {{ fmtShortTime(task._refund_request?.updated_at || task._refund_request?.created_at || task.refund_date) }}</span>
                           </div>
-                        </div>
-
-                        <!-- 财务已处理 PayPal -->
-                        <div v-else-if="task._refund_request.status === '已处理' && task._refund_request.refund_method === 'PayPal'" class="refund-done-box">
-                          <div class="refund-done-header">
-                            <span class="green-text">财务已完成 PayPal 退款</span>
-                          </div>
-                          <div class="refund-result-grid">
-                            <div class="result-item">
-                              <span class="result-label">付款账号</span>
-                              <span class="result-val mono">{{ task._refund_request.assigned_paypal_email || '—' }}</span>
-                            </div>
-                            <div class="result-item">
-                              <span class="result-label">退款金额</span>
-                              <span class="result-val amount-usd">${{ Number(task._refund_request.refund_amount_usd || 0).toFixed(2) }}</span>
-                            </div>
-                            <div v-if="task._refund_request.paypal_receipt_screenshot" class="result-item full">
-                              <span class="result-label">退款截图</span>
+                          <div class="refund-proof-row">
+                            <span class="proof-label">返款凭证</span>
+                            <template v-if="task._refund_request?.paypal_receipt_screenshot">
                               <a :href="task._refund_request.paypal_receipt_screenshot" target="_blank" class="screenshot-link">
                                 <img :src="task._refund_request.paypal_receipt_screenshot" class="screenshot-preview" referrerpolicy="no-referrer" @error="onImgError" />
                               </a>
-                            </div>
-                            <div v-if="task._refund_request.finance_notes" class="result-item full">
-                              <span class="result-label">财务备注</span>
-                              <span class="result-val">{{ task._refund_request.finance_notes }}</span>
-                            </div>
+                            </template>
+                            <template v-else>
+                              <span class="text-gray">暂无</span>
+                              <a-button type="link" size="small" @click="notifyFinanceForReceipt(task)">催财务补充截图</a-button>
+                            </template>
                           </div>
-                          <a-button type="primary" size="small" style="margin-top:10px;background:#059669;border-color:#059669" @click="markRefundDone(task)">确认退款已到账</a-button>
-                        </div>
+                          <div class="extra-refund-bar">
+                            <a-button size="small" @click="message.info('追加返款功能待接后端流程')">追加返款</a-button>
+                            <a-input-number v-model:value="task._extra_refund_amount" size="small" :min="0" :precision="2" style="width:130px" placeholder="填写金额" />
+                            <a-radio-group v-model:value="task._extra_refund_reason" size="small">
+                              <a-radio value="产品涨价">产品涨价</a-radio>
+                              <a-radio value="产品额外佣金">产品额外佣金</a-radio>
+                            </a-radio-group>
+                          </div>
+                        </template>
 
-                        <!-- 财务已处理 礼品卡 -->
-                        <div v-else-if="task._refund_request.status === '已处理' && task._refund_request.refund_method === '礼品卡'" class="refund-done-box">
-                          <div class="refund-done-header">
-                            <span class="green-text">财务已分配礼品卡</span>
+                        <template v-else>
+                          <div class="refund-setup-row">
+                            <span class="refund-setup-label">返款节点</span>
+                            <a-radio-group v-model:value="task._sel_refund_sequence" size="small" @change="syncRefundComputed(task)">
+                              <a-radio value="预付">预付</a-radio>
+                              <a-radio value="出单后返">出单后返</a-radio>
+                              <a-radio value="收货后返">收货后返</a-radio>
+                              <a-radio value="评后返">评后返</a-radio>
+                            </a-radio-group>
                           </div>
-                          <div class="refund-result-grid">
-                            <div class="result-item">
-                              <span class="result-label">礼品卡面额</span>
-                              <span class="result-val amount-usd">${{ Number(task._refund_request.gift_card_face_value_usd || task._refund_request.refund_amount_usd || 0).toFixed(2) }}</span>
-                            </div>
-                            <div class="result-item">
-                              <span class="result-label">卡号</span>
-                              <span class="result-val mono">{{ task._refund_request.assigned_gift_card_number || '—' }}</span>
-                            </div>
-                            <div class="result-item full">
-                              <span class="result-label">卡Code</span>
-                              <span class="result-val card-code">{{ task._refund_request.assigned_gift_card_code || '—' }}</span>
-                              <a-button type="link" size="small" @click="copyText(task._refund_request.assigned_gift_card_code)">复制</a-button>
-                            </div>
-                            <div v-if="task._refund_request.finance_notes" class="result-item full">
-                              <span class="result-label">财务备注</span>
-                              <span class="result-val">{{ task._refund_request.finance_notes }}</span>
-                            </div>
+                          <div class="refund-setup-row">
+                            <span class="refund-setup-label">返款方式</span>
+                            <a-radio-group v-model:value="task._sel_refund_method" size="small" @change="syncRefundComputed(task)">
+                              <a-radio value="礼品卡">礼品卡</a-radio>
+                              <a-radio value="PayPal">贝宝(PayPal)</a-radio>
+                              <a-radio value="其他">其他</a-radio>
+                            </a-radio-group>
                           </div>
-                          <a-button type="primary" size="small" style="margin-top:10px;background:#059669;border-color:#059669" @click="markRefundDone(task)">确认礼品卡已发给买手</a-button>
-                        </div>
 
-                        <!-- 已完成 -->
-                        <div v-else-if="task.refund_status === '已退款'" class="step-done-info">
-                          <span class="green-text">退款完成</span>
-                          <span v-if="task.refund_amount" class="refund-amount-text">${{ Number(task._refund_request?.refund_amount_usd || 0).toFixed(2) }}</span>
-                        </div>
-                      </div>
+                          <div v-if="task._sel_refund_method === 'PayPal'" class="refund-row">
+                            <label>贝宝账号</label>
+                            <a-input v-model:value="task._buyer_paypal_email" size="small" style="width:220px" placeholder="amanda@example.com" />
+                          </div>
 
-                      <!-- 未提交申请，显示申请表单 -->
-                      <div v-else-if="task.refund_status !== '已退款'" class="step-input-col">
-                        <div class="refund-apply-panel">
-                          <div class="refund-apply-label">
-                            向财务申请退款
-                            <span class="refund-apply-sub">· {{ task.refund_method === '礼品卡' ? '礼品卡' : 'PayPal' }} · {{ task.refund_sequence }}</span>
+                          <div class="refund-amount-box">
+                            <div class="refund-amount-title">金额明细</div>
+                            <div v-if="task._sel_refund_method === 'PayPal'" class="refund-formula-row">
+                              <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:120px" prefix="$" @change="syncRefundComputed(task)" />
+                              <span>+</span>
+                              <a-input-number v-model:value="task._refund_fee_usd" size="small" :min="0" :precision="2" style="width:120px" prefix="$" @change="syncRefundComputed(task)" />
+                              <span>=</span>
+                              <a-input-number :value="getRefundFinalAmount(task)" size="small" style="width:130px" prefix="$" disabled />
+                            </div>
+                            <div v-else class="refund-formula-row">
+                              <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:120px" prefix="$" @change="syncRefundComputed(task)" />
+                              <span>➡️</span>
+                              <a-input-number v-model:value="task._refund_final_amount_usd" size="small" :min="0" :precision="2" style="width:130px" prefix="$" />
+                            </div>
                           </div>
-                          <div class="refund-row">
-                            <label>退款金额 (USD)</label>
-                            <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:110px" prefix="$" />
-                            <span class="price-hint">产品售价 ${{ Number(task.product_price || 0).toFixed(2) }}</span>
-                          </div>
-                          <div v-if="task.refund_method === 'PayPal'" class="refund-row">
-                            <label>买手 PayPal 邮箱</label>
-                            <a-input v-model:value="task._buyer_paypal_email" size="small" style="width:220px" placeholder="buyer@example.com" />
-                          </div>
+
                           <div class="refund-row">
                             <label>备注</label>
-                            <a-input v-model:value="task._refund_apply_notes" size="small" style="width:220px" placeholder="可选" />
+                            <a-input v-model:value="task._refund_apply_notes" size="small" style="width:320px" placeholder="选填，例如：买手催款..." />
                           </div>
-                        </div>
-                        <a-button
-                          type="primary" size="small"
-                          :loading="task._submitting_refund"
-                          :disabled="!task._refund_amount_usd"
-                          @click="submitRefundRequest(task)"
-                          style="margin-top:8px"
-                        >提交退款申请</a-button>
-                      </div>
-
-                      <!-- 已退款完成状态 -->
-                      <div v-else class="step-done-info">
-                        <span class="green-text">退款已完成</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Step 4: 填写Amazon订单号 -->
-                  <div :class="['step-block', getStepDone(task, 3) ? 'step-done' : getStepDone(task, 2) ? 'step-active' : 'step-locked']">
-                    <div class="step-number" :class="getStepDone(task, 3) ? 'num-done' : getStepDone(task, 2) ? 'num-active' : 'num-locked'">
-                      <CheckCircleFilled v-if="getStepDone(task, 3)" />
-                      <span v-else>4</span>
-                    </div>
-                    <div class="step-content">
-                      <div class="step-title">填写Amazon订单号</div>
-                      <div v-if="task.amazon_order_id && !task._editing_amazon" class="step-done-info">
-                        <span class="amazon-order-text">{{ task.amazon_order_id }}</span>
-                        <span v-if="task.amazon_order_placed_at" class="time-hint">{{ fmtTime(task.amazon_order_placed_at) }}</span>
-                        <a class="re-edit" @click.stop="task._editing_amazon = true">修改</a>
-                      </div>
-                      <div v-if="!task.amazon_order_id || task._editing_amazon" class="step-input-row">
-                        <a-input
-                          v-model:value="task._input_amazon_order_id"
-                          size="small"
-                          style="width:220px"
-                          placeholder="111-1111111-1111111"
-                        />
-                        <a-button type="primary" size="small" :loading="task._saving_amazon" :disabled="!task._input_amazon_order_id" @click="saveAmazonOrder(task)">确认</a-button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Step 5: 确认签收 -->
-                  <div :class="['step-block', getStepDone(task, 4) ? 'step-done' : getStepDone(task, 3) ? 'step-active' : 'step-locked']">
-                    <div class="step-number" :class="getStepDone(task, 4) ? 'num-done' : getStepDone(task, 3) ? 'num-active' : 'num-locked'">
-                      <CheckCircleFilled v-if="getStepDone(task, 4)" />
-                      <span v-else>5</span>
-                    </div>
-                    <div class="step-content">
-                      <div class="step-title">确认签收</div>
-                      <div v-if="task.delivery_confirmed_at" class="step-done-info">
-                        <span class="green-text">已签收</span>
-                        <span class="time-hint">{{ fmtTime(task.delivery_confirmed_at) }}</span>
-                        <a v-if="!task._show_delivery_estimate" class="re-edit" @click.stop="task._show_delivery_estimate = !task._show_delivery_estimate">查看预计</a>
-                      </div>
-                      <div v-else class="step-input-col">
-                        <div v-if="task.amazon_order_placed_at" class="delivery-estimate-box">
-                          <span class="estimate-icon">⏱</span>
-                          <div>
-                            <div class="estimate-label">预计签收时间</div>
-                            <div class="estimate-val">还剩 <strong>{{ estimateDeliveryDays(task.amazon_order_placed_at) }} 天</strong></div>
-                            <div class="estimate-date">预计送达 {{ estimateDeliveryDate(task.amazon_order_placed_at) }}</div>
+                          <div class="refund-row">
+                            <a-checkbox v-model:checked="task._need_finance_screenshot">需财务提供返款截图</a-checkbox>
                           </div>
-                        </div>
-                        <a-button type="default" size="small" :loading="task._saving_delivery" @click="confirmDelivery(task)" class="confirm-btn-gray">确认已签收</a-button>
-                      </div>
+                          <div class="refund-action-row">
+                            <a-button
+                              type="primary" size="small"
+                              :loading="task._submitting_refund"
+                              :disabled="!getRefundFinalAmount(task)"
+                              @click="submitRefundRequest(task)"
+                            >提交返款申请</a-button>
+                          </div>
+                        </template>
                     </div>
                   </div>
 
-                  <!-- Step 6: 上传留评截图 -->
-                  <div :class="['step-block', getStepDone(task, 5) ? 'step-done' : getStepDone(task, 4) ? 'step-active' : 'step-locked']">
-                    <div class="step-number" :class="getStepDone(task, 5) ? 'num-done' : getStepDone(task, 4) ? 'num-active' : 'num-locked'">
-                      <CheckCircleFilled v-if="getStepDone(task, 5)" />
-                      <span v-else>6</span>
+                  <div class="wf-panel">
+                    <div class="wf-panel-head">
+                      <div class="wf-panel-header">
+                        <span class="wf-panel-index">3.</span>
+                        <span>填写Amazon订单号</span>
+                        <span v-if="task.amazon_order_id" class="wf-panel-status done">已完成</span>
+                        <span v-else class="wf-panel-status todo">待处理</span>
+                      </div>
                     </div>
-                    <div class="step-content">
-                      <div class="step-title">上传留评截图</div>
-                      <div v-if="task.review_screenshot_url && !task._editing_screenshot" class="step-done-info">
-                        <img :src="task.review_screenshot_url" class="screenshot-preview" referrerpolicy="no-referrer" @error="onImgError" />
-                        <a class="re-edit" @click.stop="task._editing_screenshot = true">重传</a>
-                      </div>
-                      <div v-if="!task.review_screenshot_url || task._editing_screenshot" class="step-input-row">
-                        <a-input
-                          v-model:value="task._input_screenshot_url"
-                          size="small"
-                          style="width:280px"
-                          placeholder="粘贴截图URL..."
+                    <div class="wf-panel-body">
+                        <a-alert
+                          v-if="isPrepayMode(task) && !isRefundStepReadonly(task)"
+                          type="info"
+                          show-icon
+                          message="预付模式需等待财务返款完成后，才可填写Amazon订单号"
+                          style="margin-bottom:10px"
                         />
-                        <a-button type="primary" size="small" :loading="task._saving_screenshot" :disabled="!task._input_screenshot_url" @click="saveScreenshot(task)">提交</a-button>
+                        <div class="step-input-row">
+                          <a-input
+                            v-model:value="task._input_amazon_order_id"
+                            size="small"
+                            style="width:220px"
+                            placeholder="111-1111111-1111111"
+                            :disabled="isPrepayMode(task) && !isRefundStepReadonly(task)"
+                          />
+                          <a-button
+                            type="primary"
+                            size="small"
+                            :loading="task._saving_amazon"
+                            :disabled="!task._input_amazon_order_id || (isPrepayMode(task) && !isRefundStepReadonly(task))"
+                            @click="saveAmazonOrder(task)"
+                          >确认</a-button>
+                        </div>
+                    </div>
+                  </div>
+
+                  <div class="wf-panel">
+                    <div class="wf-panel-head">
+                      <div class="wf-panel-header">
+                        <span class="wf-panel-index">4.</span>
+                        <span>留评凭证上传</span>
+                        <span v-if="task.review_screenshot_url" class="wf-panel-status done">已完成</span>
+                        <span v-else class="wf-panel-status todo">待处理</span>
                       </div>
-                      <div v-if="getStepDone(task, 5)" class="step-input-row" style="margin-top:8px">
-                        <a-button type="primary" size="small" :loading="task._completing" @click="completeTask(task)" style="background:#059669;border-color:#059669">标记已完成</a-button>
-                      </div>
+                    </div>
+                    <div class="wf-panel-body">
+                        <div class="refund-row">
+                          <label>凭证类型</label>
+                          <a-radio-group v-model:value="task._proof_type" size="small">
+                            <a-radio value="Review">Review(留评)</a-radio>
+                            <a-radio value="Feedback">Feedback(店铺反馈)</a-radio>
+                          </a-radio-group>
+                        </div>
+                        <div class="refund-row">
+                          <label>评论链接</label>
+                          <a-input v-model:value="task._proof_comment_link" size="small" style="width:360px" placeholder="https://..." />
+                        </div>
+                        <div class="refund-row">
+                          <label>凭证图片</label>
+                          <a-input
+                            v-model:value="task._input_screenshot_url"
+                            size="small"
+                            style="width:360px"
+                            placeholder="粘贴图片URL（支持多张可用逗号分隔）"
+                          />
+                        </div>
+                        <div class="refund-action-row">
+                          <a-button type="primary" size="small" :loading="task._saving_screenshot" :disabled="!task._input_screenshot_url" @click="saveScreenshot(task)">提交</a-button>
+                          <a-button type="primary" size="small" :loading="task._completing" @click="completeTask(task)" style="background:#059669;border-color:#059669">标记已完成</a-button>
+                        </div>
                     </div>
                   </div>
                 </div>
 
                 <!-- 底部操作栏 -->
                 <div class="workflow-footer">
-                  <a-popconfirm title="确认客户取消？需填写原因" @confirm="openCancelModal(task)">
-                    <a-button size="small" danger ghost><CloseCircleOutlined /> 客户取消 &amp; 补单</a-button>
-                  </a-popconfirm>
-                  <a-button size="small" ghost style="color:#7c3aed;border-color:#c4b5fd" @click="openReturnModal(task)"><RollbackOutlined /> 回转给管理员</a-button>
-                  <a-button size="small" ghost style="color:#f59e0b;border-color:#f59e0b" @click="releaseToHall(task)"><ExportOutlined /> 放到抢单大厅</a-button>
-                  <a-button size="small" type="primary" ghost style="color:#0284c7;border-color:#0284c7" @click="openTransferModal(task)"><SwapOutlined /> 订单互转</a-button>
+                  <a-button size="small" ghost style="color:#f59e0b;border-color:#f59e0b" @click="releaseToHall(task)">↗️ 放到抢单大厅</a-button>
+                  <span class="wf-footer-divider">|</span>
+                  <a-button size="small" type="primary" ghost style="color:#0284c7;border-color:#0284c7" @click="openTransferModal(task)">👤 转给他人</a-button>
                 </div>
               </div>
             </div>
           </div>
+          </div>
         </template>
 
         <!-- 待接收的互转请求 -->
-        <div v-if="selectedStaffId && incomingRequests.length > 0" class="incoming-transfer-panel">
+        <div v-if="selectedStaffId && !isAllStaffSelected && incomingRequests.length > 0" class="incoming-transfer-panel">
           <div class="incoming-header">
             <SwapOutlined style="color:#f59e0b" />
             <span class="incoming-title">待接收的互转请求</span>
@@ -553,7 +570,7 @@
         </div>
 
         <!-- 我发出的待确认互转 -->
-        <div v-if="selectedStaffId && outgoingRequests.length > 0" class="outgoing-transfer-panel">
+        <div v-if="selectedStaffId && !isAllStaffSelected && outgoingRequests.length > 0" class="outgoing-transfer-panel">
           <div class="outgoing-header">
             <ClockCircleOutlined style="color:#6b7280" />
             <span class="outgoing-title">我发出的互转请求（等待对方确认）</span>
@@ -572,7 +589,7 @@
 
         <div v-if="!selectedStaffId" class="empty-state">
           <TeamOutlined style="font-size:48px; color:#d1d5db" />
-          <p>请从左侧选择业务员</p>
+          <p>暂无可用业务员数据</p>
         </div>
       </div>
     </div>
@@ -680,14 +697,16 @@ import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   TeamOutlined, UserOutlined, CheckCircleFilled,
-  CloseCircleOutlined, SwapOutlined, ExportOutlined,
-  LoadingOutlined, ExclamationCircleOutlined, RollbackOutlined,
+  SwapOutlined, LoadingOutlined, ExclamationCircleOutlined,
   ArrowRightOutlined, ClockCircleOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
+import { useCurrentUser } from '../composables/useCurrentUser'
 
-const staffSearch = ref('')
+const ALL_STAFF_KEY = '__all_staff__'
+const { currentUser, isAdmin, loadFromStorage } = useCurrentUser()
+
 const staffList = ref<any[]>([])
 const selectedStaffId = ref('')
 const allTasks = ref<any[]>([])
@@ -725,26 +744,15 @@ const rejectSaving = ref(false)
 const rejectForm = ref<any>({ reason: '' })
 const rejectTarget = ref<any>(null)
 
-const workflowSteps = [0, 1, 2, 3, 4, 5]
-const wbViewMode = ref<'card' | 'table'>('card')
+type WorkbenchNavKey = 'pending' | 'improving' | 'afterSale'
 
-const wbSubColumns = [
-  { title: '子订单号', key: 'wb_no', width: 165 },
-  { title: '产品名/ASIN', key: 'wb_product', width: 180 },
-  { title: '关键词', key: 'wb_keyword', width: 130 },
-  { title: '变体', key: 'wb_variant', width: 80 },
-  { title: '排期日期', key: 'wb_scheduled', width: 95 },
-  { title: '测评类型', key: 'wb_review_type', width: 80 },
-  { title: '测评等级', key: 'wb_review_level', width: 80 },
-  { title: '产品售价', key: 'wb_price', width: 90 },
-  { title: '状态', key: 'wb_status', width: 85 },
-  { title: '买手', key: 'wb_buyer', width: 90 },
-  { title: '操作', key: 'wb_action', width: 80, fixed: 'right' as const },
-]
+const workflowSteps = [0, 1, 2, 3]
+const wbViewMode = ref<'order' | 'sub'>('order')
+const wbNav = ref<WorkbenchNavKey>('pending')
+const expandedOrderIds = ref<string[]>([])
+const enableMockPreview = ref(true)
 
-const filteredStaff = computed(() =>
-  staffList.value.filter(s => !staffSearch.value || s.name.includes(staffSearch.value))
-)
+const isAllStaffSelected = computed(() => selectedStaffId.value === ALL_STAFF_KEY)
 
 const filterTabs = computed(() => {
   const all = allTasks.value
@@ -759,12 +767,121 @@ const filterTabs = computed(() => {
   ]
 })
 
+const actionableTasks = computed(() => filteredTasks.value.filter(task => !isDone(task.status)))
+const improvingTasks = computed(() => actionableTasks.value.filter(task => !!task.buyer_id))
+const afterSaleTasks = computed(() =>
+  filteredTasks.value.filter(task => !!task.refund_status && task.refund_status !== '无需退款')
+)
+const displayedTaskCards = computed(() => {
+  if (wbNav.value === 'pending') return []
+  if (wbNav.value === 'afterSale') return afterSaleTasks.value
+  return improvingTasks.value
+})
+const wbNavItems = computed<Array<{ key: WorkbenchNavKey; label: string; count: number }>>(() => ([
+  { key: 'pending', label: '待操作订单', count: pendingOrderGroups.value.length },
+  { key: 'improving', label: '待完善订单', count: improvingTasks.value.length },
+  { key: 'afterSale', label: '问题单售后', count: afterSaleTasks.value.length },
+]))
+
+const workbenchSummary = computed(() => {
+  const actionableOrderIds = new Set(actionableTasks.value.map(task => task.order_id || task.id))
+  const improvingOrderIds = new Set(improvingTasks.value.map(task => task.order_id || task.id))
+  const today = dayjs().format('YYYY-MM-DD')
+  const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD')
+  const dayAfterTomorrow = dayjs().add(2, 'day').format('YYYY-MM-DD')
+
+  return {
+    actionableOrderCount: actionableOrderIds.size,
+    improvingOrderCount: improvingOrderIds.size,
+    todayCount: actionableTasks.value.filter(task => task.scheduled_date === today).length,
+    tomorrowCount: actionableTasks.value.filter(task => task.scheduled_date === tomorrow).length,
+    dayAfterTomorrowCount: actionableTasks.value.filter(task => task.scheduled_date === dayAfterTomorrow).length,
+    resultCount: filteredTasks.value.length,
+  }
+})
+
+const groupedWorkbenchOrders = computed(() => {
+  const groupMap = new Map<string, any>()
+
+  for (const task of actionableTasks.value) {
+    const orderId = task.order_id || task.id
+    if (!groupMap.has(orderId)) {
+      groupMap.set(orderId, {
+        order_id: orderId,
+        order_number: task._order_number || '',
+        order_status: task._order_status || '',
+        customer_name: task.customer_name || '',
+        sales_person: task.sales_person || '',
+        country: task.country || '',
+        product_image: task.product_image || '',
+        product_name: task.product_name || '',
+        asin: task.asin || '',
+        store_name: task.store_name || '',
+        brand_name: task.brand_name || '',
+        category: task.category || '',
+        product_price: task.product_price || 0,
+        order_type: task.order_type || '',
+        review_type: task.review_type || '',
+        review_level: task.review_level || '',
+        subs: [],
+      })
+    }
+    groupMap.get(orderId).subs.push(task)
+  }
+
+  return Array.from(groupMap.values())
+    .map(group => {
+      const actionableSubs = group.subs.filter((sub: any) => !isDone(sub.status))
+      const nextDate = group.subs
+        .filter((sub: any) => sub.scheduled_date && !isDone(sub.status))
+        .map((sub: any) => sub.scheduled_date)
+        .sort()[0] || ''
+      const today = dayjs().format('YYYY-MM-DD')
+      const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD')
+      const dayAfterTomorrow = dayjs().add(2, 'day').format('YYYY-MM-DD')
+      const startedCount = actionableSubs.filter((sub: any) => !!sub.buyer_id).length
+
+      return {
+        ...group,
+        actionableSubCount: actionableSubs.length,
+        completedCount: group.subs.filter((sub: any) => sub.status === '已完成').length,
+        startedCount,
+        hasStarted: startedCount > 0,
+        todayCount: actionableSubs.filter((sub: any) => sub.scheduled_date === today).length,
+        tomorrowCount: actionableSubs.filter((sub: any) => sub.scheduled_date === tomorrow).length,
+        dayAfterTomorrowCount: actionableSubs.filter((sub: any) => sub.scheduled_date === dayAfterTomorrow).length,
+        nextDate,
+      }
+    })
+    .sort((a, b) => {
+      if (Number(b.hasStarted) !== Number(a.hasStarted)) return Number(a.hasStarted) - Number(b.hasStarted)
+      if (b.actionableSubCount !== a.actionableSubCount) return b.actionableSubCount - a.actionableSubCount
+      if (a.nextDate && b.nextDate) return a.nextDate.localeCompare(b.nextDate)
+      if (a.nextDate) return -1
+      if (b.nextDate) return 1
+      return (a.order_number || '').localeCompare(b.order_number || '')
+    })
+})
+
+const pendingOrderGroups = computed(() => groupedWorkbenchOrders.value.filter(group => !group.hasStarted))
+
 function getStatusColor(s: string) {
   const map: Record<string, string> = {
     '已分配': 'cyan', '进行中': 'blue', '已下单': 'orange',
     '已留评': 'geekblue', '已完成': 'green', '已取消': 'red', '待分配': 'default'
   }
   return map[s] || 'default'
+}
+
+function getMainOrderStatusColor(status: string) {
+  const map: Record<string, string> = {
+    '待处理': 'default',
+    '进行中': 'blue',
+    '已完成': 'green',
+    '已取消': 'red',
+    '暂停': 'orange',
+  }
+  return map[status] || 'default'
 }
 
 function isDone(status: string) {
@@ -787,6 +904,21 @@ function getDangerClass(task: any) {
   return ''
 }
 
+function getTaskCheckpoint(task: any) {
+  if (isDone(task.status)) return '已完成'
+  if (!task.buyer_id) return '待分配买手'
+  if (!task.refund_method || !task.refund_sequence) return '待设置退款'
+  if (task.refund_status !== '已退款') return task._refund_request ? '待退款完成' : '待申请退款'
+  if (!task.amazon_order_id) return '待填写订单号'
+  if (!task.review_screenshot_url) return '待上传留评'
+  return '处理中'
+}
+
+function getGroupCompletionPct(group: any) {
+  if (!group?.subs?.length) return 0
+  return Math.round((group.completedCount / group.subs.length) * 100)
+}
+
 function fmtTime(t: string | null) {
   if (!t) return '—'
   return dayjs(t).format('YYYY-MM-DD HH:mm')
@@ -807,15 +939,177 @@ function estimateDeliveryDate(placedAt: string) {
   return dayjs(placedAt).add(7, 'day').format('M/D')
 }
 
+function isRefundStepReadonly(task: any) {
+  return task.refund_status === '已退款' || task._refund_request?.status === '已处理'
+}
+
+function isPrepayMode(task: any) {
+  return ['预付', '先退款后给单'].includes(task._sel_refund_sequence || task.refund_sequence || '')
+}
+
+function getRefundFinalAmount(task: any) {
+  const base = Number(task._refund_amount_usd || 0)
+  if (task._sel_refund_method === 'PayPal') {
+    return Number((base + Number(task._refund_fee_usd || 0)).toFixed(2))
+  }
+  return Number(task._refund_final_amount_usd ?? base)
+}
+
+function syncRefundComputed(task: any) {
+  if (task._sel_refund_method === 'PayPal') {
+    if (!task._buyer_paypal_email) {
+      const buyer = buyerList.value.find(b => b.id === task.buyer_id)
+      task._buyer_paypal_email = buyer?.paypal_email || ''
+    }
+    task._refund_final_amount_usd = getRefundFinalAmount(task)
+  } else if (!task._refund_final_amount_usd) {
+    task._refund_final_amount_usd = Number(task._refund_amount_usd || 0)
+  }
+}
+
+function fmtShortTime(t: string | null) {
+  if (!t) return '—'
+  return dayjs(t).format('MM-DD HH:mm')
+}
+
+function notifyFinanceForReceipt(_task: any) {
+  message.success('已向财务发送补充返款凭证提醒')
+}
+
+function buildMockTasks() {
+  const now = dayjs()
+  const today = now.format('YYYY-MM-DD')
+  const tomorrow = now.add(1, 'day').format('YYYY-MM-DD')
+  const dayAfter = now.add(2, 'day').format('YYYY-MM-DD')
+
+  return [
+    {
+      id: 'mock_prepay_gift_pending',
+      order_id: 'mock_order_1001',
+      _order_number: 'MOCK-2026-1001',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1001',
+      status: '已分配',
+      buyer_id: 'mock_buyer_amanda',
+      buyer_name: 'Amanda Garcia',
+      refund_status: '待退款',
+      refund_method: '礼品卡',
+      refund_sequence: '预付',
+      product_name: '便携榨汁杯',
+      brand_name: 'RealmAI',
+      category: 'Kitchen',
+      review_level: 'A',
+      asin: 'B0MOCK1001',
+      store_name: 'US-Store-01',
+      country: 'US',
+      product_price: 21.21,
+      scheduled_date: tomorrow,
+      keyword: 'portable blender',
+      _is_mock: true,
+    },
+    {
+      id: 'mock_prepay_paypal_pending',
+      order_id: 'mock_order_1002',
+      _order_number: 'MOCK-2026-1002',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1002',
+      status: '进行中',
+      buyer_id: 'mock_buyer_emily',
+      buyer_name: 'Emily Smith',
+      refund_status: '待退款',
+      refund_method: 'PayPal',
+      refund_sequence: '预付',
+      product_name: '蓝牙耳机',
+      brand_name: 'RealmAI',
+      category: 'Electronics',
+      review_level: 'S',
+      asin: 'B0MOCK1002',
+      store_name: 'US-Store-02',
+      country: 'US',
+      product_price: 21.21,
+      scheduled_date: dayAfter,
+      keyword: 'wireless earbuds',
+      _is_mock: true,
+      __mock_refund_fee_usd: 1.5,
+      __mock_paypal_email: 'emily.smith@example.com',
+    },
+    {
+      id: 'mock_after_review_paypal_done',
+      order_id: 'mock_order_1003',
+      _order_number: 'MOCK-2026-1003',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1003',
+      status: '已下单',
+      buyer_id: 'mock_buyer_olivia',
+      buyer_name: 'Olivia White',
+      refund_status: '已退款',
+      refund_amount: 22.71,
+      refund_method: 'PayPal',
+      refund_sequence: '评后返',
+      product_name: '人体工学鼠标',
+      brand_name: 'RealmAI',
+      category: 'Office',
+      review_level: 'A',
+      asin: 'B0MOCK1003',
+      store_name: 'US-Store-03',
+      country: 'US',
+      product_price: 21.21,
+      scheduled_date: today,
+      amazon_order_id: '111-1111111-1111111',
+      _is_mock: true,
+      __mock_refund_request: {
+        status: '已处理',
+        refund_method: 'PayPal',
+        refund_amount_usd: 22.71,
+        assigned_paypal_email: 'olivia.white@example.com',
+        paypal_receipt_screenshot: '',
+        updated_at: now.subtract(1, 'day').toISOString(),
+      },
+    },
+    {
+      id: 'mock_after_review_gift_done',
+      order_id: 'mock_order_1004',
+      _order_number: 'MOCK-2026-1004',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1004',
+      status: '已下单',
+      buyer_id: 'mock_buyer_mia',
+      buyer_name: 'Mia Brown',
+      refund_status: '已退款',
+      refund_amount: 23.5,
+      refund_method: '礼品卡',
+      refund_sequence: '评后返',
+      product_name: '运动水壶',
+      brand_name: 'RealmAI',
+      category: 'Sports',
+      review_level: 'B',
+      asin: 'B0MOCK1004',
+      store_name: 'US-Store-04',
+      country: 'US',
+      product_price: 23.5,
+      scheduled_date: today,
+      amazon_order_id: '222-2222222-2222222',
+      _is_mock: true,
+      __mock_refund_request: {
+        status: '已处理',
+        refund_method: '礼品卡',
+        refund_amount_usd: 23.5,
+        assigned_gift_card_number: 'GC-7788-9922',
+        assigned_gift_card_code: 'A1B2-C3D4-E5F6',
+        paypal_receipt_screenshot: '',
+        updated_at: now.subtract(2, 'day').toISOString(),
+      },
+    },
+  ]
+}
+
 // 步骤逻辑
 function getStepDone(task: any, step: number): boolean {
   switch (step) {
     case 0: return !!task.buyer_id
-    case 1: return !!task.refund_method
-    case 2: return task.refund_status === '已退款'
-    case 3: return !!task.amazon_order_id
-    case 4: return !!task.delivery_confirmed_at
-    case 5: return !!task.review_screenshot_url
+    case 1: return isRefundStepReadonly(task)
+    case 2: return !!task.amazon_order_id
+    case 3: return !!task.review_screenshot_url
     default: return false
   }
 }
@@ -836,12 +1130,45 @@ async function loadStaff() {
     const ids = data.map(s => s.id)
     const { data: counts } = await supabase
       .from('sub_orders')
-      .select('staff_id')
+      .select('staff_id, buyer_id, status')
       .in('staff_id', ids)
-      .in('status', ['已分配', '进行中', '已下单', '已留评'])
-    const countMap: Record<string, number> = {}
-    counts?.forEach(c => { countMap[c.staff_id] = (countMap[c.staff_id] || 0) + 1 })
-    staffList.value = data.map(s => ({ ...s, pending_count: countMap[s.id] || 0 }))
+      .not('staff_id', 'is', null)
+    const pendingMap: Record<string, number> = {}
+    const improvingMap: Record<string, number> = {}
+    counts?.forEach(c => {
+      if (isDone(c.status)) return
+      if (c.buyer_id) improvingMap[c.staff_id] = (improvingMap[c.staff_id] || 0) + 1
+      else pendingMap[c.staff_id] = (pendingMap[c.staff_id] || 0) + 1
+    })
+
+    let rows = data.map(s => ({
+      ...s,
+      pending_count: pendingMap[s.id] || 0,
+      improving_count: improvingMap[s.id] || 0,
+      total_count: (pendingMap[s.id] || 0) + (improvingMap[s.id] || 0),
+    }))
+
+    if (!isAdmin.value) {
+      rows = rows.filter(s => s.id === currentUser.value.id || s.name === currentUser.value.name)
+    } else {
+      rows.unshift({
+        id: ALL_STAFF_KEY,
+        name: '全部业务员',
+        role: '管理员',
+        status: '活跃',
+        avatar_color: '#2563eb',
+        pending_count: rows.reduce((sum, s) => sum + (s.pending_count || 0), 0),
+        improving_count: rows.reduce((sum, s) => sum + (s.improving_count || 0), 0),
+        total_count: rows.reduce((sum, s) => sum + (s.total_count || 0), 0),
+      })
+    }
+
+    staffList.value = rows
+
+    if (!selectedStaffId.value) {
+      selectedStaffId.value = isAdmin.value ? ALL_STAFF_KEY : (rows[0]?.id || '')
+      if (selectedStaffId.value) await Promise.all([loadTasks(), loadTransferRequests()])
+    }
   }
 }
 
@@ -908,7 +1235,11 @@ async function selectStaff(id: string) {
 }
 
 async function loadTransferRequests() {
-  if (!selectedStaffId.value) return
+  if (!selectedStaffId.value || isAllStaffSelected.value) {
+    incomingRequests.value = []
+    outgoingRequests.value = []
+    return
+  }
   const { data: incoming } = await supabase
     .from('transfer_requests')
     .select('*')
@@ -947,24 +1278,31 @@ function initTaskFields(task: any) {
   task._saving_buyer = false
   task._validating_buyer = false
   task._buyer_validation = null
-  task._sel_refund_sequence = task.refund_sequence || ''
-  task._sel_refund_method = task.refund_method || ''
+  task._sel_refund_sequence = task.refund_sequence || '预付'
+  task._sel_refund_method = task.refund_method || '礼品卡'
   task._editing_refund_method = false
-  task._saving_refund_method = false
-  task._refund_amount_usd = task.product_price ? Number(task.product_price) : null
-  task._buyer_paypal_email = task.buyer?.paypal_email || ''
+  task._refund_amount_usd = task.product_price ? Number(task.product_price) : 0
+  task._refund_fee_usd = task.__mock_refund_fee_usd || 0
+  task._refund_final_amount_usd = task.product_price ? Number(task.product_price) : 0
+  task._buyer_paypal_email = task.__mock_paypal_email || task.buyer?.paypal_email || ''
+  task._need_finance_screenshot = false
+  task._extra_refund_amount = null
+  task._extra_refund_reason = '产品涨价'
   task._refund_apply_notes = ''
   task._submitting_refund = false
-  task._refund_request = null
+  task._refund_request = task.__mock_refund_request || null
   task._input_amazon_order_id = task.amazon_order_id || ''
   task._editing_amazon = false
   task._saving_amazon = false
   task._saving_delivery = false
   task._show_delivery_estimate = false
+  task._proof_type = 'Review'
+  task._proof_comment_link = ''
   task._input_screenshot_url = task.review_screenshot_url || ''
   task._editing_screenshot = false
   task._saving_screenshot = false
   task._completing = false
+  syncRefundComputed(task)
   return task
 }
 
@@ -972,13 +1310,31 @@ async function loadTasks() {
   if (!selectedStaffId.value) return
   tasksLoading.value = true
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('sub_orders')
       .select('*')
-      .eq('staff_id', selectedStaffId.value)
       .order('scheduled_date', { ascending: true, nullsFirst: false })
+    query = isAllStaffSelected.value
+      ? query.not('staff_id', 'is', null)
+      : query.eq('staff_id', selectedStaffId.value)
+
+    const { data, error } = await query
     if (error) throw error
     const tasks = (data || []).map(initTaskFields)
+
+    const orderIds = [...new Set(tasks.map(t => t.order_id).filter(Boolean))]
+    if (orderIds.length > 0) {
+      const { data: orders } = await supabase
+        .from('erp_orders')
+        .select('id, order_number, status')
+        .in('id', orderIds)
+      const orderMap: Record<string, any> = {}
+      ;(orders || []).forEach(order => { orderMap[order.id] = order })
+      tasks.forEach(task => {
+        task._order_number = orderMap[task.order_id]?.order_number || ''
+        task._order_status = orderMap[task.order_id]?.status || ''
+      })
+    }
 
     const subOrderIds = tasks.map(t => t.id)
     if (subOrderIds.length > 0) {
@@ -997,7 +1353,12 @@ async function loadTasks() {
       }
     }
 
-    allTasks.value = tasks
+    let mergedTasks = tasks
+    if (enableMockPreview.value) {
+      const mockTasks = buildMockTasks().map(initTaskFields)
+      mergedTasks = [...mockTasks, ...tasks]
+    }
+    allTasks.value = mergedTasks
     filterTaskList()
   } finally {
     tasksLoading.value = false
@@ -1022,6 +1383,7 @@ function filterTaskList() {
   if (taskSearch.value) {
     const kw = taskSearch.value.toLowerCase()
     list = list.filter(t =>
+      (t._order_number || '').toLowerCase().includes(kw) ||
       (t.sub_order_number || '').toLowerCase().includes(kw) ||
       (t.asin || '').toLowerCase().includes(kw) ||
       (t.buyer_name || '').toLowerCase().includes(kw) ||
@@ -1034,6 +1396,21 @@ function filterTaskList() {
 
 function toggleExpand(task: any) {
   task._expanded = !task._expanded
+}
+
+function toggleOrderExpand(orderId: string) {
+  if (expandedOrderIds.value.includes(orderId)) {
+    expandedOrderIds.value = expandedOrderIds.value.filter(id => id !== orderId)
+  } else {
+    expandedOrderIds.value = [...expandedOrderIds.value, orderId]
+  }
+}
+
+function focusTask(task: any) {
+  wbViewMode.value = 'sub'
+  taskSearch.value = task.sub_order_number || task._order_number || ''
+  filterTaskList()
+  allTasks.value.forEach(t => { t._expanded = t.id === task.id })
 }
 
 async function quickSave(task: any, field: string, value: any) {
@@ -1127,32 +1504,14 @@ async function assignBuyer(task: any) {
   }
 }
 
-async function saveRefundMethod(task: any) {
-  if (!task._sel_refund_method || !task._sel_refund_sequence) return
-  task._saving_refund_method = true
-  try {
-    const payload = {
-      refund_method: task._sel_refund_method,
-      refund_sequence: task._sel_refund_sequence,
-    }
-    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
-    if (error) throw error
-    Object.assign(task, payload)
-    task._editing_refund_method = false
-    message.success('退款设置已保存')
-  } catch (e: any) {
-    message.error('保存失败：' + e.message)
-  } finally {
-    task._saving_refund_method = false
-  }
-}
-
 async function submitRefundRequest(task: any) {
-  if (!task._refund_amount_usd) return
+  const finalAmount = getRefundFinalAmount(task)
+  if (!finalAmount) return
   task._submitting_refund = true
   try {
     const buyer = buyerList.value.find(b => b.id === task.buyer_id)
-    const paypalEmail = task.refund_method === 'PayPal'
+    const selectedMethod = task._sel_refund_method || task.refund_method
+    const paypalEmail = selectedMethod === 'PayPal'
       ? (task._buyer_paypal_email || buyer?.paypal_email || '')
       : ''
 
@@ -1162,18 +1521,26 @@ async function submitRefundRequest(task: any) {
       sub_order_number: task.sub_order_number,
       buyer_name: task.buyer_name || '',
       buyer_paypal_email: paypalEmail,
-      refund_amount_usd: Number(task._refund_amount_usd),
-      refund_amount: Number(task._refund_amount_usd),
-      refund_method: task.refund_method,
-      refund_sequence: task.refund_sequence,
+      refund_amount_usd: finalAmount,
+      refund_amount: finalAmount,
+      refund_method: selectedMethod,
+      refund_sequence: task._sel_refund_sequence || task.refund_sequence,
       product_name: task.product_name || '',
       product_price: task.product_price || 0,
       asin: task.asin || '',
       store_name: task.store_name || '',
       staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
-      notes: task._refund_apply_notes || '',
+      notes: `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务返款截图]' : ''}`.trim(),
       status: '待处理',
     }
+    const configPayload = {
+      refund_method: task._sel_refund_method || task.refund_method,
+      refund_sequence: task._sel_refund_sequence || task.refund_sequence,
+    }
+    const { error: e1 } = await supabase.from('sub_orders').update(configPayload).eq('id', task.id)
+    if (e1) throw e1
+    Object.assign(task, configPayload)
+
     const { data, error } = await supabase.from('refund_requests').insert(payload).select().maybeSingle()
     if (error) throw error
     task._refund_request = data
@@ -1508,7 +1875,11 @@ async function releaseToHall(task: any) {
   }
 }
 
-onMounted(() => { loadStaff(); loadBuyers() })
+onMounted(() => {
+  loadFromStorage()
+  loadStaff()
+  loadBuyers()
+})
 </script>
 
 <style scoped>
@@ -1519,16 +1890,38 @@ onMounted(() => { loadStaff(); loadBuyers() })
 
 /* 左侧侧栏 */
 .staff-sidebar { width: 200px; flex-shrink: 0; background: #fff; border-radius: 12px; border: 1px solid #f0f0f0; overflow: hidden; display: flex; flex-direction: column; }
-.staff-search { padding: 10px; border-bottom: 1px solid #f0f0f0; }
-.staff-list { flex: 1; overflow-y: auto; padding: 6px; }
-.staff-item { display: flex; align-items: center; gap: 8px; padding: 9px 8px; border-radius: 8px; cursor: pointer; transition: background 0.15s; margin-bottom: 2px; }
-.staff-item:hover { background: #f5f7fa; }
-.staff-item.active { background: #eff6ff; border: 1px solid #bfdbfe; }
-.staff-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; flex-shrink: 0; }
-.staff-name { font-size: 13px; font-weight: 600; color: #374151; }
-.staff-role { font-size: 10px; color: #9ca3af; }
-.staff-info { flex: 1; min-width: 0; }
-.no-staff { font-size: 12px; color: #9ca3af; text-align: center; padding: 20px 0; }
+.wb-nav-title {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 600;
+}
+.wb-nav-list { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.wb-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.wb-nav-item:hover { border-color: #bfdbfe; background: #eff6ff; }
+.wb-nav-item.active { border-color: #2563eb; background: #eff6ff; }
+.wb-nav-label { font-size: 13px; color: #1a1a2e; }
+.wb-nav-count {
+  min-width: 24px;
+  text-align: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+}
 
 /* 右侧主区 */
 .workbench-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -1558,7 +1951,157 @@ onMounted(() => { loadStaff(); loadBuyers() })
 .wb-view-toggle { display: flex; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
 .wb-vbtn { padding: 2px 10px; font-size: 12px; cursor: pointer; color: #6b7280; background: #fff; user-select: none; }
 .wb-vbtn.active { background: #2563eb; color: #fff; }
-.wb-table-view { margin-top: 8px; }
+
+.workbench-overview {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+.overview-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.overview-label { font-size: 12px; color: #6b7280; }
+.overview-value { font-size: 24px; line-height: 1; color: #1a1a2e; }
+
+.workbench-sections { display: flex; flex-direction: column; gap: 18px; }
+.wb-section { display: flex; flex-direction: column; gap: 12px; }
+.wb-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wb-section-title { font-size: 16px; font-weight: 700; color: #1a1a2e; }
+.wb-section-desc { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.wb-section-count {
+  font-size: 12px;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.compact-empty { padding: 24px 0; }
+
+.main-order-list { display: flex; flex-direction: column; gap: 12px; }
+.main-order-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.main-order-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
+.main-order-main-row { display: flex; align-items: flex-start; gap: 14px; }
+.main-order-product-img { width: 56px; height: 56px; flex-shrink: 0; }
+.main-order-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+  display: block;
+}
+.main-order-thumb-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+.main-order-info { min-width: 0; flex: 1; }
+.main-order-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.main-order-number { font-size: 15px; font-weight: 700; color: #1a1a2e; font-family: 'Courier New', monospace; }
+.status-tag { margin-inline-end: 0; }
+.info-tag { margin-inline-end: 0; }
+.main-order-detail-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.detail-item-text { color: #374151; }
+.detail-sep { color: #6b7280; }
+.price-text { color: #16a34a; font-weight: 600; }
+.main-order-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.main-order-progress { display: flex; align-items: center; gap: 10px; min-width: 220px; flex: 1; }
+.main-order-progress-text { font-size: 12px; color: #6b7280; white-space: nowrap; }
+.main-order-progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.main-order-progress-fill {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+.inline-sub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid #f0f0f0;
+  padding-top: 12px;
+}
+.inline-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+.inline-sub-main { flex: 1; min-width: 0; }
+.inline-sub-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inline-sub-no { font-size: 12px; font-weight: 700; color: #1a1a2e; font-family: 'Courier New', monospace; }
+.inline-sub-checkpoint {
+  font-size: 11px;
+  color: #7c3aed;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.inline-sub-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.main-order-sub-preview { display: flex; gap: 8px; flex-wrap: wrap; }
+.sub-preview-chip {
+  font-size: 11px;
+  color: #374151;
+  background: #f3f4f6;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-family: 'Courier New', monospace;
+}
+.sub-preview-chip.more { color: #6b7280; font-family: inherit; }
+
 .sub-product-cell { max-width: 180px; }
 .sub-product-name { font-size: 12px; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
 .sub-asin { font-family: 'Courier New', monospace; font-size: 11px; color: #6b7280; }
@@ -1601,6 +2144,16 @@ onMounted(() => { loadStaff(); loadBuyers() })
 .sub-no-text { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; color: #1a1a2e; }
 .product-name-sm { font-size: 12px; color: #374151; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mono-sm { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 600; color: #374151; }
+.order-chip {
+  font-size: 11px;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-right: 2px;
+  font-family: 'Courier New', monospace;
+}
 .sep { padding-left: 10px; }
 .price-sm { font-size: 12px; font-weight: 600; color: #16a34a; padding-left: 10px; }
 .text-gray { color: #9ca3af; }
@@ -1639,7 +2192,63 @@ onMounted(() => { loadStaff(); loadBuyers() })
 .pi-label { font-size: 11px; color: #9ca3af; font-weight: 500; white-space: nowrap; }
 .pi-val { font-size: 12px; color: #374151; }
 
-/* 步骤 */
+/* Steps + Collapse 流程 */
+.workflow-steps-modern { padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 12px; }
+.wf-panel { border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+.wf-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #f8fafc;
+}
+.wf-panel-header { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #1a1a2e; font-weight: 600; }
+.wf-panel-index { color: #2563eb; min-width: 18px; }
+.wf-panel-status {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.wf-panel-status.todo { color: #d97706; background: rgba(217, 119, 6, 0.12); }
+.wf-panel-status.done { color: #059669; background: rgba(5, 150, 105, 0.12); }
+.wf-panel-body { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.buyer-brief-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.buyer-brief-desc { font-size: 12px; color: #6b7280; margin-top: -2px; }
+.refund-setup-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.refund-setup-label { min-width: 70px; font-size: 12px; color: #6b7280; }
+.refund-amount-box {
+  border: 1px dashed #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+  padding: 10px 12px;
+}
+.refund-amount-title { font-size: 12px; color: #1a1a2e; font-weight: 600; margin-bottom: 8px; }
+.refund-formula-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.refund-action-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.refund-readonly-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 600;
+}
+.refund-proof-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.proof-label { color: #6b7280; min-width: 64px; }
+.extra-refund-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px dashed #e5e7eb;
+  padding-top: 10px;
+}
+
 .workflow-steps { padding: 16px 20px 10px; display: flex; flex-direction: column; gap: 0; }
 .step-block { display: flex; gap: 14px; padding: 10px 0; position: relative; }
 .step-block::before {
@@ -1739,7 +2348,20 @@ onMounted(() => { loadStaff(); loadBuyers() })
 .estimate-date { font-size: 11px; color: #9ca3af; }
 
 /* 底部操作 */
-.workflow-footer { display: flex; gap: 8px; padding: 10px 20px 14px; border-top: 1px dashed #f0f0f0; flex-wrap: wrap; }
+.workflow-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 20px 12px;
+  border-top: 1px dashed #f0f0f0;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(2px);
+}
+.wf-footer-divider { color: #9ca3af; font-size: 12px; }
 
 /* 空状态 */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: #9ca3af; gap: 12px; font-size: 14px; background: #fff; border-radius: 12px; }

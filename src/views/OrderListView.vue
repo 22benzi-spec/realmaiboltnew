@@ -222,7 +222,7 @@
           </template>
 
           <template v-if="column.key === 'task_status'">
-            <a-tag :color="getStatusColor(record.status)" size="small">{{ record.status || '待处理' }}</a-tag>
+            <a-tag :color="getStatusColor(record.status)" size="small">{{ record.status || '待分配' }}</a-tag>
           </template>
 
           <template v-if="column.key === 'action'">
@@ -882,7 +882,7 @@ const groupPayTotalAmount = computed(() => {
 
 const selectedRowKeys = ref<string[]>([])
 
-const statuses = ['待处理', '进行中', '已完成', '已取消', '暂停']
+const statuses = ['待分配', '进行中', '已完成', '已截单', '暂停中']
 const countries = ['美国', '德国', '英国', '加拿大']
 const orderTypeOptions = ['免评', '文字评', '图片评', '视频评', 'Feedback']
 
@@ -951,7 +951,7 @@ function getOrderProgressPct(record: any): number {
 }
 
 function getStatusColor(status: string) {
-  const map: Record<string, string> = { '待处理': 'default', '进行中': 'blue', '已完成': 'green', '已取消': 'red', '暂停': 'orange' }
+  const map: Record<string, string> = { '待分配': 'default', '进行中': 'blue', '已完成': 'green', '已截单': 'red', '暂停中': 'orange' }
   return map[status] || 'default'
 }
 
