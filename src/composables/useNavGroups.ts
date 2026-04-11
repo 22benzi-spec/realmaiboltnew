@@ -112,6 +112,8 @@ export const allNavGroups: NavGroup[] = [
     roles: ['管理员'],
     items: [
       { id: 'user-management', label: '用户与权限', icon: SafetyOutlined },
+      { id: 'harness-console', label: 'Harness 调试台', icon: AuditOutlined },
+      { id: 'harness-runs', label: 'Harness 运行观察', icon: ProfileOutlined },
     ],
   },
 ]
