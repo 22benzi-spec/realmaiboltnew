@@ -152,7 +152,10 @@
           </template>
 
           <template v-else-if="column.key === 'action'">
-            <a-button type="link" size="small" class="edit-btn" @click="openEdit(record)">编辑</a-button>
+            <a-space size="small">
+              <a-button type="link" size="small" class="edit-btn" @click="openEdit(record)">编辑</a-button>
+              <a-button type="link" size="small" class="edit-btn" @click="openOpsDetail(record)">详情</a-button>
+            </a-space>
           </template>
 
         </template>
@@ -223,6 +226,11 @@
         <img :src="imgUrl" style="max-width:75vw;max-height:75vh;border-radius:6px" />
       </div>
     </a-modal>
+
+    <SubOrderOpsDrawer
+      v-model:open="opsDetailOpen"
+      :sub-order-id="opsDetailTarget?.id || ''"
+    />
   </div>
 </template>
 
@@ -232,6 +240,7 @@ import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabase'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
+import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 interface SubOrder {
   id: string
@@ -288,6 +297,8 @@ const editForm = ref({
 
 const imgOpen = ref(false)
 const imgUrl = ref('')
+const opsDetailOpen = ref(false)
+const opsDetailTarget = ref<SubOrder | null>(null)
 
 const pagination = ref({
   current: 1, pageSize: 50, showSizeChanger: true,
@@ -303,7 +314,7 @@ const columns = [
   { title: 'FB / 评论', key: 'media', width: 120 },
   { title: '状态 / 备注', key: 'status', width: 140 },
   { title: '创建时间', key: 'created_at', width: 90, sorter: (a: SubOrder, b: SubOrder) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime() },
-  { title: '', key: 'action', width: 55, fixed: 'right' as const, align: 'center' as const },
+  { title: '', key: 'action', width: 110, fixed: 'right' as const, align: 'center' as const },
 ]
 
 function computeStatus(r: SubOrder): string {
@@ -372,6 +383,11 @@ function getRefundColor(m: string) {
 }
 
 function openImg(url: string) { imgUrl.value = url; imgOpen.value = true }
+
+function openOpsDetail(record: SubOrder | null) {
+  opsDetailTarget.value = record
+  opsDetailOpen.value = true
+}
 
 function openEdit(r: SubOrder) {
   editRecord.value = r
@@ -810,5 +826,21 @@ onMounted(loadData)
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0 16px;
+}
+
+.refund-entry-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.refund-entry-text {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
 }
 </style>

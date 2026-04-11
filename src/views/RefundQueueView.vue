@@ -115,9 +115,37 @@
               <span class="detail-label">申请金额</span>
               <span class="detail-val amount-usd-lg">${{ Number(currentRequest.refund_amount_usd || 0).toFixed(2) }}</span>
             </div>
+            <template v-if="currentRequest.refund_method === 'PayPal'">
+              <div class="detail-item">
+                <span class="detail-label">实付金额</span>
+                <span class="detail-val">${{ Number(currentRequest.actual_paid_usd || inferQueueActualPaid(currentRequest)).toFixed(2) }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">贝宝手续费</span>
+                <span class="detail-val">${{ Number(currentRequest.paypal_fee_usd || 0).toFixed(2) }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <div class="detail-item">
+                <span class="detail-label">实付金额</span>
+                <span class="detail-val">${{ Number(currentRequest.actual_paid_usd || currentRequest.product_price || 0).toFixed(2) }}</span>
+              </div>
+              <div v-if="Number(currentRequest.gift_card_face_value_usd || 0) > 0" class="detail-item">
+                <span class="detail-label">礼品卡面额</span>
+                <span class="detail-val">${{ Number(currentRequest.gift_card_face_value_usd || 0).toFixed(2) }}</span>
+              </div>
+            </template>
             <div class="detail-item">
               <span class="detail-label">产品售价</span>
               <span class="detail-val">${{ Number(currentRequest.product_price || 0).toFixed(2) }}</span>
+            </div>
+            <div v-if="currentRequest.request_type && currentRequest.request_type !== 'initial'" class="detail-item">
+              <span class="detail-label">申请类型</span>
+              <span class="detail-val">{{ requestTypeLabel(currentRequest.request_type) }}</span>
+            </div>
+            <div v-if="currentRequest.supplement_reason" class="detail-item full">
+              <span class="detail-label">原因说明</span>
+              <span class="detail-val">{{ currentRequest.supplement_reason }}</span>
             </div>
             <div v-if="currentRequest.buyer_paypal_email" class="detail-item full">
               <span class="detail-label">买手PayPal</span>
@@ -206,9 +234,12 @@
                   <span class="detail-label">付款 PayPal</span>
                   <span class="detail-val mono">{{ currentRequest.assigned_paypal_email }}</span>
                 </div>
-                <div class="detail-item">
-                  <span class="detail-label">退款金额</span>
-                  <span class="detail-val amount-usd-lg">${{ Number(currentRequest.refund_amount_usd || 0).toFixed(2) }}</span>
+                <div class="detail-item full">
+                  <span class="detail-label">金额明细</span>
+                  <div class="detail-val">
+                    <div>实付 ${{ Number(currentRequest.actual_paid_usd || inferQueueActualPaid(currentRequest)).toFixed(2) }} + 手续费 ${{ Number(currentRequest.paypal_fee_usd || 0).toFixed(2) }}</div>
+                    <div class="amount-usd-lg">合计 ${{ Number(currentRequest.refund_amount_usd || 0).toFixed(2) }}</div>
+                  </div>
                 </div>
                 <div class="detail-item">
                   <span class="detail-label">处理时间</span>
@@ -317,6 +348,21 @@ const columns = [
 function fmtTime(t: string | null) {
   if (!t) return '—'
   return dayjs(t).format('YYYY-MM-DD HH:mm')
+}
+
+function inferQueueActualPaid(req: any) {
+  const total = Number(req?.refund_amount_usd || 0)
+  const fee = Number(req?.paypal_fee_usd || 0)
+  const stored = Number(req?.actual_paid_usd || 0)
+  if (stored > 0) return stored
+  return Math.max(0, Number((total - fee).toFixed(2)))
+}
+
+function requestTypeLabel(t: string) {
+  if (t === 'supplement') return '追加'
+  if (t === 'correction') return '更正'
+  if (t === 'initial') return '首笔'
+  return t
 }
 
 function onImgError(e: Event) {

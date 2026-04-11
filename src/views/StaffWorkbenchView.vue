@@ -124,7 +124,6 @@
                           <a-tag v-if="group.country" color="default" class="info-tag">{{ group.country }}</a-tag>
                           <a-tag v-if="group.order_type" color="default" class="info-tag">{{ group.order_type }}</a-tag>
                           <a-tag v-if="group.review_level" color="default" class="info-tag">{{ group.review_level }}</a-tag>
-                          <a-tag v-if="group.review_type" color="default" class="info-tag">{{ group.review_type }}</a-tag>
                         </div>
                         <div class="main-order-detail-row">
                           <span class="detail-item-text">产品：{{ group.product_name || group.asin || '—' }}</span>
@@ -179,7 +178,10 @@
                             <span>截止：{{ sub.scheduled_date || '—' }}</span>
                           </div>
                         </div>
-                        <a-button size="small" type="primary" ghost @click="focusTask(sub)">去处理</a-button>
+                        <a-space>
+                          <a-button size="small" type="primary" ghost @click="focusTask(sub)">编辑</a-button>
+                          <a-button size="small" @click="openTaskOpsDetail(sub)">详情</a-button>
+                        </a-space>
                       </div>
                     </div>
                   </div>
@@ -203,7 +205,7 @@
                 <div class="wb-section-header">
                   <div>
                     <div class="wb-section-title">问题单售后</div>
-                    <div class="wb-section-desc">聚合退款/售后相关子订单，优先跟进异常处理</div>
+                    <div class="wb-section-desc">聚合返款/售后相关子订单，优先跟进异常处理</div>
                   </div>
                   <span class="wb-section-count">{{ afterSaleTasks.length }} 个子订单</span>
                 </div>
@@ -231,11 +233,15 @@
                   <div class="task-meta">
                     <div class="meta-row1">
                       <span class="sub-no-text">{{ task.sub_order_number }}</span>
-                      <a-tag v-if="task._is_mock" color="purple" style="font-size:10px">模拟数据</a-tag>
                       <a-tag :color="getStatusColor(task.status)" style="margin-left:6px;font-size:11px">{{ task.status }}</a-tag>
                       <a-tag v-if="isOverdue(task.scheduled_date) && !isDone(task.status)" color="error" style="font-size:10px">日超期 {{ overdayCount(task.scheduled_date) }} 天</a-tag>
-                      <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px">{{ task.refund_status }}</a-tag>
                       <a-tag v-if="task.order_type" color="default" style="font-size:10px">{{ task.order_type }}</a-tag>
+                      <template v-if="task.keyword_type === 'link' && task.search_link">
+                        <a :href="task.search_link" target="_blank" rel="noopener noreferrer" class="keyword-badge keyword-link-badge" @click.stop>
+                          链接操作
+                        </a>
+                      </template>
+                      <div v-else-if="task.keyword" class="keyword-badge">{{ task.keyword }}</div>
                       <span v-if="task.product_name" class="product-name-sm">{{ task.product_name }}</span>
                     </div>
                     <div class="meta-row2">
@@ -243,20 +249,18 @@
                       <span class="mono-sm">{{ task.asin }}</span>
                       <span class="sep">{{ task.store_name }}</span>
                       <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
-                      <span v-if="task.review_type" class="sep text-gray">{{ task.review_type }}</span>
                       <span v-if="task.category" class="sep text-gray">{{ task.category }}</span>
                       <span v-if="task.country" class="sep text-gray">{{ task.country }}</span>
+                    </div>
+                    <div class="meta-row3">
+                      <span class="meta-focus-item"><span class="meta-focus-label">测评等级</span><span class="meta-focus-value">{{ task.review_level || '—' }}</span></span>
+                      <span class="meta-focus-item"><span class="meta-focus-label">指定变体</span><span class="meta-focus-value">{{ task.variant_info || '—' }}</span></span>
+                      <span class="meta-focus-item meta-focus-item-wide"><span class="meta-focus-label">任务备注</span><span class="meta-focus-value">{{ task.task_notes || '—' }}</span></span>
                     </div>
                   </div>
                 </div>
 
                 <div class="card-header-right">
-                  <template v-if="task.keyword_type === 'link' && task.search_link">
-                    <a :href="task.search_link" target="_blank" rel="noopener noreferrer" class="keyword-badge keyword-link-badge" @click.stop>
-                      链接操作
-                    </a>
-                  </template>
-                  <div v-else-if="task.keyword" class="keyword-badge">{{ task.keyword }}</div>
                   <div v-if="task.scheduled_date" :class="['date-badge', isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-ok']">
                     截止 {{ task.scheduled_date }}
                   </div>
@@ -265,10 +269,14 @@
                     <span v-for="(_step, i) in workflowSteps" :key="i" :class="['dot', getStepDone(task, i) ? 'done' : getStepCurrent(task, i) ? 'current' : 'pending']"></span>
                   </div>
                   <div class="header-assign">
-                    <span v-if="task.buyer_name" class="buyer-badge">{{ task.buyer_name }}</span>
-                    <span v-else class="buyer-none">未分配买手</span>
+                    <span :class="task.buyer_name ? 'buyer-badge' : 'buyer-none'">{{ task.buyer_name ? '已匹配' : '待匹配' }}</span>
+                    <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
                   </div>
-                  <div class="commission-badge">佣金 <strong>¥{{ Number(task.commission_fee || 0).toFixed(2) }}</strong></div>
+                  <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px;margin:0">{{ refundStatusLabel(task.refund_status) }}</a-tag>
+                  <a-space size="small" @click.stop>
+                    <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
+                    <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
+                  </a-space>
                 </div>
               </div>
 
@@ -279,15 +287,8 @@
                   <div class="pi-item"><span class="pi-label">产品名称</span><span class="pi-val">{{ task.product_name || '—' }}</span></div>
                   <div class="pi-item"><span class="pi-label">品牌</span><span class="pi-val">{{ task.brand_name || '—' }}</span></div>
                   <div class="pi-item"><span class="pi-label">类目</span><span class="pi-val">{{ task.category || '—' }}</span></div>
-                  <div class="pi-item"><span class="pi-label">测评等级</span><span class="pi-val">{{ task.review_level || '—' }}</span></div>
-                  <div class="pi-item"><span class="pi-label">变参</span>
-                    <a-input v-model:value="task._edit_variant" size="small" style="width:90px" placeholder="无" @blur="quickSave(task, 'variant_info', task._edit_variant)" />
-                  </div>
                   <div class="pi-item"><span class="pi-label">客户</span><span class="pi-val">{{ task.customer_name || '—' }}</span></div>
-                  <div class="pi-item">
-                    <span class="pi-label">任务备注</span>
-                    <a-input v-model:value="task._edit_task_notes" size="small" style="width:150px" placeholder="备注" @blur="quickSave(task, 'task_notes', task._edit_task_notes)" />
-                  </div>
+                  <div class="pi-item"><span class="pi-label">商务</span><span class="pi-val">{{ task.sales_person || '—' }}</span></div>
                 </div>
 
                 <!-- 流程面板（直接平铺） -->
@@ -356,33 +357,35 @@
                     <div class="wf-panel-head">
                       <div class="wf-panel-header">
                         <span class="wf-panel-index">2.</span>
-                        <span>{{ isRefundStepReadonly(task) ? '财务返款申请' : '返款申请' }}</span>
+                        <span>{{ refundPanelTitle(task) }}</span>
                         <span v-if="isRefundStepReadonly(task)" class="wf-panel-status done">已完成</span>
+                        <span v-else-if="task._refund_request_pending" class="wf-panel-status todo">待财务审核</span>
                         <span v-else class="wf-panel-status todo">当前待办</span>
                       </div>
                     </div>
                     <div class="wf-panel-body">
                         <template v-if="isRefundStepReadonly(task)">
-                          <div class="refund-readonly-summary">
-                            <span>{{ task._refund_request?.refund_method || task.refund_method || '—' }}</span>
-                            <span>🔒 ${{ Number(task._refund_request?.refund_amount_usd || task.refund_amount || 0).toFixed(2) }}</span>
-                            <span>返款时间: {{ fmtShortTime(task._refund_request?.updated_at || task._refund_request?.created_at || task.refund_date) }}</span>
-                          </div>
-                          <div class="refund-proof-row">
-                            <span class="proof-label">返款凭证</span>
-                            <template v-if="task._refund_request?.paypal_receipt_screenshot">
-                              <a :href="task._refund_request.paypal_receipt_screenshot" target="_blank" class="screenshot-link">
-                                <img :src="task._refund_request.paypal_receipt_screenshot" class="screenshot-preview" referrerpolicy="no-referrer" @error="onImgError" />
-                              </a>
-                            </template>
-                            <template v-else>
-                              <span class="text-gray">暂无</span>
-                              <a-button type="link" size="small" @click="notifyFinanceForReceipt(task)">催财务补充截图</a-button>
-                            </template>
+                          <div class="refund-compact-card">
+                            <div class="refund-compact-main">
+                              <div class="refund-compact-title">
+                                <span>已处理返款 {{ processedRefundsForDisplay(task).length }} 笔</span>
+                              </div>
+                              <div class="refund-compact-meta">
+                                <span v-if="task.refund_method">当前方式 {{ task.refund_method }}</span>
+                                <span v-if="aggregateProcessedRefunds(task).any">累计 ${{ (aggregateProcessedRefunds(task).paypalTotal + aggregateProcessedRefunds(task).giftFace).toFixed(2) }}</span>
+                                <span>明细请点子订单后的「详情」查看</span>
+                              </div>
+                            </div>
                           </div>
                           <div class="extra-refund-bar">
-                            <a-button size="small" @click="message.info('追加返款功能待接后端流程')">追加返款</a-button>
-                            <a-input-number v-model:value="task._extra_refund_amount" size="small" :min="0" :precision="2" style="width:130px" placeholder="填写金额" />
+                            <a-button size="small" type="primary" ghost @click="startSupplementalRefund(task)">追加返款</a-button>
+                            <a-input-number v-model:value="task._extra_refund_amount" size="small" :min="0" :precision="2" style="width:130px" placeholder="追加基数$" />
+                            <span class="extra-method-label">追加方式</span>
+                            <a-radio-group v-model:value="task._extra_refund_method" size="small">
+                              <a-radio value="同首笔">同首笔</a-radio>
+                              <a-radio value="礼品卡">礼品卡</a-radio>
+                              <a-radio value="PayPal">PayPal</a-radio>
+                            </a-radio-group>
                             <a-radio-group v-model:value="task._extra_refund_reason" size="small">
                               <a-radio value="产品涨价">产品涨价</a-radio>
                               <a-radio value="产品额外佣金">产品额外佣金</a-radio>
@@ -391,6 +394,42 @@
                         </template>
 
                         <template v-else>
+                          <a-alert
+                            v-if="task._refund_supplement_mode"
+                            type="info"
+                            show-icon
+                            style="margin-bottom:8px"
+                            :message="'追加返款：原因「' + (task._extra_refund_reason || '—') + '」。' + (task._extra_refund_reason === '产品涨价' ? '请务必将「实付金额」改为涨价后的真实金额（不可仍等于系统标价）。' : '')"
+                          />
+                          <a-alert
+                            v-if="task._refund_correction_mode"
+                            type="warning"
+                            show-icon
+                            style="margin-bottom:8px"
+                            message="更正返款：将生成新的待财务处理申请。若上一笔为打款失败，也可请财务先将原单标记「已取消」后再提交本单。"
+                          />
+                          <a-alert
+                            v-if="task._refund_request_pending && !task._refund_supplement_mode && !task._refund_correction_mode"
+                            type="info"
+                            show-icon
+                            style="margin-bottom:8px"
+                            message="当前有一条待财务审核的返款申请，您可修改金额或 PayPal 邮箱后再次提交更新；每次有效变更会追加一条留痕记录。"
+                          />
+                          <div
+                            v-if="(task._refund_request_pending?.staff_change_log || []).length && !task._refund_supplement_mode && !task._refund_correction_mode"
+                            class="refund-audit-trail"
+                          >
+                            <div class="rat-title">业务员修改留痕</div>
+                            <div v-for="(entry, ei) in (task._refund_request_pending.staff_change_log || [])" :key="ei" class="rat-entry">
+                              <div class="rat-meta">{{ fmtShortTime(entry.at) }} · {{ entry.staff_name }}</div>
+                              <ul class="rat-ul">
+                                <li v-for="(ed, ej) in (entry.edits || [])" :key="ej">{{ formatAuditEdit(ed) }}</li>
+                              </ul>
+                            </div>
+                          </div>
+                          <div v-if="task._refund_supplement_mode || task._refund_correction_mode" class="refund-action-row" style="margin-bottom:4px">
+                            <a-button size="small" @click="cancelRefundSpecialModes(task)">取消</a-button>
+                          </div>
                           <div class="refund-setup-row">
                             <span class="refund-setup-label">返款节点</span>
                             <a-radio-group v-model:value="task._sel_refund_sequence" size="small" @change="syncRefundComputed(task)">
@@ -410,23 +449,40 @@
                           </div>
 
                           <div v-if="task._sel_refund_method === 'PayPal'" class="refund-row">
-                            <label>贝宝账号</label>
+                            <label>买手 PayPal 邮箱</label>
                             <a-input v-model:value="task._buyer_paypal_email" size="small" style="width:220px" placeholder="amanda@example.com" />
                           </div>
 
                           <div class="refund-amount-box">
                             <div class="refund-amount-title">金额明细</div>
-                            <div v-if="task._sel_refund_method === 'PayPal'" class="refund-formula-row">
-                              <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:120px" prefix="$" @change="syncRefundComputed(task)" />
-                              <span>+</span>
-                              <a-input-number v-model:value="task._refund_fee_usd" size="small" :min="0" :precision="2" style="width:120px" prefix="$" @change="syncRefundComputed(task)" />
-                              <span>=</span>
-                              <a-input-number :value="getRefundFinalAmount(task)" size="small" style="width:130px" prefix="$" disabled />
+                            <div class="refund-product-ref">系统产品标价（参考）<span class="refund-product-ref-val">${{ Number(task.product_price || 0).toFixed(2) }}</span></div>
+                            <div v-if="task._sel_refund_method === 'PayPal'" class="refund-amount-fields">
+                              <div class="raf-line">
+                                <span class="raf-label">实付金额</span>
+                                <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                                <span class="raf-hint">买手实际支付</span>
+                              </div>
+                              <div class="raf-line">
+                                <span class="raf-label">贝宝手续费</span>
+                                <a-input-number v-model:value="task._refund_fee_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                                <span class="raf-hint">由财务承担的手续费，计入打款总额</span>
+                              </div>
+                              <div class="raf-line raf-total">
+                                <span class="raf-label">合计返款</span>
+                                <span class="raf-total-val">${{ getRefundFinalAmount(task).toFixed(2) }}</span>
+                              </div>
                             </div>
-                            <div v-else class="refund-formula-row">
-                              <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:120px" prefix="$" @change="syncRefundComputed(task)" />
-                              <span>➡️</span>
-                              <a-input-number v-model:value="task._refund_final_amount_usd" size="small" :min="0" :precision="2" style="width:130px" prefix="$" />
+                            <div v-else class="refund-amount-fields">
+                              <div class="raf-line">
+                                <span class="raf-label">实付金额</span>
+                                <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                                <span class="raf-hint">买手实际支付（可与标价不同）</span>
+                              </div>
+                              <div class="raf-line">
+                                <span class="raf-label">应返礼品卡面额</span>
+                                <a-input-number v-model:value="task._refund_final_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" />
+                                <span class="raf-hint">发给买手的卡面金额，可与实付一致或含补贴</span>
+                              </div>
                             </div>
                           </div>
 
@@ -443,7 +499,7 @@
                               :loading="task._submitting_refund"
                               :disabled="!getRefundFinalAmount(task)"
                               @click="submitRefundRequest(task)"
-                            >提交返款申请</a-button>
+                            >{{ refundSubmitButtonText(task) }}</a-button>
                           </div>
                         </template>
                     </div>
@@ -517,8 +573,30 @@
                         </div>
                         <div class="refund-action-row">
                           <a-button type="primary" size="small" :loading="task._saving_screenshot" :disabled="!task._input_screenshot_url" @click="saveScreenshot(task)">提交</a-button>
-                          <a-button type="primary" size="small" :loading="task._completing" @click="completeTask(task)" style="background:#059669;border-color:#059669">标记已完成</a-button>
                         </div>
+                    </div>
+                  </div>
+
+                  <div class="wf-panel">
+                    <div class="wf-panel-head">
+                      <div class="wf-panel-header">
+                        <span class="wf-panel-index">5.</span>
+                        <span>子单备注</span>
+                        <span v-if="task.notes" class="wf-panel-status done">已填写</span>
+                        <span v-else class="wf-panel-status todo">选填</span>
+                      </div>
+                    </div>
+                    <div class="wf-panel-body">
+                      <div class="refund-row">
+                        <label>子单备注</label>
+                        <a-input
+                          v-model:value="task._edit_order_notes"
+                          size="small"
+                          style="width:360px"
+                          placeholder="填写子单备注"
+                          @blur="quickSave(task, 'notes', task._edit_order_notes)"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -689,6 +767,12 @@
         </a-form>
       </div>
     </a-modal>
+
+    <SubOrderOpsDrawer
+      v-model:open="taskOpsDetailOpen"
+      :sub-order-id="taskOpsDetailTarget?.id || ''"
+      :fallback-detail="taskOpsDetailTarget"
+    />
   </div>
 </template>
 
@@ -703,6 +787,7 @@ import {
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import { useCurrentUser } from '../composables/useCurrentUser'
+import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 const ALL_STAFF_KEY = '__all_staff__'
 const { currentUser, isAdmin, loadFromStorage } = useCurrentUser()
@@ -743,10 +828,12 @@ const rejectModalOpen = ref(false)
 const rejectSaving = ref(false)
 const rejectForm = ref<any>({ reason: '' })
 const rejectTarget = ref<any>(null)
+const taskOpsDetailOpen = ref(false)
+const taskOpsDetailTarget = ref<any>(null)
 
 type WorkbenchNavKey = 'pending' | 'improving' | 'afterSale'
 
-const workflowSteps = [0, 1, 2, 3]
+const workflowSteps = [0, 1, 2, 3, 4]
 const wbViewMode = ref<'order' | 'sub'>('order')
 const wbNav = ref<WorkbenchNavKey>('pending')
 const expandedOrderIds = ref<string[]>([])
@@ -907,8 +994,8 @@ function getDangerClass(task: any) {
 function getTaskCheckpoint(task: any) {
   if (isDone(task.status)) return '已完成'
   if (!task.buyer_id) return '待分配买手'
-  if (!task.refund_method || !task.refund_sequence) return '待设置退款'
-  if (task.refund_status !== '已退款') return task._refund_request ? '待退款完成' : '待申请退款'
+  if (!task.refund_method || !task.refund_sequence) return '待设置返款'
+  if (task.refund_status !== '已退款') return task._refund_request ? '待返款完成' : '待申请返款'
   if (!task.amazon_order_id) return '待填写订单号'
   if (!task.review_screenshot_url) return '待上传留评'
   return '处理中'
@@ -940,7 +1027,207 @@ function estimateDeliveryDate(placedAt: string) {
 }
 
 function isRefundStepReadonly(task: any) {
-  return task.refund_status === '已退款' || task._refund_request?.status === '已处理'
+  if (task._refund_supplement_mode || task._refund_correction_mode) return false
+  if (task._refund_request_pending) return false
+  return task.refund_status === '已退款' || task._refund_request_latest_processed?.status === '已处理'
+}
+
+function refundPanelTitle(task: any) {
+  if (task._refund_supplement_mode) return '追加返款申请'
+  if (task._refund_correction_mode) return '更正返款申请'
+  if (isRefundStepReadonly(task)) return '财务返款申请'
+  if (task._refund_request_pending) return '返款申请（待审核）'
+  return '返款申请'
+}
+
+function inferActualPaidUsd(req: any) {
+  if (!req) return 0
+  const total = Number(req.refund_amount_usd || 0)
+  const fee = Number(req.paypal_fee_usd || 0)
+  const stored = Number(req.actual_paid_usd || 0)
+  if (stored > 0) return stored
+  return Math.max(0, Number((total - fee).toFixed(2)))
+}
+
+function refundRequestTypeLabel(req: any) {
+  if (!req?.request_type || req.request_type === 'initial') return '首笔'
+  if (req.request_type === 'supplement') return '追加'
+  if (req.request_type === 'correction') return '更正'
+  return String(req.request_type)
+}
+
+function refundStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    '待退款': '待返款',
+    '退款中': '返款中',
+    '已退款': '已返款',
+    '退款失败': '返款失败',
+  }
+  return map[status] || status || ''
+}
+
+function processedRefundsForDisplay(task: any) {
+  const raw = (task._refund_requests_list || []).filter((r: any) => r.status === '已处理')
+  if (raw.length) {
+    return raw.slice().sort((a: any, b: any) =>
+      new Date(a.created_at || a.updated_at).getTime() - new Date(b.created_at || b.updated_at).getTime())
+  }
+  if (task.refund_status === '已退款' && Number(task.refund_amount) > 0) {
+    return [{
+      id: 'synthetic-from-sub-order',
+      status: '已处理',
+      refund_method: task.refund_method || 'PayPal',
+      refund_amount_usd: Number(task.refund_amount || 0),
+      actual_paid_usd: Number(task.actual_paid_usd || 0),
+      paypal_fee_usd: Number(task.paypal_fee_usd || 0),
+      request_type: 'initial',
+      product_price: task.product_price,
+      buyer_paypal_email: task.buyer_paypal_email,
+      created_at: task.refund_date,
+      updated_at: task.refund_date,
+      _synthetic: true,
+    }]
+  }
+  return []
+}
+
+function hasPaypalReceiptInProcessed(task: any) {
+  return processedRefundsForDisplay(task).some((r: any) => !!r.paypal_receipt_screenshot)
+}
+
+function aggregateProcessedRefunds(task: any) {
+  const rows = processedRefundsForDisplay(task)
+  let paypalActual = 0
+  let paypalFee = 0
+  let paypalTotal = 0
+  let paypalCount = 0
+  let giftFace = 0
+  let giftCount = 0
+  for (const r of rows) {
+    if (r.refund_method === 'PayPal') {
+      paypalCount++
+      paypalActual += inferActualPaidUsd(r)
+      paypalFee += Number(r.paypal_fee_usd || 0)
+      paypalTotal += Number(r.refund_amount_usd || 0)
+    } else if (r.refund_method === '礼品卡') {
+      giftCount++
+      giftFace += Number(r.gift_card_face_value_usd || r.refund_amount_usd || 0)
+    }
+  }
+  const any = paypalCount > 0 || giftCount > 0
+  return {
+    any,
+    paypalActual,
+    paypalFee,
+    paypalTotal,
+    paypalCount,
+    giftFace,
+    giftCount,
+  }
+}
+
+function formatAuditEdit(e: any) {
+  const labels: Record<string, string> = {
+    buyer_paypal_email: '买手 PayPal 邮箱',
+    actual_paid_usd: '实付金额 (USD)',
+    paypal_fee_usd: '贝宝手续费 (USD)',
+    refund_amount_usd: '合计返款 (USD)',
+    refund_method: '返款方式',
+    refund_sequence: '返款节点',
+  }
+  const lb = labels[e.field] || e.field
+  const fromVal = e.from === '' || e.from == null ? '（空）' : String(e.from)
+  const toVal = e.to === '' || e.to == null ? '（空）' : String(e.to)
+  return `${lb}：${fromVal} → ${toVal}`
+}
+
+function hydrateRefundFormFromRequest(task: any, req: any) {
+  if (!req) return
+  task._sel_refund_method = req.refund_method || task._sel_refund_method
+  task._sel_refund_sequence = req.refund_sequence || task._sel_refund_sequence || task.refund_sequence
+  task._buyer_paypal_email = req.buyer_paypal_email || task._buyer_paypal_email || ''
+  const method = req.refund_method || task._sel_refund_method
+  if (method === 'PayPal') {
+    const fee = Number(req.paypal_fee_usd || 0)
+    const total = Number(req.refund_amount_usd || 0)
+    const storedActual = Number(req.actual_paid_usd || 0)
+    if (storedActual > 0 || fee > 0) {
+      task._refund_amount_usd = storedActual > 0 ? storedActual : Math.max(0, Number((total - fee).toFixed(2)))
+      task._refund_fee_usd = fee
+    } else {
+      task._refund_amount_usd = total
+      task._refund_fee_usd = 0
+    }
+  } else {
+    const actual = Number(req.actual_paid_usd || 0)
+    task._refund_amount_usd = actual > 0 ? actual : Number(req.product_price || task.product_price || 0)
+    const face = Number(req.refund_amount_usd || req.gift_card_face_value_usd || 0)
+    task._refund_final_amount_usd = face > 0 ? face : Number(task._refund_amount_usd || 0)
+  }
+  const rawNotes = req.notes || ''
+  task._need_finance_screenshot = /\[需财务返款截图\]/.test(rawNotes)
+  task._refund_apply_notes = rawNotes.replace(/\s*\[需财务返款截图\]\s*$/, '').trim()
+  syncRefundComputed(task)
+}
+
+function startSupplementalRefund(task: any) {
+  if (!task._extra_refund_amount || Number(task._extra_refund_amount) <= 0) {
+    message.warning('请先填写追加基数金额（美元）')
+    return
+  }
+  task._refund_supplement_mode = true
+  task._refund_correction_mode = false
+  task._refund_correction_target_id = null
+  task._refund_amount_usd = Number(task._extra_refund_amount)
+  task._refund_fee_usd = 0
+  let method = task._refund_request_latest_processed?.refund_method || task.refund_method || '礼品卡'
+  if (task._extra_refund_method === '礼品卡') method = '礼品卡'
+  else if (task._extra_refund_method === 'PayPal') method = 'PayPal'
+  else if (task._extra_refund_method === '同首笔') {
+    method = task._refund_request_latest_processed?.refund_method || task.refund_method || '礼品卡'
+  }
+  task._sel_refund_method = method
+  syncRefundComputed(task)
+  if (task._sel_refund_method === '礼品卡') {
+    task._refund_final_amount_usd = Number(task._extra_refund_amount)
+  }
+}
+
+function startCorrectionRefund(task: any) {
+  const base = task._refund_request_latest_processed
+  if (!base) {
+    message.info('暂无已处理的返款记录可关联更正')
+    return
+  }
+  task._refund_correction_mode = true
+  task._refund_supplement_mode = false
+  task._refund_correction_target_id = base.id
+  hydrateRefundFormFromRequest(task, base)
+  message.info('已带入上一笔信息，请修改 PayPal 邮箱或金额后提交')
+}
+
+function cancelRefundSpecialModes(task: any) {
+  task._refund_supplement_mode = false
+  task._refund_correction_mode = false
+  task._refund_correction_target_id = null
+  if (task._refund_request_pending) {
+    hydrateRefundFormFromRequest(task, task._refund_request_pending)
+  } else {
+    task._sel_refund_sequence = task.refund_sequence || '预付'
+    task._sel_refund_method = task.refund_method || '礼品卡'
+    task._refund_amount_usd = task.product_price ? Number(task.product_price) : 0
+    task._refund_fee_usd = task.__mock_refund_fee_usd || 0
+    task._refund_final_amount_usd = task.product_price ? Number(task.product_price) : 0
+    task._buyer_paypal_email = task.__mock_paypal_email || task.buyer?.paypal_email || ''
+    syncRefundComputed(task)
+  }
+}
+
+function refundSubmitButtonText(task: any) {
+  if (task._refund_supplement_mode) return '提交追加返款申请'
+  if (task._refund_correction_mode) return '提交更正返款申请'
+  if (task._refund_request_pending && !task._refund_supplement_mode && !task._refund_correction_mode) return '更新返款申请'
+  return '提交返款申请'
 }
 
 function isPrepayMode(task: any) {
@@ -990,9 +1277,11 @@ function buildMockTasks() {
       _order_status: '进行中',
       sub_order_number: 'SUB-MOCK-1001',
       status: '已分配',
+      staff_name: '张敏',
       buyer_id: 'mock_buyer_amanda',
       buyer_name: 'Amanda Garcia',
-      refund_status: '待退款',
+      refund_status: '退款中',
+      refund_amount: 23.71,
       refund_method: '礼品卡',
       refund_sequence: '预付',
       product_name: '便携榨汁杯',
@@ -1005,7 +1294,66 @@ function buildMockTasks() {
       product_price: 21.21,
       scheduled_date: tomorrow,
       keyword: 'portable blender',
+      order_type: '免评',
+      review_type: '文字评',
+      customer_name: '广州优品贸易',
+      sales_person: '王浩',
+      variant_info: '白色',
+      task_notes: '商务备注：预付模式，买手确认后尽快返款',
+      notes: '订单备注：客户要求先发礼品卡',
+      created_at: now.subtract(1, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(10, 'hour').toISOString(),
       _is_mock: true,
+      __mock_refund_requests: [
+        {
+          id: 'mock_rr_gift_initial_1001',
+          sub_order_id: 'mock_prepay_gift_pending',
+          status: '已处理',
+          request_type: 'initial',
+          refund_method: '礼品卡',
+          refund_sequence: '预付',
+          refund_amount_usd: 21.21,
+          actual_paid_usd: 21.21,
+          gift_card_face_value_usd: 21.21,
+          paypal_fee_usd: 0,
+          assigned_gift_card_number: 'GC-1001-INIT',
+          assigned_gift_card_code: 'INIT-11AA-22BB',
+          notes: '先按原始售价发首笔礼品卡',
+          finance_notes: '礼品卡已发放，买手确认可正常兑换',
+          created_at: now.subtract(9, 'hour').toISOString(),
+          handled_at: now.subtract(8, 'hour').toISOString(),
+          updated_at: now.subtract(8, 'hour').toISOString(),
+        },
+        {
+          id: 'mock_rr_gift_supplement_1001',
+          sub_order_id: 'mock_prepay_gift_pending',
+          status: '待处理',
+          request_type: 'supplement',
+          supplement_reason: '产品涨价',
+          refund_method: '礼品卡',
+          refund_sequence: '预付',
+          refund_amount_usd: 2.50,
+          actual_paid_usd: 23.71,
+          gift_card_face_value_usd: 2.50,
+          paypal_fee_usd: 0,
+          assigned_gift_card_number: 'GC-1001-SUP',
+          assigned_gift_card_code: 'SUP-33CC-44DD',
+          notes: '买手反馈下单时价格上涨，补差额礼品卡',
+          finance_notes: '待财务分配补差礼品卡',
+          created_at: now.subtract(3, 'hour').toISOString(),
+          updated_at: now.subtract(2, 'hour').toISOString(),
+          staff_change_log: [
+            {
+              at: now.subtract(2, 'hour').subtract(20, 'minute').toISOString(),
+              staff_name: '张敏',
+              edits: [
+                { field: 'actual_paid_usd', from: '21.21', to: '23.71' },
+                { field: 'refund_amount_usd', from: '0', to: '2.50' },
+              ],
+            },
+          ],
+        },
+      ],
     },
     {
       id: 'mock_prepay_paypal_pending',
@@ -1014,6 +1362,7 @@ function buildMockTasks() {
       _order_status: '进行中',
       sub_order_number: 'SUB-MOCK-1002',
       status: '进行中',
+      staff_name: '李倩',
       buyer_id: 'mock_buyer_emily',
       buyer_name: 'Emily Smith',
       refund_status: '待退款',
@@ -1029,6 +1378,15 @@ function buildMockTasks() {
       product_price: 21.21,
       scheduled_date: dayAfter,
       keyword: 'wireless earbuds',
+      order_type: '图外评',
+      review_type: '图片评',
+      customer_name: '深圳芯选电子',
+      sales_person: 'Luna',
+      variant_info: '黑色蓝牙5.3',
+      task_notes: '商务备注：客户急单，今天要回传订单号',
+      notes: '订单备注：先返款再下单',
+      created_at: now.subtract(2, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(20, 'hour').toISOString(),
       _is_mock: true,
       __mock_refund_fee_usd: 1.5,
       __mock_paypal_email: 'emily.smith@example.com',
@@ -1040,10 +1398,11 @@ function buildMockTasks() {
       _order_status: '进行中',
       sub_order_number: 'SUB-MOCK-1003',
       status: '已下单',
+      staff_name: '王磊',
       buyer_id: 'mock_buyer_olivia',
       buyer_name: 'Olivia White',
       refund_status: '已退款',
-      refund_amount: 22.71,
+      refund_amount: 29.16,
       refund_method: 'PayPal',
       refund_sequence: '评后返',
       product_name: '人体工学鼠标',
@@ -1056,15 +1415,98 @@ function buildMockTasks() {
       product_price: 21.21,
       scheduled_date: today,
       amazon_order_id: '111-1111111-1111111',
+      order_type: '图外评',
+      review_type: '图片评',
+      customer_name: '上海森拓科技',
+      sales_person: '王浩',
+      variant_info: '人体工学版',
+      task_notes: '商务备注：客户要求 4/5 前完成全部返款',
+      notes: '订单备注：首笔贝宝，涨价部分改走礼品卡',
+      created_at: now.subtract(8, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(7, 'day').toISOString(),
+      amazon_order_placed_at: now.subtract(6, 'day').toISOString(),
+      delivery_confirmed_at: now.subtract(4, 'day').toISOString(),
+      review_submitted_at: now.subtract(2, 'day').toISOString(),
       _is_mock: true,
-      __mock_refund_request: {
-        status: '已处理',
-        refund_method: 'PayPal',
-        refund_amount_usd: 22.71,
-        assigned_paypal_email: 'olivia.white@example.com',
-        paypal_receipt_screenshot: '',
-        updated_at: now.subtract(1, 'day').toISOString(),
-      },
+      __mock_refund_requests: [
+        {
+          id: 'mock_rr_paypal_initial',
+          sub_order_id: 'mock_after_review_paypal_done',
+          status: '已处理',
+          request_type: 'initial',
+          refund_method: 'PayPal',
+          refund_sequence: '评后返',
+          refund_amount_usd: 22.71,
+          actual_paid_usd: 21.21,
+          paypal_fee_usd: 1.5,
+          buyer_paypal_email: 'olivia.white@example.com',
+          paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=PayPal+Receipt+1',
+          product_price: 21.21,
+          notes: '买手要求使用本人主邮箱收款',
+          finance_notes: '财务已使用公司 PayPal 完成首笔返款',
+          created_at: now.subtract(6, 'day').toISOString(),
+          handled_at: now.subtract(5, 'day').add(1, 'hour').toISOString(),
+          updated_at: now.subtract(5, 'day').toISOString(),
+          staff_change_log: [
+            {
+              at: now.subtract(5, 'day').subtract(3, 'hour').toISOString(),
+              staff_name: '业务员',
+              edits: [
+                { field: 'buyer_paypal_email', from: 'olivia.typo@wrong.com', to: 'olivia.white@example.com' },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'mock_rr_gift_supplement',
+          sub_order_id: 'mock_after_review_paypal_done',
+          status: '已处理',
+          request_type: 'supplement',
+          supplement_reason: '产品涨价',
+          refund_method: '礼品卡',
+          refund_sequence: '评后返',
+          refund_amount_usd: 5.25,
+          actual_paid_usd: 24.99,
+          gift_card_face_value_usd: 5.25,
+          paypal_fee_usd: 0,
+          assigned_gift_card_number: 'GC-SUP-7788',
+          assigned_gift_card_code: 'SUPP-AB12-CD34',
+          product_price: 21.21,
+          notes: '产品涨价补差额，改发礼品卡',
+          finance_notes: '已分配礼品卡并通知买手兑换',
+          created_at: now.subtract(3, 'day').toISOString(),
+          handled_at: now.subtract(1, 'day').subtract(2, 'hour').toISOString(),
+          updated_at: now.subtract(1, 'day').toISOString(),
+        },
+        {
+          id: 'mock_rr_paypal_correction',
+          sub_order_id: 'mock_after_review_paypal_done',
+          status: '已处理',
+          request_type: 'correction',
+          supplement_reason: '更正贝宝邮箱',
+          refund_method: 'PayPal',
+          refund_sequence: '评后返',
+          refund_amount_usd: 1.20,
+          actual_paid_usd: 0,
+          paypal_fee_usd: 1.2,
+          buyer_paypal_email: 'olivia.new@example.com',
+          paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=PayPal+Receipt+2',
+          notes: '原邮箱填写错误，补发手续费并更正到账邮箱',
+          finance_notes: '原付款失败后已重新打款到新邮箱',
+          created_at: now.subtract(22, 'hour').toISOString(),
+          handled_at: now.subtract(20, 'hour').toISOString(),
+          updated_at: now.subtract(20, 'hour').toISOString(),
+          staff_change_log: [
+            {
+              at: now.subtract(21, 'hour').toISOString(),
+              staff_name: '王磊',
+              edits: [
+                { field: 'buyer_paypal_email', from: 'olivia.white@example.com', to: 'olivia.new@example.com' },
+              ],
+            },
+          ],
+        },
+      ],
     },
     {
       id: 'mock_after_review_gift_done',
@@ -1073,6 +1515,7 @@ function buildMockTasks() {
       _order_status: '进行中',
       sub_order_number: 'SUB-MOCK-1004',
       status: '已下单',
+      staff_name: '陈晨',
       buyer_id: 'mock_buyer_mia',
       buyer_name: 'Mia Brown',
       refund_status: '已退款',
@@ -1089,14 +1532,34 @@ function buildMockTasks() {
       product_price: 23.5,
       scheduled_date: today,
       amazon_order_id: '222-2222222-2222222',
+      order_type: '免评',
+      review_type: '文字评',
+      customer_name: '杭州山野户外',
+      sales_person: '陈婷',
+      variant_info: '650ml',
+      task_notes: '商务备注：本单返礼品卡即可',
+      notes: '订单备注：优先发 25 面额礼品卡',
+      created_at: now.subtract(9, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(8, 'day').toISOString(),
+      amazon_order_placed_at: now.subtract(7, 'day').toISOString(),
+      delivery_confirmed_at: now.subtract(5, 'day').toISOString(),
+      review_submitted_at: now.subtract(3, 'day').toISOString(),
       _is_mock: true,
       __mock_refund_request: {
+        id: 'mock_rr_gift_done',
+        sub_order_id: 'mock_after_review_gift_done',
         status: '已处理',
         refund_method: '礼品卡',
         refund_amount_usd: 23.5,
+        actual_paid_usd: 23.5,
+        gift_card_face_value_usd: 23.5,
+        request_type: 'initial',
         assigned_gift_card_number: 'GC-7788-9922',
         assigned_gift_card_code: 'A1B2-C3D4-E5F6',
         paypal_receipt_screenshot: '',
+        notes: '礼品卡返款',
+        finance_notes: '礼品卡已发放并确认可用',
+        created_at: now.subtract(3, 'day').toISOString(),
         updated_at: now.subtract(2, 'day').toISOString(),
       },
     },
@@ -1110,6 +1573,7 @@ function getStepDone(task: any, step: number): boolean {
     case 1: return isRefundStepReadonly(task)
     case 2: return !!task.amazon_order_id
     case 3: return !!task.review_screenshot_url
+    case 4: return !!(task.notes || '').trim()
     default: return false
   }
 }
@@ -1273,6 +1737,7 @@ function initTaskFields(task: any) {
   task._expanded = false
   task._edit_variant = task.variant_info || ''
   task._edit_task_notes = task.task_notes || ''
+  task._edit_order_notes = task.notes || ''
   task._sel_buyer_id = task.buyer_id || null
   task._editing_buyer = false
   task._saving_buyer = false
@@ -1287,10 +1752,34 @@ function initTaskFields(task: any) {
   task._buyer_paypal_email = task.__mock_paypal_email || task.buyer?.paypal_email || ''
   task._need_finance_screenshot = false
   task._extra_refund_amount = null
+  task._extra_refund_method = '同首笔'
   task._extra_refund_reason = '产品涨价'
   task._refund_apply_notes = ''
   task._submitting_refund = false
-  task._refund_request = task.__mock_refund_request || null
+  task._refund_supplement_mode = false
+  task._refund_correction_mode = false
+  task._refund_correction_target_id = null
+  task._refund_requests_list = []
+  task._refund_request_pending = null
+  task._refund_request_latest_processed = null
+  task._refund_request = null
+  const mockMulti = task.__mock_refund_requests
+  const mockOne = task.__mock_refund_request
+  if (mockMulti?.length) {
+    task._refund_requests_list = mockMulti
+    task._refund_request_pending = mockMulti.find((r: any) => r.status === '待处理') || null
+    const proc = mockMulti.filter((r: any) => r.status === '已处理')
+    task._refund_request_latest_processed = proc.length
+      ? proc.slice().sort((a: any, b: any) =>
+          new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime())[0]
+      : null
+    task._refund_request = task._refund_request_pending || task._refund_request_latest_processed
+  } else if (mockOne) {
+    task._refund_requests_list = [mockOne]
+    task._refund_request_pending = mockOne.status === '待处理' ? mockOne : null
+    task._refund_request_latest_processed = mockOne.status === '已处理' ? mockOne : null
+    task._refund_request = task._refund_request_pending || task._refund_request_latest_processed
+  }
   task._input_amazon_order_id = task.amazon_order_id || ''
   task._editing_amazon = false
   task._saving_amazon = false
@@ -1342,15 +1831,23 @@ async function loadTasks() {
         .from('refund_requests')
         .select('*')
         .in('sub_order_id', subOrderIds)
-        .in('status', ['待处理', '已处理'])
         .order('created_at', { ascending: false })
-      if (refundReqs) {
-        const reqMap: Record<string, any> = {}
-        refundReqs.forEach(r => {
-          if (!reqMap[r.sub_order_id]) reqMap[r.sub_order_id] = r
-        })
-        tasks.forEach(t => { t._refund_request = reqMap[t.id] || null })
-      }
+      const bySub: Record<string, any[]> = {}
+      ;(refundReqs || []).forEach(r => {
+        if (!bySub[r.sub_order_id]) bySub[r.sub_order_id] = []
+        bySub[r.sub_order_id].push(r)
+      })
+      tasks.forEach(t => {
+        const list = (bySub[t.id] || []).slice().sort((a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        t._refund_requests_list = list
+        t._refund_request_pending = list.find(r => r.status === '待处理') || null
+        t._refund_request_latest_processed = list.find(r => r.status === '已处理') || null
+        t._refund_request = t._refund_request_pending || t._refund_request_latest_processed || null
+        if (t._refund_request_pending) {
+          hydrateRefundFormFromRequest(t, t._refund_request_pending)
+        }
+      })
     }
 
     let mergedTasks = tasks
@@ -1411,6 +1908,11 @@ function focusTask(task: any) {
   taskSearch.value = task.sub_order_number || task._order_number || ''
   filterTaskList()
   allTasks.value.forEach(t => { t._expanded = t.id === task.id })
+}
+
+function openTaskOpsDetail(task: any) {
+  taskOpsDetailTarget.value = task
+  taskOpsDetailOpen.value = true
 }
 
 async function quickSave(task: any, field: string, value: any) {
@@ -1507,32 +2009,43 @@ async function assignBuyer(task: any) {
 async function submitRefundRequest(task: any) {
   const finalAmount = getRefundFinalAmount(task)
   if (!finalAmount) return
-  task._submitting_refund = true
-  try {
-    const buyer = buyerList.value.find(b => b.id === task.buyer_id)
-    const selectedMethod = task._sel_refund_method || task.refund_method
-    const paypalEmail = selectedMethod === 'PayPal'
-      ? (task._buyer_paypal_email || buyer?.paypal_email || '')
+
+  if (task._refund_supplement_mode && task._extra_refund_reason === '产品涨价') {
+    const ap = Number(task._refund_amount_usd || 0)
+    const pp = Number(task.product_price || 0)
+    if (Math.abs(ap - pp) < 0.005) {
+      message.error('选择「产品涨价」追加时，实付金额必须与系统标价不同，请填写涨价后的真实支付金额')
+      return
+    }
+  }
+
+  const buyer = buyerList.value.find(b => b.id === task.buyer_id)
+  const selectedMethod = task._sel_refund_method || task.refund_method
+  const paypalEmail = selectedMethod === 'PayPal'
+    ? (task._buyer_paypal_email || buyer?.paypal_email || '')
+    : ''
+  if (selectedMethod === 'PayPal' && !paypalEmail) {
+    message.error('请填写买手 PayPal 邮箱')
+    return
+  }
+
+  const pending = task._refund_request_pending
+  const isUpdatePending = !!(pending && !task._refund_supplement_mode && !task._refund_correction_mode)
+
+  const actualPaid = Number(task._refund_amount_usd || 0)
+  const feeUsd = selectedMethod === 'PayPal' ? Number(task._refund_fee_usd || 0) : 0
+  const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务返款截图]' : ''}`.trim()
+  const supplementReason = task._refund_supplement_mode
+    ? (task._extra_refund_reason || '追加返款')
+    : task._refund_correction_mode
+      ? '邮箱或金额更正'
       : ''
 
-    const payload = {
-      sub_order_id: task.id,
-      order_id: task.order_id,
-      sub_order_number: task.sub_order_number,
-      buyer_name: task.buyer_name || '',
-      buyer_paypal_email: paypalEmail,
-      refund_amount_usd: finalAmount,
-      refund_amount: finalAmount,
-      refund_method: selectedMethod,
-      refund_sequence: task._sel_refund_sequence || task.refund_sequence,
-      product_name: task.product_name || '',
-      product_price: task.product_price || 0,
-      asin: task.asin || '',
-      store_name: task.store_name || '',
-      staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
-      notes: `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务返款截图]' : ''}`.trim(),
-      status: '待处理',
-    }
+  const wasSupplement = task._refund_supplement_mode
+  const wasCorrection = task._refund_correction_mode
+
+  task._submitting_refund = true
+  try {
     const configPayload = {
       refund_method: task._sel_refund_method || task.refund_method,
       refund_sequence: task._sel_refund_sequence || task.refund_sequence,
@@ -1541,11 +2054,90 @@ async function submitRefundRequest(task: any) {
     if (e1) throw e1
     Object.assign(task, configPayload)
 
-    const { data, error } = await supabase.from('refund_requests').insert(payload).select().maybeSingle()
-    if (error) throw error
-    task._refund_request = data
+    const commonFields: Record<string, any> = {
+      buyer_paypal_email: paypalEmail,
+      refund_amount_usd: finalAmount,
+      refund_amount: finalAmount,
+      actual_paid_usd: actualPaid,
+      paypal_fee_usd: feeUsd,
+      refund_method: selectedMethod,
+      refund_sequence: task._sel_refund_sequence || task.refund_sequence,
+      product_name: task.product_name || '',
+      product_price: task.product_price || 0,
+      asin: task.asin || '',
+      store_name: task.store_name || '',
+      staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
+      notes,
+    }
+
+    if (isUpdatePending) {
+      const staffName = staffList.value.find(s => s.id === selectedStaffId.value)?.name || ''
+      const existingLog = Array.isArray(pending.staff_change_log) ? pending.staff_change_log : []
+      const edits: { field: string; from: any; to: any }[] = []
+      if ((pending.buyer_paypal_email || '') !== paypalEmail) {
+        edits.push({ field: 'buyer_paypal_email', from: pending.buyer_paypal_email || '', to: paypalEmail })
+      }
+      if (Number(pending.actual_paid_usd ?? 0) !== actualPaid) {
+        edits.push({ field: 'actual_paid_usd', from: Number(pending.actual_paid_usd ?? 0), to: actualPaid })
+      }
+      if (Number(pending.paypal_fee_usd ?? 0) !== feeUsd) {
+        edits.push({ field: 'paypal_fee_usd', from: Number(pending.paypal_fee_usd ?? 0), to: feeUsd })
+      }
+      if (Number(pending.refund_amount_usd ?? 0) !== finalAmount) {
+        edits.push({ field: 'refund_amount_usd', from: Number(pending.refund_amount_usd ?? 0), to: finalAmount })
+      }
+      if ((pending.refund_method || '') !== selectedMethod) {
+        edits.push({ field: 'refund_method', from: pending.refund_method || '', to: selectedMethod })
+      }
+      if ((pending.refund_sequence || '') !== (task._sel_refund_sequence || task.refund_sequence || '')) {
+        edits.push({
+          field: 'refund_sequence',
+          from: pending.refund_sequence || '',
+          to: task._sel_refund_sequence || task.refund_sequence || '',
+        })
+      }
+      const updatePayload: Record<string, any> = { ...commonFields }
+      if (edits.length) {
+        updatePayload.staff_change_log = [...existingLog, { at: new Date().toISOString(), staff_name: staffName, edits }]
+      }
+
+      const { data, error } = await supabase
+        .from('refund_requests')
+        .update(updatePayload)
+        .eq('id', pending.id)
+        .select()
+        .maybeSingle()
+      if (error) throw error
+      task._refund_request_pending = data
+      task._refund_request = data
+      const idx = (task._refund_requests_list || []).findIndex((r: any) => r.id === pending.id)
+      if (idx >= 0) task._refund_requests_list[idx] = data
+      message.success('返款申请已更新')
+    } else {
+      const insertPayload: Record<string, any> = {
+        ...commonFields,
+        sub_order_id: task.id,
+        order_id: task.order_id,
+        sub_order_number: task.sub_order_number,
+        buyer_name: task.buyer_name || '',
+        status: '待处理',
+        request_type: wasSupplement ? 'supplement' : wasCorrection ? 'correction' : 'initial',
+        supersedes_request_id: wasCorrection ? task._refund_correction_target_id : null,
+        supplement_reason: wasSupplement || wasCorrection ? supplementReason : '',
+      }
+      const { data, error } = await supabase.from('refund_requests').insert(insertPayload).select().maybeSingle()
+      if (error) throw error
+      task._refund_request_pending = data
+      task._refund_request = data
+      task._refund_requests_list = [data, ...((task._refund_requests_list || []).filter((r: any) => r.id !== data.id))]
+      task._refund_supplement_mode = false
+      task._refund_correction_mode = false
+      task._refund_correction_target_id = null
+      if (wasCorrection) message.success('更正返款申请已提交，等待财务处理')
+      else if (wasSupplement) message.success('追加返款申请已提交，等待财务处理')
+      else message.success('返款申请已提交，等待财务处理')
+    }
     task._refund_apply_notes = ''
-    message.success('退款申请已提交，等待财务处理')
   } catch (e: any) {
     message.error('提交失败：' + e.message)
   } finally {
@@ -1564,7 +2156,7 @@ async function markRefundDone(task: any) {
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
     if (error) throw error
     Object.assign(task, payload)
-    message.success('退款已确认完成')
+    message.success('返款已确认完成')
   } catch (e: any) {
     message.error('操作失败：' + e.message)
   }
@@ -2141,6 +2733,7 @@ onMounted(() => {
 .task-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .meta-row1 { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .meta-row2 { display: flex; align-items: center; flex-wrap: wrap; gap: 0; font-size: 12px; color: #6b7280; }
+.meta-row3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .sub-no-text { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; color: #1a1a2e; }
 .product-name-sm { font-size: 12px; color: #374151; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mono-sm { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 600; color: #374151; }
@@ -2161,6 +2754,30 @@ onMounted(() => {
 .keyword-badge { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 .keyword-link-badge { background: #ecfeff; color: #0891b2; border-color: #a5f3fc; text-decoration: none; cursor: pointer; display: inline-block; }
 .keyword-link-badge:hover { background: #cffafe; color: #0e7490; }
+.meta-focus-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px 0;
+  color: #1a1a2e;
+}
+.meta-focus-item-wide { max-width: 420px; }
+.meta-focus-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1a2e;
+  white-space: nowrap;
+}
+.meta-focus-value {
+  font-size: 12px;
+  font-weight: 500;
+  color: #1a1a2e;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .date-badge { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
 .date-ok { background: #f0fdf4; color: #16a34a; }
 .date-overdue { background: #fef2f2; color: #dc2626; }
@@ -2169,11 +2786,23 @@ onMounted(() => {
 .dot.done { background: #059669; }
 .dot.current { background: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
 .dot.pending { background: #e5e7eb; }
-.header-assign { font-size: 12px; }
+.header-assign { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .buyer-badge { background: #f0fdf4; color: #059669; border: 1px solid #bbf7d0; border-radius: 10px; padding: 2px 8px; font-weight: 500; white-space: nowrap; }
-.buyer-none { color: #f59e0b; font-size: 11px; }
-.commission-badge { font-size: 12px; color: #6b7280; white-space: nowrap; }
-.commission-badge strong { color: #059669; }
+.buyer-none {
+  color: #d97706;
+  font-size: 11px;
+  border: 1px solid rgba(217, 119, 6, 0.18);
+  background: rgba(217, 119, 6, 0.08);
+  border-radius: 10px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.assign-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #1a1a2e;
+  white-space: nowrap;
+}
 
 /* 工作流主体 */
 .workflow-body { border-top: 1px solid #e5e7eb; }
@@ -2189,8 +2818,8 @@ onMounted(() => {
 }
 .pi-item { display: flex; align-items: center; gap: 5px; padding: 3px 12px; border-right: 1px solid #e5e7eb; }
 .pi-item:last-child { border-right: none; }
-.pi-label { font-size: 11px; color: #9ca3af; font-weight: 500; white-space: nowrap; }
-.pi-val { font-size: 12px; color: #374151; }
+.pi-label { font-size: 12px; color: #1a1a2e; font-weight: 600; white-space: nowrap; }
+.pi-val { font-size: 12px; color: #1a1a2e; font-weight: 500; }
 
 /* Steps + Collapse 流程 */
 .workflow-steps-modern { padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 12px; }
@@ -2229,6 +2858,20 @@ onMounted(() => {
 .refund-amount-title { font-size: 12px; color: #1a1a2e; font-weight: 600; margin-bottom: 8px; }
 .refund-formula-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .refund-action-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.refund-compact-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.refund-compact-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.refund-compact-title { font-size: 13px; font-weight: 700; color: #1f2937; }
+.refund-compact-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: #6b7280; }
+.refund-compact-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .refund-readonly-summary {
   display: flex;
   align-items: center;
@@ -2248,6 +2891,116 @@ onMounted(() => {
   border-top: 1px dashed #e5e7eb;
   padding-top: 10px;
 }
+.extra-refund-tip { font-size: 11px; color: #6b7280; flex: 1 1 100%; }
+.refund-readonly-hint { font-size: 11px; color: #6b7280; font-weight: 500; }
+.refund-breakdown-readonly {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.rb-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.rb-row.muted { color: #9ca3af; font-size: 11px; margin-top: 2px; }
+.rb-row.rb-strong { font-weight: 600; color: #1a1a2e; padding-top: 4px; border-top: 1px dashed #e5e7eb; margin-top: 4px; }
+.rb-k { color: #6b7280; }
+.rb-v { color: #1a1a2e; font-variant-numeric: tabular-nums; }
+.refund-history-box {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.refund-history-title { font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600; }
+.refund-history-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.refund-history-row:last-child { border-bottom: none; }
+.refund-correct-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e5e7eb;
+  font-size: 11px;
+  color: #6b7280;
+}
+.correct-hint { font-weight: 500; color: #374151; }
+.correct-sub { flex: 1 1 100%; }
+.refund-product-ref { font-size: 11px; color: #6b7280; margin-bottom: 8px; }
+.refund-product-ref-val { font-weight: 600; color: #1a1a2e; margin-left: 6px; }
+.refund-amount-fields { display: flex; flex-direction: column; gap: 8px; }
+.raf-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.raf-label { min-width: 100px; font-size: 12px; color: #374151; font-weight: 500; }
+.raf-hint { font-size: 11px; color: #9ca3af; flex: 1 1 140px; }
+.raf-line.raf-total { padding-top: 6px; border-top: 1px dashed #bfdbfe; margin-top: 2px; }
+.raf-total-val { font-size: 14px; font-weight: 700; color: #2563eb; font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, monospace; }
+.refund-processed-list { display: flex; flex-direction: column; gap: 10px; }
+.refund-processed-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.rpc-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border-bottom: 1px solid #f0f0f0;
+}
+.rpc-reason { font-size: 11px; color: #7c3aed; font-weight: 500; }
+.rpc-time { margin-left: auto; font-size: 11px; color: #9ca3af; }
+.rpc-body { border: none !important; background: transparent !important; }
+.refund-grandsum {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+.rgs-title { font-size: 12px; font-weight: 700; color: #1e40af; margin-bottom: 6px; }
+.rgs-note { font-size: 11px; margin-top: 6px; line-height: 1.4; }
+.refund-mini-audit {
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  font-size: 11px;
+}
+.rma-title { font-weight: 600; color: #b45309; margin-bottom: 4px; }
+.rma-line { margin-top: 4px; color: #6b7280; }
+.rma-ul { margin: 4px 0 0 18px; padding: 0; color: #374151; }
+.refund-audit-trail {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e9d5ff;
+  border-radius: 8px;
+  background: #faf5ff;
+  font-size: 12px;
+}
+.rat-title { font-weight: 600; color: #6b21a8; margin-bottom: 6px; }
+.rat-entry { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e9d5ff; }
+.rat-entry:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.rat-meta { color: #6b7280; font-size: 11px; }
+.rat-ul { margin: 4px 0 0 18px; padding: 0; color: #374151; }
+.extra-method-label { font-size: 12px; color: #6b7280; white-space: nowrap; }
+.rpc-proof { padding: 0 10px 10px; }
+.refund-breakdown-readonly.empty-hint { padding: 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
 
 .workflow-steps { padding: 16px 20px 10px; display: flex; flex-direction: column; gap: 0; }
 .step-block { display: flex; gap: 14px; padding: 10px 0; position: relative; }
