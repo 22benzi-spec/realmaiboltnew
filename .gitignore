@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.harness
+public/harness-observer/*.json
 *.local
 
 # 环境变量（勿提交真实密钥）；保留 .env.example 供团队对照
