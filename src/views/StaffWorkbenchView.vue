@@ -11,7 +11,7 @@
             v-for="item in wbNavItems"
             :key="item.key"
             :class="['wb-nav-item', wbNav === item.key ? 'active' : '']"
-            @click="wbNav = item.key"
+            @click="setWorkbenchNav(item.key)"
           >
             <span class="wb-nav-label">{{ item.label }}</span>
             <span class="wb-nav-count">{{ item.count }}</span>
@@ -22,8 +22,70 @@
       <!-- 右侧主内容 -->
       <div class="workbench-main">
         <template v-if="selectedStaffId">
+          <div class="workbench-priority">
+            <div class="today-focus-card">
+              <div class="today-focus-head">
+                <div>
+                  <div class="today-focus-title">今日待办</div>
+                  <div class="today-focus-desc">优先处理今天到期和已超期的订单，其他时间维度只做提醒</div>
+                </div>
+                <span class="today-focus-result">{{ workbenchSummary.resultCount }} 条结果</span>
+              </div>
+              <div class="today-focus-stats">
+                <div class="today-stat">
+                  <span class="today-stat-label">主订单</span>
+                  <strong class="today-stat-value">{{ workbenchSummary.todayOrderCount }}</strong>
+                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayCompletedOrderCount }}</span>
+                  <span class="today-stat-sub">{{ workbenchSummary.todayOrderProgressPct }}%</span>
+                </div>
+                <div class="today-stat">
+                  <span class="today-stat-label">子订单</span>
+                  <strong class="today-stat-value">{{ workbenchSummary.todayTotalCount || 0 }}</strong>
+                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayDoneCount }}</span>
+                  <span class="today-stat-sub">{{ workbenchSummary.todayProgressPct }}%</span>
+                </div>
+                <div class="today-stat">
+                  <span class="today-stat-label">待完善子订单</span>
+                  <strong class="today-stat-value">{{ workbenchSummary.todayImprovingSubOrderCount }}</strong>
+                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayImprovingDoneCount }}</span>
+                  <span class="today-stat-sub">{{ workbenchSummary.todayImprovingProgressPct }}%</span>
+                </div>
+                <div class="today-stat">
+                  <span class="today-stat-label">评论跟进</span>
+                  <strong class="today-stat-value">{{ workbenchSummary.todayReviewFollowCount }}</strong>
+                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayReviewFollowDoneCount }}</span>
+                  <span class="today-stat-sub">{{ workbenchSummary.todayReviewFollowProgressPct }}%</span>
+                </div>
+              </div>
+              <div class="today-focus-foot">
+                <span class="future-hint danger-hint">超期 {{ workbenchSummary.todayOverdueCount }}</span>
+                <span class="future-hint">明日 {{ workbenchSummary.tomorrowCount }}</span>
+                <span class="future-hint">后日 {{ workbenchSummary.dayAfterTomorrowCount }}</span>
+                <span class="future-hint">售后 {{ workbenchSummary.afterSaleCount }}</span>
+                <span class="future-hint">评论跟进 {{ workbenchSummary.reviewFollowCount }}</span>
+              </div>
+            </div>
+
+            <div class="overview-side-card">
+              <div class="overview-side-title">待完善订单</div>
+              <div class="overview-side-value">{{ workbenchSummary.improvingSubOrderCount }}</div>
+              <div class="overview-side-desc">{{ workbenchSummary.improvingOrderCount }} 个主订单正在推进</div>
+              <div class="overview-side-tags">
+                <span class="overview-mini-tag">待返款 {{ improvingSummary.needRefundCount }}</span>
+                <span class="overview-mini-tag">待下单 {{ improvingSummary.needOrderCount }}</span>
+                <span class="overview-mini-tag">待留评 {{ improvingSummary.needReviewCount }}</span>
+              </div>
+            </div>
+
+            <div class="overview-side-card compact-card muted">
+              <div class="overview-side-title">问题单售后</div>
+              <div class="overview-side-value">{{ workbenchSummary.afterSaleCount }}</div>
+              <div class="overview-side-desc">保留独立入口，顶部仅做轻提醒</div>
+            </div>
+          </div>
+
           <!-- 统计栏 + 筛选 -->
-          <div class="top-bar">
+          <div v-if="wbNav !== 'afterSale'" class="top-bar">
             <div class="filter-tabs">
               <span
                 v-for="tab in filterTabs"
@@ -36,11 +98,9 @@
               </span>
             </div>
             <div class="filter-right">
-              <a-checkbox v-model:checked="filterOverdue" @change="filterTaskList">
-                <span class="overdue-label">逾期</span>
-              </a-checkbox>
-              <a-checkbox v-model:checked="filterToday" @change="filterTaskList">今日</a-checkbox>
-              <a-checkbox v-model:checked="filterSoon" @change="filterTaskList">即将到期</a-checkbox>
+              <a-checkbox v-model:checked="filterTomorrow" @change="filterTaskList">明日</a-checkbox>
+              <a-checkbox v-model:checked="filterDayAfterTomorrow" @change="filterTaskList">后日</a-checkbox>
+              <a-checkbox v-model:checked="filterSoon" @change="filterTaskList">即将预期</a-checkbox>
               <a-input-search
                 v-model:value="taskSearch"
                 placeholder="搜索主订单号/子订单号/ASIN/买手/关键词..."
@@ -53,30 +113,6 @@
                 <span :class="['wb-vbtn', wbViewMode === 'order' ? 'active' : '']" @click="wbViewMode = 'order'">主订单视角</span>
                 <span :class="['wb-vbtn', wbViewMode === 'sub' ? 'active' : '']" @click="wbViewMode = 'sub'">子订单平铺</span>
               </div>
-              <span class="total-hint">{{ workbenchSummary.resultCount }} 条结果</span>
-            </div>
-          </div>
-
-          <div class="workbench-overview">
-            <div class="overview-card">
-              <span class="overview-label">待操作主订单</span>
-              <strong class="overview-value">{{ workbenchSummary.actionableOrderCount }}</strong>
-            </div>
-            <div class="overview-card">
-              <span class="overview-label">待完善主订单</span>
-              <strong class="overview-value">{{ workbenchSummary.improvingOrderCount }}</strong>
-            </div>
-            <div class="overview-card">
-              <span class="overview-label">今日</span>
-              <strong class="overview-value">{{ workbenchSummary.todayCount }}</strong>
-            </div>
-            <div class="overview-card">
-              <span class="overview-label">明日</span>
-              <strong class="overview-value">{{ workbenchSummary.tomorrowCount }}</strong>
-            </div>
-            <div class="overview-card">
-              <span class="overview-label">后日</span>
-              <strong class="overview-value">{{ workbenchSummary.dayAfterTomorrowCount }}</strong>
             </div>
           </div>
 
@@ -91,17 +127,17 @@
               <div class="wb-section">
                 <div class="wb-section-header">
                   <div>
-                    <div class="wb-section-title">待操作订单</div>
-                    <div class="wb-section-desc">0操作订单，先按主订单启动分配</div>
+                    <div class="wb-section-title">今日待办</div>
+                    <div class="wb-section-desc">只展示今天到期和已超期的主订单，优先完成今天必须推进的事项</div>
                   </div>
-                  <span class="wb-section-count">{{ pendingOrderGroups.length }} 个主订单</span>
+                  <span class="wb-section-count">{{ todayTodoOrderGroups.length }} 个主订单</span>
                 </div>
-                <div v-if="pendingOrderGroups.length === 0" class="empty-list compact-empty">
-                  <a-empty description="暂无待操作订单" />
+                <div v-if="todayTodoOrderGroups.length === 0" class="empty-list compact-empty">
+                  <a-empty description="今日暂无待办主订单" />
                 </div>
                 <div v-else class="main-order-list">
                   <div
-                    v-for="group in pendingOrderGroups"
+                    v-for="group in todayTodoOrderGroups"
                     :key="group.order_id"
                     class="main-order-card"
                   >
@@ -138,17 +174,17 @@
                           <span class="detail-sep">售价：<span class="price-text">${{ Number(group.product_price || 0).toFixed(2) }}</span></span>
                         </div>
                         <div class="main-order-detail-row">
-                          <span class="detail-item-text">最早截止：{{ group.nextDate || '—' }}</span>
                           <span class="detail-sep">今日 {{ group.todayCount }}</span>
                           <span class="detail-sep">明日 {{ group.tomorrowCount }}</span>
                           <span class="detail-sep">后日 {{ group.dayAfterTomorrowCount }}</span>
+                          <span class="detail-sep">总待操作 {{ group.actionableSubCount }}</span>
                         </div>
                       </div>
                     </div>
 
                     <div class="main-order-footer">
                       <div class="main-order-progress">
-                        <span class="main-order-progress-text">待操作 {{ group.actionableSubCount }} / 总子单 {{ group.subs.length }}</span>
+                        <span class="main-order-progress-text">今日进度 {{ group.completedCount }} / {{ group.subs.length }}</span>
                         <div class="main-order-progress-bar">
                           <div class="main-order-progress-fill" :style="{ width: `${getGroupCompletionPct(group)}%` }"></div>
                         </div>
@@ -194,30 +230,59 @@
                 <div class="wb-section-header">
                   <div>
                     <div class="wb-section-title">待完善订单</div>
-                    <div class="wb-section-desc">已分配买手后进入这里，按子订单平铺处理</div>
+                    <div class="wb-section-desc">已分配买手后进入这里，重点看待返款、待下单和待留评等具体环节</div>
                   </div>
                   <span class="wb-section-count">{{ improvingTasks.length }} 个子订单</span>
                 </div>
+                <div class="wb-stage-overview">
+                  <div class="wb-stage-card">
+                    <span class="wb-stage-label">待返款</span>
+                    <strong class="wb-stage-value">{{ improvingSummary.needRefundCount }}</strong>
+                  </div>
+                  <div class="wb-stage-card">
+                    <span class="wb-stage-label">待下单</span>
+                    <strong class="wb-stage-value">{{ improvingSummary.needOrderCount }}</strong>
+                  </div>
+                  <div class="wb-stage-card">
+                    <span class="wb-stage-label">待留评</span>
+                    <strong class="wb-stage-value">{{ improvingSummary.needReviewCount }}</strong>
+                  </div>
+                </div>
               </div>
             </div>
-            <div v-if="wbViewMode === 'order' && wbNav === 'afterSale'" class="workbench-sections">
+            <div v-if="wbNav === 'afterSale'" class="workbench-sections">
               <div class="wb-section">
                 <div class="wb-section-header">
                   <div>
                     <div class="wb-section-title">问题单售后</div>
-                    <div class="wb-section-desc">聚合返款/售后相关子订单，优先跟进异常处理</div>
+                    <div class="wb-section-desc">直接复用售后问题单表格，在工作台里完成筛选和处理</div>
                   </div>
-                  <span class="wb-section-count">{{ afterSaleTasks.length }} 个子订单</span>
+                </div>
+                <AfterSaleIssueList
+                  :staff-id="isAllStaffSelected ? undefined : selectedStaffId"
+                  :show-stats="true"
+                  @changed="handleAfterSaleChanged"
+                />
+              </div>
+            </div>
+            <div v-if="wbViewMode === 'order' && wbNav === 'reviewFollow'" class="workbench-sections">
+              <div class="wb-section">
+                <div class="wb-section-header">
+                  <div>
+                    <div class="wb-section-title">评论跟进</div>
+                    <div class="wb-section-desc">集中跟进已下单但未完成留评回传的子订单，便于业务员单独催评</div>
+                  </div>
+                  <span class="wb-section-count">{{ reviewFollowupTasks.length }} 个子订单</span>
                 </div>
               </div>
             </div>
 
-            <div v-if="wbNav !== 'pending' && displayedTaskCards.length === 0" class="empty-list compact-empty">
-              <a-empty :description="wbNav === 'afterSale' ? '暂无问题单售后' : '暂无待完善订单'" />
+            <div v-if="wbNav !== 'pending' && wbNav !== 'afterSale' && displayedTaskCards.length === 0" class="empty-list compact-empty">
+              <a-empty :description="wbNav === 'reviewFollow' ? '暂无评论跟进订单' : '暂无待完善订单'" />
             </div>
 
             <!-- 任务卡片列表 -->
-            <div v-if="wbNav !== 'pending' && displayedTaskCards.length > 0" class="task-card-list">
+            <div v-if="wbNav !== 'pending' && wbNav !== 'afterSale' && displayedTaskCards.length > 0" class="task-card-list">
             <div
               v-for="task in displayedTaskCards"
               :key="task.id"
@@ -273,7 +338,17 @@
                     <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
                   </div>
                   <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px;margin:0">{{ refundStatusLabel(task.refund_status) }}</a-tag>
+                  <span v-if="wbNav === 'reviewFollow' && task.review_followed_at" class="review-follow-date">
+                    催评 {{ fmtShortTime(task.review_followed_at) }}
+                  </span>
                   <a-space size="small" @click.stop>
+                    <a-button
+                      v-if="wbNav === 'reviewFollow' && !task.review_followed_at"
+                      size="small"
+                      ghost
+                      class="follow-review-btn"
+                      @click.stop="markReviewFollowed(task)"
+                    >催评</a-button>
                     <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
                     <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
                   </a-space>
@@ -787,11 +862,11 @@ import {
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import { useCurrentUser } from '../composables/useCurrentUser'
+import AfterSaleIssueList from '../components/AfterSaleIssueList.vue'
 import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 const ALL_STAFF_KEY = '__all_staff__'
 const { currentUser, isAdmin, loadFromStorage } = useCurrentUser()
-
 const staffList = ref<any[]>([])
 const selectedStaffId = ref('')
 const allTasks = ref<any[]>([])
@@ -799,8 +874,8 @@ const filteredTasks = ref<any[]>([])
 const tasksLoading = ref(false)
 const taskFilter = ref('')
 const taskSearch = ref('')
-const filterOverdue = ref(false)
-const filterToday = ref(false)
+const filterTomorrow = ref(false)
+const filterDayAfterTomorrow = ref(false)
 const filterSoon = ref(false)
 const buyerList = ref<any[]>([])
 const buyerMonthlyCountMap = ref<Record<string, number>>({})
@@ -831,7 +906,7 @@ const rejectTarget = ref<any>(null)
 const taskOpsDetailOpen = ref(false)
 const taskOpsDetailTarget = ref<any>(null)
 
-type WorkbenchNavKey = 'pending' | 'improving' | 'afterSale'
+type WorkbenchNavKey = 'pending' | 'improving' | 'reviewFollow' | 'afterSale'
 
 const workflowSteps = [0, 1, 2, 3, 4]
 const wbViewMode = ref<'order' | 'sub'>('order')
@@ -842,6 +917,20 @@ const enableMockPreview = ref(true)
 const isAllStaffSelected = computed(() => selectedStaffId.value === ALL_STAFF_KEY)
 
 const filterTabs = computed(() => {
+  if (wbNav.value === 'improving') {
+    return [
+      { label: '全部', value: '', count: improvingTasks.value.length },
+      { label: '待返款', value: '待返款', count: improvingTasks.value.filter(t => getImprovingFilterCategory(t) === '待返款').length },
+      { label: '待下单', value: '待下单', count: improvingTasks.value.filter(t => getImprovingFilterCategory(t) === '待下单').length },
+    ]
+  }
+  if (wbNav.value === 'reviewFollow') {
+    return [
+      { label: '全部', value: '', count: reviewFollowupTasks.value.length },
+      { label: '待催评', value: '待催评', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '待催评').length },
+      { label: '待传评', value: '待传评', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '待传评').length },
+    ]
+  }
   const all = allTasks.value
   return [
     { label: '全部', value: '', count: all.length },
@@ -857,40 +946,75 @@ const filterTabs = computed(() => {
 const actionableTasks = computed(() => filteredTasks.value.filter(task => !isDone(task.status)))
 const improvingTasks = computed(() => actionableTasks.value.filter(task => !!task.buyer_id))
 const afterSaleTasks = computed(() =>
-  filteredTasks.value.filter(task => !!task.refund_status && task.refund_status !== '无需退款')
+  filteredTasks.value.filter(task => !!task._after_sale_issue)
+)
+const today = computed(() => dayjs().format('YYYY-MM-DD'))
+const tomorrow = computed(() => dayjs().add(1, 'day').format('YYYY-MM-DD'))
+const dayAfterTomorrow = computed(() => dayjs().add(2, 'day').format('YYYY-MM-DD'))
+const todayRelevantTasks = computed(() =>
+  filteredTasks.value.filter(task => task.scheduled_date && (task.scheduled_date === today.value || isOverdue(task.scheduled_date)))
+)
+const todayActionableTasks = computed(() => todayRelevantTasks.value.filter(task => !isDone(task.status)))
+const todayImprovingRelevantTasks = computed(() => todayRelevantTasks.value.filter(task => !!task.buyer_id))
+const todayReviewFollowRelevantTasks = computed(() =>
+  todayRelevantTasks.value.filter(task => isReviewTrackableTask(task))
+)
+const reviewFollowupTasks = computed(() =>
+  actionableTasks.value.filter(task => getTaskCheckpoint(task) === '待上传留评')
 )
 const displayedTaskCards = computed(() => {
   if (wbNav.value === 'pending') return []
-  if (wbNav.value === 'afterSale') return afterSaleTasks.value
+  if (wbNav.value === 'reviewFollow') return reviewFollowupTasks.value
+  if (wbNav.value === 'afterSale') return []
   return improvingTasks.value
 })
 const wbNavItems = computed<Array<{ key: WorkbenchNavKey; label: string; count: number }>>(() => ([
-  { key: 'pending', label: '待操作订单', count: pendingOrderGroups.value.length },
+  { key: 'pending', label: '待操作订单', count: todayActionableTasks.value.length },
   { key: 'improving', label: '待完善订单', count: improvingTasks.value.length },
+  { key: 'reviewFollow', label: '评论跟进', count: reviewFollowupTasks.value.length },
   { key: 'afterSale', label: '问题单售后', count: afterSaleTasks.value.length },
 ]))
 
 const workbenchSummary = computed(() => {
-  const actionableOrderIds = new Set(actionableTasks.value.map(task => task.order_id || task.id))
+  const todayOrderGroups = buildWorkbenchGroups(todayRelevantTasks.value)
   const improvingOrderIds = new Set(improvingTasks.value.map(task => task.order_id || task.id))
-  const today = dayjs().format('YYYY-MM-DD')
-  const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD')
-  const dayAfterTomorrow = dayjs().add(2, 'day').format('YYYY-MM-DD')
+  const todayDoneCount = todayRelevantTasks.value.filter(task => isDone(task.status)).length
+  const todayTotalCount = todayRelevantTasks.value.length
+  const todayImprovingDoneCount = todayImprovingRelevantTasks.value.filter(task => isDone(task.status)).length
+  const todayImprovingTotalCount = todayImprovingRelevantTasks.value.length
+  const todayReviewFollowDoneCount = todayReviewFollowRelevantTasks.value.filter(task => hasReviewDone(task)).length
+  const todayReviewFollowCount = todayReviewFollowRelevantTasks.value.length
+  const todayCompletedOrderCount = todayOrderGroups.filter(group => group.actionableSubCount === 0 && group.subs.length > 0).length
 
   return {
-    actionableOrderCount: actionableOrderIds.size,
+    todayOrderCount: todayOrderGroups.length,
+    todayCompletedOrderCount,
+    todayOrderProgressPct: todayOrderGroups.length ? Math.round((todayCompletedOrderCount / todayOrderGroups.length) * 100) : 0,
+    todaySubOrderCount: todayActionableTasks.value.length,
+    todayDoneCount,
+    todayTotalCount,
+    todayProgressPct: todayTotalCount ? Math.round((todayDoneCount / todayTotalCount) * 100) : 0,
+    todayImprovingSubOrderCount: todayImprovingTotalCount,
+    todayImprovingDoneCount,
+    todayImprovingProgressPct: todayImprovingTotalCount ? Math.round((todayImprovingDoneCount / todayImprovingTotalCount) * 100) : 0,
+    todayReviewFollowCount,
+    todayReviewFollowDoneCount,
+    todayReviewFollowProgressPct: todayReviewFollowCount ? Math.round((todayReviewFollowDoneCount / todayReviewFollowCount) * 100) : 0,
+    todayOverdueCount: todayActionableTasks.value.filter(task => isOverdue(task.scheduled_date)).length,
     improvingOrderCount: improvingOrderIds.size,
-    todayCount: actionableTasks.value.filter(task => task.scheduled_date === today).length,
-    tomorrowCount: actionableTasks.value.filter(task => task.scheduled_date === tomorrow).length,
-    dayAfterTomorrowCount: actionableTasks.value.filter(task => task.scheduled_date === dayAfterTomorrow).length,
+    improvingSubOrderCount: improvingTasks.value.length,
+    reviewFollowCount: reviewFollowupTasks.value.length,
+    tomorrowCount: actionableTasks.value.filter(task => task.scheduled_date === tomorrow.value).length,
+    dayAfterTomorrowCount: actionableTasks.value.filter(task => task.scheduled_date === dayAfterTomorrow.value).length,
+    afterSaleCount: afterSaleTasks.value.length,
     resultCount: filteredTasks.value.length,
   }
 })
 
-const groupedWorkbenchOrders = computed(() => {
+function buildWorkbenchGroups(sourceTasks: any[]) {
   const groupMap = new Map<string, any>()
 
-  for (const task of actionableTasks.value) {
+  for (const task of sourceTasks) {
     const orderId = task.order_id || task.id
     if (!groupMap.has(orderId)) {
       groupMap.set(orderId, {
@@ -923,20 +1047,18 @@ const groupedWorkbenchOrders = computed(() => {
         .filter((sub: any) => sub.scheduled_date && !isDone(sub.status))
         .map((sub: any) => sub.scheduled_date)
         .sort()[0] || ''
-      const today = dayjs().format('YYYY-MM-DD')
-      const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD')
-      const dayAfterTomorrow = dayjs().add(2, 'day').format('YYYY-MM-DD')
       const startedCount = actionableSubs.filter((sub: any) => !!sub.buyer_id).length
 
       return {
         ...group,
         actionableSubCount: actionableSubs.length,
         completedCount: group.subs.filter((sub: any) => sub.status === '已完成').length,
+        overdueCount: actionableSubs.filter((sub: any) => isOverdue(sub.scheduled_date)).length,
         startedCount,
         hasStarted: startedCount > 0,
-        todayCount: actionableSubs.filter((sub: any) => sub.scheduled_date === today).length,
-        tomorrowCount: actionableSubs.filter((sub: any) => sub.scheduled_date === tomorrow).length,
-        dayAfterTomorrowCount: actionableSubs.filter((sub: any) => sub.scheduled_date === dayAfterTomorrow).length,
+        todayCount: actionableSubs.filter((sub: any) => sub.scheduled_date === today.value).length,
+        tomorrowCount: actionableSubs.filter((sub: any) => sub.scheduled_date === tomorrow.value).length,
+        dayAfterTomorrowCount: actionableSubs.filter((sub: any) => sub.scheduled_date === dayAfterTomorrow.value).length,
         nextDate,
       }
     })
@@ -948,9 +1070,15 @@ const groupedWorkbenchOrders = computed(() => {
       if (b.nextDate) return 1
       return (a.order_number || '').localeCompare(b.order_number || '')
     })
-})
+}
 
-const pendingOrderGroups = computed(() => groupedWorkbenchOrders.value.filter(group => !group.hasStarted))
+const allWorkbenchOrderGroups = computed(() => buildWorkbenchGroups(filteredTasks.value).filter(group => group.actionableSubCount > 0))
+const todayTodoOrderGroups = computed(() => allWorkbenchOrderGroups.value.filter(group => group.todayCount > 0 || group.overdueCount > 0))
+const improvingSummary = computed(() => ({
+  needRefundCount: improvingTasks.value.filter(task => ['待申请返款', '待返款完成'].includes(getTaskCheckpoint(task))).length,
+  needOrderCount: improvingTasks.value.filter(task => getTaskCheckpoint(task) === '待填写订单号').length,
+  needReviewCount: improvingTasks.value.filter(task => getTaskCheckpoint(task) === '待上传留评').length,
+}))
 
 function getStatusColor(s: string) {
   const map: Record<string, string> = {
@@ -999,6 +1127,26 @@ function getTaskCheckpoint(task: any) {
   if (!task.amazon_order_id) return '待填写订单号'
   if (!task.review_screenshot_url) return '待上传留评'
   return '处理中'
+}
+
+function getImprovingFilterCategory(task: any) {
+  const checkpoint = getTaskCheckpoint(task)
+  if (['待设置返款', '待申请返款', '待返款完成'].includes(checkpoint)) return '待返款'
+  if (checkpoint === '待填写订单号') return '待下单'
+  return ''
+}
+
+function getReviewFollowFilterCategory(task: any) {
+  if (task.status === '已留评' || task.review_submitted_at) return '待传评'
+  return '待催评'
+}
+
+function isReviewTrackableTask(task: any) {
+  return !!task.amazon_order_id || !!task.review_screenshot_url || ['已留评', '已完成'].includes(task.status)
+}
+
+function hasReviewDone(task: any) {
+  return !!task.review_screenshot_url || ['已留评', '已完成'].includes(task.status)
 }
 
 function getGroupCompletionPct(group: any) {
@@ -1263,6 +1411,20 @@ function notifyFinanceForReceipt(_task: any) {
   message.success('已向财务发送补充返款凭证提醒')
 }
 
+async function markReviewFollowed(task: any) {
+  const followedAt = new Date().toISOString()
+  try {
+    if (!task._is_mock) {
+      const { error } = await supabase.from('sub_orders').update({ review_followed_at: followedAt }).eq('id', task.id)
+      if (error) throw error
+    }
+    task.review_followed_at = followedAt
+    message.success('已记录催评日期')
+  } catch (e: any) {
+    message.error('记录催评失败：' + e.message)
+  }
+}
+
 function buildMockTasks() {
   const now = dayjs()
   const today = now.format('YYYY-MM-DD')
@@ -1303,6 +1465,7 @@ function buildMockTasks() {
       notes: '订单备注：客户要求先发礼品卡',
       created_at: now.subtract(1, 'day').toISOString(),
       buyer_assigned_at: now.subtract(10, 'hour').toISOString(),
+      review_followed_at: now.subtract(2, 'hour').toISOString(),
       _is_mock: true,
       __mock_refund_requests: [
         {
@@ -1427,6 +1590,18 @@ function buildMockTasks() {
       amazon_order_placed_at: now.subtract(6, 'day').toISOString(),
       delivery_confirmed_at: now.subtract(4, 'day').toISOString(),
       review_submitted_at: now.subtract(2, 'day').toISOString(),
+      __mock_after_sale_issue: {
+        id: 'mock_after_sale_1003',
+        sub_order_id: 'mock_after_review_paypal_done',
+        issue_type: '退款',
+        issue_status: '处理中',
+        principal_stolen: true,
+        principal_amount: 21.21,
+        refund_to_client_method: '',
+        refund_to_client_amount: 0,
+        resolution_notes: '客户反馈买手下错单，正在确认是否改走退款给客户',
+        created_at: now.subtract(1, 'day').toISOString(),
+      },
       _is_mock: true,
       __mock_refund_requests: [
         {
@@ -1544,6 +1719,18 @@ function buildMockTasks() {
       amazon_order_placed_at: now.subtract(7, 'day').toISOString(),
       delivery_confirmed_at: now.subtract(5, 'day').toISOString(),
       review_submitted_at: now.subtract(3, 'day').toISOString(),
+      __mock_after_sale_issue: {
+        id: 'mock_after_sale_1004',
+        sub_order_id: 'mock_after_review_gift_done',
+        issue_type: '不下单',
+        issue_status: '已退款给客户',
+        principal_stolen: false,
+        principal_amount: 0,
+        refund_to_client_method: 'PayPal',
+        refund_to_client_amount: 23.5,
+        resolution_notes: '客户不补单，已原路退款给客户并结案',
+        created_at: now.subtract(2, 'day').toISOString(),
+      },
       _is_mock: true,
       __mock_refund_request: {
         id: 'mock_rr_gift_done',
@@ -1691,8 +1878,8 @@ function getBuyerBlockReason(task: any, buyerId: string): string {
 async function selectStaff(id: string) {
   selectedStaffId.value = id
   taskFilter.value = ''
-  filterOverdue.value = false
-  filterToday.value = false
+  filterTomorrow.value = false
+  filterDayAfterTomorrow.value = false
   filterSoon.value = false
   taskSearch.value = ''
   await Promise.all([loadTasks(), loadTransferRequests()])
@@ -1791,6 +1978,7 @@ function initTaskFields(task: any) {
   task._editing_screenshot = false
   task._saving_screenshot = false
   task._completing = false
+  task._after_sale_issue = task.__mock_after_sale_issue || task._after_sale_issue || null
   syncRefundComputed(task)
   return task
 }
@@ -1848,6 +2036,19 @@ async function loadTasks() {
           hydrateRefundFormFromRequest(t, t._refund_request_pending)
         }
       })
+
+      const { data: issueRows } = await supabase
+        .from('after_sale_issues')
+        .select('*')
+        .in('sub_order_id', subOrderIds)
+        .order('created_at', { ascending: false })
+      const issueMap: Record<string, any> = {}
+      ;(issueRows || []).forEach((issue: any) => {
+        if (!issueMap[issue.sub_order_id]) issueMap[issue.sub_order_id] = issue
+      })
+      tasks.forEach(t => {
+        t._after_sale_issue = issueMap[t.id] || t._after_sale_issue || null
+      })
     }
 
     let mergedTasks = tasks
@@ -1862,6 +2063,18 @@ async function loadTasks() {
   }
 }
 
+function setWorkbenchNav(next: WorkbenchNavKey) {
+  wbNav.value = next
+  if (next === 'afterSale') {
+    taskFilter.value = ''
+    filterTomorrow.value = false
+    filterDayAfterTomorrow.value = false
+    filterSoon.value = false
+    taskSearch.value = ''
+    filterTaskList()
+  }
+}
+
 function setFilter(val: string) {
   taskFilter.value = val
   filterTaskList()
@@ -1869,9 +2082,13 @@ function setFilter(val: string) {
 
 function filterTaskList() {
   let list = allTasks.value
-  if (taskFilter.value) list = list.filter(t => t.status === taskFilter.value)
-  if (filterOverdue.value) list = list.filter(t => isOverdue(t.scheduled_date) && !isDone(t.status))
-  if (filterToday.value) list = list.filter(t => t.scheduled_date === dayjs().format('YYYY-MM-DD'))
+  if (taskFilter.value) {
+    if (wbNav.value === 'improving') list = list.filter(t => getImprovingFilterCategory(t) === taskFilter.value)
+    else if (wbNav.value === 'reviewFollow') list = list.filter(t => getReviewFollowFilterCategory(t) === taskFilter.value)
+    else list = list.filter(t => t.status === taskFilter.value)
+  }
+  if (filterTomorrow.value) list = list.filter(t => t.scheduled_date === tomorrow.value)
+  if (filterDayAfterTomorrow.value) list = list.filter(t => t.scheduled_date === dayAfterTomorrow.value)
   if (filterSoon.value) list = list.filter(t => {
     if (!t.scheduled_date || isDone(t.status)) return false
     const diff = dayjs(t.scheduled_date).diff(dayjs(), 'day')
@@ -1913,6 +2130,10 @@ function focusTask(task: any) {
 function openTaskOpsDetail(task: any) {
   taskOpsDetailTarget.value = task
   taskOpsDetailOpen.value = true
+}
+
+async function handleAfterSaleChanged() {
+  await loadTasks()
 }
 
 async function quickSave(task: any, field: string, value: any) {
@@ -2544,23 +2765,101 @@ onMounted(() => {
 .wb-vbtn { padding: 2px 10px; font-size: 12px; cursor: pointer; color: #6b7280; background: #fff; user-select: none; }
 .wb-vbtn.active { background: #2563eb; color: #fff; }
 
-.workbench-overview {
+.workbench-priority {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 2.2fr) minmax(240px, 0.95fr) minmax(180px, 0.7fr);
   gap: 12px;
-  margin-top: 8px;
 }
-.overview-card {
+.today-focus-card,
+.overview-side-card {
   background: #fff;
   border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+.today-focus-card {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.today-focus-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.today-focus-title { font-size: 18px; font-weight: 700; color: #1a1a2e; }
+.today-focus-desc { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.today-focus-result {
+  font-size: 12px;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.today-focus-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.today-stat {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
   border-radius: 10px;
-  padding: 14px 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.overview-label { font-size: 12px; color: #6b7280; }
-.overview-value { font-size: 24px; line-height: 1; color: #1a1a2e; }
+.today-stat-label { font-size: 12px; color: #6b7280; }
+.today-stat-value { font-size: 24px; line-height: 1; color: #1a1a2e; }
+.today-stat-value.danger { color: #dc2626; }
+.today-stat-meta { font-size: 12px; color: #6b7280; }
+.today-stat-sub { font-size: 12px; color: #059669; font-weight: 600; }
+.today-focus-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+.future-hint {
+  font-size: 12px;
+  color: #6b7280;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.danger-hint {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.16);
+}
+.overview-side-card {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: space-between;
+}
+.compact-card {
+  padding: 14px;
+  gap: 8px;
+}
+.overview-side-card.muted { background: #f8fafc; }
+.overview-side-title { font-size: 14px; font-weight: 700; color: #1a1a2e; }
+.overview-side-value { font-size: 28px; line-height: 1; color: #1a1a2e; }
+.overview-side-desc { font-size: 12px; color: #6b7280; }
+.overview-side-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.overview-mini-tag {
+  font-size: 12px;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
 
 .workbench-sections { display: flex; flex-direction: column; gap: 18px; }
 .wb-section { display: flex; flex-direction: column; gap: 12px; }
@@ -2581,6 +2880,22 @@ onMounted(() => {
   padding: 4px 10px;
   white-space: nowrap;
 }
+.wb-stage-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.wb-stage-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wb-stage-label { font-size: 12px; color: #6b7280; }
+.wb-stage-value { font-size: 22px; line-height: 1; color: #1a1a2e; }
 .compact-empty { padding: 24px 0; }
 
 .main-order-list { display: flex; flex-direction: column; gap: 12px; }
@@ -2630,6 +2945,7 @@ onMounted(() => {
 }
 .detail-item-text { color: #374151; }
 .detail-sep { color: #6b7280; }
+.danger-text { color: #dc2626; font-weight: 600; }
 .price-text { color: #16a34a; font-weight: 600; }
 .main-order-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .main-order-progress { display: flex; align-items: center; gap: 10px; min-width: 220px; flex: 1; }
@@ -2778,6 +3094,35 @@ onMounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.after-sale-summary-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.after-sale-chip-label {
+  font-size: 11px;
+  color: #6b7280;
+}
+.after-sale-principal {
+  font-size: 11px;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.16);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.after-sale-result {
+  font-size: 11px;
+  color: #374151;
+  min-width: 0;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .date-badge { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
 .date-ok { background: #f0fdf4; color: #16a34a; }
 .date-overdue { background: #fef2f2; color: #dc2626; }
@@ -2802,6 +3147,23 @@ onMounted(() => {
   font-weight: 500;
   color: #1a1a2e;
   white-space: nowrap;
+}
+.review-follow-date {
+  font-size: 11px;
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.18);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.follow-review-btn {
+  color: #d97706;
+  border-color: #fbbf24;
+}
+.follow-review-btn:hover {
+  color: #b45309 !important;
+  border-color: #d97706 !important;
 }
 
 /* 工作流主体 */
@@ -3226,4 +3588,17 @@ onMounted(() => {
 .outgoing-to { font-weight: 600; color: #374151; }
 .outgoing-reason { color: #9ca3af; font-size: 11px; flex: 1; }
 .outgoing-time { font-size: 11px; color: #9ca3af; white-space: nowrap; margin-left: auto; }
+
+@media (max-width: 1280px) {
+  .workbench-priority { grid-template-columns: 1fr; }
+  .today-focus-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .workbench-layout { flex-direction: column; }
+  .staff-sidebar { width: 100%; }
+  .today-focus-stats,
+  .wb-stage-overview { grid-template-columns: 1fr; }
+  .filter-right { width: 100%; margin-left: 0; flex-wrap: wrap; }
+}
 </style>

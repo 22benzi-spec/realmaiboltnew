@@ -68,7 +68,7 @@ export const allNavGroups: NavGroup[] = [
       { id: 'staff-workbench', label: '业务员工作台', icon: DesktopOutlined },
       { id: 'staff', label: '业务员管理', icon: UserOutlined },
       { id: 'staff-analytics', label: '业务员数据分析', icon: BarChartOutlined },
-      { id: 'after-sale', label: '售后问题单', icon: WarningOutlined },
+      // { id: 'after-sale', label: '售后问题单', icon: WarningOutlined },
     ],
   },
   {

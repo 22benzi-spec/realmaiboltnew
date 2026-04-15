@@ -27,8 +27,11 @@
         <a-select v-model:value="filterSales" style="width: 110px" allow-clear placeholder="业务员" size="small" @change="applyFilters">
           <a-select-option v-for="s in salesOptions" :key="s" :value="s">{{ s }}</a-select-option>
         </a-select>
-        <a-select v-model:value="filterStatus" style="width: 120px" allow-clear placeholder="状态" size="small" @change="applyFilters">
-          <a-select-option v-for="s in ALL_STATUSES" :key="s" :value="s">{{ s }}</a-select-option>
+        <a-select v-model:value="filterProgress" style="width: 120px" allow-clear placeholder="进度" size="small" @change="applyFilters">
+          <a-select-option v-for="s in PROGRESS_OPTIONS" :key="s" :value="s">{{ s }}</a-select-option>
+        </a-select>
+        <a-select v-model:value="filterRefundStatus" style="width: 120px" allow-clear placeholder="返款状态" size="small" @change="applyFilters">
+          <a-select-option v-for="s in REFUND_STATUS_OPTIONS" :key="s" :value="s">{{ s }}</a-select-option>
         </a-select>
         <a-select v-model:value="filterType" style="width: 100px" allow-clear placeholder="类型" size="small" @change="applyFilters">
           <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
@@ -140,11 +143,27 @@
             </div>
           </template>
 
-          <template v-else-if="column.key === 'status'">
-            <a-tag :color="getStatusColor(computeStatus(record))" class="status-tag">
-              {{ computeStatus(record) }}
+          <template v-else-if="column.key === 'progress'">
+            <a-tag :color="getProgressColor(computeProgress(record))" class="status-tag">
+              {{ computeProgress(record) }}
             </a-tag>
+          </template>
+
+          <template v-else-if="column.key === 'refund_status'">
+            <a-tag :color="getRefundStatusColor(getRefundStatus(record))" class="status-tag">
+              {{ getRefundStatus(record) }}
+            </a-tag>
+          </template>
+
+          <template v-else-if="column.key === 'order_status'">
+            <a-tag :color="getOrderStatusColor(getOrderStatus(record))" class="status-tag">
+              {{ getOrderStatus(record) }}
+            </a-tag>
+          </template>
+
+          <template v-else-if="column.key === 'notes'">
             <div v-if="record.notes" class="notes-inline" :title="record.notes">{{ record.notes }}</div>
+            <span v-else class="empty-text">-</span>
           </template>
 
           <template v-else-if="column.key === 'created_at'">
@@ -268,20 +287,22 @@ interface SubOrder {
   review_link: string
   review_screenshot_url: string
   status: string
+  refund_status?: string
   notes: string
   created_at: string
 }
 
-const NORMAL_FLOW = ['待分配业务员', '待分配买手', '未返款', '已返款', '已完成']
+const PROGRESS_OPTIONS = ['待匹配', '待下单', '待留评', '已完成', '已掉评', '无法完成']
 const PROBLEM_STATUSES = ['已取消', '已退款', '无此订单', '本金多返', '不下单']
-const ALL_STATUSES = [...NORMAL_FLOW, ...PROBLEM_STATUSES]
+const REFUND_STATUS_OPTIONS = ['待返款', '返款中', '已返款', '返款失败', '无需返款']
 const REFUND_METHODS = ['PayPal', '礼品卡', '银行转账', '微信', '支付宝', 'Zelle']
 
 const loading = ref(false)
 const allData = ref<SubOrder[]>([])
 const searchText = ref('')
 const filterSales = ref<string | undefined>()
-const filterStatus = ref<string | undefined>()
+const filterProgress = ref<string | undefined>()
+const filterRefundStatus = ref<string | undefined>()
 const filterType = ref<string | undefined>()
 const dateRange = ref<[Dayjs, Dayjs] | null>(null)
 
@@ -312,18 +333,23 @@ const columns = [
   { title: '业务员 / 买手 / 聊单号', key: 'assignment', width: 170 },
   { title: '售价 / 实付 / 返款', key: 'price_refund', width: 170 },
   { title: 'FB / 评论', key: 'media', width: 120 },
-  { title: '状态 / 备注', key: 'status', width: 140 },
+  { title: '进度', key: 'progress', width: 110 },
+  { title: '返款状态', key: 'refund_status', width: 110 },
+  { title: '订单状态', key: 'order_status', width: 110 },
+  { title: '备注', key: 'notes', width: 150 },
   { title: '创建时间', key: 'created_at', width: 90, sorter: (a: SubOrder, b: SubOrder) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime() },
   { title: '', key: 'action', width: 110, fixed: 'right' as const, align: 'center' as const },
 ]
 
-function computeStatus(r: SubOrder): string {
-  if (PROBLEM_STATUSES.includes(r.status)) return r.status
-  if (!r.staff_name && !r.buyer_name) return '待分配业务员'
-  if (!r.buyer_name) return '待分配买手'
-  if (Number(r.refund_amount) > 0) return '已返款'
-  if (r.amazon_order_id) return '未返款'
-  return '待分配买手'
+function computeProgress(r: SubOrder): string {
+  if (r.status === '已掉评') return '已掉评'
+  if (PROBLEM_STATUSES.includes(r.status)) return '无法完成'
+  if (!r.staff_name && !r.buyer_name) return '待匹配'
+  if (!r.buyer_name) return '待匹配'
+  if (!r.amazon_order_id) return '待下单'
+  if (!r.review_link && !r.review_screenshot_url && !['已留评', '已完成'].includes(r.status)) return '待留评'
+  if (r.status === '已完成' || !!r.review_screenshot_url || !!r.review_link) return '已完成'
+  return '待留评'
 }
 
 const salesOptions = computed(() => [...new Set(allData.value.map(r => r.sales_person).filter(Boolean))].sort())
@@ -341,7 +367,8 @@ const filteredData = computed(() => {
     r.amazon_order_id?.toLowerCase().includes(q)
   )
   if (filterSales.value) d = d.filter(r => r.sales_person === filterSales.value)
-  if (filterStatus.value) d = d.filter(r => computeStatus(r) === filterStatus.value)
+  if (filterProgress.value) d = d.filter(r => computeProgress(r) === filterProgress.value)
+  if (filterRefundStatus.value) d = d.filter(r => getRefundStatus(r) === filterRefundStatus.value)
   if (filterType.value) d = d.filter(r => r.order_type === filterType.value)
   if (dateRange.value) {
     const [s, e] = dateRange.value
@@ -355,21 +382,67 @@ const filteredData = computed(() => {
 
 const totalOrders = computed(() => allData.value.length)
 const todayCount = computed(() => allData.value.filter(r => dayjs(r.created_at).isAfter(dayjs().startOf('day'))).length)
-const paidCount = computed(() => allData.value.filter(r => computeStatus(r) === '已返款' || computeStatus(r) === '已完成').length)
-const unpaidCount = computed(() => allData.value.filter(r => computeStatus(r) === '未返款').length)
-const problemCount = computed(() => allData.value.filter(r => PROBLEM_STATUSES.includes(computeStatus(r))).length)
+const paidCount = computed(() => allData.value.filter(r => getRefundStatus(r) === '已返款').length)
+const unpaidCount = computed(() => allData.value.filter(r => ['待返款', '返款中'].includes(getRefundStatus(r))).length)
+const problemCount = computed(() => allData.value.filter(r => ['无法完成', '已掉评'].includes(computeProgress(r))).length)
 
 function fmt(n: number | string) { return (Number(n) || 0).toFixed(2) }
 function fmtDate(d: string) { return d ? dayjs(d).format('MM-DD HH:mm') : '-' }
 
-function getStatusColor(s: string) {
+function getProgressColor(s: string) {
   const m: Record<string, string> = {
-    '待分配业务员': 'default', '待分配买手': 'processing',
-    '未返款': 'orange', '已返款': 'blue', '已完成': 'green',
-    '已取消': 'red', '已退款': 'volcano', '无此订单': 'red',
-    '本金多返': 'magenta', '不下单': 'red',
+    '待匹配': 'default',
+    '待下单': 'processing',
+    '待留评': 'orange',
+    '已完成': 'green',
+    '已掉评': 'volcano',
+    '无法完成': 'red',
   }
   return m[s] || 'default'
+}
+
+function getRefundStatus(r: SubOrder) {
+  const raw = r.refund_status || ''
+  const map: Record<string, string> = {
+    '待退款': '待返款',
+    '退款中': '返款中',
+    '已退款': '已返款',
+    '退款失败': '返款失败',
+    '无需退款': '无需返款',
+  }
+  if (map[raw]) return map[raw]
+  if (Number(r.refund_amount) > 0) return '已返款'
+  return '待返款'
+}
+
+function getRefundStatusColor(s: string) {
+  const map: Record<string, string> = {
+    '待返款': 'orange',
+    '返款中': 'processing',
+    '已返款': 'blue',
+    '返款失败': 'red',
+    '无需返款': 'default',
+  }
+  return map[s] || 'default'
+}
+
+function getOrderStatus(r: SubOrder) {
+  if (r.status === '不下单') return '不下单'
+  if (r.status === '已取消') return '取消'
+  if (r.status === '已退款') return '退款'
+  if (r.status === '无此订单') return '无此订单'
+  return '正常'
+}
+
+function getOrderStatusColor(s: string) {
+  const map: Record<string, string> = {
+    '正常': 'green',
+    '不下单': 'orange',
+    '取消': 'red',
+    '退款': 'volcano',
+    '无此订单': 'default',
+  }
+  return map[s] || 'default'
 }
 
 function getTypeColor(t: string) {
@@ -445,7 +518,7 @@ async function loadData() {
       buyer_name, buyer_id, amazon_order_id,
       product_price, actual_paid, refund_amount, refund_method,
       fb_link, fb_image_url, review_link, review_screenshot_url,
-      status, notes, created_at
+      status, refund_status, notes, created_at
     `)
     .order('created_at', { ascending: false })
   const rows = (data || []) as any[]
@@ -463,7 +536,7 @@ function applyFilters() { pagination.value.current = 1 }
 
 function resetFilters() {
   searchText.value = ''; filterSales.value = undefined
-  filterStatus.value = undefined; filterType.value = undefined
+  filterProgress.value = undefined; filterRefundStatus.value = undefined; filterType.value = undefined
   dateRange.value = null; pagination.value.current = 1
 }
 
@@ -473,12 +546,12 @@ function onTableChange(pag: any) {
 }
 
 function exportCSV() {
-  const headers = ['子订单号', 'ASIN', '产品名称', '亚马逊单号', '业务员', '买手', '聊单号', '售价', '实付', '返款金额', '返款方式', 'FB链接', '评论链接', '状态', '备注', '创建时间']
+  const headers = ['子订单号', 'ASIN', '产品名称', '亚马逊单号', '业务员', '买手', '聊单号', '售价', '实付', '返款金额', '返款方式', 'FB链接', '评论链接', '进度', '返款状态', '订单状态', '备注', '创建时间']
   const rows = filteredData.value.map(r => [
     r.sub_order_number, r.asin, r.product_name, r.amazon_order_id,
     r.sales_person, r.buyer_name, r.buyer_chat_id,
     r.product_price, r.actual_paid, r.refund_amount, r.refund_method,
-    r.fb_link, r.review_link, computeStatus(r), r.notes, fmtDate(r.created_at),
+    r.fb_link, r.review_link, computeProgress(r), getRefundStatus(r), getOrderStatus(r), r.notes, fmtDate(r.created_at),
   ])
   const csv = '\uFEFF' + [headers, ...rows].map(row =>
     row.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')
@@ -767,7 +840,7 @@ onMounted(loadData)
   &:hover { text-decoration: underline; }
 }
 
-/* 状态列 */
+/* 进度/返款状态列 */
 .status-tag {
   font-size: 11px;
   display: inline-block;
@@ -775,9 +848,8 @@ onMounted(loadData)
 
 .notes-inline {
   font-size: 11px;
-  color: #94a3b8;
-  margin-top: 3px;
-  max-width: 120px;
+  color: #64748b;
+  max-width: 130px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
