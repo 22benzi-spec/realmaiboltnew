@@ -39,22 +39,10 @@
                   <span class="today-stat-sub">{{ workbenchSummary.todayOrderProgressPct }}%</span>
                 </div>
                 <div class="today-stat">
-                  <span class="today-stat-label">待分配买手</span>
-                  <strong class="today-stat-value">{{ workbenchSummary.todayPendingBuyerMatchCount || 0 }}</strong>
-                  <span class="today-stat-meta">今日待处理 {{ workbenchSummary.todayPendingBuyerMatchCount }}</span>
-                  <span class="today-stat-sub">匹配中</span>
-                </div>
-                <div class="today-stat">
-                  <span class="today-stat-label">待完善子订单</span>
-                  <strong class="today-stat-value">{{ workbenchSummary.todayImprovingSubOrderCount }}</strong>
-                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayImprovingDoneCount }}</span>
-                  <span class="today-stat-sub">{{ workbenchSummary.todayImprovingProgressPct }}%</span>
-                </div>
-                <div class="today-stat">
-                  <span class="today-stat-label">评论跟进</span>
-                  <strong class="today-stat-value">{{ workbenchSummary.todayReviewFollowCount }}</strong>
-                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayReviewFollowDoneCount }}</span>
-                  <span class="today-stat-sub">{{ workbenchSummary.todayReviewFollowProgressPct }}%</span>
+                  <span class="today-stat-label">子订单</span>
+                  <strong class="today-stat-value">{{ workbenchSummary.todayTotalCount || 0 }}</strong>
+                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayDoneCount }}</span>
+                  <span class="today-stat-sub">{{ workbenchSummary.todayProgressPct }}%</span>
                 </div>
               </div>
             </div>
@@ -85,6 +73,13 @@
                 allow-clear
                 size="small"
               />
+              <a-button
+                v-if="wbNav === 'pending' && wbViewMode === 'sub'"
+                size="small"
+                @click="backToPendingOrderList"
+              >
+                返回主订单列表
+              </a-button>
               <div v-if="wbNav !== 'pending'" class="wb-view-toggle">
                 <span :class="['wb-vbtn', wbViewMode === 'order' ? 'active' : '']" @click="wbViewMode = 'order'">主订单视角</span>
                 <span :class="['wb-vbtn', wbViewMode === 'sub' ? 'active' : '']" @click="wbViewMode = 'sub'">子订单平铺</span>
@@ -103,22 +98,22 @@
               <div class="wb-section">
                 <div class="wb-section-header">
                   <div>
-                    <div class="wb-section-title">待分配买手</div>
-                    <div class="wb-section-desc">默认直接展示今日需要分配买手的数据，便于业务员直接处理，不再额外套一层主订单分组查看</div>
+                    <div class="wb-section-title">待操作订单</div>
+                    <div class="wb-section-desc">按当前主订单分组展示待分配子订单，展开后可逐条分配买手</div>
                   </div>
-                  <span class="wb-section-count">{{ pendingListTasks.length }} 条待分配记录</span>
+                  <span class="wb-section-count">{{ pendingOrderGroups.length }} 个主订单</span>
                 </div>
-                <div v-if="pendingListTasks.length === 0" class="empty-list compact-empty">
-                  <a-empty description="今日暂无待分配买手数据" />
+                <div v-if="pendingOrderGroups.length === 0" class="empty-list compact-empty">
+                  <a-empty description="暂无待分配买手数据" />
                 </div>
                 <div v-else class="pending-summary-bar">
                   <span class="detail-sep">今日待分配 {{ todayPendingBuyerMatchTasks.length }}</span>
                   <span class="detail-sep">当前列表 {{ pendingListTasks.length }}</span>
-                  <span class="detail-sep">仅展示未分配买手的记录</span>
+                  <span class="detail-sep">主订单 {{ pendingOrderGroups.length }}</span>
                 </div>
-                <div v-if="false" class="main-order-list">
+                <div class="main-order-list">
                   <div
-                    v-for="group in todayTodoOrderGroups"
+                    v-for="group in pendingOrderGroups"
                     :key="group.order_id"
                     class="main-order-card"
                   >
@@ -165,7 +160,7 @@
 
                     <div class="main-order-footer">
                       <div class="main-order-progress">
-                        <span class="main-order-progress-text">今日进度 {{ group.completedCount }} / {{ group.subs.length }}</span>
+                        <span class="main-order-progress-text">待分配 {{ group.actionableSubCount }} / {{ group.subs.length }}</span>
                         <div class="main-order-progress-bar">
                           <div class="main-order-progress-fill" :style="{ width: `${getGroupCompletionPct(group)}%` }"></div>
                         </div>
@@ -186,8 +181,6 @@
                         <div class="inline-sub-main">
                           <div class="inline-sub-line">
                             <span class="inline-sub-no">{{ sub.sub_order_number }}</span>
-                            <a-tag :color="getStatusColor(sub.status)" size="small">{{ sub.status }}</a-tag>
-                            <span class="inline-sub-checkpoint">{{ getTaskCheckpoint(sub) }}</span>
                           </div>
                           <div class="inline-sub-meta">
                             <span>ASIN：{{ sub.asin || '—' }}</span>
@@ -196,7 +189,7 @@
                           </div>
                         </div>
                         <a-space>
-                          <a-button size="small" type="primary" ghost @click="focusTask(sub)">匹配买手</a-button>
+                          <a-button size="small" type="primary" ghost @click="focusTask(sub)">编辑</a-button>
                           <a-button size="small" @click="openTaskOpsDetail(sub)">详情</a-button>
                         </a-space>
                       </div>
@@ -258,8 +251,11 @@
               </div>
             </div>
 
-            <div v-if="wbNav !== 'pending' && wbNav !== 'afterSale' && displayedTaskCards.length === 0" class="empty-list compact-empty">
-              <a-empty :description="wbNav === 'reviewFollow' ? '暂无评论跟进订单' : '暂无待完善订单'" />
+            <div
+              v-if="wbNav !== 'afterSale' && displayedTaskCards.length === 0 && (wbNav !== 'pending' || wbViewMode === 'sub')"
+              class="empty-list compact-empty"
+            >
+              <a-empty :description="wbNav === 'reviewFollow' ? '暂无评论跟进订单' : wbNav === 'pending' ? '暂无待操作订单' : '暂无待完善订单'" />
             </div>
 
             <!-- 任务卡片列表 -->
@@ -319,18 +315,27 @@
                     <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
                   </div>
                   <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px;margin:0">{{ refundStatusLabel(task.refund_status) }}</a-tag>
-                  <span v-if="wbNav === 'reviewFollow' && task.review_followed_at" class="review-follow-date">
-                    催评 {{ fmtShortTime(task.review_followed_at) }}
+                  <span
+                    v-if="wbNav === 'reviewFollow' && getReviewFollowDateBadgeText(task)"
+                    class="review-follow-date"
+                  >
+                    {{ getReviewFollowDateBadgeText(task) }}
+                  </span>
+                  <span
+                    v-if="wbNav === 'reviewFollow' && getReviewFollowFilterCategory(task) === '超时跟进'"
+                    class="review-follow-overdue"
+                  >
+                    {{ getReviewFollowOverdueLabel(task) }}
                   </span>
                   <a-space size="small" @click.stop>
                     <a-button
-                      v-if="wbNav === 'reviewFollow' && !task.review_followed_at"
+                      v-if="shouldShowReviewFollowAction(task)"
                       size="small"
                       ghost
-                      class="follow-review-btn"
-                      @click.stop="markReviewFollowed(task)"
-                    >催评</a-button>
-                    <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">{{ wbNav === 'pending' ? '匹配买手' : '编辑' }}</a-button>
+                      :class="getReviewFollowActionLabel(task) === '无法完成' ? 'follow-review-btn danger' : 'follow-review-btn'"
+                      @click.stop="handleReviewFollowAction(task)"
+                    >{{ getReviewFollowActionLabel(task) }}</a-button>
+                    <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
                     <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
                   </a-space>
                 </div>
@@ -409,7 +414,7 @@
                     </div>
                   </div>
 
-                  <template v-if="wbNav !== 'pending'">
+                  <template v-if="wbNav !== 'pending' || wbViewMode === 'sub'">
                   <div class="wf-panel">
                     <div class="wf-panel-head">
                       <div class="wf-panel-header">
@@ -826,6 +831,29 @@
       </div>
     </a-modal>
 
+    <a-modal
+      v-model:open="reviewFailureModalOpen"
+      title="标记为无法完成"
+      @ok="submitReviewFailure"
+      :confirm-loading="reviewFailureSaving"
+      ok-text="确认"
+      ok-type="danger"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="无法完成原因">
+          <a-select
+            v-model:value="reviewFailureForm.reason"
+            style="width:100%"
+            placeholder="请选择原因"
+          >
+            <a-select-option v-for="reason in REVIEW_FOLLOW_FAILURE_REASONS" :key="reason" :value="reason">
+              {{ reason }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
     <SubOrderOpsDrawer
       v-model:open="taskOpsDetailOpen"
       :sub-order-id="taskOpsDetailTarget?.id || ''"
@@ -887,17 +915,23 @@ const rejectModalOpen = ref(false)
 const rejectSaving = ref(false)
 const rejectForm = ref<any>({ reason: '' })
 const rejectTarget = ref<any>(null)
+const reviewFailureModalOpen = ref(false)
+const reviewFailureSaving = ref(false)
+const reviewFailureForm = ref<any>({ reason: '已掉评' })
+const reviewFailureTarget = ref<any>(null)
 const taskOpsDetailOpen = ref(false)
 const taskOpsDetailTarget = ref<any>(null)
 
 type WorkbenchNavKey = 'pending' | 'improving' | 'reviewFollow' | 'afterSale'
-const PROBLEM_TASK_STATUSES = ['已取消', '已退款', '无此订单', '本金多返', '不下单']
+const PROBLEM_TASK_STATUSES = ['已取消', '已退款', '无此订单', '本金多返', '不下单', '评论不显示', '评论被拒', '买手失联', '买手拒绝上评', '卖家要求不上评']
+const REVIEW_FOLLOW_FAILURE_REASONS = ['已掉评', '评论不显示', '评论被拒', '买手失联', '买手拒绝上评', '卖家要求不上评']
 
 const workflowSteps = [0, 1, 2, 3, 4]
 const wbViewMode = ref<'order' | 'sub'>('order')
 const wbNav = ref<WorkbenchNavKey>('pending')
 const expandedOrderIds = ref<string[]>([])
 const enableMockPreview = ref(true)
+const pendingListSearchSnapshot = ref('')
 
 const isAllStaffSelected = computed(() => selectedStaffId.value === ALL_STAFF_KEY)
 
@@ -919,7 +953,10 @@ const filterTabs = computed(() => {
     return [
       { label: '全部', value: '', count: reviewFollowupTasks.value.length },
       { label: '待催评', value: '待催评', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '待催评').length },
+      { label: '已催评', value: '已催评', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '已催评').length },
+      { label: '已上评待显示', value: '已上评待显示', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '已上评待显示').length },
       { label: '待传评', value: '待传评', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '待传评').length },
+      { label: '超时跟进', value: '超时跟进', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '超时跟进').length },
     ]
   }
   const all = allTasks.value
@@ -936,7 +973,9 @@ const filterTabs = computed(() => {
 
 const taskSearchPlaceholder = computed(() =>
   wbNav.value === 'pending'
-    ? '搜索主订单号/ASIN/关键词...'
+    ? (wbViewMode.value === 'sub'
+        ? '搜索主订单号/子订单号/ASIN/关键词...'
+        : '搜索主订单号/ASIN/关键词...')
     : '搜索主订单号/子订单号/ASIN/买手/关键词...'
 )
 const pendingBuyerMatchTasks = computed(() =>
@@ -962,22 +1001,23 @@ const pendingListTasks = computed(() => {
   }
   return todayPendingBuyerMatchTasks.value
 })
+const pendingOrderGroups = computed(() => buildWorkbenchGroups(pendingListTasks.value).filter(group => group.actionableSubCount > 0))
 const todayActionableTasks = computed(() => todayRelevantTasks.value.filter(task => !isDone(task.status)))
 const todayImprovingRelevantTasks = computed(() => todayRelevantTasks.value.filter(task => !!task.buyer_id))
 const todayReviewFollowRelevantTasks = computed(() =>
   todayRelevantTasks.value.filter(task => isReviewTrackableTask(task))
 )
 const reviewFollowupTasks = computed(() =>
-  actionableTasks.value.filter(task => getTaskCheckpoint(task) === '待上传留评')
+  actionableTasks.value.filter(task => isReviewTrackableTask(task))
 )
 const displayedTaskCards = computed(() => {
-  if (wbNav.value === 'pending') return pendingListTasks.value
-  if (wbNav.value === 'reviewFollow') return reviewFollowupTasks.value
+  if (wbNav.value === 'pending') return wbViewMode.value === 'sub' ? pendingListTasks.value : []
+  if (wbNav.value === 'reviewFollow') return getSortedReviewFollowTasks(reviewFollowupTasks.value)
   if (wbNav.value === 'afterSale') return []
   return improvingTasks.value
 })
 const wbNavItems = computed<Array<{ key: WorkbenchNavKey; label: string; count: number }>>(() => ([
-  { key: 'pending', label: '待分配买手', count: todayPendingBuyerMatchTasks.value.length },
+  { key: 'pending', label: '待操作订单', count: todayPendingBuyerMatchTasks.value.length },
   { key: 'improving', label: '待完善订单', count: improvingTasks.value.length },
   { key: 'reviewFollow', label: '评论跟进', count: reviewFollowupTasks.value.length },
   { key: 'afterSale', label: '问题单售后', count: afterSaleTasks.value.length },
@@ -1073,8 +1113,6 @@ function buildWorkbenchGroups(sourceTasks: any[]) {
     })
 }
 
-const allWorkbenchOrderGroups = computed(() => buildWorkbenchGroups(pendingBuyerMatchTasks.value).filter(group => group.actionableSubCount > 0))
-const todayTodoOrderGroups = computed(() => allWorkbenchOrderGroups.value.filter(group => group.todayCount > 0))
 const improvingSummary = computed(() => ({
   needRefundCount: improvingTasks.value.filter(task => ['待申请返款', '待返款完成'].includes(getTaskCheckpoint(task))).length,
   needOrderCount: improvingTasks.value.filter(task => getTaskCheckpoint(task) === '待填写订单号').length,
@@ -1117,6 +1155,7 @@ function overdayCount(dateStr: string) {
 function getDangerClass(task: any) {
   if (isDone(task.status)) return ''
   if (isOverdue(task.scheduled_date)) return 'card-overdue'
+  if (isTodayReviewFollowUrgentTask(task)) return 'card-review-urgent'
   return ''
 }
 
@@ -1164,12 +1203,101 @@ function getImprovingFilterCategory(task: any) {
 }
 
 function getReviewFollowFilterCategory(task: any) {
-  if (task.status === '已留评' || task.review_submitted_at) return '待传评'
+  if (isReviewFollowOverdue(task)) return '超时跟进'
+  return getReviewFollowBaseCategory(task)
+}
+
+function getReviewFollowBaseCategory(task: any) {
+  if (task.review_screenshot_url) return '待传评'
+  if (task.review_submitted_at || task.review_link || task.status === '已留评') return '已上评待显示'
+  if (task.review_followed_at) return '已催评'
   return '待催评'
 }
 
+function isReviewFollowOverdue(task: any) {
+  return !!task.scheduled_date && !isDone(task.status) && isOverdue(task.scheduled_date)
+}
+
+function getReviewFollowOverdueLabel(task: any) {
+  const baseCategory = getReviewFollowBaseCategory(task)
+  if (baseCategory === '待催评') return '催评超时'
+  if (baseCategory === '待传评') return '待传评超时'
+  return '上评超时'
+}
+
+function getReviewFollowDateBadgeText(task: any) {
+  if (wbNav.value !== 'reviewFollow') return ''
+  const baseCategory = getReviewFollowBaseCategory(task)
+  if (baseCategory === '待传评' && task.review_submitted_at) {
+    return `已上评 ${Math.max(dayjs().diff(dayjs(task.review_submitted_at), 'day'), 0)} 天`
+  }
+  if (baseCategory === '已上评待显示' && task.review_submitted_at) {
+    return `评论 ${fmtShortTime(task.review_submitted_at)}`
+  }
+  if (baseCategory === '已催评' && task.review_followed_at) {
+    return `催评 ${fmtShortTime(task.review_followed_at)}`
+  }
+  return ''
+}
+
+function getReviewFollowActionLabel(task: any) {
+  const category = getReviewFollowFilterCategory(task)
+  const baseCategory = getReviewFollowBaseCategory(task)
+  if (category === '超时跟进') return '无法完成'
+  if (baseCategory === '待催评') return '催评'
+  if (baseCategory === '已催评') return '已上评'
+  return ''
+}
+
+function shouldShowReviewFollowAction(task: any) {
+  if (wbNav.value !== 'reviewFollow') return false
+  if (getReviewFollowFilterCategory(task) === '超时跟进') return true
+  const baseCategory = getReviewFollowBaseCategory(task)
+  return baseCategory === '待催评' || baseCategory === '已催评'
+}
+
+function handleReviewFollowAction(task: any) {
+  const action = getReviewFollowActionLabel(task)
+  if (action === '催评') {
+    markReviewFollowed(task)
+    return
+  }
+  if (action === '已上评') {
+    markReviewSubmitted(task)
+    return
+  }
+  if (action === '无法完成') {
+    openReviewFailureModal(task)
+  }
+}
+
+function isTodayReviewFollowUrgentTask(task: any) {
+  return wbNav.value === 'reviewFollow'
+    && taskFilter.value === '待催评'
+    && getReviewFollowBaseCategory(task) === '待催评'
+    && task.scheduled_date === today.value
+}
+
+function getSortedReviewFollowTasks(tasks: any[]) {
+  const list = tasks.slice()
+  if (taskFilter.value === '待催评') {
+    return list.sort((a, b) => {
+      const urgentDiff = Number(isTodayReviewFollowUrgentTask(b)) - Number(isTodayReviewFollowUrgentTask(a))
+      if (urgentDiff !== 0) return urgentDiff
+      return (a.scheduled_date || '').localeCompare(b.scheduled_date || '')
+    })
+  }
+  return list.sort((a, b) => (a.scheduled_date || '').localeCompare(b.scheduled_date || ''))
+}
+
 function isReviewTrackableTask(task: any) {
-  return !!task.amazon_order_id || !!task.review_screenshot_url || ['已留评', '已完成'].includes(task.status)
+  if (task.status === '已掉评' || PROBLEM_TASK_STATUSES.includes(task.status)) return false
+  return !!task.amazon_order_id
+    || !!task.review_followed_at
+    || !!task.review_submitted_at
+    || !!task.review_screenshot_url
+    || !!task.review_link
+    || ['已留评', '已完成'].includes(task.status)
 }
 
 function hasReviewDone(task: any) {
@@ -1452,13 +1580,424 @@ async function markReviewFollowed(task: any) {
   }
 }
 
+async function markReviewSubmitted(task: any) {
+  const submittedAt = new Date().toISOString()
+  try {
+    if (!task._is_mock) {
+      const { error } = await supabase.from('sub_orders').update({ review_submitted_at: submittedAt }).eq('id', task.id)
+      if (error) throw error
+    }
+    task.review_submitted_at = submittedAt
+    message.success('已标记为已上评')
+  } catch (e: any) {
+    message.error('记录已上评失败：' + e.message)
+  }
+}
+
+function openReviewFailureModal(task: any) {
+  reviewFailureTarget.value = task
+  reviewFailureForm.value = { reason: '已掉评' }
+  reviewFailureModalOpen.value = true
+}
+
+async function submitReviewFailure() {
+  if (!reviewFailureTarget.value || !reviewFailureForm.value.reason) {
+    message.warning('请选择无法完成原因')
+    return
+  }
+
+  reviewFailureSaving.value = true
+  try {
+    const nextStatus = reviewFailureForm.value.reason
+    if (!reviewFailureTarget.value._is_mock) {
+      const { error } = await supabase
+        .from('sub_orders')
+        .update({ status: nextStatus, cancel_reason: nextStatus })
+        .eq('id', reviewFailureTarget.value.id)
+      if (error) throw error
+    }
+
+    reviewFailureTarget.value.status = nextStatus
+    reviewFailureTarget.value.cancel_reason = nextStatus
+    reviewFailureModalOpen.value = false
+    filterTaskList()
+    message.success('已标记为无法完成')
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    reviewFailureSaving.value = false
+  }
+}
+
 function buildMockTasks() {
   const now = dayjs()
   const today = now.format('YYYY-MM-DD')
+  const yesterday = now.subtract(1, 'day').format('YYYY-MM-DD')
+  const twoDaysAgo = now.subtract(2, 'day').format('YYYY-MM-DD')
   const tomorrow = now.add(1, 'day').format('YYYY-MM-DD')
   const dayAfter = now.add(2, 'day').format('YYYY-MM-DD')
 
   return [
+    {
+      id: 'mock_pending_match_1005',
+      order_id: 'mock_order_pending_a',
+      _order_number: 'MOCK-2026-P001',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1005',
+      status: '待分配',
+      staff_name: '张敏',
+      product_name: '车载手机支架',
+      brand_name: 'RealmAI',
+      category: 'Automotive',
+      review_level: 'A',
+      asin: 'B0MOCK1005',
+      store_name: 'US-Store-05',
+      country: 'US',
+      product_price: 18.99,
+      scheduled_date: today,
+      keyword: 'car phone mount',
+      order_type: '免评',
+      review_type: '文字评',
+      customer_name: '宁波驰越贸易',
+      sales_person: '王浩',
+      variant_info: '出风口款',
+      task_notes: '商务备注：优先分配有车品经验的买手',
+      notes: '订单备注：客户要求今天内完成买手匹配',
+      created_at: now.subtract(6, 'hour').toISOString(),
+      _is_mock: true,
+    },
+    {
+      id: 'mock_pending_match_1006',
+      order_id: 'mock_order_pending_a',
+      _order_number: 'MOCK-2026-P001',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1006',
+      status: '待分配',
+      staff_name: '张敏',
+      product_name: '车载手机支架',
+      brand_name: 'RealmAI',
+      category: 'Automotive',
+      review_level: 'A',
+      asin: 'B0MOCK1005',
+      store_name: 'US-Store-05',
+      country: 'US',
+      product_price: 18.99,
+      scheduled_date: today,
+      keyword: 'car phone mount',
+      order_type: '免评',
+      review_type: '文字评',
+      customer_name: '宁波驰越贸易',
+      sales_person: '王浩',
+      variant_info: '仪表台款',
+      task_notes: '商务备注：同主订单第二个子单，一并分配车品买手',
+      notes: '订单备注：同主任务下的追加子单',
+      created_at: now.subtract(8, 'hour').toISOString(),
+      _is_mock: true,
+    },
+    {
+      id: 'mock_pending_match_1007',
+      order_id: 'mock_order_pending_b',
+      _order_number: 'MOCK-2026-P002',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1007',
+      status: '待分配',
+      staff_name: '王磊',
+      product_name: '宠物梳毛手套',
+      brand_name: 'RealmAI',
+      category: 'Pets',
+      review_level: 'B',
+      asin: 'B0MOCK1007',
+      store_name: 'US-Store-07',
+      country: 'US',
+      product_price: 14.80,
+      scheduled_date: today,
+      keyword: 'pet grooming glove',
+      order_type: '免评',
+      review_type: '文字评',
+      customer_name: '苏州萌宠用品',
+      sales_person: '陈婷',
+      variant_info: '蓝色右手款',
+      task_notes: '商务备注：客户首次合作，优先稳妥买手',
+      notes: '订单备注：尽快完成买手匹配并回传',
+      created_at: now.subtract(10, 'hour').toISOString(),
+      _is_mock: true,
+    },
+    {
+      id: 'mock_pending_match_1008',
+      order_id: 'mock_order_pending_b',
+      _order_number: 'MOCK-2026-P002',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1008',
+      status: '待分配',
+      staff_name: '王磊',
+      product_name: '宠物梳毛手套',
+      brand_name: 'RealmAI',
+      category: 'Pets',
+      review_level: 'B',
+      asin: 'B0MOCK1007',
+      store_name: 'US-Store-07',
+      country: 'US',
+      product_price: 14.80,
+      scheduled_date: today,
+      keyword: 'pet grooming glove',
+      order_type: '免评',
+      review_type: '文字评',
+      customer_name: '苏州萌宠用品',
+      sales_person: '陈婷',
+      variant_info: '粉色左手款',
+      task_notes: '商务备注：同主订单第二个子单，优先一起分配',
+      notes: '订单备注：与同主单一起推进',
+      created_at: now.subtract(12, 'hour').toISOString(),
+      _is_mock: true,
+    },
+    {
+      id: 'mock_pending_match_1009',
+      order_id: 'mock_order_pending_c',
+      _order_number: 'MOCK-2026-P003',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1009',
+      status: '待分配',
+      staff_name: '张敏',
+      product_name: '儿童水彩画笔套装',
+      brand_name: 'RealmAI',
+      category: 'Home',
+      review_level: 'A',
+      asin: 'B0MOCK1009',
+      store_name: 'US-Store-09',
+      country: 'US',
+      product_price: 17.30,
+      scheduled_date: today,
+      keyword: 'kids watercolor pens',
+      order_type: '免评',
+      review_type: '文字评',
+      customer_name: '义乌彩绘文具',
+      sales_person: 'Luna',
+      variant_info: '24色',
+      task_notes: '商务备注：优先匹配有亲子用品经验的买手',
+      notes: '订单备注：今天完成买手匹配即可',
+      created_at: now.subtract(14, 'hour').toISOString(),
+      _is_mock: true,
+    },
+    {
+      id: 'mock_overdue_improving_1010',
+      order_id: 'mock_order_1010',
+      _order_number: 'MOCK-2026-1010',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1010',
+      status: '已分配',
+      staff_name: '张敏',
+      buyer_id: 'mock_buyer_sophia',
+      buyer_name: 'Sophia Lee',
+      refund_status: '待退款',
+      product_name: '磁吸充电支架',
+      brand_name: 'RealmAI',
+      category: 'Electronics',
+      review_level: 'A',
+      asin: 'B0MOCK1010',
+      store_name: 'US-Store-10',
+      country: 'US',
+      product_price: 27.9,
+      scheduled_date: yesterday,
+      keyword: 'magnetic charging stand',
+      order_type: '图外评',
+      review_type: '图片评',
+      customer_name: '深圳智联数码',
+      sales_person: '王浩',
+      variant_info: '15W 黑色',
+      task_notes: '商务备注：已匹配买手但返款资料还没补齐',
+      notes: '订单备注：逾期后仍需在待完善订单继续推进',
+      created_at: now.subtract(3, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(2, 'day').toISOString(),
+      _is_mock: true,
+    },
+    {
+      id: 'mock_overdue_improving_1011',
+      order_id: 'mock_order_1011',
+      _order_number: 'MOCK-2026-1011',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1011',
+      status: '进行中',
+      staff_name: '李倩',
+      buyer_id: 'mock_buyer_ava',
+      buyer_name: 'Ava Wilson',
+      refund_status: '已退款',
+      refund_method: 'PayPal',
+      refund_sequence: '预付',
+      product_name: '婴儿监护摄像头',
+      brand_name: 'RealmAI',
+      category: 'Home',
+      review_level: 'S',
+      asin: 'B0MOCK1011',
+      store_name: 'US-Store-11',
+      country: 'US',
+      product_price: 39.5,
+      scheduled_date: twoDaysAgo,
+      keyword: 'baby monitor camera',
+      order_type: '图外评',
+      review_type: '视频评',
+      customer_name: '杭州安居智能',
+      sales_person: 'Luna',
+      variant_info: '1080P 套装版',
+      task_notes: '商务备注：买手已收款，但 Amazon 单号迟迟未回传',
+      notes: '订单备注：逾期后保留在待完善订单跟进',
+      created_at: now.subtract(4, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(3, 'day').toISOString(),
+      _is_mock: true,
+      __mock_refund_fee_usd: 1.8,
+      __mock_paypal_email: 'ava.wilson@example.com',
+    },
+    {
+      id: 'mock_overdue_review_1012',
+      order_id: 'mock_order_1012',
+      _order_number: 'MOCK-2026-1012',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1012',
+      status: '已下单',
+      staff_name: '王磊',
+      buyer_id: 'mock_buyer_emma',
+      buyer_name: 'Emma Davis',
+      refund_status: '已退款',
+      refund_method: '礼品卡',
+      refund_sequence: '评后返',
+      refund_amount: 24.3,
+      product_name: '折叠露营灯',
+      brand_name: 'RealmAI',
+      category: 'Outdoor',
+      review_level: 'A',
+      asin: 'B0MOCK1012',
+      store_name: 'US-Store-12',
+      country: 'US',
+      product_price: 24.3,
+      scheduled_date: yesterday,
+      amazon_order_id: '333-3333333-3333333',
+      order_type: '免评',
+      review_type: '文字评',
+      customer_name: '宁波野营装备',
+      sales_person: '陈婷',
+      variant_info: '暖光双灯版',
+      task_notes: '商务备注：订单已下，催评回传超期仍需跟进',
+      notes: '订单备注：评论截图未上传',
+      created_at: now.subtract(6, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(5, 'day').toISOString(),
+      amazon_order_placed_at: now.subtract(4, 'day').toISOString(),
+      _is_mock: true,
+    },
+    {
+      id: 'mock_overdue_review_1013',
+      order_id: 'mock_order_1013',
+      _order_number: 'MOCK-2026-1013',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1013',
+      status: '已下单',
+      staff_name: '陈晨',
+      buyer_id: 'mock_buyer_isabella',
+      buyer_name: 'Isabella Moore',
+      refund_status: '已退款',
+      refund_method: 'PayPal',
+      refund_sequence: '评后返',
+      refund_amount: 31.6,
+      product_name: '空气炸锅烘焙盘',
+      brand_name: 'RealmAI',
+      category: 'Kitchen',
+      review_level: 'B',
+      asin: 'B0MOCK1013',
+      store_name: 'US-Store-13',
+      country: 'US',
+      product_price: 31.6,
+      scheduled_date: twoDaysAgo,
+      amazon_order_id: '444-4444444-4444444',
+      order_type: '图外评',
+      review_type: '图片评',
+      customer_name: '佛山厨具优选',
+      sales_person: '王浩',
+      variant_info: '8寸方盘',
+      task_notes: '商务备注：已经催评，但留评截图还没回传',
+      notes: '订单备注：逾期后继续保留在评论跟进',
+      created_at: now.subtract(7, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(6, 'day').toISOString(),
+      amazon_order_placed_at: now.subtract(5, 'day').toISOString(),
+      review_followed_at: now.subtract(1, 'day').toISOString(),
+      _is_mock: true,
+      __mock_refund_fee_usd: 1.6,
+      __mock_paypal_email: 'isabella.moore@example.com',
+    },
+    {
+      id: 'mock_review_follow_pending_1014',
+      order_id: 'mock_order_1014',
+      _order_number: 'MOCK-2026-1014',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1014',
+      status: '已下单',
+      staff_name: '张敏',
+      buyer_id: 'mock_buyer_madison',
+      buyer_name: 'Madison Clark',
+      refund_status: '已退款',
+      refund_method: '礼品卡',
+      refund_sequence: '评后返',
+      refund_amount: 26.8,
+      product_name: '折叠笔记本支架',
+      brand_name: 'RealmAI',
+      category: 'Office',
+      review_level: 'A',
+      asin: 'B0MOCK1014',
+      store_name: 'US-Store-14',
+      country: 'US',
+      product_price: 26.8,
+      scheduled_date: today,
+      amazon_order_id: '555-5555555-5555555',
+      order_type: '图外评',
+      review_type: '文字评',
+      customer_name: '苏州云端办公',
+      sales_person: '王浩',
+      variant_info: '银色便携款',
+      task_notes: '商务备注：今天必须完成首次催评',
+      notes: '订单备注：当前仍处于待催评',
+      created_at: now.subtract(3, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(2, 'day').toISOString(),
+      amazon_order_placed_at: now.subtract(1, 'day').toISOString(),
+      _is_mock: true,
+    },
+    {
+      id: 'mock_review_follow_upload_1015',
+      order_id: 'mock_order_1015',
+      _order_number: 'MOCK-2026-1015',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1015',
+      status: '已留评',
+      staff_name: '李倩',
+      buyer_id: 'mock_buyer_chloe',
+      buyer_name: 'Chloe Hall',
+      refund_status: '已退款',
+      refund_method: 'PayPal',
+      refund_sequence: '评后返',
+      refund_amount: 28.4,
+      product_name: '无绳香薰机',
+      brand_name: 'RealmAI',
+      category: 'Home',
+      review_level: 'B',
+      asin: 'B0MOCK1015',
+      store_name: 'US-Store-15',
+      country: 'US',
+      product_price: 28.4,
+      scheduled_date: tomorrow,
+      amazon_order_id: '666-6666666-6666666',
+      review_submitted_at: now.subtract(5, 'hour').toISOString(),
+      review_screenshot_url: 'https://placehold.co/240x120/e2e8f0/64748b?text=Review+Proof',
+      order_type: '免评',
+      review_type: '图片评',
+      customer_name: '厦门逸居生活',
+      sales_person: 'Luna',
+      variant_info: '白色标准版',
+      task_notes: '商务备注：凭证已收到，等待传评',
+      notes: '订单备注：当前处于待传评',
+      created_at: now.subtract(4, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(3, 'day').toISOString(),
+      amazon_order_placed_at: now.subtract(2, 'day').toISOString(),
+      review_followed_at: now.subtract(1, 'day').toISOString(),
+      _is_mock: true,
+      __mock_refund_fee_usd: 1.4,
+      __mock_paypal_email: 'chloe.hall@example.com',
+    },
     {
       id: 'mock_prepay_gift_pending',
       order_id: 'mock_order_1001',
@@ -2205,6 +2744,7 @@ function filterTaskList() {
     list = list.filter(t => {
       const pendingMatched =
         (t._order_number || '').toLowerCase().includes(kw) ||
+        (t.sub_order_number || '').toLowerCase().includes(kw) ||
         (t.asin || '').toLowerCase().includes(kw) ||
         (t.keyword || '').toLowerCase().includes(kw) ||
         (t.product_name || '').toLowerCase().includes(kw)
@@ -2232,12 +2772,23 @@ function toggleOrderExpand(orderId: string) {
 }
 
 function focusTask(task: any) {
-  wbViewMode.value = 'sub'
-  taskSearch.value = wbNav.value === 'pending'
-    ? (task._order_number || task.asin || task.keyword || '')
-    : (task.sub_order_number || task._order_number || '')
+  if (wbNav.value === 'pending') {
+    pendingListSearchSnapshot.value = taskSearch.value
+    wbViewMode.value = 'sub'
+    taskSearch.value = task.sub_order_number || task._order_number || ''
+  } else {
+    wbViewMode.value = 'sub'
+    taskSearch.value = task.sub_order_number || task._order_number || ''
+  }
   filterTaskList()
   allTasks.value.forEach(t => { t._expanded = t.id === task.id })
+}
+
+function backToPendingOrderList() {
+  wbViewMode.value = 'order'
+  taskSearch.value = pendingListSearchSnapshot.value
+  filterTaskList()
+  allTasks.value.forEach(t => { t._expanded = false })
 }
 
 function openTaskOpsDetail(task: any) {
@@ -2913,7 +3464,7 @@ onMounted(() => {
 }
 .today-focus-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 .today-stat {
@@ -3143,6 +3694,10 @@ onMounted(() => {
 }
 .task-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 .task-card.card-overdue { border-left: 4px solid #ef4444; }
+.task-card.card-review-urgent {
+  border-left: 4px solid #d97706;
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.06), #fff 72px);
+}
 .task-card.expanded { border-color: #2563eb; box-shadow: 0 2px 12px rgba(37,99,235,0.1); }
 
 /* 卡片头 */
@@ -3294,6 +3849,15 @@ onMounted(() => {
   color: #d97706;
   background: rgba(217, 119, 6, 0.1);
   border: 1px solid rgba(217, 119, 6, 0.18);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.review-follow-overdue {
+  font-size: 11px;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.16);
   border-radius: 999px;
   padding: 2px 8px;
   white-space: nowrap;
@@ -3732,10 +4296,6 @@ onMounted(() => {
 
 @media (max-width: 1280px) {
   .workbench-priority { grid-template-columns: 1fr; }
-  .today-focus-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-@media (max-width: 1180px) {
   .today-focus-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

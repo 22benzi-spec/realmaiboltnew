@@ -56,6 +56,9 @@
         <a-select v-model:value="filterType" style="width: 110px" @change="load" allow-clear placeholder="订单状态">
           <a-select-option v-for="t in issueTypes" :key="t" :value="t">{{ t }}</a-select-option>
         </a-select>
+        <a-select v-model:value="filterStatus" style="width: 120px" @change="load" allow-clear placeholder="处理状态">
+          <a-select-option v-for="s in processStatusOptions" :key="s" :value="s">{{ s }}</a-select-option>
+        </a-select>
         <a-select v-model:value="filterPrincipalStatus" style="width: 120px" @change="load" allow-clear placeholder="本金状态">
           <a-select-option v-for="s in principalStatusOptions" :key="s" :value="s">{{ s }}</a-select-option>
         </a-select>
@@ -130,7 +133,29 @@
             <span v-else class="text-gray">--</span>
           </template>
           <template v-if="column.key === 'action'">
-            <a-button type="link" size="small" @click="openDetail(record)">处理</a-button>
+            <div class="action-btns">
+              <a-button type="link" size="small" @click="openDetail(record)">详情</a-button>
+              <a-button type="link" size="small" @click="openActionModal(record, 'replace-order')">修改订单号</a-button>
+              <a-button type="link" size="small" @click="openActionModal(record, 'reorder')">补单</a-button>
+              <a-popconfirm
+                title="确定改为需补单？"
+                @confirm="quickUpdateStatus(record, '需补单')"
+              >
+                <a-button type="link" size="small">需补单</a-button>
+              </a-popconfirm>
+              <a-popconfirm
+                title="确定改为已关闭？"
+                @confirm="quickUpdateStatus(record, '已关闭')"
+              >
+                <a-button type="link" size="small">已关闭</a-button>
+              </a-popconfirm>
+              <a-popconfirm
+                title="确定改为无需处理？"
+                @confirm="quickUpdateStatus(record, '无需处理')"
+              >
+                <a-button type="link" size="small">无需处理</a-button>
+              </a-popconfirm>
+            </div>
           </template>
         </template>
       </a-table>
@@ -138,7 +163,7 @@
 
     <a-drawer
       v-model:open="drawerOpen"
-      :title="`问题单 · ${currentIssue?.sub_order_number || ''}`"
+      :title="`${drawerMode === 'handle' ? '操作问题单' : '问题单详情'} · ${currentIssue?.sub_order_number || ''}`"
       width="700"
       placement="right"
       destroy-on-close
@@ -202,51 +227,94 @@
           </div>
         </div>
 
-        <div class="drawer-section">
+        <div v-if="drawerMode === 'detail'" class="drawer-section">
           <div class="drawer-section-title">本金情况</div>
-          <div class="principal-row">
-            <a-radio-group v-model:value="editForm.principal_status" button-style="solid" @change="onPrincipalChange">
-              <a-radio-button value="待确定">待确定</a-radio-button>
-              <a-radio-button value="正常">正常</a-radio-button>
-              <a-radio-button value="损失">损失</a-radio-button>
-            </a-radio-group>
-            <template v-if="editForm.principal_status === '损失'">
-              <a-input-number
-                v-model:value="editForm.principal_amount"
-                :min="0"
-                :precision="2"
-                prefix="$"
-                placeholder="损失金额"
-                style="width: 160px"
-              />
-              <a-select v-model:value="editForm.principal_reason" style="width: 120px" placeholder="情况">
-                <a-select-option value="被骗">被骗</a-select-option>
-                <a-select-option value="差价">差价</a-select-option>
-              </a-select>
-            </template>
+          <div class="detail-grid-3">
+            <div class="detail-item">
+              <span class="detail-label">本金状态</span>
+              <span class="detail-val">{{ getPrincipalStatus(currentIssue) }}</span>
+            </div>
+            <div v-if="getPrincipalStatus(currentIssue) === '损失'" class="detail-item">
+              <span class="detail-label">损失金额</span>
+              <span class="detail-val amount-usd">${{ Number(currentIssue.principal_amount || 0).toFixed(2) }}</span>
+            </div>
+            <div v-if="currentIssue.principal_reason" class="detail-item">
+              <span class="detail-label">损失原因</span>
+              <span class="detail-val">{{ currentIssue.principal_reason }}</span>
+            </div>
           </div>
         </div>
 
         <div class="drawer-section">
-          <div class="drawer-section-title">处理方式</div>
-          <a-radio-group v-model:value="editForm.issue_status" button-style="solid" style="margin-bottom: 16px">
-            <a-radio-button v-for="s in statusOptions" :key="s" :value="s">{{ s }}</a-radio-button>
-          </a-radio-group>
+          <div class="drawer-section-title">{{ drawerMode === 'handle' ? '操作' : '处理结果' }}</div>
+          <template v-if="drawerMode === 'detail'">
+            <div class="detail-grid-3">
+              <div class="detail-item">
+                <span class="detail-label">处理状态</span>
+                <a-tag :color="statusColorMap[normalizeIssueStatus(currentIssue.issue_status)] || 'default'" style="margin: 0">
+                  {{ normalizeIssueStatus(currentIssue.issue_status) }}
+                </a-tag>
+              </div>
+              <div v-if="currentIssue.new_amazon_order_id" class="detail-item">
+                <span class="detail-label">新亚马逊订单号</span>
+                <span class="detail-val mono">{{ currentIssue.new_amazon_order_id }}</span>
+              </div>
+              <div v-if="currentIssue.profit_diff" class="detail-item">
+                <span class="detail-label">差价盈利</span>
+                <span class="detail-val amount-usd">${{ Number(currentIssue.profit_diff || 0).toFixed(2) }}</span>
+              </div>
+              <div v-if="currentIssue.replacement_buyer_name" class="detail-item">
+                <span class="detail-label">补单买手</span>
+                <span class="detail-val">{{ currentIssue.replacement_buyer_name }}</span>
+              </div>
+              <div v-if="currentIssue.replacement_sub_order_number" class="detail-item">
+                <span class="detail-label">补单子订单号</span>
+                <span class="detail-val mono">{{ currentIssue.replacement_sub_order_number }}</span>
+              </div>
+              <div v-if="currentIssue.loss_amount" class="detail-item">
+                <span class="detail-label">损失金额</span>
+                <span class="detail-val amount-usd">${{ Number(currentIssue.loss_amount || 0).toFixed(2) }}</span>
+              </div>
+              <div v-if="currentIssue.refund_to_client_method" class="detail-item">
+                <span class="detail-label">返款方式</span>
+                <span class="detail-val">{{ currentIssue.refund_to_client_method }}</span>
+              </div>
+              <div v-if="currentIssue.refund_to_client_amount" class="detail-item">
+                <span class="detail-label">返款金额</span>
+                <span class="detail-val amount-usd">${{ Number(currentIssue.refund_to_client_amount || 0).toFixed(2) }}</span>
+              </div>
+              <div v-if="currentIssue.refund_to_client_notes" class="detail-item full3">
+                <span class="detail-label">返款备注</span>
+                <span class="detail-val">{{ currentIssue.refund_to_client_notes }}</span>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+          <div class="handle-current-status">
+            当前状态：
+            <a-tag :color="statusColorMap[normalizeIssueStatus(currentIssue.issue_status)] || 'default'">
+              {{ normalizeIssueStatus(currentIssue.issue_status) }}
+            </a-tag>
+          </div>
+          <div class="handle-action-grid">
+            <a-button :type="handleAction === 'replace-order' ? 'primary' : 'default'" @click="setHandleAction('replace-order')">修改订单号</a-button>
+            <a-button :type="handleAction === 'reorder' ? 'primary' : 'default'" @click="setHandleAction('reorder')">补单</a-button>
+            <a-button :type="handleAction === 'mark-need-reorder' ? 'primary' : 'default'" @click="setHandleAction('mark-need-reorder')">改为需补单</a-button>
+            <a-button :type="handleAction === 'mark-closed' ? 'primary' : 'default'" @click="setHandleAction('mark-closed')">改为已关闭</a-button>
+            <a-button :type="handleAction === 'mark-no-need' ? 'primary' : 'default'" @click="setHandleAction('mark-no-need')">改为无需处理</a-button>
+          </div>
 
-          <template v-if="editForm.issue_status === '已替换单号'">
+          <template v-if="handleAction === 'replace-order'">
             <div class="handle-box">
               <a-form layout="vertical">
-                <a-form-item label="新亚马逊订单号 (老外提供的替换订单)">
+                <a-form-item label="新亚马逊订单号">
                   <a-input v-model:value="editForm.new_amazon_order_id" placeholder="输入新的亚马逊订单号..." />
-                </a-form-item>
-                <a-form-item label="差价盈利 (本次退款少退的部分，记为我们的利润)">
-                  <a-input-number v-model:value="editForm.profit_diff" :min="0" :precision="2" prefix="$" style="width: 200px" />
                 </a-form-item>
               </a-form>
             </div>
           </template>
 
-          <template v-if="editForm.issue_status === '需补单' || editForm.issue_status === '已补单'">
+          <template v-if="handleAction === 'reorder'">
             <div class="handle-box">
               <a-form layout="vertical">
                 <a-form-item label="补单买手">
@@ -269,70 +337,75 @@
                     </a-select-option>
                   </a-select>
                 </a-form-item>
-                <a-form-item label="补单子订单号 (可选)">
+                <a-form-item label="补单子订单号">
                   <a-input v-model:value="editForm.replacement_sub_order_number" placeholder="关联新的子订单号..." />
                 </a-form-item>
-                <a-form-item label="损失金额">
-                  <a-input-number v-model:value="editForm.loss_amount" :min="0" :precision="2" prefix="$" style="width: 200px" />
-                </a-form-item>
-                <div class="blacklist-action">
-                  <a-checkbox v-model:checked="editForm.blacklist_buyer">将原买手加入黑名单</a-checkbox>
-                </div>
               </a-form>
             </div>
           </template>
 
-          <template v-if="editForm.issue_status === '无需处理'">
-            <div class="handle-box handle-box-refund">
-              <div class="refund-hint">客户不要求补单，可记录退款给客户或其他无需继续处理的结果</div>
-              <a-form layout="vertical">
-                <a-form-item label="返款方式">
-                  <a-radio-group v-model:value="editForm.refund_to_client_method" button-style="solid">
-                    <a-radio-button value="PayPal">PayPal</a-radio-button>
-                    <a-radio-button value="礼品卡">礼品卡</a-radio-button>
-                    <a-radio-button value="转账">转账</a-radio-button>
-                    <a-radio-button value="其他">其他</a-radio-button>
-                  </a-radio-group>
-                </a-form-item>
-                <a-form-item label="返款金额 (本金 + 佣金)">
-                  <a-input-number
-                    v-model:value="editForm.refund_to_client_amount"
-                    :min="0"
-                    :precision="2"
-                    prefix="$"
-                    style="width: 200px"
-                    :placeholder="`参考产品价格 $${Number(currentIssue.product_price || 0).toFixed(2)}`"
-                  />
-                  <div class="refund-calc-hint">
-                    产品价格 ${{ Number(currentIssue.product_price || 0).toFixed(2) }} + 佣金 ¥{{ Number(currentIssue.commission_fee || 0).toFixed(2) }}
-                  </div>
-                </a-form-item>
-                <a-form-item label="返款备注">
-                  <a-textarea v-model:value="editForm.refund_to_client_notes" :rows="2" placeholder="如转账凭证、收款账号等..." />
-                </a-form-item>
-                <div class="blacklist-action">
-                  <a-checkbox v-model:checked="editForm.blacklist_buyer">将买手加入黑名单</a-checkbox>
-                </div>
-              </a-form>
+          <template v-if="handleAction === 'mark-need-reorder' || handleAction === 'mark-closed' || handleAction === 'mark-no-need'">
+            <div class="handle-box">
+              <div class="handle-action-hint">
+                {{ getHandleActionHint() }}
+              </div>
             </div>
+          </template>
           </template>
         </div>
 
-        <div class="drawer-section">
+        <div v-if="drawerMode === 'detail'" class="drawer-section">
           <div class="drawer-section-title">备注</div>
-          <a-textarea v-model:value="editForm.resolution_notes" :rows="3" placeholder="让业务员记录处理过程、补单说明、改单号说明等..." />
+          <span v-if="currentIssue.resolution_notes" class="remark-text">{{ currentIssue.resolution_notes }}</span>
+          <span v-else class="text-gray">--</span>
         </div>
 
         <div class="drawer-footer">
-          <a-popconfirm title="确定删除此问题单?" @confirm="handleDelete">
-            <a-button danger>删除</a-button>
-          </a-popconfirm>
           <div style="flex: 1"></div>
           <a-button @click="drawerOpen = false">关闭</a-button>
-          <a-button type="primary" :loading="saving" @click="handleUpdate">保存</a-button>
+          <a-button v-if="drawerMode === 'handle'" type="primary" :loading="saving" @click="handleUpdate">确认操作</a-button>
         </div>
       </template>
     </a-drawer>
+
+    <a-modal
+      v-model:open="actionModalOpen"
+      :title="actionModalType === 'replace-order' ? '修改订单号' : '补单'"
+      :confirm-loading="saving"
+      @ok="submitActionModal"
+      @cancel="closeActionModal"
+    >
+      <a-form layout="vertical">
+        <a-form-item v-if="actionModalType === 'replace-order'" label="新亚马逊订单号">
+          <a-input v-model:value="editForm.new_amazon_order_id" placeholder="输入新的亚马逊订单号..." />
+        </a-form-item>
+        <template v-if="actionModalType === 'reorder'">
+          <a-form-item label="补单买手">
+            <a-select
+              v-model:value="editForm.replacement_buyer_id"
+              show-search
+              :filter-option="false"
+              placeholder="搜索买手..."
+              @search="searchBuyers"
+              style="width: 100%"
+              allow-clear
+              :not-found-content="searchingBuyers ? '搜索中...' : '无结果'"
+              @change="onReplacementBuyerChange"
+            >
+              <a-select-option v-for="b in buyerResults" :key="b.id" :value="b.id">
+                <div class="buyer-option">
+                  <span>{{ b.buyer_number }} - {{ b.name }}</span>
+                  <span class="buyer-option-meta">{{ b.country }} · 完成 {{ b.total_completed }} 单</span>
+                </div>
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item label="补单子订单号">
+            <a-input v-model:value="editForm.replacement_sub_order_number" placeholder="关联新的子订单号..." />
+          </a-form-item>
+        </template>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -368,10 +441,14 @@ const filterPrincipalStatus = ref<string | undefined>(undefined)
 const filterSearch = ref('')
 const drawerOpen = ref(false)
 const currentIssue = ref<any>(null)
+const actionModalOpen = ref(false)
+const actionModalType = ref<'replace-order' | 'reorder' | ''>('')
+const drawerMode = ref<'detail' | 'handle'>('detail')
+const handleAction = ref<'replace-order' | 'reorder' | 'mark-need-reorder' | 'mark-closed' | 'mark-no-need' | ''>('')
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 
 const issueTypes = ['不下单', '取消', '退款', '无此订单']
-const statusOptions = ['待处理', '处理中', '需补单', '已替换单号', '已补单', '已关闭', '无需处理']
+const processStatusOptions = ['待处理', '处理中', '已处理', '已替换单号', '需补单', '已补单', '已关闭', '无需处理']
 const principalStatusOptions = ['待确定', '正常', '损失']
 
 const issueTypeColor: Record<string, string> = {
@@ -384,6 +461,7 @@ const issueTypeColor: Record<string, string> = {
 const statusColorMap: Record<string, string> = {
   '待处理': 'orange',
   '处理中': 'processing',
+  '已处理': 'blue',
   '已替换单号': 'cyan',
   '需补单': 'red',
   '已补单': 'green',
@@ -391,11 +469,12 @@ const statusColorMap: Record<string, string> = {
   '已关闭': 'default',
 }
 
-const stats = ref({ pending: 0, processing: 0, replaced: 0, needReorder: 0, reordered: 0, closed: 0, noNeed: 0 })
+const stats = ref({ pending: 0, processing: 0, handled: 0, replaced: 0, needReorder: 0, reordered: 0, closed: 0, noNeed: 0 })
 
 const statusFilterItems = computed(() => ([
   { label: '待处理', value: '待处理', count: stats.value.pending, tone: 'pending' },
   { label: '处理中', value: '处理中', count: stats.value.processing, tone: 'processing' },
+  { label: '已处理', value: '已处理', count: stats.value.handled, tone: 'handled' },
   { label: '已替换单号', value: '已替换单号', count: stats.value.replaced, tone: 'replaced' },
   { label: '需补单', value: '需补单', count: stats.value.needReorder, tone: 'need-reorder' },
   { label: '已补单', value: '已补单', count: stats.value.reordered, tone: 'reordered' },
@@ -440,7 +519,14 @@ const columns = [
     width: 100,
     customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '',
   },
-  { title: '操作', key: 'action', width: 70, fixed: 'right' as const },
+  {
+    title: '更新时间',
+    dataIndex: 'updated_at',
+    key: 'updated_at',
+    width: 100,
+    customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '',
+  },
+  { title: '操作', key: 'action', width: 300, fixed: 'right' as const },
 ]
 
 async function loadStats() {
@@ -451,6 +537,7 @@ async function loadStats() {
   stats.value = {
     pending: data.filter(d => normalizeIssueStatus(d.issue_status) === '待处理').length,
     processing: data.filter(d => normalizeIssueStatus(d.issue_status) === '处理中').length,
+    handled: data.filter(d => normalizeIssueStatus(d.issue_status) === '已处理').length,
     replaced: data.filter(d => normalizeIssueStatus(d.issue_status) === '已替换单号').length,
     needReorder: data.filter(d => normalizeIssueStatus(d.issue_status) === '需补单').length,
     reordered: data.filter(d => normalizeIssueStatus(d.issue_status) === '已补单').length,
@@ -467,7 +554,7 @@ function applyIssueFilters<T>(query: T, options?: { includeStatusFilter?: boolea
   let nextQuery: any = query
   if (props.staffId) nextQuery = nextQuery.eq('staff_id', props.staffId)
   if (props.issueId) nextQuery = nextQuery.eq('id', props.issueId)
-  if (options?.includeStatusFilter !== false && filterStatus.value) nextQuery = nextQuery.eq('issue_status', filterStatus.value)
+  if (options?.includeStatusFilter !== false && filterStatus.value) nextQuery = applyProcessStatusFilter(nextQuery, filterStatus.value)
   if (filterType.value) nextQuery = nextQuery.eq('issue_type', filterType.value)
   if (filterPrincipalStatus.value) nextQuery = nextQuery.eq('principal_status', filterPrincipalStatus.value)
 
@@ -479,6 +566,13 @@ function applyIssueFilters<T>(query: T, options?: { includeStatusFilter?: boolea
   }
 
   return nextQuery
+}
+
+function applyProcessStatusFilter<T>(query: T, status: string) {
+  let nextQuery: any = query
+  if (status === '已替换单号') return nextQuery.in('issue_status', ['已替换单号', '已替换订单'])
+  if (status === '无需处理') return nextQuery.in('issue_status', ['无需处理', '已退款给客户'])
+  return nextQuery.eq('issue_status', status)
 }
 
 async function load() {
@@ -553,6 +647,31 @@ function onPrincipalChange() {
 }
 
 function openDetail(record: any) {
+  drawerMode.value = 'detail'
+  hydrateIssueForm(record)
+  drawerOpen.value = true
+}
+
+function openHandle(record: any) {
+  drawerMode.value = 'handle'
+  hydrateIssueForm(record)
+  handleAction.value = inferHandleAction(normalizeIssueStatus(record.issue_status))
+  drawerOpen.value = true
+}
+
+function openActionModal(record: any, type: 'replace-order' | 'reorder') {
+  currentIssue.value = record
+  hydrateIssueForm(record)
+  actionModalType.value = type
+  actionModalOpen.value = true
+}
+
+function closeActionModal() {
+  actionModalOpen.value = false
+  actionModalType.value = ''
+}
+
+function hydrateIssueForm(record: any) {
   currentIssue.value = record
   Object.assign(editForm, {
     principal_status: getPrincipalStatus(record),
@@ -571,75 +690,170 @@ function openDetail(record: any) {
     issue_status: normalizeIssueStatus(record.issue_status),
     blacklist_buyer: false,
   })
-  drawerOpen.value = true
+}
+
+function inferHandleAction(status: string) {
+  if (status === '已替换单号') return 'replace-order'
+  if (status === '已补单') return 'reorder'
+  if (status === '需补单') return 'mark-need-reorder'
+  if (status === '已关闭') return 'mark-closed'
+  if (status === '无需处理') return 'mark-no-need'
+  return ''
+}
+
+function setHandleAction(action: 'replace-order' | 'reorder' | 'mark-need-reorder' | 'mark-closed' | 'mark-no-need') {
+  handleAction.value = action
+}
+
+function getHandleActionHint() {
+  if (handleAction.value === 'mark-need-reorder') return '确认后将状态直接改为需补单。'
+  if (handleAction.value === 'mark-closed') return '确认后将状态直接改为已关闭。'
+  if (handleAction.value === 'mark-no-need') return '确认后将状态直接改为无需处理。'
+  return ''
 }
 
 async function handleUpdate() {
   if (!currentIssue.value) return
+  if (!handleAction.value) {
+    message.warning('请选择一个操作')
+    return
+  }
+
   saving.value = true
   try {
-    const normalizedStatus = normalizeIssueStatus(editForm.issue_status)
-    if (editForm.principal_status === '损失' && (!editForm.principal_amount || editForm.principal_amount <= 0)) {
-      message.warning('请填写损失金额')
-      return
-    }
-    if (editForm.principal_status === '损失' && !editForm.principal_reason) {
-      message.warning('请选择损失情况')
-      return
-    }
-    if (normalizedStatus === '已替换单号' && !editForm.new_amazon_order_id.trim()) {
-      message.warning('请填写新的亚马逊订单号')
-      return
-    }
-
+    const actionStatusMap = {
+      'replace-order': '已替换单号',
+      'reorder': '已补单',
+      'mark-need-reorder': '需补单',
+      'mark-closed': '已关闭',
+      'mark-no-need': '无需处理',
+    } as const
+    const normalizedStatus = actionStatusMap[handleAction.value]
     const update: any = {
-      principal_status: editForm.principal_status,
-      principal_reason: editForm.principal_status === '损失' ? editForm.principal_reason : '',
-      principal_stolen: editForm.principal_status === '损失' && editForm.principal_reason === '被骗',
-      principal_amount: editForm.principal_status === '损失' ? editForm.principal_amount : 0,
-      new_amazon_order_id: editForm.new_amazon_order_id,
-      profit_diff: editForm.profit_diff,
-      loss_amount: editForm.loss_amount,
-      replacement_buyer_id: editForm.replacement_buyer_id || null,
-      replacement_buyer_name: editForm.replacement_buyer_name,
-      replacement_sub_order_number: editForm.replacement_sub_order_number,
-      refund_to_client_method: editForm.refund_to_client_method,
-      refund_to_client_amount: editForm.refund_to_client_amount,
-      refund_to_client_notes: editForm.refund_to_client_notes,
-      resolution_notes: editForm.resolution_notes,
       issue_status: normalizedStatus,
     }
 
-    const closedStatuses = ['已替换单号', '已补单', '已关闭', '无需处理']
-    if (closedStatuses.includes(normalizedStatus)) {
-      update.resolved_at = new Date().toISOString()
+    if (handleAction.value === 'replace-order') {
+      const newAmazonOrderId = editForm.new_amazon_order_id.trim()
+      if (!newAmazonOrderId) {
+        message.warning('请填写新的亚马逊订单号')
+        return
+      }
+      update.new_amazon_order_id = newAmazonOrderId
     }
-    if (normalizedStatus === '无需处理' && editForm.refund_to_client_method) {
-      update.refund_to_client_at = new Date().toISOString()
+
+    if (handleAction.value === 'reorder') {
+      const replacementSubOrderNumber = editForm.replacement_sub_order_number.trim()
+      if (!editForm.replacement_buyer_id && !replacementSubOrderNumber) {
+        message.warning('请至少填写补单买手或补单子订单号')
+        return
+      }
+      update.replacement_buyer_id = editForm.replacement_buyer_id || null
+      update.replacement_buyer_name = editForm.replacement_buyer_name
+      update.replacement_sub_order_number = replacementSubOrderNumber
+    }
+
+    const closedStatuses = ['已替换单号', '已补单', '已关闭', '无需处理']
+    update.resolved_at = closedStatuses.includes(normalizedStatus) ? new Date().toISOString() : null
+    if (normalizedStatus !== '无需处理') {
+      update.refund_to_client_at = null
     }
 
     const { error } = await supabase.from('after_sale_issues').update(update).eq('id', currentIssue.value.id)
     if (error) throw error
 
-    if (editForm.blacklist_buyer && currentIssue.value.buyer_id) {
-      const reason = normalizedStatus === '无需处理'
-        ? `售后问题单 ${currentIssue.value.sub_order_number} - 本金损失，已无需继续处理`
-        : `售后问题单 ${currentIssue.value.sub_order_number} - 本金被骗，需补单`
-      await supabase.from('erp_buyers').update({
-        status: '黑名单',
-        blacklist_reason: reason,
-      }).eq('id', currentIssue.value.buyer_id)
-      message.info(`买手 ${currentIssue.value.buyer_name} 已加入黑名单`)
-    }
-
-    if (editForm.new_amazon_order_id && currentIssue.value.sub_order_id) {
+    if (handleAction.value === 'replace-order' && editForm.new_amazon_order_id && currentIssue.value.sub_order_id) {
       await supabase.from('sub_orders').update({
-        amazon_order_id: editForm.new_amazon_order_id,
+        amazon_order_id: editForm.new_amazon_order_id.trim(),
       }).eq('id', currentIssue.value.sub_order_id)
     }
 
-    message.success('已保存')
+    message.success('操作已保存')
     drawerOpen.value = false
+    await load()
+    emit('changed')
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function submitActionModal() {
+  if (!currentIssue.value || !actionModalType.value) return
+
+  saving.value = true
+  try {
+    if (actionModalType.value === 'replace-order') {
+      const newAmazonOrderId = editForm.new_amazon_order_id.trim()
+      if (!newAmazonOrderId) {
+        message.warning('请填写新的亚马逊订单号')
+        return
+      }
+
+      const { error } = await supabase
+        .from('after_sale_issues')
+        .update({
+          issue_status: '已替换单号',
+          new_amazon_order_id: newAmazonOrderId,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq('id', currentIssue.value.id)
+      if (error) throw error
+
+      if (currentIssue.value.sub_order_id) {
+        await supabase.from('sub_orders').update({
+          amazon_order_id: newAmazonOrderId,
+        }).eq('id', currentIssue.value.sub_order_id)
+      }
+    }
+
+    if (actionModalType.value === 'reorder') {
+      const replacementSubOrderNumber = editForm.replacement_sub_order_number.trim()
+      if (!editForm.replacement_buyer_id && !replacementSubOrderNumber) {
+        message.warning('请至少填写补单买手或补单子订单号')
+        return
+      }
+
+      const { error } = await supabase
+        .from('after_sale_issues')
+        .update({
+          issue_status: '已补单',
+          replacement_buyer_id: editForm.replacement_buyer_id || null,
+          replacement_buyer_name: editForm.replacement_buyer_name,
+          replacement_sub_order_number: replacementSubOrderNumber,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq('id', currentIssue.value.id)
+      if (error) throw error
+    }
+
+    message.success('操作已保存')
+    closeActionModal()
+    await load()
+    emit('changed')
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function quickUpdateStatus(record: any, status: '需补单' | '已关闭' | '无需处理') {
+  saving.value = true
+  try {
+    const update: any = {
+      issue_status: status,
+      resolved_at: status === '需补单' ? null : new Date().toISOString(),
+    }
+    if (status !== '无需处理') {
+      update.refund_to_client_at = null
+    }
+
+    const { error } = await supabase.from('after_sale_issues').update(update).eq('id', record.id)
+    if (error) throw error
+
+    message.success('状态已更新')
     await load()
     emit('changed')
   } catch (e: any) {
@@ -803,6 +1017,7 @@ watch(() => [props.issueId, props.subOrder, props.staffId], () => {
 .cell-refund-method { font-size: 12px; color: #7c3aed; font-weight: 600; }
 .cell-refund-amount { font-size: 11px; color: #dc2626; font-weight: 700; }
 .remark-text { font-size: 12px; color: #374151; }
+.action-btns { display: flex; flex-wrap: wrap; gap: 2px 6px; }
 
 .drawer-section { margin-bottom: 24px; }
 .drawer-section-title { font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
@@ -814,8 +1029,6 @@ watch(() => [props.issueId, props.subOrder, props.staffId], () => {
 .detail-val { font-size: 13px; color: #1a1a2e; }
 .detail-val.mono { font-family: 'Courier New', monospace; font-size: 12px; }
 
-.principal-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-
 .handle-box {
   background: #f9fafb;
   border: 1px solid #e5e7eb;
@@ -823,29 +1036,9 @@ watch(() => [props.issueId, props.subOrder, props.staffId], () => {
   padding: 16px;
 }
 
-.handle-box-refund {
-  background: #fdf4ff;
-  border-color: #e9d5ff;
-}
-
-.refund-hint {
-  font-size: 12px;
-  color: #7c3aed;
-  background: #ede9fe;
-  border-radius: 6px;
-  padding: 6px 10px;
-  margin-bottom: 14px;
-}
-
-.refund-calc-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
-
-.blacklist-action {
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 6px;
-}
+.handle-current-status { font-size: 13px; color: #374151; margin-bottom: 14px; }
+.handle-action-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.handle-action-hint { font-size: 13px; color: #6b7280; line-height: 1.6; }
 
 .buyer-option { display: flex; flex-direction: column; }
 .buyer-option-meta { font-size: 11px; color: #9ca3af; }
