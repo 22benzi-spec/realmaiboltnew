@@ -93,8 +93,8 @@
                 <div v-if="req.notes" class="detail-item full"><label>业务员备注</label><span>{{ req.notes }}</span></div>
                 <div v-if="req.finance_notes" class="detail-item full"><label>财务备注</label><span>{{ req.finance_notes }}</span></div>
                 <div v-if="req.paypal_receipt_screenshot" class="detail-item full">
-                  <label>返款截图</label>
-                  <a :href="req.paypal_receipt_screenshot" target="_blank" rel="noopener noreferrer">查看返款截图</a>
+                  <label>水单</label>
+                  <a :href="req.paypal_receipt_screenshot" target="_blank" rel="noopener noreferrer">查看水单</a>
                 </div>
               </div>
               <div v-if="Array.isArray(req.staff_change_log) && req.staff_change_log.length" class="audit-box">
@@ -233,6 +233,12 @@ function refundStatusLabel(status: string) {
     '退款中': '返款中',
     '已退款': '已返款',
     '退款失败': '返款失败',
+    '未返款': '未返款',
+    '返款中': '返款中',
+    '已返款': '已返款',
+    'On Hold': 'On Hold',
+    '返款失败': '返款失败',
+    '失误多返': '失误多返',
   }
   return map[status] || status || ''
 }

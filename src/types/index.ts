@@ -96,7 +96,7 @@ export interface SubOrder {
   review_submitted_at?: string
   buyer_assigned_at?: string
   amazon_order_placed_at?: string
-  refund_status?: '无需退款' | '待退款' | '已退款'
+  refund_status?: '无需退款' | '待退款' | '退款中' | '已退款' | '未返款' | '返款中' | '已返款' | 'On Hold' | '返款失败' | '失误多返'
   refund_method?: '礼品卡' | 'PayPal'
   refund_sequence?: '先退款后给单号' | '先给单号后退款'
   refund_amount?: number

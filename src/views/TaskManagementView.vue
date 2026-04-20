@@ -50,10 +50,10 @@
                 <a-tag :color="getStatusColor(record.status)" class="status-tag">{{ record.status }}</a-tag>
                 <a-tag color="default" class="info-tag">{{ record.country }}</a-tag>
                 <template v-if="record.order_types && record.order_types.length">
-                  <a-tag v-for="ot in record.order_types" :key="ot" :color="getOrderTypeColor(ot)" class="info-tag">{{ ot }}</a-tag>
+                  <a-tag v-for="(ot, index) in record.order_types" :key="`${ot}-${index}`" :color="getOrderTypeColor(ot)" class="info-tag">{{ formatReviewType(ot) }}</a-tag>
                 </template>
                 <template v-else-if="record.order_type">
-                  <a-tag :color="getOrderTypeColor(record.order_type)" class="info-tag">{{ record.order_type }}</a-tag>
+                  <a-tag :color="getOrderTypeColor(record.order_type)" class="info-tag">{{ formatReviewType(record.order_type) }}</a-tag>
                 </template>
                 <a-tag v-if="record.review_level" :color="getReviewLevelColor(record.review_level)" class="info-tag">{{ record.review_level }}</a-tag>
               </div>
@@ -170,7 +170,7 @@
                       :key="t"
                       class="spc-type-badge"
                       :style="{ background: getOrderTypeBg(t), color: getOrderTypeTextColor(t) }"
-                    >{{ t }}</span>
+                    >{{ formatReviewType(t) }}</span>
                     <span v-if="!s.order_types || s.order_types.length === 0" class="spc-type-none">未指定类型</span>
                   </div>
                   <div v-if="s.keywords && s.keywords.length" class="spc-keywords">
@@ -188,7 +188,7 @@
               :pagination="false"
               row-key="id"
               size="small"
-              :scroll="{ x: 2200 }"
+              :scroll="{ x: 2320 }"
               style="margin-top:10px"
             >
               <template #bodyCell="{ column, record: sub }">
@@ -228,8 +228,8 @@
                   </div>
                 </template>
                 <template v-if="column.key === 'sub_review_type'">
-                  <div class="editable-cell" @click="openQuickEdit(sub, 'order_type')">
-                    <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                  <div class="editable-cell" @click="openQuickEdit(sub, 'review_type')">
+                    <a-tag v-if="formatReviewType(sub.review_type || sub.order_type)" :color="getOrderTypeTagColor(sub.review_type || sub.order_type)" size="small">{{ formatReviewType(sub.review_type || sub.order_type) }}</a-tag>
                     <span v-else class="text-gray">—</span>
                     <EditOutlined class="kw-edit-icon" />
                   </div>
@@ -300,6 +300,15 @@
                 <template v-if="column.key === 'sub_refund_method'">
                   <span v-if="sub.refund_method" class="refund-method-tag">{{ sub.refund_method }}</span>
                   <span v-else class="text-gray">—</span>
+                </template>
+                <template v-if="column.key === 'sub_refund_status'">
+                  <div class="refund-status-cell">
+                    <a-tag v-if="normalizeRefundStatus(sub.refund_status)" :color="getRefundStatusTagColor(sub.refund_status)" size="small">
+                      {{ normalizeRefundStatus(sub.refund_status) }}
+                    </a-tag>
+                    <span v-else class="text-gray">—</span>
+                    <span v-if="showPrincipalLossHint(sub)" class="principal-loss-hint">本金损失</span>
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_created_at'">
                   <span class="created-at-text">{{ sub.created_at ? dayjs(sub.created_at).format('MM-DD HH:mm') : '—' }}</span>
@@ -380,7 +389,7 @@
                 :key="t"
                 class="spc-type-badge"
                 :style="{ background: getOrderTypeBg(t), color: getOrderTypeTextColor(t) }"
-              >{{ t }}</span>
+              >{{ formatReviewType(t) }}</span>
               <span v-if="!s.order_types || s.order_types.length === 0" class="text-gray" style="font-size:11px">未指定类型</span>
             </div>
             <div class="sched-row-kws">
@@ -555,8 +564,15 @@
           <div class="detail-section">
             <div class="detail-section-title">订单信息</div>
             <div class="detail-grid">
-              <div class="detail-item"><label>下单类型</label><span>{{ detailRecord.order_type || '—' }}</span></div>
-              <div class="detail-item"><label>测评类型</label><span>{{ detailRecord.review_type || '—' }}</span></div>
+              <div class="detail-item">
+                <label>测评类型</label>
+                <template v-if="editMode">
+                  <a-select v-model:value="editForm.review_type" size="small" style="width:100%" allow-clear placeholder="选择测评类型">
+                    <a-select-option v-for="s in reviewTypeOptions" :key="s" :value="s">{{ s }}</a-select-option>
+                  </a-select>
+                </template>
+                <span v-else>{{ formatReviewType(detailRecord.review_type || detailRecord.order_type) || '—' }}</span>
+              </div>
               <div class="detail-item"><label>评价等级</label><span>{{ detailRecord.review_level || '—' }}</span></div>
               <div class="detail-item">
                 <label>关键词</label>
@@ -604,8 +620,11 @@
                   </a-select>
                 </template>
                 <template v-else>
-                  <a-tag v-if="detailRecord.refund_status" color="orange">{{ detailRecord.refund_status }}</a-tag>
-                  <span v-else class="text-gray">—</span>
+                  <div class="refund-status-cell">
+                    <a-tag v-if="detailRecord.refund_status" :color="getRefundStatusTagColor(detailRecord.refund_status)">{{ normalizeRefundStatus(detailRecord.refund_status) }}</a-tag>
+                    <span v-else class="text-gray">—</span>
+                    <span v-if="showPrincipalLossHint(detailRecord)" class="principal-loss-hint">本金损失</span>
+                  </div>
                 </template>
               </div>
               <div class="detail-item">
@@ -867,7 +886,8 @@ const editForm = ref<any>({})
 
 const taskStatuses = ['待分配', '进行中', '已完成', '已截单', '暂停中']
 const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留评', '已完成', '已取消']
-const refundStatuses = ['待退款', '退款中', '已退款', '退款失败']
+const refundStatuses = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '无需返款', '失误多返']
+const reviewTypeOptions = ['文字', '图片', '视频', '免评', 'Feedback']
 const countries = ['美国', '德国', '英国', '加拿大']
 
 const subColumns = [
@@ -887,6 +907,7 @@ const subColumns = [
   { title: 'FB', key: 'sub_fb', width: 60 },
   { title: '应返 / 实返', key: 'sub_refund', width: 130 },
   { title: '返款方式', key: 'sub_refund_method', width: 90 },
+  { title: '返款状态', key: 'sub_refund_status', width: 120 },
   { title: '创建时间', key: 'sub_created_at', width: 115 },
   { title: '备注', key: 'sub_notes', width: 130 },
   { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
@@ -927,24 +948,92 @@ function getReviewLevelTagColor(level: string) {
   return map[level] || 'default'
 }
 
+function formatReviewType(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw === '文字评' || raw === '文字') return '文字'
+  if (raw === '图片评' || raw === '图片') return '图片'
+  if (raw === '视频评' || raw === '视频') return '视频'
+  if (raw === 'FB' || raw === 'Feedback') return 'Feedback'
+  if (raw === '免评') return '免评'
+  return raw
+}
+
+function normalizeRefundStatus(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw === '待退款' || raw === '未返款') return '未返款'
+  if (raw === '退款中' || raw === '返款中') return '返款中'
+  if (raw === '已退款' || raw === '已返款') return '已返款'
+  if (raw === '无需退款' || raw === '无需返款') return '无需返款'
+  if (raw === 'On Hold') return 'On Hold'
+  if (raw === '退款失败' || raw === '返款失败') return '返款失败'
+  if (raw === '失误多返') return '失误多返'
+  return raw
+}
+
+function getRefundStatusTagColor(status: string) {
+  const normalized = normalizeRefundStatus(status)
+  const map: Record<string, string> = {
+    '未返款': 'default',
+    '返款中': 'blue',
+    '已返款': 'green',
+    'On Hold': 'gold',
+    '返款失败': 'red',
+    '无需返款': 'cyan',
+    '失误多返': 'magenta',
+  }
+  return map[normalized] || 'default'
+}
+
+function shouldInjectPrincipalLossMock(orderId: string) {
+  return tasks.value.slice(0, 2).some((task: any) => task.id === orderId)
+}
+
+function showPrincipalLossHint(sub: any) {
+  return normalizeRefundStatus(sub?.refund_status) === '已返款' && Boolean(sub?._mock_principal_loss)
+}
+
+function decorateSubOrdersForDisplay(orderId: string, rows: any[]) {
+  const normalized = rows.map((row, index) => ({
+    ...row,
+    review_type: formatReviewType(row.review_type || row.order_type),
+    refund_status: normalizeRefundStatus(row.refund_status),
+    _mock_principal_loss: false,
+    _display_index: index,
+  }))
+  if (!shouldInjectPrincipalLossMock(orderId)) return normalized
+  let injected = 0
+  return normalized.map((row) => {
+    if (injected >= 3 || row.status === '已取消') return row
+    injected += 1
+    return {
+      ...row,
+      refund_status: '已返款',
+      _mock_principal_loss: true,
+      task_notes: row.task_notes || `Mock ${injected}: 已返款但出现本金损失提示`,
+    }
+  })
+}
+
 function getOrderTypeTagColor(t: string) {
-  const map: Record<string, string> = { '文字': 'cyan', '图片': 'blue', '视频': 'geekblue', '免评': 'green', 'FB': 'gold', 'Feedback': 'gold' }
-  return map[t] || 'default'
+  const map: Record<string, string> = { '文字': 'cyan', '图片': 'blue', '视频': 'geekblue', '免评': 'green', 'Feedback': 'gold' }
+  return map[formatReviewType(t)] || 'default'
 }
 
 function getOrderTypeColor(t: string) {
-  const map: Record<string, string> = { '免评': 'green', '文字评': 'cyan', '图片评': 'blue', '视频评': 'geekblue', 'Feedback': 'gold' }
-  return map[t] || 'default'
+  const map: Record<string, string> = { '免评': 'green', '文字': 'cyan', '图片': 'blue', '视频': 'geekblue', 'Feedback': 'gold' }
+  return map[formatReviewType(t)] || 'default'
 }
 
 function getOrderTypeBg(t: string) {
-  const map: Record<string, string> = { '免评': '#f0fdf4', '文字评': '#eff6ff', '图片评': '#f5f3ff', '视频评': '#fef2f2', 'Feedback': '#fffbeb' }
-  return map[t] || '#f3f4f6'
+  const map: Record<string, string> = { '免评': '#f0fdf4', '文字': '#eff6ff', '图片': '#f5f3ff', '视频': '#fef2f2', 'Feedback': '#fffbeb' }
+  return map[formatReviewType(t)] || '#f3f4f6'
 }
 
 function getOrderTypeTextColor(t: string) {
-  const map: Record<string, string> = { '免评': '#15803d', '文字评': '#1d4ed8', '图片评': '#7c3aed', '视频评': '#b91c1c', 'Feedback': '#b45309' }
-  return map[t] || '#374151'
+  const map: Record<string, string> = { '免评': '#15803d', '文字': '#1d4ed8', '图片': '#7c3aed', '视频': '#b91c1c', 'Feedback': '#b45309' }
+  return map[formatReviewType(t)] || '#374151'
 }
 
 async function loadSchedules(orderId: string) {
@@ -985,9 +1074,10 @@ function openDetail(sub: any, orderId: string) {
     unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
     commission_fee: d.commission_fee != null ? Number(d.commission_fee) : undefined,
     keyword: d.keyword || '',
+    review_type: formatReviewType(d.review_type || d.order_type) || undefined,
     staff_name: d.staff_name || '',
     buyer_name: d.buyer_name || '',
-    refund_status: d.refund_status || null,
+    refund_status: normalizeRefundStatus(d.refund_status) || null,
     refund_method: d.refund_method || '',
     refund_amount: d.refund_amount != null ? Number(d.refund_amount) : undefined,
     refund_date: d.refund_date || '',
@@ -1016,9 +1106,10 @@ function startEdit() {
     unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
     commission_fee: d.commission_fee != null ? Number(d.commission_fee) : undefined,
     keyword: d.keyword || '',
+    review_type: formatReviewType(d.review_type || d.order_type) || undefined,
     staff_name: d.staff_name || '',
     buyer_name: d.buyer_name || '',
-    refund_status: d.refund_status || null,
+    refund_status: normalizeRefundStatus(d.refund_status) || null,
     refund_method: d.refund_method || '',
     refund_amount: d.refund_amount != null ? Number(d.refund_amount) : undefined,
     refund_date: d.refund_date || '',
@@ -1057,9 +1148,10 @@ async function saveDetail() {
       unit_price: f.unit_price,
       commission_fee: f.commission_fee,
       keyword: f.keyword || null,
+      review_type: f.review_type ? formatReviewType(f.review_type) : null,
       staff_name: f.staff_name || null,
       buyer_name: f.buyer_name || null,
-      refund_status: f.refund_status || null,
+      refund_status: normalizeRefundStatus(f.refund_status) || null,
       refund_method: f.refund_method || null,
       refund_amount: f.refund_amount,
       refund_date: f.refund_date || null,
@@ -1128,7 +1220,7 @@ async function load() {
     if (orderIds.length > 0) {
       const { data: subData } = await supabase
         .from('sub_orders')
-        .select('order_id, status, buyer_name, amazon_order_id')
+        .select('order_id, status, buyer_name, amazon_order_id, refund_status')
         .in('order_id', orderIds)
 
       const { data: schedData } = await supabase
@@ -1142,7 +1234,7 @@ async function load() {
         if (s.buyer_name) statsMap[s.order_id].scheduled++
         if (s.amazon_order_id) statsMap[s.order_id].ordered++
         if (['已完成', '已留评'].includes(s.status)) statsMap[s.order_id].reviewed++
-        if (s.status === '已返款') statsMap[s.order_id].refunded++
+        if (normalizeRefundStatus(s.refund_status) === '已返款') statsMap[s.order_id].refunded++
       })
 
       const daysCountMap: Record<string, Set<string>> = {}
@@ -1183,8 +1275,9 @@ async function loadSubOrders(orderId: string) {
     .eq('order_id', orderId)
     .order('created_at', { ascending: true })
   if (error) { message.error('加载子订单失败'); return }
-  subOrdersMap.value[orderId] = data || []
-  const validIds = new Set((data || []).filter((sub: any) => canBatchEditSub(sub)).map((sub: any) => sub.id))
+  const displayRows = decorateSubOrdersForDisplay(orderId, data || [])
+  subOrdersMap.value[orderId] = displayRows
+  const validIds = new Set(displayRows.filter((sub: any) => canBatchEditSub(sub)).map((sub: any) => sub.id))
   selectedSubIdsMap.value[orderId] = getSelectedSubIds(orderId).filter(id => validIds.has(id))
 }
 
@@ -1245,7 +1338,7 @@ async function generateSubOrders(record: any) {
         brand_name: record.brand_name,
         category: record.category,
         review_level: record.review_level,
-        review_type: record.review_type,
+        review_type: formatReviewType(record.review_type || record.order_type),
         variant_info: record.variant_info,
         customer_name: record.customer_name,
         customer_id_str: record.customer_id_str,
@@ -1320,13 +1413,13 @@ const kwEditValue = ref('')
 const kwEditSaving = ref(false)
 const quickEditOpen = ref(false)
 const quickEditRecord = ref<any>(null)
-const quickEditField = ref<'asin' | 'scheduled_date' | 'order_type' | 'review_level' | 'product_price' | ''>('')
+const quickEditField = ref<'asin' | 'scheduled_date' | 'review_type' | 'review_level' | 'product_price' | ''>('')
 const quickEditValue = ref<any>('')
 const quickEditSaving = ref(false)
 const quickEditConfigs: Record<string, { label: string; type: 'text' | 'select' | 'date' | 'number'; options?: string[] }> = {
   asin: { label: 'ASIN', type: 'text' },
   scheduled_date: { label: '排单日期', type: 'date' },
-  order_type: { label: '测评类型', type: 'select', options: ['文字', '图片', '视频', '免评', 'FB', 'Feedback'] },
+  review_type: { label: '测评类型', type: 'select', options: reviewTypeOptions },
   review_level: { label: '测评等级', type: 'select', options: ['普通', '高等', '极高等'] },
   product_price: { label: '售价', type: 'number' },
 }
@@ -1339,12 +1432,12 @@ function openKwEdit(sub: any) {
   kwEditOpen.value = true
 }
 
-function openQuickEdit(sub: any, field: 'asin' | 'scheduled_date' | 'order_type' | 'review_level' | 'product_price') {
+function openQuickEdit(sub: any, field: 'asin' | 'scheduled_date' | 'review_type' | 'review_level' | 'product_price') {
   quickEditRecord.value = sub
   quickEditField.value = field
   quickEditValue.value = field === 'product_price'
     ? (sub[field] != null ? Number(sub[field]) : undefined)
-    : (sub[field] || '')
+    : (field === 'review_type' ? formatReviewType(sub.review_type || sub.order_type) : (sub[field] || ''))
   quickEditOpen.value = true
 }
 
@@ -1382,7 +1475,8 @@ async function saveQuickEdit() {
     const value = field === 'product_price'
       ? (quickEditValue.value == null || quickEditValue.value === '' ? null : Number(quickEditValue.value))
       : (typeof quickEditValue.value === 'string' ? quickEditValue.value.trim() : quickEditValue.value) || null
-    const updates = { [field]: value }
+    const normalizedValue = field === 'review_type' && value ? formatReviewType(String(value)) : value
+    const updates = { [field]: normalizedValue }
     const { error } = await supabase.from('sub_orders').update(updates).eq('id', quickEditRecord.value.id)
     if (error) throw error
     Object.assign(quickEditRecord.value, updates)
@@ -1407,7 +1501,7 @@ const selectedSubIdsMap = ref<Record<string, string[]>>({})
 const batchEditOrderId = ref<string>('')
 const batchEditFieldOptions = [
   { key: 'keyword', label: '关键词', type: 'text', options: [] as string[] },
-  { key: 'order_type', label: '测评类型', type: 'select', options: ['文字', '图片', '视频', '免评', 'FB', 'Feedback'] },
+  { key: 'review_type', label: '测评类型', type: 'select', options: reviewTypeOptions },
   { key: 'review_level', label: '测评等级', type: 'select', options: ['普通', '高等', '极高等'] },
   { key: 'scheduled_date', label: '排单日期', type: 'date', options: [] as string[] },
   { key: 'asin', label: 'ASIN', type: 'text', options: [] as string[] },
@@ -1426,7 +1520,7 @@ function resetBatchEditForm() {
   activeBatchEditKeys.value = []
   batchEditForm.value = {
     keyword: '',
-    order_type: undefined,
+    review_type: undefined,
     review_level: undefined,
     scheduled_date: '',
     asin: '',
@@ -1442,7 +1536,7 @@ function activateBatchField(key: string) {
 
 function deactivateBatchField(key: string) {
   activeBatchEditKeys.value = activeBatchEditKeys.value.filter(item => item !== key)
-  batchEditForm.value[key] = key === 'product_price' ? undefined : key === 'order_type' || key === 'review_level' ? undefined : ''
+  batchEditForm.value[key] = key === 'product_price' ? undefined : key === 'review_type' || key === 'review_level' ? undefined : ''
 }
 
 function getSelectedSubIds(orderId: string) {
@@ -1518,7 +1612,9 @@ async function saveBatchEdit() {
       const value = batchEditForm.value[field.key]
       payload[field.key] = field.key === 'product_price'
         ? (value == null || value === '' ? null : Number(value))
-        : (value ?? '') || null
+        : field.key === 'review_type'
+          ? ((value ? formatReviewType(String(value)) : null))
+          : (value ?? '') || null
     }
 
     const { error } = await supabase.from('sub_orders').update(payload).in('id', currentBatchSelectedIds.value)
@@ -1548,7 +1644,7 @@ const copyFieldOptions = [
   { key: 'store_name', label: '店铺名称' },
   { key: 'brand_name', label: '品牌名称' },
   { key: 'country', label: '国家/站点' },
-  { key: 'order_type', label: '测评类型' },
+  { key: 'review_type', label: '测评类型' },
   { key: 'review_level', label: '测评等级' },
   { key: 'product_price', label: '产品售价' },
   { key: 'order_quantity', label: '订单数量' },
@@ -1573,6 +1669,7 @@ function updateCopyPreview() {
     if (!copyCheckedFields.value.includes(f.key)) continue
     let val = rec[f.key]
     if (f.key === 'product_price' && val != null) val = '$' + Number(val).toFixed(2)
+    if (f.key === 'review_type') val = formatReviewType(rec.review_type || rec.order_type)
     if (val != null && val !== '') parts.push(`${f.label}：${val}`)
   }
   copyPreviewText.value = parts.join('\n')
@@ -1780,6 +1877,17 @@ onMounted(() => {
 .commission-val { font-size: 12px; font-weight: 600; color: #059669; }
 .refund-amount { font-size: 11px; color: #f59e0b; font-weight: 600; margin-top: 2px; }
 .refund-method-tag { font-size: 11px; color: #6b7280; }
+.refund-status-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.principal-loss-hint {
+  align-self: flex-end;
+  font-size: 10px;
+  line-height: 1;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  border-radius: 999px;
+  padding: 2px 6px;
+}
 .media-link { font-size: 11px; color: #2563eb; display: inline-flex; align-items: center; gap: 2px; }
 .sub-progress-cell { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .prog-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }

@@ -499,9 +499,13 @@
                               <a-radio value="出单后返">出单后返</a-radio>
                               <a-radio value="收货后返">收货后返</a-radio>
                               <a-radio value="评后返">评后返</a-radio>
+                              <a-radio value="无需返款">无需返款</a-radio>
                             </a-radio-group>
                           </div>
-                          <div class="refund-setup-row">
+                          <div v-if="isNoRefundSelection(task)" class="refund-no-need-tip">
+                            选择“无需返款”后，保存将直接标记为无需退款，不会生成新的财务返款申请。
+                          </div>
+                          <div v-if="!isNoRefundSelection(task)" class="refund-setup-row">
                             <span class="refund-setup-label">返款方式</span>
                             <a-radio-group v-model:value="task._sel_refund_method" size="small" @change="syncRefundComputed(task)">
                               <a-radio value="礼品卡">礼品卡</a-radio>
@@ -510,12 +514,12 @@
                             </a-radio-group>
                           </div>
 
-                          <div v-if="task._sel_refund_method === 'PayPal'" class="refund-row">
+                          <div v-if="!isNoRefundSelection(task) && task._sel_refund_method === 'PayPal'" class="refund-row">
                             <label>买手 PayPal 邮箱</label>
                             <a-input v-model:value="task._buyer_paypal_email" size="small" style="width:220px" placeholder="amanda@example.com" />
                           </div>
 
-                          <div class="refund-amount-box">
+                          <div v-if="!isNoRefundSelection(task)" class="refund-amount-box">
                             <div class="refund-amount-title">金额明细</div>
                             <div class="refund-product-ref">系统产品标价（参考）<span class="refund-product-ref-val">${{ Number(task.product_price || 0).toFixed(2) }}</span></div>
                             <div v-if="task._sel_refund_method === 'PayPal'" class="refund-amount-fields">
@@ -552,14 +556,14 @@
                             <label>备注</label>
                             <a-input v-model:value="task._refund_apply_notes" size="small" style="width:320px" placeholder="选填，例如：买手催款..." />
                           </div>
-                          <div class="refund-row">
-                            <a-checkbox v-model:checked="task._need_finance_screenshot">需财务提供返款截图</a-checkbox>
+                          <div v-if="!isNoRefundSelection(task)" class="refund-row">
+                            <a-checkbox v-model:checked="task._need_finance_screenshot">需财务提供水单</a-checkbox>
                           </div>
                           <div class="refund-action-row">
                             <a-button
                               type="primary" size="small"
                               :loading="task._submitting_refund"
-                              :disabled="!getRefundFinalAmount(task)"
+                              :disabled="!isNoRefundSelection(task) && !getRefundFinalAmount(task)"
                               @click="submitRefundRequest(task)"
                             >{{ refundSubmitButtonText(task) }}</a-button>
                           </div>
@@ -1162,8 +1166,13 @@ function getDangerClass(task: any) {
 function getTaskCheckpoint(task: any) {
   if (isDone(task.status)) return '已完成'
   if (!task.buyer_id) return '待分配买手'
+  if (task.refund_status === '无需退款' || task.refund_sequence === '无需返款') {
+    if (!task.amazon_order_id) return '待填写订单号'
+    if (!task.review_screenshot_url) return '待上传留评'
+    return '处理中'
+  }
   if (!task.refund_method || !task.refund_sequence) return '待设置返款'
-  if (task.refund_status !== '已退款') return task._refund_request ? '待返款完成' : '待申请返款'
+  if (!['已退款', '已返款'].includes(task.refund_status || '')) return task._refund_request ? '待返款完成' : '待申请返款'
   if (!task.amazon_order_id) return '待填写订单号'
   if (!task.review_screenshot_url) return '待上传留评'
   return '处理中'
@@ -1332,7 +1341,7 @@ function estimateDeliveryDate(placedAt: string) {
 function isRefundStepReadonly(task: any) {
   if (task._refund_supplement_mode || task._refund_correction_mode) return false
   if (task._refund_request_pending) return false
-  return task.refund_status === '已退款' || task._refund_request_latest_processed?.status === '已处理'
+  return ['已退款', '已返款'].includes(task.refund_status || '') || task._refund_request_latest_processed?.status === '已处理'
 }
 
 function refundPanelTitle(task: any) {
@@ -1361,10 +1370,17 @@ function refundRequestTypeLabel(req: any) {
 
 function refundStatusLabel(status: string) {
   const map: Record<string, string> = {
+    '无需退款': '无需返款',
     '待退款': '待返款',
     '退款中': '返款中',
     '已退款': '已返款',
     '退款失败': '返款失败',
+    '未返款': '未返款',
+    '返款中': '返款中',
+    '已返款': '已返款',
+    'On Hold': 'On Hold',
+    '返款失败': '返款失败',
+    '失误多返': '失误多返',
   }
   return map[status] || status || ''
 }
@@ -1375,7 +1391,7 @@ function processedRefundsForDisplay(task: any) {
     return raw.slice().sort((a: any, b: any) =>
       new Date(a.created_at || a.updated_at).getTime() - new Date(b.created_at || b.updated_at).getTime())
   }
-  if (task.refund_status === '已退款' && Number(task.refund_amount) > 0) {
+  if (['已退款', '已返款'].includes(task.refund_status || '') && Number(task.refund_amount) > 0) {
     return [{
       id: 'synthetic-from-sub-order',
       status: '已处理',
@@ -1468,8 +1484,8 @@ function hydrateRefundFormFromRequest(task: any, req: any) {
     task._refund_final_amount_usd = face > 0 ? face : Number(task._refund_amount_usd || 0)
   }
   const rawNotes = req.notes || ''
-  task._need_finance_screenshot = /\[需财务返款截图\]/.test(rawNotes)
-  task._refund_apply_notes = rawNotes.replace(/\s*\[需财务返款截图\]\s*$/, '').trim()
+  task._need_finance_screenshot = /\[需财务返款截图\]|\[需财务水单\]/.test(rawNotes)
+  task._refund_apply_notes = rawNotes.replace(/\s*\[(需财务返款截图|需财务水单)\]\s*$/, '').trim()
   syncRefundComputed(task)
 }
 
@@ -1527,10 +1543,15 @@ function cancelRefundSpecialModes(task: any) {
 }
 
 function refundSubmitButtonText(task: any) {
+  if (isNoRefundSelection(task)) return '保存无需返款'
   if (task._refund_supplement_mode) return '提交追加返款申请'
   if (task._refund_correction_mode) return '提交更正返款申请'
   if (task._refund_request_pending && !task._refund_supplement_mode && !task._refund_correction_mode) return '更新返款申请'
   return '提交返款申请'
+}
+
+function isNoRefundSelection(task: any) {
+  return (task._sel_refund_sequence || task.refund_sequence || '') === '无需返款'
 }
 
 function isPrepayMode(task: any) {
@@ -1546,6 +1567,10 @@ function getRefundFinalAmount(task: any) {
 }
 
 function syncRefundComputed(task: any) {
+  if (isNoRefundSelection(task)) {
+    task._need_finance_screenshot = false
+    return
+  }
   if (task._sel_refund_method === 'PayPal') {
     if (!task._buyer_paypal_email) {
       const buyer = buyerList.value.find(b => b.id === task.buyer_id)
@@ -2160,12 +2185,12 @@ function buildMockTasks() {
         id: 'mock_after_sale_1003',
         sub_order_id: 'mock_after_review_paypal_done',
         issue_type: '退款',
-        issue_status: '处理中',
+        issue_status: '需补单',
         principal_stolen: true,
         principal_amount: 21.21,
         refund_to_client_method: '',
         refund_to_client_amount: 0,
-        resolution_notes: '客户反馈买手下错单，正在确认是否改走退款给客户',
+        resolution_notes: '客户反馈买手下错单，正在确认补单方案',
         created_at: now.subtract(1, 'day').toISOString(),
       },
       _is_mock: true,
@@ -2892,8 +2917,9 @@ async function assignBuyer(task: any) {
 }
 
 async function submitRefundRequest(task: any) {
+  const noRefund = isNoRefundSelection(task)
   const finalAmount = getRefundFinalAmount(task)
-  if (!finalAmount) return
+  if (!noRefund && !finalAmount) return
 
   if (task._refund_supplement_mode && task._extra_refund_reason === '产品涨价') {
     const ap = Number(task._refund_amount_usd || 0)
@@ -2919,7 +2945,7 @@ async function submitRefundRequest(task: any) {
 
   const actualPaid = Number(task._refund_amount_usd || 0)
   const feeUsd = selectedMethod === 'PayPal' ? Number(task._refund_fee_usd || 0) : 0
-  const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务返款截图]' : ''}`.trim()
+  const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
   const supplementReason = task._refund_supplement_mode
     ? (task._extra_refund_reason || '追加返款')
     : task._refund_correction_mode
@@ -2931,6 +2957,39 @@ async function submitRefundRequest(task: any) {
 
   task._submitting_refund = true
   try {
+    if (noRefund) {
+      const configPayload = {
+        refund_method: '',
+        refund_sequence: '无需返款',
+        refund_status: '无需退款',
+        refund_amount: 0,
+        refund_amount_usd: 0,
+      }
+      const { error: e0 } = await supabase.from('sub_orders').update(configPayload).eq('id', task.id)
+      if (e0) throw e0
+      Object.assign(task, configPayload)
+
+      if (pending?.id) {
+        const cancelNote = [pending.notes, '业务改为无需返款，原待审核返款申请已取消'].filter(Boolean).join('；')
+        const { data: cancelled, error: cancelError } = await supabase
+          .from('refund_requests')
+          .update({ status: '已取消', notes: cancelNote })
+          .eq('id', pending.id)
+          .select()
+          .maybeSingle()
+        if (cancelError) throw cancelError
+        const idx = (task._refund_requests_list || []).findIndex((r: any) => r.id === pending.id)
+        if (idx >= 0 && cancelled) task._refund_requests_list[idx] = cancelled
+      }
+
+      task._refund_request_pending = null
+      task._refund_request = task._refund_request_latest_processed || null
+      task._refund_apply_notes = ''
+      task._need_finance_screenshot = false
+      message.success(pending?.id ? '已改为无需返款，并取消待审核返款申请' : '已保存为无需返款')
+      return
+    }
+
     const configPayload = {
       refund_method: task._sel_refund_method || task.refund_method,
       refund_sequence: task._sel_refund_sequence || task.refund_sequence,
@@ -3916,6 +3975,7 @@ onMounted(() => {
 .buyer-brief-desc { font-size: 12px; color: #6b7280; margin-top: -2px; }
 .refund-setup-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .refund-setup-label { min-width: 70px; font-size: 12px; color: #6b7280; }
+.refund-no-need-tip { font-size: 12px; color: #6b7280; background: #f5f7fa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; }
 .refund-amount-box {
   border: 1px dashed #dbeafe;
   border-radius: 8px;

@@ -2,8 +2,8 @@
   <div class="page-content">
     <div class="page-header">
       <div>
-        <h1 class="page-title">子订单明细</h1>
-        <p class="page-desc">管理所有子订单，跟踪返款进度</p>
+        <h1 class="page-title">订单列表</h1>
+        <p class="page-desc">管理所有子订单，统一查看测评与返款进度</p>
       </div>
       <div class="header-stats" v-if="!loading">
         <div class="stat-pill">共 <strong>{{ totalOrders }}</strong> 单</div>
@@ -33,7 +33,7 @@
         <a-select v-model:value="filterRefundStatus" style="width: 120px" allow-clear placeholder="返款状态" size="small" @change="applyFilters">
           <a-select-option v-for="s in REFUND_STATUS_OPTIONS" :key="s" :value="s">{{ s }}</a-select-option>
         </a-select>
-        <a-select v-model:value="filterType" style="width: 100px" allow-clear placeholder="类型" size="small" @change="applyFilters">
+        <a-select v-model:value="filterType" style="width: 120px" allow-clear placeholder="测评类型" size="small" @change="applyFilters">
           <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
         </a-select>
         <a-range-picker v-model:value="dateRange" style="width: 220px" size="small" :placeholder="['开始', '结束']" @change="applyFilters" />
@@ -48,7 +48,7 @@
         :data-source="filteredData"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1600 }"
+        :scroll="{ x: 1680 }"
         row-key="id"
         size="small"
         @change="onTableChange"
@@ -64,10 +64,17 @@
                   <a :href="'https://www.amazon.com/dp/' + record.asin" target="_blank" class="asin-link">{{ record.asin }}</a>
                   <span class="sep-dot">·</span>
                   <span class="country-text">{{ record.country }}</span>
-                  <span v-if="record.order_type" class="sep-dot">·</span>
-                  <a-tag v-if="record.order_type" :color="getTypeColor(record.order_type)" class="type-tag">{{ record.order_type }}</a-tag>
                 </div>
               </div>
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'type'">
+            <div class="type-cell">
+              <a-tag v-if="getDisplayReviewType(record)" :color="getTypeColor(getDisplayReviewType(record))" class="type-tag">
+                {{ getDisplayReviewType(record) }}
+              </a-tag>
+              <span v-else class="empty-text">-</span>
             </div>
           </template>
 
@@ -150,9 +157,12 @@
           </template>
 
           <template v-else-if="column.key === 'refund_status'">
-            <a-tag :color="getRefundStatusColor(getRefundStatus(record))" class="status-tag">
-              {{ getRefundStatus(record) }}
-            </a-tag>
+            <div class="refund-status-wrap">
+              <a-tag :color="getRefundStatusColor(getRefundStatus(record))" class="status-tag">
+                {{ getRefundStatus(record) }}
+              </a-tag>
+              <span v-if="showPrincipalLossHint(record)" class="principal-loss-hint">本金损失</span>
+            </div>
           </template>
 
           <template v-else-if="column.key === 'order_status'">
@@ -294,7 +304,8 @@ interface SubOrder {
 
 const PROGRESS_OPTIONS = ['待匹配', '待下单', '待留评', '已完成', '已掉评', '无法完成']
 const PROBLEM_STATUSES = ['已取消', '已退款', '无此订单', '本金多返', '不下单']
-const REFUND_STATUS_OPTIONS = ['待返款', '返款中', '已返款', '返款失败', '无需返款']
+const REVIEW_TYPE_OPTIONS = ['文字', '图片', '视频', '免评', 'Feedback']
+const REFUND_STATUS_OPTIONS = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '无需返款', '失误多返']
 const REFUND_METHODS = ['PayPal', '礼品卡', '银行转账', '微信', '支付宝', 'Zelle']
 
 const loading = ref(false)
@@ -330,6 +341,7 @@ const pagination = ref({
 const columns = [
   { title: '子单号 / 亚马逊单号', key: 'order_ids', width: 200 },
   { title: '产品', key: 'product', width: 260 },
+  { title: '类型', key: 'type', width: 90, align: 'center' as const },
   { title: '业务员 / 买手 / 聊单号', key: 'assignment', width: 170 },
   { title: '售价 / 实付 / 返款', key: 'price_refund', width: 170 },
   { title: 'FB / 评论', key: 'media', width: 120 },
@@ -340,6 +352,38 @@ const columns = [
   { title: '创建时间', key: 'created_at', width: 90, sorter: (a: SubOrder, b: SubOrder) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime() },
   { title: '', key: 'action', width: 110, fixed: 'right' as const, align: 'center' as const },
 ]
+
+function normalizeReviewType(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw === '文字评' || raw === '文字') return '文字'
+  if (raw === '图片评' || raw === '图片') return '图片'
+  if (raw === '视频评' || raw === '视频') return '视频'
+  if (raw === 'FB' || raw === 'Feedback') return 'Feedback'
+  if (raw === '免评') return '免评'
+  return raw
+}
+
+function normalizeRefundStatus(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw === '待退款' || raw === '待返款' || raw === '未返款') return '未返款'
+  if (raw === '退款中' || raw === '返款中') return '返款中'
+  if (raw === '已退款' || raw === '已返款') return '已返款'
+  if (raw === '退款失败' || raw === '返款失败') return '返款失败'
+  if (raw === '无需退款' || raw === '无需返款') return '无需返款'
+  if (raw === 'On Hold') return 'On Hold'
+  if (raw === '失误多返') return '失误多返'
+  return raw
+}
+
+function getDisplayReviewType(record: Pick<SubOrder, 'review_type' | 'order_type'>) {
+  return normalizeReviewType(record.review_type || record.order_type || '')
+}
+
+function showPrincipalLossHint(record: any) {
+  return getRefundStatus(record) === '已返款' && Boolean(record._mock_principal_loss)
+}
 
 function computeProgress(r: SubOrder): string {
   if (r.status === '已掉评') return '已掉评'
@@ -353,7 +397,7 @@ function computeProgress(r: SubOrder): string {
 }
 
 const salesOptions = computed(() => [...new Set(allData.value.map(r => r.sales_person).filter(Boolean))].sort())
-const typeOptions = computed(() => [...new Set(allData.value.map(r => r.order_type).filter(Boolean))].sort())
+const typeOptions = computed(() => [...new Set(allData.value.map(r => getDisplayReviewType(r)).filter(Boolean))].sort((a, b) => REVIEW_TYPE_OPTIONS.indexOf(a) - REVIEW_TYPE_OPTIONS.indexOf(b)))
 
 const filteredData = computed(() => {
   let d = allData.value
@@ -369,7 +413,7 @@ const filteredData = computed(() => {
   if (filterSales.value) d = d.filter(r => r.sales_person === filterSales.value)
   if (filterProgress.value) d = d.filter(r => computeProgress(r) === filterProgress.value)
   if (filterRefundStatus.value) d = d.filter(r => getRefundStatus(r) === filterRefundStatus.value)
-  if (filterType.value) d = d.filter(r => r.order_type === filterType.value)
+  if (filterType.value) d = d.filter(r => getDisplayReviewType(r) === filterType.value)
   if (dateRange.value) {
     const [s, e] = dateRange.value
     d = d.filter(r => {
@@ -383,7 +427,7 @@ const filteredData = computed(() => {
 const totalOrders = computed(() => allData.value.length)
 const todayCount = computed(() => allData.value.filter(r => dayjs(r.created_at).isAfter(dayjs().startOf('day'))).length)
 const paidCount = computed(() => allData.value.filter(r => getRefundStatus(r) === '已返款').length)
-const unpaidCount = computed(() => allData.value.filter(r => ['待返款', '返款中'].includes(getRefundStatus(r))).length)
+const unpaidCount = computed(() => allData.value.filter(r => ['未返款', '返款中'].includes(getRefundStatus(r))).length)
 const problemCount = computed(() => allData.value.filter(r => ['无法完成', '已掉评'].includes(computeProgress(r))).length)
 
 function fmt(n: number | string) { return (Number(n) || 0).toFixed(2) }
@@ -402,26 +446,21 @@ function getProgressColor(s: string) {
 }
 
 function getRefundStatus(r: SubOrder) {
-  const raw = r.refund_status || ''
-  const map: Record<string, string> = {
-    '待退款': '待返款',
-    '退款中': '返款中',
-    '已退款': '已返款',
-    '退款失败': '返款失败',
-    '无需退款': '无需返款',
-  }
-  if (map[raw]) return map[raw]
+  const normalized = normalizeRefundStatus(r.refund_status || '')
+  if (normalized) return normalized
   if (Number(r.refund_amount) > 0) return '已返款'
-  return '待返款'
+  return '未返款'
 }
 
 function getRefundStatusColor(s: string) {
   const map: Record<string, string> = {
-    '待返款': 'orange',
+    '未返款': 'default',
     '返款中': 'processing',
-    '已返款': 'blue',
+    '已返款': 'green',
+    'On Hold': 'gold',
     '返款失败': 'red',
-    '无需返款': 'default',
+    '无需返款': 'cyan',
+    '失误多返': 'magenta',
   }
   return map[s] || 'default'
 }
@@ -446,8 +485,8 @@ function getOrderStatusColor(s: string) {
 }
 
 function getTypeColor(t: string) {
-  const m: Record<string, string> = { '免评': 'cyan', '留评': 'orange', '直评': 'green', '真人测评': 'blue', '图片评': 'geekblue', '文字评': 'cyan', '视频评': 'geekblue' }
-  return m[t] || 'default'
+  const m: Record<string, string> = { '文字': 'cyan', '图片': 'blue', '视频': 'geekblue', '免评': 'green', 'Feedback': 'gold' }
+  return m[normalizeReviewType(t)] || 'default'
 }
 
 function getRefundColor(m: string) {
@@ -528,7 +567,18 @@ async function loadData() {
     const { data: buyers } = await supabase.from('buyers').select('id, chat_order_id').in('id', buyerIds)
     if (buyers) buyers.forEach((b: any) => { if (b.chat_order_id) chatMap[b.id] = b.chat_order_id })
   }
-  allData.value = rows.map(r => ({ ...r, buyer_chat_id: (r.buyer_id && chatMap[r.buyer_id]) ? chatMap[r.buyer_id] : '' }))
+  let principalLossInjected = 0
+  allData.value = rows.map((r, index) => {
+    const shouldInject = principalLossInjected < 3 && index < 12 && (Number(r.refund_amount) > 0 || normalizeRefundStatus(r.refund_status) === '已返款')
+    if (shouldInject) principalLossInjected += 1
+    return {
+      ...r,
+      review_type: normalizeReviewType(r.review_type || r.order_type),
+      refund_status: normalizeRefundStatus(r.refund_status),
+      buyer_chat_id: (r.buyer_id && chatMap[r.buyer_id]) ? chatMap[r.buyer_id] : '',
+      _mock_principal_loss: shouldInject,
+    }
+  })
   loading.value = false
 }
 
@@ -559,7 +609,7 @@ function exportCSV() {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `子订单明细_${dayjs().format('YYYYMMDD_HHmm')}.csv`
+  a.download = `订单列表_${dayjs().format('YYYYMMDD_HHmm')}.csv`
   a.click()
 }
 
@@ -699,6 +749,12 @@ onMounted(loadData)
   font-size: 10px;
   line-height: 1.4;
   padding: 0 4px;
+}
+.type-cell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 24px;
 }
 
 /* 分配列 */
@@ -841,9 +897,25 @@ onMounted(loadData)
 }
 
 /* 进度/返款状态列 */
+.refund-status-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 72px;
+}
 .status-tag {
   font-size: 11px;
   display: inline-block;
+}
+.principal-loss-hint {
+  font-size: 10px;
+  line-height: 1;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  border-radius: 999px;
+  padding: 2px 6px;
 }
 
 .notes-inline {

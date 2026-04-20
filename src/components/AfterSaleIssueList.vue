@@ -31,33 +31,16 @@
       </div>
     </div> -->
 
-    <div v-if="props.showStats" class="status-filter-row">
-      <button
-        type="button"
-        :class="['status-filter-btn', !filterStatus ? 'active all' : '']"
-        @click="setStatusFilter(undefined)"
-      >
-        <span>全部</span>
-      </button>
-      <button
-        v-for="item in statusFilterItems"
-        :key="item.value"
-        type="button"
-        :class="['status-filter-btn', `tone-${item.tone}`, filterStatus === item.value ? 'active' : '']"
-        @click="setStatusFilter(item.value)"
-      >
-        <span>{{ item.label }}</span>
-        <em>{{ item.count }}</em>
-      </button>
-    </div>
-
     <div class="card-panel">
       <div class="toolbar">
         <a-select v-model:value="filterType" style="width: 110px" @change="load" allow-clear placeholder="订单状态">
           <a-select-option v-for="t in issueTypes" :key="t" :value="t">{{ t }}</a-select-option>
         </a-select>
-        <a-select v-model:value="filterStatus" style="width: 120px" @change="load" allow-clear placeholder="处理状态">
+        <a-select v-model:value="filterStatus" style="width: 120px" @change="load" allow-clear placeholder="处理进度">
           <a-select-option v-for="s in processStatusOptions" :key="s" :value="s">{{ s }}</a-select-option>
+        </a-select>
+        <a-select v-model:value="filterResolutionResult" style="width: 140px" @change="load" allow-clear placeholder="处理结果">
+          <a-select-option v-for="s in resolutionResultOptions" :key="s" :value="s">{{ s }}</a-select-option>
         </a-select>
         <a-select v-model:value="filterPrincipalStatus" style="width: 120px" @change="load" allow-clear placeholder="本金状态">
           <a-select-option v-for="s in principalStatusOptions" :key="s" :value="s">{{ s }}</a-select-option>
@@ -103,30 +86,21 @@
             <a-tag :color="issueTypeColor[record.issue_type] || 'default'">{{ record.issue_type }}</a-tag>
           </template>
           <template v-if="column.key === 'principal_status'">
-            <template v-if="getPrincipalStatus(record) === '损失'">
-              <a-tag color="red">损失</a-tag>
-              <div class="amount-loss">${{ Number(record.principal_amount || 0).toFixed(2) }}</div>
+            <template v-if="shouldShowPrincipalAmount(record)">
+              <a-tag :color="getPrincipalStatusColor(record)">{{ getPrincipalStatus(record) }}</a-tag>
+              <div class="amount-loss">${{ getPrincipalAmount(record).toFixed(2) }}</div>
               <div v-if="record.principal_reason" class="cell-meta">{{ record.principal_reason }}</div>
             </template>
-            <a-tag v-else :color="getPrincipalStatus(record) === '正常' ? 'green' : 'default'">{{ getPrincipalStatus(record) }}</a-tag>
+            <a-tag v-else :color="getPrincipalStatusColor(record)">{{ getPrincipalStatus(record) }}</a-tag>
           </template>
-          <template v-if="column.key === 'process_status'">
-            <a-tag :color="statusColorMap[normalizeIssueStatus(record.issue_status)] || 'default'">{{ normalizeIssueStatus(record.issue_status) }}</a-tag>
-          </template>
-          <template v-if="column.key === 'resolution'">
-            <template v-if="normalizeIssueStatus(record.issue_status) === '已替换单号' && record.new_amazon_order_id">
-              <div class="cell-new-order">{{ record.new_amazon_order_id }}</div>
-              <div v-if="record.profit_diff > 0" class="cell-profit">差价+${{ Number(record.profit_diff).toFixed(2) }}</div>
-            </template>
-            <template v-else-if="normalizeIssueStatus(record.issue_status) === '已补单' && record.replacement_buyer_name">
-              <div class="cell-replacement">{{ record.replacement_buyer_name }}</div>
-              <div v-if="record.replacement_sub_order_number" class="cell-meta">{{ record.replacement_sub_order_number }}</div>
-            </template>
-            <template v-else-if="normalizeIssueStatus(record.issue_status) === '无需处理' && record.refund_to_client_method">
-              <div class="cell-refund-method">{{ record.refund_to_client_method }}</div>
-              <div class="cell-refund-amount">退${{ Number(record.refund_to_client_amount || 0).toFixed(2) }}</div>
-            </template>
-            <span v-else class="text-gray">--</span>
+          <template v-if="column.key === 'after_sale_progress'">
+            <div class="after-sale-progress-cell">
+              <div class="after-sale-progress-main">
+                <a-tag :color="afterSaleProgressTagColor(record)" class="after-sale-progress-tag">{{ getAfterSaleProgressMainStatus(record) }}</a-tag>
+                <a-tag v-if="showPendingReorderAlert(record)" color="red" class="after-sale-alert-tag">待补单</a-tag>
+              </div>
+              <div class="after-sale-progress-sub">{{ getAfterSaleProgressSubText(record) }}</div>
+            </div>
           </template>
           <template v-if="column.key === 'remark'">
             <span v-if="record.resolution_notes" class="remark-text">{{ record.resolution_notes }}</span>
@@ -135,26 +109,7 @@
           <template v-if="column.key === 'action'">
             <div class="action-btns">
               <a-button type="link" size="small" @click="openDetail(record)">详情</a-button>
-              <a-button type="link" size="small" @click="openActionModal(record, 'replace-order')">修改订单号</a-button>
-              <a-button type="link" size="small" @click="openActionModal(record, 'reorder')">补单</a-button>
-              <a-popconfirm
-                title="确定改为需补单？"
-                @confirm="quickUpdateStatus(record, '需补单')"
-              >
-                <a-button type="link" size="small">需补单</a-button>
-              </a-popconfirm>
-              <a-popconfirm
-                title="确定改为已关闭？"
-                @confirm="quickUpdateStatus(record, '已关闭')"
-              >
-                <a-button type="link" size="small">已关闭</a-button>
-              </a-popconfirm>
-              <a-popconfirm
-                title="确定改为无需处理？"
-                @confirm="quickUpdateStatus(record, '无需处理')"
-              >
-                <a-button type="link" size="small">无需处理</a-button>
-              </a-popconfirm>
+              <a-button type="link" size="small" @click="openHandle(record)">处理</a-button>
             </div>
           </template>
         </template>
@@ -169,7 +124,7 @@
       destroy-on-close
     >
       <template v-if="currentIssue">
-        <div class="drawer-section">
+        <div v-if="drawerMode === 'detail'" class="drawer-section">
           <div class="drawer-section-title">子订单信息</div>
           <div class="detail-grid-3">
             <div class="detail-item">
@@ -234,12 +189,12 @@
               <span class="detail-label">本金状态</span>
               <span class="detail-val">{{ getPrincipalStatus(currentIssue) }}</span>
             </div>
-            <div v-if="getPrincipalStatus(currentIssue) === '损失'" class="detail-item">
-              <span class="detail-label">损失金额</span>
-              <span class="detail-val amount-usd">${{ Number(currentIssue.principal_amount || 0).toFixed(2) }}</span>
+            <div v-if="shouldShowPrincipalAmount(currentIssue)" class="detail-item">
+              <span class="detail-label">{{ currentIssue.issue_type === '本金多返' ? '差价金额' : '损失金额' }}</span>
+              <span class="detail-val amount-usd">${{ getPrincipalAmount(currentIssue).toFixed(2) }}</span>
             </div>
             <div v-if="currentIssue.principal_reason" class="detail-item">
-              <span class="detail-label">损失原因</span>
+              <span class="detail-label">{{ currentIssue.issue_type === '本金多返' ? '处理说明' : '损失原因' }}</span>
               <span class="detail-val">{{ currentIssue.principal_reason }}</span>
             </div>
           </div>
@@ -297,11 +252,16 @@
             </a-tag>
           </div>
           <div class="handle-action-grid">
-            <a-button :type="handleAction === 'replace-order' ? 'primary' : 'default'" @click="setHandleAction('replace-order')">修改订单号</a-button>
+            <a-button :type="handleAction === 'replace-order' ? 'primary' : 'default'" @click="setHandleAction('replace-order')">替换单号</a-button>
             <a-button :type="handleAction === 'reorder' ? 'primary' : 'default'" @click="setHandleAction('reorder')">补单</a-button>
-            <a-button :type="handleAction === 'mark-need-reorder' ? 'primary' : 'default'" @click="setHandleAction('mark-need-reorder')">改为需补单</a-button>
-            <a-button :type="handleAction === 'mark-closed' ? 'primary' : 'default'" @click="setHandleAction('mark-closed')">改为已关闭</a-button>
-            <a-button :type="handleAction === 'mark-no-need' ? 'primary' : 'default'" @click="setHandleAction('mark-no-need')">改为无需处理</a-button>
+            <a-button :type="handleAction === 'mark-need-reorder' ? 'primary' : 'default'" @click="setHandleAction('mark-need-reorder')">需补单</a-button>
+            <a-button
+              v-if="currentIssue?.issue_type === '本金多返' || normalizeIssueStatus(currentIssue?.issue_status) === '已追回本金'"
+              :type="handleAction === 'recover-principal' ? 'primary' : 'default'"
+              @click="setHandleAction('recover-principal')"
+            >追回本金</a-button>
+            <a-button :type="handleAction === 'mark-closed' ? 'primary' : 'default'" @click="setHandleAction('mark-closed')">关闭此单</a-button>
+            <a-button :type="handleAction === 'mark-no-need' ? 'primary' : 'default'" @click="setHandleAction('mark-no-need')">无需处理</a-button>
           </div>
 
           <template v-if="handleAction === 'replace-order'">
@@ -344,7 +304,7 @@
             </div>
           </template>
 
-          <template v-if="handleAction === 'mark-need-reorder' || handleAction === 'mark-closed' || handleAction === 'mark-no-need'">
+          <template v-if="handleAction === 'mark-need-reorder' || handleAction === 'recover-principal' || handleAction === 'mark-closed' || handleAction === 'mark-no-need'">
             <div class="handle-box">
               <div class="handle-action-hint">
                 {{ getHandleActionHint() }}
@@ -432,11 +392,40 @@ const emit = defineEmits<{
   (e: 'changed'): void
 }>()
 
+const MOCK_AFTER_SALE_ISSUES_KEY = 'mock_after_sale_issue_list_v1'
+const MOCK_AFTER_SALE_ISSUES = [
+  {
+    id: 'mock_after_sale_principal_overpaid',
+    issue_number: 'ASI-MOCK-20260415-0001',
+    sub_order_id: 'mock_sub_order_principal_overpaid',
+    sub_order_number: 'SUB-MOCK-AS-2001',
+    order_number: 'MOCK-AS-2001',
+    buyer_name: 'Liam Carter',
+    staff_name: '王浩',
+    customer_name: '深圳云帆科技',
+    business_manager_name: '陈婷',
+    asin: 'B0MOCKAS2001',
+    store_name: 'US-Store-09',
+    product_price: 18.9,
+    issue_type: '本金多返',
+    issue_status: '待处理',
+    principal_status: '待追回',
+    principal_amount: 4.5,
+    principal_reason: '原应返 18.90 USD，误返 23.40 USD，待追回差价。',
+    old_amazon_order_id: '333-3333333-3333333',
+    resolution_notes: '已联系买手确认退回多返本金，等待到账。',
+    description: '财务多返了 4.50 USD，本金差价待追回。',
+    created_at: '2026-04-15T09:30:00.000Z',
+    updated_at: '2026-04-15T10:20:00.000Z',
+  },
+]
+
 const loading = ref(false)
 const saving = ref(false)
 const issues = ref<any[]>([])
 const filterStatus = ref<string | undefined>(undefined)
 const filterType = ref<string | undefined>(undefined)
+const filterResolutionResult = ref<string | undefined>(undefined)
 const filterPrincipalStatus = ref<string | undefined>(undefined)
 const filterSearch = ref('')
 const drawerOpen = ref(false)
@@ -444,18 +433,20 @@ const currentIssue = ref<any>(null)
 const actionModalOpen = ref(false)
 const actionModalType = ref<'replace-order' | 'reorder' | ''>('')
 const drawerMode = ref<'detail' | 'handle'>('detail')
-const handleAction = ref<'replace-order' | 'reorder' | 'mark-need-reorder' | 'mark-closed' | 'mark-no-need' | ''>('')
+const handleAction = ref<'replace-order' | 'reorder' | 'mark-need-reorder' | 'recover-principal' | 'mark-closed' | 'mark-no-need' | ''>('')
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 
-const issueTypes = ['不下单', '取消', '退款', '无此订单']
-const processStatusOptions = ['待处理', '处理中', '已处理', '已替换单号', '需补单', '已补单', '已关闭', '无需处理']
-const principalStatusOptions = ['待确定', '正常', '损失']
+const issueTypes = ['不下单', '取消', '退款', '无此订单', '本金多返']
+const processStatusOptions = ['待处理', '处理中', '已处理']
+const resolutionResultOptions = ['已替换单号', '已补新单', '已追回本金', '已关闭', '无需处理']
+const principalStatusOptions = ['正常', '待确定', '待追回', '已损失']
 
 const issueTypeColor: Record<string, string> = {
   '不下单': 'orange',
   '取消': 'red',
   '退款': 'blue',
   '无此订单': 'volcano',
+  '本金多返': 'gold',
 }
 
 const statusColorMap: Record<string, string> = {
@@ -465,22 +456,12 @@ const statusColorMap: Record<string, string> = {
   '已替换单号': 'cyan',
   '需补单': 'red',
   '已补单': 'green',
+  '已追回本金': 'green',
   '无需处理': 'purple',
   '已关闭': 'default',
 }
 
 const stats = ref({ pending: 0, processing: 0, handled: 0, replaced: 0, needReorder: 0, reordered: 0, closed: 0, noNeed: 0 })
-
-const statusFilterItems = computed(() => ([
-  { label: '待处理', value: '待处理', count: stats.value.pending, tone: 'pending' },
-  { label: '处理中', value: '处理中', count: stats.value.processing, tone: 'processing' },
-  { label: '已处理', value: '已处理', count: stats.value.handled, tone: 'handled' },
-  { label: '已替换单号', value: '已替换单号', count: stats.value.replaced, tone: 'replaced' },
-  { label: '需补单', value: '需补单', count: stats.value.needReorder, tone: 'need-reorder' },
-  { label: '已补单', value: '已补单', count: stats.value.reordered, tone: 'reordered' },
-  { label: '已关闭', value: '已关闭', count: stats.value.closed, tone: 'closed' },
-  { label: '无需处理', value: '无需处理', count: stats.value.noNeed, tone: 'refunded' },
-]))
 
 const buyerResults = ref<any[]>([])
 const searchingBuyers = ref(false)
@@ -509,8 +490,7 @@ const columns = [
   { title: '买手/业务员', key: 'buyer', width: 120 },
   { title: '订单状态', key: 'order_status', width: 95 },
   { title: '本金状态', key: 'principal_status', width: 110 },
-  { title: '处理状态', key: 'process_status', width: 110 },
-  { title: '处理结果', key: 'resolution', width: 170 },
+  { title: '售后进度', key: 'after_sale_progress', width: 220 },
   { title: '备注', key: 'remark', width: 180 },
   {
     title: '创建时间',
@@ -555,8 +535,9 @@ function applyIssueFilters<T>(query: T, options?: { includeStatusFilter?: boolea
   if (props.staffId) nextQuery = nextQuery.eq('staff_id', props.staffId)
   if (props.issueId) nextQuery = nextQuery.eq('id', props.issueId)
   if (options?.includeStatusFilter !== false && filterStatus.value) nextQuery = applyProcessStatusFilter(nextQuery, filterStatus.value)
+  if (filterResolutionResult.value) nextQuery = applyResolutionResultFilter(nextQuery, filterResolutionResult.value)
   if (filterType.value) nextQuery = nextQuery.eq('issue_type', filterType.value)
-  if (filterPrincipalStatus.value) nextQuery = nextQuery.eq('principal_status', filterPrincipalStatus.value)
+  if (filterPrincipalStatus.value) nextQuery = applyPrincipalStatusFilter(nextQuery, filterPrincipalStatus.value)
 
   const searchVal = getSearchValue()
   if (searchVal) {
@@ -570,14 +551,36 @@ function applyIssueFilters<T>(query: T, options?: { includeStatusFilter?: boolea
 
 function applyProcessStatusFilter<T>(query: T, status: string) {
   let nextQuery: any = query
-  if (status === '已替换单号') return nextQuery.in('issue_status', ['已替换单号', '已替换订单'])
-  if (status === '无需处理') return nextQuery.in('issue_status', ['无需处理', '已退款给客户'])
+  if (status === '处理中') return nextQuery.in('issue_status', ['处理中', '需补单'])
+  if (status === '已处理') return nextQuery.in('issue_status', ['已替换单号', '已替换订单', '已补单', '已追回本金', '已关闭', '无需处理', '已退款给客户'])
   return nextQuery.eq('issue_status', status)
+}
+
+function applyResolutionResultFilter<T>(query: T, result: string) {
+  let nextQuery: any = query
+  if (result === '已替换单号') return nextQuery.in('issue_status', ['已替换单号', '已替换订单'])
+  if (result === '已补新单') return nextQuery.eq('issue_status', '已补单')
+  if (result === '已追回本金') return nextQuery.eq('issue_status', '已追回本金')
+  if (result === '无需处理') return nextQuery.in('issue_status', ['无需处理', '已退款给客户'])
+  return nextQuery.eq('issue_status', result)
+}
+
+function applyPrincipalStatusFilter<T>(query: T, status: string) {
+  let nextQuery: any = query
+  if (status === '已损失') return nextQuery.in('principal_status', ['已损失', '损失'])
+  return nextQuery.eq('principal_status', status)
 }
 
 async function load() {
   loading.value = true
   try {
+    const filteredMockIssues = filterMockIssues(loadMockIssuesState())
+    const mockCount = filteredMockIssues.length
+    const pageStart = (pagination.value.current - 1) * pagination.value.pageSize
+    const mockOnEarlierPages = Math.min(mockCount, pageStart)
+    const mockOnCurrentPage = Math.max(Math.min(mockCount - pageStart, pagination.value.pageSize), 0)
+    const dbPageSize = pagination.value.pageSize - mockOnCurrentPage
+
     let query = supabase
       .from('after_sale_issues')
       .select('*', { count: 'exact' })
@@ -585,12 +588,19 @@ async function load() {
 
     query = applyIssueFilters(query, { includeStatusFilter: true })
 
-    const from = (pagination.value.current - 1) * pagination.value.pageSize
-    query = query.range(from, from + pagination.value.pageSize - 1)
+    if (dbPageSize > 0) {
+      const dbFrom = Math.max(pageStart - mockOnEarlierPages, 0)
+      query = query.range(dbFrom, dbFrom + dbPageSize - 1)
+    } else {
+      query = query.range(0, 0)
+    }
+
     const { data, count, error } = await query
     if (error) throw error
-    issues.value = data || []
-    pagination.value.total = count || 0
+    const mockPageRows = filteredMockIssues.slice(pageStart, pageStart + mockOnCurrentPage)
+    const dbRows = dbPageSize > 0 ? (data || []) : []
+    issues.value = [...mockPageRows, ...dbRows]
+    pagination.value.total = (count || 0) + mockCount
 
     if ((props.issueId || props.subOrder) && issues.value.length === 1) {
       openDetail(issues.value[0])
@@ -604,10 +614,58 @@ async function load() {
   }
 }
 
-function setStatusFilter(status?: string) {
-  filterStatus.value = status
-  pagination.value.current = 1
-  load()
+function loadMockIssuesState() {
+  if (typeof window === 'undefined') return MOCK_AFTER_SALE_ISSUES.map(item => ({ ...item }))
+  try {
+    const raw = window.localStorage.getItem(MOCK_AFTER_SALE_ISSUES_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    const seeded = Array.isArray(parsed) ? parsed : []
+    const merged = [...seeded]
+    MOCK_AFTER_SALE_ISSUES.forEach(seed => {
+      if (!merged.some((item: any) => item.id === seed.id)) {
+        merged.push({ ...seed })
+      }
+    })
+    window.localStorage.setItem(MOCK_AFTER_SALE_ISSUES_KEY, JSON.stringify(merged))
+    return merged
+  } catch {
+    return MOCK_AFTER_SALE_ISSUES.map(item => ({ ...item }))
+  }
+}
+
+function saveMockIssuesState(nextIssues: any[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(MOCK_AFTER_SALE_ISSUES_KEY, JSON.stringify(nextIssues))
+}
+
+function isMockIssue(record: any) {
+  return String(record?.id || '').startsWith('mock_after_sale_')
+}
+
+function filterMockIssues(records: any[]) {
+  const keyword = getSearchValue().toLowerCase()
+  return records.filter(record => {
+    if (props.issueId && record.id !== props.issueId) return false
+    if (filterType.value && record.issue_type !== filterType.value) return false
+    if (filterStatus.value && getAfterSaleProgressMainStatus(record) !== filterStatus.value) return false
+    if (filterResolutionResult.value) {
+      const normalized = normalizeIssueStatus(record.issue_status)
+      if (filterResolutionResult.value === '已补新单' && normalized !== '已补单') return false
+      else if (filterResolutionResult.value !== '已补新单' && normalized !== filterResolutionResult.value) return false
+    }
+    if (filterPrincipalStatus.value && getPrincipalStatus(record) !== filterPrincipalStatus.value) return false
+    if (!keyword) return true
+
+    const haystack = [
+      record.sub_order_number,
+      record.buyer_name,
+      record.customer_name,
+      record.asin,
+      record.old_amazon_order_id,
+      record.business_manager_name,
+    ].join(' ').toLowerCase()
+    return haystack.includes(keyword)
+  })
 }
 
 let buyerSearchTimer: ReturnType<typeof setTimeout> | null = null
@@ -637,7 +695,7 @@ function onReplacementBuyerChange(buyerId: string) {
 }
 
 function onPrincipalChange() {
-  if (editForm.principal_status !== '损失') {
+  if (!['待追回', '已损失'].includes(editForm.principal_status)) {
     editForm.principal_amount = 0
     editForm.principal_reason = ''
     editForm.blacklist_buyer = false
@@ -656,6 +714,7 @@ function openHandle(record: any) {
   drawerMode.value = 'handle'
   hydrateIssueForm(record)
   handleAction.value = inferHandleAction(normalizeIssueStatus(record.issue_status))
+    || (record.issue_type === '本金多返' ? 'recover-principal' : '')
   drawerOpen.value = true
 }
 
@@ -676,7 +735,7 @@ function hydrateIssueForm(record: any) {
   Object.assign(editForm, {
     principal_status: getPrincipalStatus(record),
     principal_reason: record.principal_reason || (record.principal_stolen ? '被骗' : ''),
-    principal_amount: Number(record.principal_amount || 0),
+    principal_amount: getPrincipalAmount(record),
     new_amazon_order_id: record.new_amazon_order_id || '',
     profit_diff: Number(record.profit_diff || 0),
     loss_amount: Number(record.loss_amount || 0),
@@ -696,17 +755,19 @@ function inferHandleAction(status: string) {
   if (status === '已替换单号') return 'replace-order'
   if (status === '已补单') return 'reorder'
   if (status === '需补单') return 'mark-need-reorder'
+  if (status === '已追回本金') return 'recover-principal'
   if (status === '已关闭') return 'mark-closed'
   if (status === '无需处理') return 'mark-no-need'
   return ''
 }
 
-function setHandleAction(action: 'replace-order' | 'reorder' | 'mark-need-reorder' | 'mark-closed' | 'mark-no-need') {
+function setHandleAction(action: 'replace-order' | 'reorder' | 'mark-need-reorder' | 'recover-principal' | 'mark-closed' | 'mark-no-need') {
   handleAction.value = action
 }
 
 function getHandleActionHint() {
   if (handleAction.value === 'mark-need-reorder') return '确认后将状态直接改为需补单。'
+  if (handleAction.value === 'recover-principal') return '确认后将状态改为已追回本金，本金状态回到正常。'
   if (handleAction.value === 'mark-closed') return '确认后将状态直接改为已关闭。'
   if (handleAction.value === 'mark-no-need') return '确认后将状态直接改为无需处理。'
   return ''
@@ -725,6 +786,7 @@ async function handleUpdate() {
       'replace-order': '已替换单号',
       'reorder': '已补单',
       'mark-need-reorder': '需补单',
+      'recover-principal': '已追回本金',
       'mark-closed': '已关闭',
       'mark-no-need': '无需处理',
     } as const
@@ -753,16 +815,30 @@ async function handleUpdate() {
       update.replacement_sub_order_number = replacementSubOrderNumber
     }
 
-    const closedStatuses = ['已替换单号', '已补单', '已关闭', '无需处理']
+    if (handleAction.value === 'recover-principal') {
+      update.principal_status = '正常'
+      update.resolution_notes = editForm.resolution_notes?.trim() || currentIssue.value.resolution_notes || '已追回多返本金'
+    }
+
+    const closedStatuses = ['已替换单号', '已补单', '已追回本金', '已关闭', '无需处理']
     update.resolved_at = closedStatuses.includes(normalizedStatus) ? new Date().toISOString() : null
     if (normalizedStatus !== '无需处理') {
       update.refund_to_client_at = null
     }
 
-    const { error } = await supabase.from('after_sale_issues').update(update).eq('id', currentIssue.value.id)
-    if (error) throw error
+    if (isMockIssue(currentIssue.value)) {
+      const nextMockIssues = loadMockIssuesState().map(item => item.id === currentIssue.value.id ? {
+        ...item,
+        ...update,
+        updated_at: new Date().toISOString(),
+      } : item)
+      saveMockIssuesState(nextMockIssues)
+    } else {
+      const { error } = await supabase.from('after_sale_issues').update(update).eq('id', currentIssue.value.id)
+      if (error) throw error
+    }
 
-    if (handleAction.value === 'replace-order' && editForm.new_amazon_order_id && currentIssue.value.sub_order_id) {
+    if (!isMockIssue(currentIssue.value) && handleAction.value === 'replace-order' && editForm.new_amazon_order_id && currentIssue.value.sub_order_id) {
       await supabase.from('sub_orders').update({
         amazon_order_id: editForm.new_amazon_order_id.trim(),
       }).eq('id', currentIssue.value.sub_order_id)
@@ -869,10 +945,76 @@ function normalizeIssueStatus(status: string) {
   return status || '待处理'
 }
 
+function maskProgressValue(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw.length <= 4) return raw
+  return `${raw.slice(0, 4)}***`
+}
+
+function getAfterSaleProgressMainStatus(record: any) {
+  const normalized = normalizeIssueStatus(record.issue_status)
+  if (['已替换单号', '已补单', '已追回本金', '已关闭', '无需处理'].includes(normalized)) return '已处理'
+  if (['处理中', '需补单'].includes(normalized)) return '处理中'
+  return '待处理'
+}
+
+function showPendingReorderAlert(record: any) {
+  return normalizeIssueStatus(record.issue_status) === '需补单'
+}
+
+function getAfterSaleProgressSubText(record: any) {
+  const normalized = normalizeIssueStatus(record.issue_status)
+  if (normalized === '已关闭') return '已关闭'
+  if (normalized === '无需处理') return '无需处理'
+  if (normalized === '已替换单号') {
+    return record.new_amazon_order_id
+      ? `已换新单号 ${maskProgressValue(record.new_amazon_order_id)}`
+      : '已换新单号'
+  }
+  if (normalized === '已补单') {
+    return record.replacement_sub_order_number
+      ? `已补新单 ${maskProgressValue(record.replacement_sub_order_number)}`
+      : '已补新单'
+  }
+  if (normalized === '已追回本金') {
+    const amount = getPrincipalAmount(record)
+    return amount > 0 ? `已追回本金 $${amount.toFixed(2)}` : '已追回本金'
+  }
+  if (normalized === '需补单') return '待确认补单方案'
+  if (normalized === '处理中') return record.resolution_notes || '处理中'
+  return record.resolution_notes || '待处理'
+}
+
+function afterSaleProgressTagColor(record: any) {
+  const main = getAfterSaleProgressMainStatus(record)
+  if (main === '已处理') return 'green'
+  if (main === '处理中') return 'processing'
+  return 'orange'
+}
+
 function getPrincipalStatus(record: any) {
+  if (record.principal_status === '损失') return '已损失'
   if (record.principal_status) return record.principal_status
-  if (record.principal_stolen || Number(record.principal_amount || 0) > 0) return '损失'
+  if (record.issue_type === '本金多返') return '待追回'
+  if (record.principal_stolen || Number(record.principal_amount || 0) > 0) return '已损失'
   return '待确定'
+}
+
+function getPrincipalStatusColor(record: any) {
+  const status = getPrincipalStatus(record)
+  if (status === '正常') return 'green'
+  if (status === '待追回') return 'orange'
+  if (status === '已损失') return 'red'
+  return 'default'
+}
+
+function getPrincipalAmount(record: any) {
+  return Number(record.principal_amount || record.profit_diff || record.loss_amount || 0)
+}
+
+function shouldShowPrincipalAmount(record: any) {
+  return ['待追回', '已损失'].includes(getPrincipalStatus(record)) && getPrincipalAmount(record) > 0
 }
 
 async function handleDelete() {
@@ -1016,6 +1158,22 @@ watch(() => [props.issueId, props.subOrder, props.staffId], () => {
 .cell-replacement { font-size: 12px; color: #374151; }
 .cell-refund-method { font-size: 12px; color: #7c3aed; font-weight: 600; }
 .cell-refund-amount { font-size: 11px; color: #dc2626; font-weight: 700; }
+.after-sale-progress-cell { display: flex; flex-direction: column; gap: 6px; }
+.after-sale-progress-main { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.after-sale-progress-tag { margin: 0; }
+.after-sale-alert-tag {
+  margin: 0;
+  font-weight: 700;
+  border-color: #dc2626;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+.after-sale-progress-sub {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.4;
+  word-break: break-all;
+}
 .remark-text { font-size: 12px; color: #374151; }
 .action-btns { display: flex; flex-wrap: wrap; gap: 2px 6px; }
 
