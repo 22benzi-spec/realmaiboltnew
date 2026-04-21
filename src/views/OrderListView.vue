@@ -164,9 +164,9 @@
           <template v-if="column.key === 'sales_person'">
             <div v-if="record.sales_person" class="sales-cell">
               <span class="sales-name">{{ record.sales_person }}</span>
-              <template v-if="managerWechatMap[record.sales_person]?.length">
+              <div v-if="managerWechatMap[record.sales_person]?.length" class="sales-wechat-wrap">
                 <span v-for="wx in managerWechatMap[record.sales_person]" :key="wx" class="sales-wechat">{{ wx }}</span>
-              </template>
+              </div>
             </div>
             <span v-else class="text-empty">-</span>
           </template>
@@ -199,6 +199,13 @@
 
           <template v-if="column.key === 'exchange_rate'">
             <span v-if="record.exchange_rate" class="rate-text">{{ Number(record.exchange_rate).toFixed(2) }}</span>
+            <span v-else class="text-empty">—</span>
+          </template>
+
+          <template v-if="column.key === 'commission_fee'">
+            <div v-if="getCommissionUnitPrice(record) > 0" class="price-cell">
+              <span class="commission-text">&yen;{{ getCommissionUnitPrice(record).toFixed(2) }}</span>
+            </div>
             <span v-else class="text-empty">—</span>
           </template>
 
@@ -287,6 +294,15 @@
           <a-descriptions-item label="店铺">{{ currentOrder.store_name }}</a-descriptions-item>
           <a-descriptions-item label="品牌">{{ currentOrder.brand_name || '-' }}</a-descriptions-item>
           <a-descriptions-item label="国家">{{ currentOrder.country }}</a-descriptions-item>
+          <a-descriptions-item label="产品售价">
+            {{ currentOrder.product_price ? `$ ${Number(currentOrder.product_price).toFixed(2)}` : '-' }}
+          </a-descriptions-item>
+          <a-descriptions-item label="接单汇率">
+            {{ currentOrder.exchange_rate ? Number(currentOrder.exchange_rate).toFixed(2) : '-' }}
+          </a-descriptions-item>
+          <a-descriptions-item label="佣金">
+            {{ getCommissionUnitPrice(currentOrder) > 0 ? `¥ ${getCommissionUnitPrice(currentOrder).toFixed(2)}` : '-' }}
+          </a-descriptions-item>
           <a-descriptions-item label="测评类型">{{ currentOrder.review_type }}</a-descriptions-item>
           <a-descriptions-item label="下单类型">
             <div class="order-types-cell">
@@ -899,8 +915,8 @@ const columns = [
   { title: '产品信息', key: 'product', width: 220 },
   { title: '国家', key: 'country', dataIndex: 'country', width: 65 },
   { title: '测评类型/量', key: 'order_types', width: 135 },
-  { title: '产品售价', key: 'product_price', width: 90 },
   { title: '接单汇率', key: 'exchange_rate', width: 80 },
+  { title: '佣金', key: 'commission_fee', width: 90 },
   { title: '应收基础款项', key: 'receivable_amount', width: 130 },
   { title: '实收基础款项', key: 'actual_received', width: 130 },
   { title: '账单状态', key: 'billing', width: 130 },
@@ -1713,9 +1729,10 @@ onMounted(() => {
 .rs-amount { font-size: 12px; font-weight: 600; color: #f59e0b; }
 .rs-date { font-size: 10px; color: #9ca3af; }
 
-.sales-cell { display: flex; flex-direction: column; gap: 2px; }
-.sales-name { font-size: 12px; font-weight: 500; color: #374151; }
-.sales-wechat { font-size: 11px; color: #6b7280; }
+.sales-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sales-name { font-size: 13px; font-weight: 700; color: #1a1a2e; line-height: 1.2; }
+.sales-wechat-wrap { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.sales-wechat { font-size: 10px; color: #6b7280; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 999px; padding: 1px 6px; line-height: 1.4; }
 .customer-name { font-size: 11px; color: #9ca3af; }
 .customer-name-cell { font-size: 12px; color: #374151; }
 .customer-cell { display: flex; flex-direction: column; gap: 3px; }
@@ -1730,6 +1747,7 @@ onMounted(() => {
 .amount-received { color: #2563eb; }
 .price-cell { display: inline-block; }
 .price-usd { font-size: 12px; color: #1d4ed8; font-weight: 600; }
+.commission-text { font-size: 12px; color: #d97706; font-weight: 600; }
 .customer-group-name { font-size: 12px; color: #1d4ed8; font-weight: 500; display: block; line-height: 1.4; }
 .total-qty-badge { font-size: 11px; color: #374151; font-weight: 600; background: #f3f4f6; border-radius: 3px; padding: 1px 5px; margin-left: 4px; }
 

@@ -157,7 +157,10 @@
               class="record-card record-supplement"
             >
               <div class="record-left">
-                <div class="record-amount">+¥{{ Number(p.amount_cny).toFixed(2) }}</div>
+                <div class="record-amount-wrap">
+                  <div v-if="Number(p.amount_cny || 0) > 0" class="record-amount">+¥{{ Number(p.amount_cny).toFixed(2) }}</div>
+                  <div v-if="Number(p.amount_usd || 0) > 0" class="record-amount record-amount-usd">+$ {{ Number(p.amount_usd).toFixed(2) }}</div>
+                </div>
                 <div class="record-meta">
                   <span>{{ p.payment_date }}</span>
                   <span v-if="p.payment_method" class="meta-dot">·</span>
@@ -245,14 +248,30 @@
           退款将生成待审批流水，需财务审批后执行
         </div>
         <div class="ar-field">
-          <label class="ar-label">{{ addRecordType === '退款' ? '退款金额（元）' : '补款金额（元）' }} <span class="required">*</span></label>
+          <label class="ar-label">
+            {{ addRecordType === '退款' ? '退款金额（元）' : '补款金额（人民币）' }}
+            <span v-if="addRecordType === '退款'" class="required">*</span>
+          </label>
           <a-input-number
             v-model:value="addRecordForm.amount_cny"
             style="width:100%"
-            :min="0.01"
+            :min="0"
             :precision="2"
-            :placeholder="addRecordType === '退款' ? '退款金额' : '补款金额'"
+            :placeholder="addRecordType === '退款' ? '退款金额' : '人民币金额，可选'"
           />
+        </div>
+        <div v-if="addRecordType !== '退款'" class="ar-field">
+          <label class="ar-label">补款金额（USD）</label>
+          <a-input-number
+            v-model:value="addRecordForm.amount_usd"
+            style="width:100%"
+            :min="0"
+            :precision="2"
+            placeholder="美金金额，可选"
+          />
+        </div>
+        <div v-if="addRecordType !== '退款'" class="add-record-tip">
+          人民币和美元至少填写一项；如同时填写，会一并记录到补款流水。
         </div>
         <div class="ar-field">
           <label class="ar-label">{{ addRecordType === '退款' ? '退款日期' : '补款日期' }} <span class="required">*</span></label>
@@ -480,6 +499,7 @@ const addRecordType = ref<'补款' | '退款'>('补款')
 const addRecordFiles = ref<any[]>([])
 const addRecordForm = ref({
   amount_cny: undefined as number | undefined,
+  amount_usd: undefined as number | undefined,
   payment_date_picker: null as any,
   payment_method: '银行转账',
   payer_name: '',
@@ -493,6 +513,7 @@ function openAddRecord(type: '补款' | '退款') {
   addRecordFiles.value = []
   addRecordForm.value = {
     amount_cny: undefined,
+    amount_usd: undefined,
     payment_date_picker: dayjs(),
     payment_method: '银行转账',
     payer_name: props.order?.customer_name || '',
@@ -505,10 +526,6 @@ function openAddRecord(type: '补款' | '退款') {
 
 async function saveRecord() {
   if (!props.order?.id) return
-  if (!addRecordForm.value.amount_cny || addRecordForm.value.amount_cny <= 0) {
-    message.warning('请输入金额')
-    return
-  }
   if (!addRecordForm.value.payment_date_picker) {
     message.warning('请选择日期')
     return
@@ -535,6 +552,20 @@ async function saveRecord() {
     }
 
     const isRefund = addRecordType.value === '退款'
+    const amountCny = Number(addRecordForm.value.amount_cny || 0)
+    const amountUsd = Number(addRecordForm.value.amount_usd || 0)
+
+    if (isRefund) {
+      if (amountCny <= 0) {
+        message.warning('请输入退款金额')
+        addRecordSaving.value = false
+        return
+      }
+    } else if (amountCny <= 0 && amountUsd <= 0) {
+      message.warning('请至少填写人民币或美元补款金额')
+      addRecordSaving.value = false
+      return
+    }
 
     const { data: txNo } = await supabase.rpc('generate_transaction_no')
     const transactionNo = txNo || `FT-${Date.now()}`
@@ -543,7 +574,8 @@ async function saveRecord() {
       transaction_no: transactionNo,
       transaction_type: isRefund ? '退款' : '批次收款',
       direction: isRefund ? '支出' : '收入',
-      amount_cny: addRecordForm.value.amount_cny,
+      amount_cny: amountCny,
+      amount_usd: isRefund ? 0 : amountUsd,
       exchange_rate: props.order.exchange_rate || 7.25,
       customer_name: props.order.customer_name || '',
       customer_id_str: props.order.customer_id_str || '',
@@ -561,7 +593,8 @@ async function saveRecord() {
       batch_id: props.order.id,
       batch_number: props.order.order_number,
       transaction_id: txData?.id || null,
-      amount_cny: addRecordForm.value.amount_cny,
+      amount_cny: amountCny,
+      amount_usd: isRefund ? 0 : amountUsd,
       payment_date: paymentDate,
       payment_method: addRecordForm.value.payment_method,
       payer_name: addRecordForm.value.payer_name,
@@ -829,10 +862,20 @@ async function deleteRecord(payment: any) {
   gap: 4px;
 }
 
+.record-amount-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .record-amount {
   font-size: 16px;
   font-weight: 700;
   color: #16a34a;
+}
+
+.record-amount-usd {
+  color: #2563eb;
 }
 
 .record-amount-refund {
@@ -869,6 +912,12 @@ async function deleteRecord(payment: any) {
   font-size: 12px;
   color: #9ca3af;
   margin-bottom: 10px;
+  margin-top: -6px;
+}
+
+.add-record-tip {
+  font-size: 12px;
+  color: #6b7280;
   margin-top: -6px;
 }
 
