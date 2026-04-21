@@ -204,10 +204,10 @@
               <div v-for="row in allocRows" :key="row.orderId" class="bf-alloc-row">
                 <span class="alloc-order-num">{{ row.orderNumber }}</span>
                 <div class="alloc-debt-info">
+                  <span class="alloc-expected">签单¥{{ Number(row.expected).toFixed(2) }}</span>
                   <span v-if="row.debtHint" class="alloc-debt-tag" :class="row.debtHintType">
                     {{ row.debtHint }}
                   </span>
-                  <span v-else class="alloc-expected">签单¥{{ Number(row.expected).toFixed(2) }}</span>
                 </div>
                 <div class="alloc-input-wrap">
                   <a-input-number
@@ -252,6 +252,14 @@
                 @click="saveBatchRecord"
               >
                 提交款项
+              </a-button>
+              <a-button
+                danger
+                :loading="batchRefundSaving"
+                :disabled="!batchDatePicker || allocRefundTotal <= 0"
+                @click="submitRefundRequest"
+              >
+                退款申请
               </a-button>
               <span class="bf-submit-hint" v-if="allocRefundTotal > 0">含退款将生成待审批流水</span>
             </div>
@@ -392,7 +400,14 @@ const groupDiffColor = computed(() => {
 })
 
 async function loadOrders() {
-  if (!props.groupData?.id) return
+  if (props.groupOrders?.length) {
+    orders.value = props.groupOrders
+    return
+  }
+  if (!props.groupData?.id) {
+    orders.value = []
+    return
+  }
   const { data } = await supabase
     .from('erp_orders')
     .select('*')
@@ -402,7 +417,11 @@ async function loadOrders() {
 }
 
 async function loadAllPayments() {
-  if (orders.value.length === 0) return
+  if (orders.value.length === 0) {
+    allPayments.value = []
+    orderPaymentMap.value = {}
+    return
+  }
   const orderIds = orders.value.map(o => o.id)
   const { data } = await supabase
     .from('batch_payments')
@@ -451,6 +470,7 @@ const batchPayerName = ref('')
 const batchRecordedBy = ref('')
 const batchNotes = ref('')
 const batchSaving = ref(false)
+const batchRefundSaving = ref(false)
 
 interface AllocRow {
   orderId: string
@@ -519,6 +539,10 @@ const hasAnyAlloc = computed(() =>
   allocRows.value.some(r => r.allocated !== undefined && r.allocated !== null && r.allocated !== 0)
 )
 
+const hasRefundAlloc = computed(() =>
+  allocRows.value.some(r => Number(r.allocated || 0) < 0)
+)
+
 function resetBatchForm() {
   batchDatePicker.value = dayjs()
   batchPaymentMethod.value = '银行转账'
@@ -528,18 +552,37 @@ function resetBatchForm() {
   allocRows.value = buildAllocRows(orders.value)
 }
 
-async function saveBatchRecord() {
+function rebuildAllocRowsWithDrafts(draftMap: Record<string, { allocated: number | undefined, updateDebtStatus: string }>) {
+  allocRows.value = buildAllocRows(orders.value).map(row => {
+    const draft = draftMap[row.orderId]
+    return draft
+      ? { ...row, allocated: draft.allocated, updateDebtStatus: draft.updateDebtStatus }
+      : row
+  })
+}
+
+async function saveBatchRecord(mode: 'all' | 'refund' = 'all') {
   if (!batchDatePicker.value) {
     message.warning('请选择日期')
     return
   }
-  const toProcess = allocRows.value.filter(r => r.allocated !== undefined && r.allocated !== null && r.allocated !== 0)
+  const toProcess = allocRows.value.filter((r) => {
+    if (r.allocated === undefined || r.allocated === null || r.allocated === 0) return false
+    if (mode === 'refund') return Number(r.allocated) < 0
+    return true
+  })
   if (toProcess.length === 0) {
-    message.warning('请至少填写一个订单的款项金额')
+    message.warning(mode === 'refund' ? '请至少填写一条退款金额' : '请至少填写一个订单的款项金额')
     return
   }
 
-  batchSaving.value = true
+  if (mode === 'refund' && !hasRefundAlloc.value) {
+    message.warning('当前没有可提交的退款项')
+    return
+  }
+
+  if (mode === 'refund') batchRefundSaving.value = true
+  else batchSaving.value = true
   try {
     const paymentDate = typeof batchDatePicker.value === 'string'
       ? batchDatePicker.value
@@ -607,16 +650,34 @@ async function saveBatchRecord() {
     const parts = []
     if (supplementCount > 0) parts.push(`补款 ${supplementCount} 笔`)
     if (refundCount > 0) parts.push(`退款 ${refundCount} 笔（待审批）`)
-    message.success(`款项已记录：${parts.join('，')}`)
+    message.success(mode === 'refund' ? `退款申请已提交：${parts.join('，')}` : `款项已记录：${parts.join('，')}`)
 
-    resetBatchForm()
+    if (mode === 'refund') {
+      const remainingDrafts = allocRows.value
+        .filter(row => Number(row.allocated || 0) > 0)
+        .reduce((acc, row) => {
+          acc[row.orderId] = {
+            allocated: row.allocated,
+            updateDebtStatus: row.updateDebtStatus,
+          }
+          return acc
+        }, {} as Record<string, { allocated: number | undefined, updateDebtStatus: string }>)
+      rebuildAllocRowsWithDrafts(remainingDrafts)
+    } else {
+      resetBatchForm()
+    }
     await loadAllPayments()
     emit('updated')
   } catch (e: any) {
     message.error('操作失败：' + e.message)
   } finally {
     batchSaving.value = false
+    batchRefundSaving.value = false
   }
+}
+
+function submitRefundRequest() {
+  saveBatchRecord('refund')
 }
 
 // --- 批量变账状态 ---
@@ -1026,8 +1087,11 @@ async function saveBatchStatus() {
 }
 
 .alloc-debt-info {
-  min-width: 100px;
+  min-width: 118px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .alloc-expected {
@@ -1102,6 +1166,7 @@ async function saveBatchStatus() {
   align-items: center;
   gap: 12px;
   padding-top: 4px;
+  flex-wrap: wrap;
 }
 
 .bf-submit-hint {

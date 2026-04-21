@@ -74,6 +74,16 @@
                 <a-tag v-else color="default" style="font-size:11px">变体随意</a-tag>
                 <span class="detail-sep remark-text">备注：一定要买跟卖店铺</span>
               </div>
+              <div class="task-detail-row">
+                <span class="detail-item-text">创建时间：{{ fmtTime(record.created_at) }}</span>
+                <span
+                  v-if="record.status === '暂停中' || record.status === '已截单'"
+                  class="detail-sep"
+                >
+                  状态时间：{{ fmtTime(getTaskCurrentStatusTime(record)) }}
+                </span>
+                <span v-if="record.status_reason" class="detail-sep">原因：{{ record.status_reason }}</span>
+              </div>
             </div>
 
             <div class="task-stats">
@@ -112,6 +122,19 @@
             </div>
 
             <div class="task-actions">
+              <a-button size="small" @click.stop="openTaskDetail(record)">
+                详情
+              </a-button>
+              <a-select
+                :value="record.status"
+                size="small"
+                class="task-status-select"
+                :loading="taskStatusSavingId === record.id"
+                @change="(value: string) => requestTaskStatusChange(record, value)"
+                @click.stop
+              >
+                <a-select-option v-for="s in taskStatuses" :key="s" :value="s">{{ s }}</a-select-option>
+              </a-select>
               <a-button
                 type="primary"
                 size="small"
@@ -125,7 +148,7 @@
               <a-button size="small" class="copy-sub-btn" @click.stop="openCopyModal(record)">
                 <CopyOutlined /> 复制
               </a-button>
-              <a-popconfirm title="确定删除此任务及所有子订单吗?" @confirm="deleteTask(record.id)">
+              <a-popconfirm v-if="canDeleteTask(record)" title="确定删除此任务吗?" @confirm="deleteTask(record.id)">
                 <a-button size="small" type="text" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
               </a-popconfirm>
             </div>
@@ -150,6 +173,33 @@
                 <a-button size="small" :disabled="getSelectedSubCount(record.id) === 0" @click="openBatchEdit(record)">
                   批量修改 ({{ getSelectedSubCount(record.id) }})
                 </a-button>
+              </div>
+            </div>
+
+            <div v-if="getTaskStatusTimeline(record).length" class="task-status-history">
+              <div class="task-status-history-title">状态记录</div>
+              <div class="task-status-history-list">
+                <div
+                  v-for="item in getTaskStatusTimeline(record)"
+                  :key="item.key"
+                  class="task-status-history-item"
+                >
+                  <div class="task-status-history-main">
+                    <template v-if="item.kind === 'created'">
+                      <span class="task-status-history-text">创建任务</span>
+                    </template>
+                    <template v-else>
+                      <a-tag :color="getStatusColor(item.to_status)" size="small">{{ item.to_status || '未知状态' }}</a-tag>
+                      <span class="task-status-history-text">
+                        {{ item.from_status || '初始状态' }} -> {{ item.to_status || '未知状态' }}
+                      </span>
+                    </template>
+                  </div>
+                  <div class="task-status-history-meta">
+                    <span>{{ fmtTime(item.changed_at) }}</span>
+                    <span v-if="item.reason">原因：{{ item.reason }}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -348,6 +398,138 @@
         />
       </div>
     </div>
+
+    <a-drawer
+      v-model:open="taskDetailOpen"
+      :title="`任务详情 - ${currentTaskDetail?.order_number || ''}`"
+      width="760"
+      placement="right"
+    >
+      <template v-if="currentTaskDetail">
+        <div class="task-drawer-header">
+          <div class="task-drawer-product">
+            <div class="task-drawer-img-wrap">
+              <img
+                v-if="currentTaskDetail.product_image"
+                :src="currentTaskDetail.product_image"
+                class="task-drawer-img"
+                referrerpolicy="no-referrer"
+                @error="onImgError($event)"
+              />
+              <div v-else class="task-drawer-img-placeholder"><PictureOutlined /></div>
+            </div>
+            <div>
+              <div v-if="currentTaskDetail.product_name" class="task-drawer-product-name">{{ currentTaskDetail.product_name }}</div>
+              <div class="task-drawer-asin">{{ currentTaskDetail.asin || '—' }}</div>
+              <div class="task-drawer-store">{{ currentTaskDetail.store_name || '—' }}</div>
+              <div class="task-drawer-tag-row">
+                <a-tag :color="getStatusColor(currentTaskDetail.status)">{{ currentTaskDetail.status || '待分配' }}</a-tag>
+                <a-tag color="default">{{ currentTaskDetail.country || '—' }}</a-tag>
+                <template v-for="item in getTaskTypeRows(currentTaskDetail)" :key="item.type">
+                  <a-tag :color="getOrderTypeColor(item.type)">{{ item.type }}</a-tag>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <a-divider style="margin: 16px 0" />
+
+        <a-descriptions :column="2" bordered size="small">
+          <a-descriptions-item label="任务编号" :span="2">
+            <span class="task-drawer-order-num">{{ currentTaskDetail.order_number || '—' }}</span>
+          </a-descriptions-item>
+          <a-descriptions-item label="产品名称" :span="2">{{ currentTaskDetail.product_name || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="ASIN">{{ currentTaskDetail.asin || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="店铺">{{ currentTaskDetail.store_name || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="品牌">{{ currentTaskDetail.brand_name || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="国家">{{ currentTaskDetail.country || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="测评等级">{{ currentTaskDetail.review_level || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="类目">{{ currentTaskDetail.category || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="下单类型">
+            <div class="task-drawer-type-list">
+              <template v-for="item in getTaskTypeRows(currentTaskDetail)" :key="item.type">
+                <div class="task-drawer-type-row">
+                  <a-tag :color="getOrderTypeColor(item.type)" size="small">{{ item.type }}</a-tag>
+                  <span class="task-drawer-type-qty">&times;{{ item.qty }}</span>
+                </div>
+              </template>
+              <span v-if="getTaskTypeRows(currentTaskDetail).length === 0">-</span>
+            </div>
+          </a-descriptions-item>
+          <a-descriptions-item label="任务状态">
+            <a-tag :color="getStatusColor(currentTaskDetail.status)">{{ currentTaskDetail.status || '待分配' }}</a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="任务数量">{{ currentTaskDetail.order_quantity || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="已生成子订单">{{ currentTaskDetail._sub_total || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="已下单">{{ currentTaskDetail._ordered_count || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="已留评">{{ currentTaskDetail._review_count || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="买手匹配">{{ currentTaskDetail._scheduled_count || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="排期天数">{{ currentTaskDetail._schedule_days || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="变体信息">{{ getTaskVariantText(currentTaskDetail) }}</a-descriptions-item>
+          <a-descriptions-item label="对接商务">{{ currentTaskDetail.sales_person || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="客户名称">{{ currentTaskDetail.customer_name || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="创建时间">{{ fmtTime(currentTaskDetail.created_at) }}</a-descriptions-item>
+          <a-descriptions-item label="备注" :span="2">{{ currentTaskDetail.notes || '-' }}</a-descriptions-item>
+        </a-descriptions>
+
+        <a-divider style="margin: 20px 0 16px" />
+        <div class="task-drawer-section-title">状态变更记录</div>
+        <div class="task-drawer-timeline">
+          <div
+            v-for="item in getTaskStatusJourney(currentTaskDetail)"
+            :key="item.key"
+            class="task-drawer-timeline-item"
+          >
+            <div class="task-drawer-timeline-axis">
+              <span class="task-drawer-timeline-dot"></span>
+              <span class="task-drawer-timeline-line"></span>
+            </div>
+            <div class="task-drawer-timeline-content">
+              <div class="task-drawer-timeline-title">
+                <template v-if="item.kind === 'created'">
+                  创建任务
+                </template>
+                <template v-else>
+                  状态由「{{ item.from_status || '初始状态' }}」变更为「{{ item.to_status || '未知状态' }}」
+                </template>
+              </div>
+              <div class="task-drawer-timeline-meta">
+                <span>{{ fmtTime(item.changed_at) }}</span>
+                <span v-if="item.reason">原因：{{ item.reason }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <a-divider style="margin: 20px 0 16px" />
+        <div class="task-drawer-section-title">反馈状态</div>
+        <div class="task-drawer-feedback-panel">
+          <div class="task-drawer-feedback-row">
+            <span class="task-drawer-feedback-key">订单反馈：</span>
+            <a-tag :color="currentTaskDetail.order_feedback_status === '已反馈' ? 'green' : 'default'">
+              {{ currentTaskDetail.order_feedback_status || '未反馈' }}
+            </a-tag>
+            <span v-if="currentTaskDetail.order_feedback_date" class="task-drawer-feedback-date">
+              {{ currentTaskDetail.order_feedback_date }}
+            </span>
+          </div>
+          <div class="task-drawer-feedback-row">
+            <span class="task-drawer-feedback-key">评论反馈：</span>
+            <a-tag :color="currentTaskDetail.review_feedback_status === '已反馈' ? 'green' : 'default'">
+              {{ currentTaskDetail.review_feedback_status || '未反馈' }}
+            </a-tag>
+            <span v-if="currentTaskDetail.review_feedback_date" class="task-drawer-feedback-date">
+              {{ currentTaskDetail.review_feedback_date }}
+            </span>
+          </div>
+          <div v-if="currentTaskDetail.feedback_notes" class="task-drawer-feedback-row">
+            <span class="task-drawer-feedback-key">反馈备注：</span>
+            <span class="task-drawer-feedback-notes">{{ currentTaskDetail.feedback_notes }}</span>
+          </div>
+        </div>
+      </template>
+    </a-drawer>
 
     <!-- 排期详情弹窗 -->
     <a-modal
@@ -851,6 +1033,31 @@
       </div>
     </a-modal>
 
+    <a-modal
+      v-model:open="taskStatusReasonModalOpen"
+      :title="`修改任务状态为${pendingTaskStatus || ''}`"
+      @ok="confirmTaskStatusChange"
+      :confirm-loading="taskStatusSavingId === pendingTaskStatusRecord?.id"
+      :ok-button-props="{ disabled: !pendingTaskStatusReason }"
+      ok-text="确认修改"
+      cancel-text="取消"
+      width="460px"
+    >
+      <div class="status-reason-modal-body">
+        <div v-if="pendingTaskStatusRecord" class="status-reason-modal-order">
+          订单号：{{ pendingTaskStatusRecord.order_number }}
+        </div>
+        <div class="status-reason-modal-label">请选择{{ pendingTaskStatus }}原因</div>
+        <a-select
+          v-model:value="pendingTaskStatusReason"
+          :options="currentTaskStatusReasonOptions.map(item => ({ label: item, value: item }))"
+          placeholder="请选择原因"
+          style="width:100%"
+          show-search
+        />
+      </div>
+    </a-modal>
+
   </div>
 </template>
 
@@ -877,6 +1084,7 @@ const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 const expandedRowKeys = ref<string[]>([])
 const subOrdersMap = ref<Record<string, any[]>>({})
 const genLoadingId = ref<string | null>(null)
+const taskStatusSavingId = ref<string | null>(null)
 const detailOpen = ref(false)
 const detailRecord = ref<any>(null)
 const detailOrderId = ref<string>('')
@@ -889,6 +1097,8 @@ const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留
 const refundStatuses = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '无需返款', '失误多返']
 const reviewTypeOptions = ['文字', '图片', '视频', '免评', 'Feedback']
 const countries = ['美国', '德国', '英国', '加拿大']
+const pauseStatusReasons = ['库存不足', '链接问题', '店铺问题', '计划调整', '风控预警', '不知原因']
+const cutoffStatusReasons = ['未按计划做单', '库存不足', '链接问题', '店铺问题', '计划调整', '目标达成', '风控预警', '不知原因']
 
 const subColumns = [
   { title: '子订单号', key: 'sub_no', width: 165 },
@@ -914,10 +1124,28 @@ const subColumns = [
 ]
 
 const schedulesMap = ref<Record<string, any[]>>({})
+const defaultVisibleTaskStatuses = ['待分配', '进行中', '已截单', '暂停中']
+const taskDetailOpen = ref(false)
+const currentTaskDetail = ref<any>(null)
+const taskStatusReasonModalOpen = ref(false)
+const pendingTaskStatusRecord = ref<any>(null)
+const pendingTaskStatus = ref('')
+const pendingTaskStatusReason = ref<string | undefined>(undefined)
+const currentTaskStatusReasonOptions = computed(() => getTaskStatusReasonOptions(pendingTaskStatus.value))
 
 function getStatusColor(status: string) {
   const map: Record<string, string> = { '待分配': 'default', '进行中': 'blue', '已完成': 'green', '已截单': 'red', '暂停中': 'orange' }
   return map[status] || 'default'
+}
+
+function isTaskStatusReasonRequired(status: string) {
+  return status === '暂停中' || status === '已截单'
+}
+
+function getTaskStatusReasonOptions(status: string) {
+  if (status === '暂停中') return pauseStatusReasons
+  if (status === '已截单') return cutoffStatusReasons
+  return []
 }
 
 function getSubStatusColor(status: string) {
@@ -1060,6 +1288,86 @@ function fmtTime(t: string | null) {
   return dayjs(t).format('YYYY-MM-DD HH:mm')
 }
 
+function getTaskCurrentStatusTime(record: any) {
+  return record?.status_changed_at || record?.updated_at || record?.created_at || null
+}
+
+function getTaskTypeRows(record: any) {
+  const rawTypes = Array.isArray(record?.order_types) && record.order_types.length
+    ? record.order_types
+    : (record?.order_type ? [record.order_type] : [])
+  return rawTypes.map((rawType: string) => ({
+    type: formatReviewType(rawType),
+    qty: record?.type_quantities && record.type_quantities[rawType] !== undefined
+      ? Number(record.type_quantities[rawType] || 0)
+      : Number(record?.order_quantity || 0),
+  }))
+}
+
+function getTaskVariantText(record: any) {
+  const variantInfo = String(record?.variant_info || '').trim()
+  return variantInfo ? `指定变体 (${variantInfo})` : '默认变体'
+}
+
+function shouldInjectTaskStatusMock(record: any) {
+  return !Array.isArray(record?.status_change_log) || record.status_change_log.length === 0
+}
+
+function canDeleteTask(record: any) {
+  return Number(record?._sub_total || 0) === 0
+}
+
+function getTaskStatusTimeline(record: any) {
+  const history = Array.isArray(record?.status_change_log)
+    ? record.status_change_log.map((item: any, index: number) => ({
+      key: `${record.id}-status-${index}-${item?.changed_at || 'unknown'}`,
+      kind: 'status',
+      from_status: String(item?.from_status || ''),
+      to_status: String(item?.to_status || ''),
+      reason: String(item?.reason || ''),
+      changed_at: item?.changed_at || null,
+    }))
+    : []
+
+  const createdEntry = record?.created_at
+    ? [{
+      key: `${record.id}-created`,
+      kind: 'created',
+      from_status: '',
+      to_status: '',
+      reason: '',
+      changed_at: record.created_at,
+    }]
+    : []
+
+  const mockEntries = shouldInjectTaskStatusMock(record)
+    && ['暂停中', '已截单'].includes(String(record?.status || ''))
+    && record?.status_reason
+    ? [{
+      key: `${record.id}-mock-status-change`,
+      kind: 'status',
+      from_status: '进行中',
+      to_status: String(record.status || ''),
+      reason: String(record.status_reason || ''),
+      changed_at: dayjs(record.created_at || undefined).add(2, 'day').toISOString(),
+    }]
+    : []
+
+  return [...history, ...createdEntry, ...mockEntries].sort((a, b) => {
+    const left = dayjs(a.changed_at).valueOf()
+    const right = dayjs(b.changed_at).valueOf()
+    return right - left
+  })
+}
+
+function getTaskStatusJourney(record: any) {
+  return [...getTaskStatusTimeline(record)].sort((a, b) => {
+    const left = dayjs(a.changed_at).valueOf()
+    const right = dayjs(b.changed_at).valueOf()
+    return left - right
+  })
+}
+
 function openDetail(sub: any, orderId: string) {
   detailRecord.value = { ...sub }
   detailOrderId.value = orderId
@@ -1192,6 +1500,11 @@ async function toggleExpand(record: any) {
   }
 }
 
+function openTaskDetail(record: any) {
+  currentTaskDetail.value = record
+  taskDetailOpen.value = true
+}
+
 async function load() {
   loading.value = true
   try {
@@ -1202,7 +1515,7 @@ async function load() {
     if (filterStatus.value) {
       query = query.eq('status', filterStatus.value)
     } else {
-      query = query.in('status', ['待分配', '进行中', '已截单', '暂停中'])
+      query = query.in('status', defaultVisibleTaskStatuses)
     }
     if (filterCountry.value) query = query.eq('country', filterCountry.value)
 
@@ -1265,6 +1578,97 @@ async function load() {
     message.error('加载失败：' + e.message)
   } finally {
     loading.value = false
+  }
+}
+
+function requestTaskStatusChange(record: any, nextStatus: string) {
+  if (!record?.id || !nextStatus || nextStatus === record.status) return
+
+  if (isTaskStatusReasonRequired(nextStatus)) {
+    pendingTaskStatusRecord.value = record
+    pendingTaskStatus.value = nextStatus
+    pendingTaskStatusReason.value = undefined
+    taskStatusReasonModalOpen.value = true
+    return
+  }
+
+  void updateTaskStatus(record, nextStatus, null)
+}
+
+async function confirmTaskStatusChange() {
+  if (!pendingTaskStatusRecord.value || !pendingTaskStatus.value || !pendingTaskStatusReason.value) {
+    message.warning('请先选择原因')
+    return
+  }
+  const success = await updateTaskStatus(pendingTaskStatusRecord.value, pendingTaskStatus.value, pendingTaskStatusReason.value)
+  if (!success) return
+  taskStatusReasonModalOpen.value = false
+  pendingTaskStatusRecord.value = null
+  pendingTaskStatus.value = ''
+  pendingTaskStatusReason.value = undefined
+}
+
+function appendTaskStatusHistory(record: any, fromStatus: string, toStatus: string, reason: string | null, changedAt: string) {
+  const nextLog = {
+    from_status: fromStatus || '',
+    to_status: toStatus || '',
+    reason: reason || null,
+    changed_at: changedAt,
+  }
+  const history = Array.isArray(record.status_change_log) ? [...record.status_change_log] : []
+  history.push(nextLog)
+  record.status_change_log = history
+}
+
+async function updateTaskStatus(record: any, nextStatus: string, reason: string | null) {
+  if (!record?.id || !nextStatus || nextStatus === record.status) return false
+  const previousStatus = record.status
+  const previousReason = record.status_reason || null
+  const previousChangedAt = record.status_changed_at || null
+  taskStatusSavingId.value = record.id
+  try {
+    const nowIso = new Date().toISOString()
+    const { error } = await supabase
+      .from('erp_orders')
+      .update({
+        status: nextStatus,
+        status_reason: isTaskStatusReasonRequired(nextStatus) ? reason : null,
+      })
+      .eq('id', record.id)
+    if (error) throw error
+
+    record.status = nextStatus
+    record.status_reason = isTaskStatusReasonRequired(nextStatus) ? reason : null
+    record.status_changed_at = nowIso
+    appendTaskStatusHistory(record, previousStatus, nextStatus, record.status_reason, nowIso)
+    const listRecord = tasks.value.find((item: any) => item.id === record.id)
+    if (listRecord) {
+      listRecord.status = nextStatus
+      listRecord.status_reason = record.status_reason
+      listRecord.status_changed_at = nowIso
+      listRecord.status_change_log = record.status_change_log
+    }
+
+    const shouldKeepInList = filterStatus.value
+      ? filterStatus.value === nextStatus
+      : defaultVisibleTaskStatuses.includes(nextStatus)
+
+    if (!shouldKeepInList) {
+      tasks.value = tasks.value.filter((item: any) => item.id !== record.id)
+      expandedRowKeys.value = expandedRowKeys.value.filter(id => id !== record.id)
+      pagination.value.total = Math.max(0, pagination.value.total - 1)
+    }
+
+    message.success(`任务状态已改为${nextStatus}`)
+    return true
+  } catch (e: any) {
+    record.status = previousStatus
+    record.status_reason = previousReason
+    record.status_changed_at = previousChangedAt
+    message.error('状态修改失败：' + e.message)
+    return false
+  } finally {
+    taskStatusSavingId.value = null
   }
 }
 
@@ -1371,11 +1775,18 @@ async function deleteSubOrder(subId: string, orderId: string) {
 }
 
 async function deleteTask(id: string) {
-  const { error: subErr } = await supabase.from('sub_orders').delete().eq('order_id', id)
-  if (subErr) { message.error('删除子订单失败'); return }
+  const { count, error: countErr } = await supabase
+    .from('sub_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('order_id', id)
+  if (countErr) { message.error('校验任务是否可删除失败'); return }
+  if ((count || 0) > 0) {
+    message.warning('该任务已生成子订单，不能删除，请使用现有截单流程')
+    return
+  }
   const { error } = await supabase.from('erp_orders').delete().eq('id', id)
   if (error) { message.error('删除任务失败'); return }
-  message.success('任务及子订单已全部删除')
+  message.success('任务已删除')
   delete subOrdersMap.value[id]
   delete selectedSubIdsMap.value[id]
   expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== id)
@@ -1791,6 +2202,7 @@ onMounted(() => {
 .detail-sep { color: #6b7280; padding-left: 12px; }
 .mono-sm { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
 .price-text { color: #16a34a; font-weight: 600; }
+.remark-text { color: #6b7280; }
 
 .task-stats {
   display: flex;
@@ -1837,9 +2249,87 @@ onMounted(() => {
 .review-label { background: #eff6ff; color: #3b82f6; }
 
 .task-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding-left: 8px; }
+.task-status-select { width: 110px; }
 .gen-btn { font-size: 12px; }
 .icon-btn { color: #6b7280; font-size: 14px; }
 .danger-btn:hover { color: #dc2626 !important; }
+.task-drawer-header { display: flex; align-items: flex-start; }
+.task-drawer-product { display: flex; gap: 16px; align-items: flex-start; }
+.task-drawer-img-wrap { width: 80px; height: 80px; flex-shrink: 0; }
+.task-drawer-img { width: 80px; height: 80px; object-fit: cover; border-radius: 10px; border: 1px solid #e5e7eb; display: block; }
+.task-drawer-img-placeholder { width: 80px; height: 80px; border-radius: 10px; border: 1px dashed #d1d5db; background: #f9fafb; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 28px; }
+.task-drawer-product-name { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 2px; }
+.task-drawer-asin { font-size: 16px; font-weight: 700; color: #1e40af; }
+.task-drawer-store { font-size: 13px; color: #6b7280; margin-top: 2px; }
+.task-drawer-tag-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.task-drawer-order-num { font-family: 'Courier New', monospace; font-weight: 700; font-size: 14px; color: #1e3a8a; }
+.task-drawer-section-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px; }
+.task-drawer-type-list { display: flex; flex-direction: column; gap: 4px; }
+.task-drawer-type-row { display: flex; align-items: center; gap: 6px; }
+.task-drawer-type-qty { font-size: 12px; color: #374151; }
+.task-drawer-timeline {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  padding: 14px 18px;
+}
+.task-drawer-timeline-item {
+  display: flex;
+  gap: 12px;
+}
+.task-drawer-timeline-item:last-child .task-drawer-timeline-line {
+  display: none;
+}
+.task-drawer-timeline-axis {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+.task-drawer-timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2563eb;
+  margin-top: 4px;
+}
+.task-drawer-timeline-line {
+  width: 2px;
+  flex: 1;
+  background: #dbeafe;
+  margin-top: 4px;
+  min-height: 28px;
+}
+.task-drawer-timeline-content {
+  flex: 1;
+  padding-bottom: 14px;
+}
+.task-drawer-timeline-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+.task-drawer-timeline-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.task-drawer-feedback-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 18px;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-drawer-feedback-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.task-drawer-feedback-key { font-size: 13px; color: #6b7280; flex-shrink: 0; }
+.task-drawer-feedback-date { font-size: 12px; color: #374151; margin-left: 4px; }
+.task-drawer-feedback-notes { font-size: 13px; color: #374151; }
 
 .sub-orders-panel {
   background: #f8fafc;
@@ -1852,6 +2342,68 @@ onMounted(() => {
 .sub-orders-selected { font-size: 12px; color: #2563eb; font-weight: 600; }
 .sub-orders-eligible { font-size: 12px; color: #6b7280; }
 .no-sub-orders { margin-top: 10px; color: #9ca3af; font-size: 13px; text-align: center; padding: 12px 0; }
+.task-status-history {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+.task-status-history-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 10px;
+}
+.task-status-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-status-history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #f0f0f0;
+}
+.task-status-history-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.task-status-history-text {
+  font-size: 12px;
+  color: #374151;
+  word-break: break-all;
+}
+.task-status-history-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  font-size: 12px;
+  color: #6b7280;
+}
+.status-reason-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.status-reason-modal-order {
+  font-size: 12px;
+  color: #6b7280;
+}
+.status-reason-modal-label {
+  font-size: 13px;
+  color: #374151;
+  font-weight: 600;
+}
 
 .sub-no { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
 .order-num-sm { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }

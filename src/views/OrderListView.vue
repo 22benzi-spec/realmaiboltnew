@@ -35,9 +35,9 @@
           <a-button @click="openBillModalFromSelection" style="margin-right:8px">
             <FileTextOutlined /> 生成账单（{{ selectedRowKeys.length }}）
           </a-button>
-          <a-popconfirm title="确定批量删除选中的订单吗?" @confirm="batchDelete">
-            <a-button danger>批量删除（{{ selectedRowKeys.length }}）</a-button>
-          </a-popconfirm>
+          <a-button type="primary" @click="openBatchEditFromSelection">
+            批量编辑（{{ selectedRowKeys.length }}）
+          </a-button>
         </template>
       </div>
 
@@ -1476,6 +1476,31 @@ async function showGroupDetail(record: any) {
   groupDetailData.value = bData
   const { data: oData } = await supabase.from('erp_orders').select('*').eq('batch_id', record.batch_id).order('created_at')
   groupDetailOrders.value = oData || []
+  groupDetailModalOpen.value = true
+}
+
+function openBatchEditFromSelection() {
+  const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id))
+  if (!selected.length) {
+    message.warning('请先选择要批量编辑的订单')
+    return
+  }
+
+  const batchNames = [...new Set(selected.map(o => o.batch_number).filter(Boolean))]
+  const customerNames = [...new Set(selected.map(o => o.customer_name || o.group_name).filter(Boolean))]
+  const salesNames = [...new Set(selected.map(o => o.sales_person).filter(Boolean))]
+  const leadName = salesNames[0] || customerNames[0] || '已选订单'
+
+  groupDetailData.value = {
+    id: null,
+    label: batchNames.length === 1 ? batchNames[0] : `${leadName} 批量编辑`,
+    batch_number: batchNames.length === 1 ? batchNames[0] : `已选 ${selected.length} 单`,
+    customer_name: customerNames.length === 1 ? customerNames[0] : `${leadName} 等${customerNames.length || 1}组`,
+    sales_person: salesNames.length === 1 ? salesNames[0] : '',
+    batch_date: dayjs().format('YYYY-MM-DD'),
+    order_count: selected.length,
+  }
+  groupDetailOrders.value = selected.map(order => ({ ...order }))
   groupDetailModalOpen.value = true
 }
 
