@@ -5,7 +5,7 @@ import {
   CreditCardOutlined, BankOutlined, SendOutlined, MessageOutlined,
   FileTextOutlined, WifiOutlined, CloudServerOutlined, CommentOutlined,
   LineChartOutlined, WarningOutlined, FundOutlined, AccountBookOutlined,
-  BarChartOutlined, SafetyOutlined, AuditOutlined, ProfileOutlined,
+  BarChartOutlined, SafetyOutlined, AuditOutlined, ProfileOutlined, SwapOutlined,
 } from '@ant-design/icons-vue'
 import type { StaffRole } from '../types'
 
@@ -83,6 +83,15 @@ export const allNavGroups: NavGroup[] = [
       { id: 'refund-ledger', label: '退款账单', icon: FileTextOutlined },
       { id: 'financial-ledger', label: '交易流水', icon: AccountBookOutlined },
       { id: 'profit-analysis', label: '利润分析', icon: LineChartOutlined },
+    ],
+  },
+  {
+    id: 'exchange',
+    label: '汇率中心',
+    icon: SwapOutlined,
+    roles: ['商务', '财务', '管理员'],
+    items: [
+      { id: 'exchange-rates', label: '汇率管理', icon: SwapOutlined },
     ],
   },
   {
