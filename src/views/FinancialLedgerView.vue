@@ -27,11 +27,11 @@
 
     <!-- 筛选栏 -->
     <div class="filter-bar">
-      <a-input v-model:value="search" placeholder="搜索客户 / 订单号 / 备注" style="width:220px" allow-clear @change="loadData" />
+      <a-input v-model:value="search" placeholder="搜索客户 / 订单号 / 流水号 / 备注" style="width:220px" allow-clear @change="loadData" />
       <a-select v-model:value="filterType" placeholder="交易类型" style="width:140px" allow-clear @change="loadData">
-        <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
+        <a-select-option v-for="item in transactionTypeOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
       </a-select>
-      <a-select v-model:value="filterDirection" placeholder="收入/支出" style="width:110px" allow-clear @change="loadData">
+      <a-select v-model:value="filterDirection" placeholder="收支方向" style="width:110px" allow-clear @change="loadData">
         <a-select-option value="收入">收入</a-select-option>
         <a-select-option value="支出">支出</a-select-option>
       </a-select>
@@ -56,21 +56,23 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'direction'">
-          <a-tag :color="record.direction === '收入' ? 'green' : 'red'">{{ record.direction }}</a-tag>
+          <a-tag :color="getDirection(record) === '收入' ? 'green' : 'red'">{{ getDirection(record) }}</a-tag>
         </template>
         <template v-if="column.key === 'transaction_type'">
-          <a-tag :color="typeColor[record.transaction_type] || 'default'">{{ record.transaction_type }}</a-tag>
+          <a-tag :color="getTransactionTypeColor(record)">{{ getTransactionTypeLabel(record) }}</a-tag>
         </template>
-        <template v-if="column.key === 'amount_cny'">
-          <span :class="record.direction === '收入' ? 'amount-in' : 'amount-out'">
-            {{ record.direction === '收入' ? '+' : '-' }}¥{{ formatNum(record.amount_cny) }}
-          </span>
-        </template>
-        <template v-if="column.key === 'amount_usd'">
-          <span v-if="record.amount_usd">
-            ${{ formatNum(record.amount_usd) }}
-          </span>
-          <span v-else class="text-muted">-</span>
+        <template v-if="column.key === 'amount'">
+          <div class="amount-stack">
+            <template v-if="hasAmount(record)">
+              <span v-if="Number(record.amount_cny || 0) > 0" :class="getDirection(record) === '收入' ? 'amount-in' : 'amount-out'">
+                {{ getDirection(record) === '收入' ? '+' : '-' }}¥{{ formatNum(record.amount_cny) }}
+              </span>
+              <span v-if="Number(record.amount_usd || 0) > 0" :class="getDirection(record) === '收入' ? 'amount-in' : 'amount-out'">
+                {{ getDirection(record) === '收入' ? '+' : '-' }}${{ formatNum(record.amount_usd) }}
+              </span>
+            </template>
+            <span v-else class="text-muted">-</span>
+          </div>
         </template>
         <template v-if="column.key === 'status'">
           <a-badge :status="statusBadge[record.status] || 'default'" :text="record.status" />
@@ -100,11 +102,24 @@
       <a-form :model="form" layout="vertical" style="margin-top:8px">
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="交易类型" required>
-              <a-select v-model:value="form.transaction_type" @change="onTypeChange">
-                <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
+            <a-form-item label="记账归属" required>
+              <a-select v-model:value="form.entry_scope" @change="onScopeChange">
+                <a-select-option value="行政">行政</a-select-option>
+                <a-select-option value="业务">业务</a-select-option>
               </a-select>
             </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="交易类型" required>
+              <a-select v-model:value="form.transaction_type" @change="onTypeChange">
+                <a-select-option v-for="item in manualTypeOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <div class="form-tip">
+              {{ isAdministrativeEntry ? '行政记账默认按人民币直接入账，不关联任务订单。' : '业务记账可按类型补充往来对象、客户或订单信息。' }}
+            </div>
           </a-col>
           <a-col :span="12">
             <a-form-item label="收支方向">
@@ -119,12 +134,12 @@
               <a-input-number v-model:value="form.amount_cny" :min="0" :precision="2" style="width:100%" placeholder="人民币金额" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col v-if="showUsdFields" :span="12">
             <a-form-item label="金额 (USD)">
               <a-input-number v-model:value="form.amount_usd" :min="0" :precision="2" style="width:100%" placeholder="美金金额(可选)" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col v-if="showUsdFields" :span="12">
             <a-form-item label="汇率">
               <a-input-number v-model:value="form.exchange_rate" :min="0" :precision="4" style="width:100%" />
             </a-form-item>
@@ -135,21 +150,21 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="客户名称">
-              <a-input v-model:value="form.customer_name" placeholder="关联客户(可选)" />
+            <a-form-item :label="counterpartyLabel">
+              <a-input v-model:value="form.customer_name" :placeholder="counterpartyPlaceholder" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="订单号">
+          <a-col v-if="showOrderNumberField" :span="12">
+            <a-form-item label="关联订单号">
               <a-input v-model:value="form.order_number" placeholder="关联订单号(可选)" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="操作人">
+            <a-form-item :label="ownerLabel">
               <a-input v-model:value="form.staff_name" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col v-if="!isAdministrativeEntry" :span="12">
             <a-form-item label="状态">
               <a-select v-model:value="form.status">
                 <a-select-option value="已确认">已确认</a-select-option>
@@ -170,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabase'
 import type { Dayjs } from 'dayjs'
@@ -193,16 +208,59 @@ const stats = reactive({ totalIncome: 0, totalExpense: 0, net: 0, count: 0 })
 const modalOpen = ref(false)
 const editId = ref<string | null>(null)
 
-const typeOptions = ['订单收入', '客户充值', '批次收款', '退款支出', '返佣支出', '礼品卡采购', '美金购汇', '其他收入', '其他支出']
-const typeColor: Record<string, string> = {
-  '订单收入': 'green', '客户充值': 'cyan', '批次收款': 'geekblue', '退款支出': 'red', '返佣支出': 'orange',
-  '礼品卡采购': 'gold', '美金购汇': 'blue', '其他收入': 'lime', '其他支出': 'default',
+const manualBusinessTypeOptions = [
+  { value: '订单收入', label: '任务收入' },
+  { value: '客户充值', label: '客户充值收入' },
+  { value: '批次收款', label: '补款收入' },
+  { value: '退款', label: '退款支出' },
+  { value: '退款支出', label: '退款支出' },
+  { value: '业务支出', label: '业务支出' },
+  { value: '任务支出', label: '任务支出' },
+  { value: '返佣支出', label: '返佣支出' },
+  { value: '礼品卡采购', label: '礼品卡采购支出' },
+  { value: '美金购汇', label: '美金购汇支出' },
+  { value: '其他收入', label: '其他收入' },
+]
+const manualAdministrativeTypeOptions = [
+  { value: '行政支出', label: '行政支出' },
+]
+const transactionTypeOptions = [
+  { value: '订单收入', label: '任务收入' },
+  { value: '客户充值', label: '客户充值收入' },
+  { value: '批次收款', label: '补款收入' },
+  { value: '退款', label: '退款支出' },
+  { value: '退款支出', label: '退款支出' },
+  { value: '任务支出', label: '任务支出' },
+  { value: '行政支出', label: '行政支出' },
+  { value: '业务支出', label: '业务支出' },
+  { value: '返佣支出', label: '返佣支出' },
+  { value: '礼品卡采购', label: '礼品卡采购支出' },
+  { value: '美金购汇', label: '美金购汇支出' },
+  { value: '其他收入', label: '其他收入' },
+]
+const incomeTypeValues = new Set(['订单收入', '客户充值', '批次收款', '其他收入'])
+const administrativeTypeValues = new Set(['行政支出'])
+const usdCapableTypeValues = new Set(['礼品卡采购', '美金购汇'])
+const transactionTypeMeta: Record<string, { label: string; color: string }> = {
+  '订单收入': { label: '任务收入', color: 'green' },
+  '客户充值': { label: '客户充值收入', color: 'cyan' },
+  '批次收款': { label: '补款收入', color: 'geekblue' },
+  '退款': { label: '退款支出', color: 'red' },
+  '退款支出': { label: '退款支出', color: 'red' },
+  '任务支出': { label: '任务支出', color: 'volcano' },
+  '行政支出': { label: '行政支出', color: 'gold' },
+  '业务支出': { label: '业务支出', color: 'purple' },
+  '返佣支出': { label: '返佣支出', color: 'orange' },
+  '礼品卡采购': { label: '礼品卡采购支出', color: 'gold' },
+  '美金购汇': { label: '美金购汇支出', color: 'blue' },
+  '其他收入': { label: '其他收入', color: 'lime' },
+  '其他支出': { label: '业务支出', color: 'purple' },
 }
 const statusBadge: Record<string, string> = { '已确认': 'success', '待审批': 'warning', '已取消': 'default' }
 
 const emptyForm = () => ({
-  transaction_type: '订单收入', direction: '收入', amount_cny: 0, amount_usd: 0,
-  exchange_rate: 7.25, customer_name: '', order_number: '', staff_name: '',
+  entry_scope: '行政', transaction_type: '行政支出', direction: '支出', amount_cny: 0, amount_usd: 0,
+  exchange_rate: null as number | null, customer_name: '', order_number: '', staff_name: '',
   status: '已确认', notes: '', transaction_date: dayjs().format('YYYY-MM-DD'),
 })
 const form = reactive(emptyForm())
@@ -210,13 +268,12 @@ const form = reactive(emptyForm())
 const columns = [
   { title: '流水号', dataIndex: 'transaction_no', key: 'transaction_no', width: 160 },
   { title: '日期', dataIndex: 'transaction_date', key: 'transaction_date', width: 100 },
-  { title: '类型', key: 'transaction_type', width: 110 },
-  { title: '方向', key: 'direction', width: 80 },
-  { title: '金额(CNY)', key: 'amount_cny', width: 130 },
-  { title: '金额(USD)', key: 'amount_usd', width: 100 },
+  { title: '流水类型', key: 'transaction_type', width: 140 },
+  { title: '收支方向', key: 'direction', width: 90 },
+  { title: '金额', key: 'amount', width: 140 },
   { title: '客户', dataIndex: 'customer_name', key: 'customer_name', width: 110, ellipsis: true },
   { title: '订单号', dataIndex: 'order_number', key: 'order_number', width: 140, ellipsis: true },
-  { title: '操作人', dataIndex: 'staff_name', key: 'staff_name', width: 90 },
+  { title: '商务', dataIndex: 'staff_name', key: 'staff_name', width: 90 },
   { title: '状态', key: 'status', width: 90 },
   { title: '备注', dataIndex: 'notes', key: 'notes', width: 140, ellipsis: true },
   { title: '操作', key: 'action', width: 150, fixed: 'right' as const },
@@ -226,11 +283,84 @@ function formatNum(n: number) {
   return (n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function inferEntryScope(type: string) {
+  return administrativeTypeValues.has(type) ? '行政' : '业务'
+}
+
+const isAdministrativeEntry = computed(() => form.entry_scope === '行政')
+const manualTypeOptions = computed(() => isAdministrativeEntry.value ? manualAdministrativeTypeOptions : manualBusinessTypeOptions)
+const showUsdFields = computed(() => !isAdministrativeEntry.value && usdCapableTypeValues.has(form.transaction_type))
+const showOrderNumberField = computed(() => !isAdministrativeEntry.value && form.transaction_type === '任务支出')
+const counterpartyLabel = computed(() => {
+  if (isAdministrativeEntry.value) return '收款方 / 商户'
+  if (form.transaction_type === '任务支出') return '关联客户'
+  return '往来对象'
+})
+const counterpartyPlaceholder = computed(() => {
+  if (isAdministrativeEntry.value) return '例如：超市、办公室、供应商'
+  if (form.transaction_type === '任务支出') return '关联客户(可选)'
+  return '往来对象(可选)'
+})
+const ownerLabel = computed(() => isAdministrativeEntry.value ? '经手人' : '商务')
+
+function getDirection(record: any) {
+  if (record?.direction === '收入' || record?.direction === '支出') return record.direction
+  return incomeTypeValues.has(record?.transaction_type) ? '收入' : '支出'
+}
+
+function getNormalizedTransactionType(record: any) {
+  const rawType = String(record?.transaction_type || '')
+  if (rawType !== '其他支出') return rawType
+  const text = `${record?.transaction_type || ''} ${record?.notes || ''}`
+  if (/任务付款|任务退款|任务支出/.test(text)) return '任务支出'
+  if (/行政|办公|人事|工资|行政支出/.test(text)) return '行政支出'
+  return '业务支出'
+}
+
+function getTransactionTypeLabel(record: any) {
+  const rawType = getNormalizedTransactionType(record)
+  return transactionTypeMeta[rawType]?.label || rawType || '未分类'
+}
+
+function getTransactionTypeColor(record: any) {
+  const rawType = getNormalizedTransactionType(record)
+  return transactionTypeMeta[rawType]?.color || 'default'
+}
+
+function hasAmount(record: any) {
+  return Number(record?.amount_cny || 0) > 0 || Number(record?.amount_usd || 0) > 0
+}
+
+function onScopeChange(scope: string) {
+  const nextOptions = scope === '行政' ? manualAdministrativeTypeOptions : manualBusinessTypeOptions
+  if (!nextOptions.some(item => item.value === form.transaction_type)) {
+    form.transaction_type = nextOptions[0].value
+  }
+  if (scope === '行政') {
+    form.amount_usd = 0
+    form.exchange_rate = null
+    form.order_number = ''
+    form.status = '已确认'
+  } else if (usdCapableTypeValues.has(form.transaction_type)) {
+    form.exchange_rate = form.exchange_rate || 7.25
+  }
+  onTypeChange(form.transaction_type)
+}
+
 function onTypeChange(val: string) {
-  if (['订单收入', '客户充值', '批次收款', '其他收入'].includes(val)) {
+  if (incomeTypeValues.has(val)) {
     form.direction = '收入'
   } else {
     form.direction = '支出'
+  }
+  if (!usdCapableTypeValues.has(val)) {
+    form.amount_usd = 0
+    form.exchange_rate = null
+  } else if (!isAdministrativeEntry.value) {
+    form.exchange_rate = form.exchange_rate || 7.25
+  }
+  if (val !== '任务支出') {
+    form.order_number = ''
   }
 }
 
@@ -284,13 +414,15 @@ function openAdd() {
 function openEdit(row: any) {
   editId.value = row.id
   Object.assign(form, {
-    transaction_type: row.transaction_type, direction: row.direction,
+    entry_scope: inferEntryScope(getNormalizedTransactionType(row)),
+    transaction_type: getNormalizedTransactionType(row), direction: getDirection(row),
     amount_cny: Number(row.amount_cny), amount_usd: Number(row.amount_usd || 0),
-    exchange_rate: Number(row.exchange_rate || 7.25), customer_name: row.customer_name || '',
+    exchange_rate: row.exchange_rate ? Number(row.exchange_rate) : null, customer_name: row.customer_name || '',
     order_number: row.order_number || '', staff_name: row.staff_name || '',
     status: row.status || '已确认', notes: row.notes || '',
     transaction_date: row.transaction_date || dayjs().format('YYYY-MM-DD'),
   })
+  onScopeChange(form.entry_scope)
   modalOpen.value = true
 }
 
@@ -299,8 +431,19 @@ async function handleSave() {
   if (!form.transaction_date) { message.error('请填写交易日期'); return }
   saving.value = true
   try {
-    const payload: any = { ...form, updated_at: new Date().toISOString() }
-    if (!payload.amount_usd) payload.amount_usd = null
+    const { entry_scope, ...restForm } = form
+    const payload: any = { ...restForm, updated_at: new Date().toISOString() }
+    if (entry_scope === '行政') {
+      payload.amount_usd = null
+      payload.exchange_rate = null
+      payload.order_number = null
+      payload.status = '已确认'
+    } else if (!showUsdFields.value) {
+      payload.amount_usd = null
+      payload.exchange_rate = null
+    } else if (!payload.amount_usd) {
+      payload.amount_usd = null
+    }
     if (editId.value) {
       await supabase.from('financial_transactions').update(payload).eq('id', editId.value)
       message.success('已更新')
@@ -345,6 +488,8 @@ onMounted(() => { loadData(); loadStats() })
 
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 
+.form-tip { margin: -4px 0 8px; font-size: 12px; color: #8c8c8c; }
+.amount-stack { display: flex; flex-direction: column; gap: 2px; }
 .amount-in { color: #52c41a; font-weight: 600; }
 .amount-out { color: #ff4d4f; font-weight: 600; }
 .text-muted { color: #bbb; }

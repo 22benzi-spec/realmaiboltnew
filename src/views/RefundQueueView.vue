@@ -953,6 +953,72 @@ function formatRecordAmount(record: any) {
   return formatCurrency(getAmountValue(record), ['其他退款', '其他付款'].includes(record?.refund_method) || activeTab.value === 'other' ? 'cny' : 'usd')
 }
 
+const UUID_LIKE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function getOtherPaymentTransactionType(category: string) {
+  if (/任务/.test(category || '')) return '任务支出'
+  if (/行政|办公|人事|工资/.test(category || '')) return '行政支出'
+  return '业务支出'
+}
+
+function buildOtherPaymentLedgerNote(record: any, financeNotes: string) {
+  return [
+    '付款审批',
+    record?.refund_category || '其他付款',
+    record?.refund_reason || '',
+    record?.payout_method || '',
+    financeNotes || '',
+  ].filter(Boolean).join(' | ')
+}
+
+async function insertOtherPaymentTransactions(records: any[], handledAt: string) {
+  if (!records.length) return
+  const orderIds = Array.from(new Set(
+    records
+      .map(item => String(item.order_id || ''))
+      .filter(id => UUID_LIKE_RE.test(id)),
+  ))
+  const orderNumberMap = new Map<string, string>()
+  if (orderIds.length) {
+    const { data: orders, error: orderError } = await supabase
+      .from('erp_orders')
+      .select('id, order_number')
+      .in('id', orderIds)
+    if (orderError) throw orderError
+    ;(orders || []).forEach(item => orderNumberMap.set(item.id, item.order_number || ''))
+  }
+
+  for (const record of records) {
+    const amountCny = Number(record.refund_amount_cny || record.refund_amount || 0)
+    if (amountCny <= 0) continue
+    const { data: txNo, error: txNoError } = await supabase.rpc('generate_transaction_no')
+    if (txNoError) throw txNoError
+    const payload: any = {
+      transaction_no: txNo || `FT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      transaction_type: getOtherPaymentTransactionType(record.refund_category || ''),
+      direction: '支出',
+      amount_cny: amountCny,
+      amount_usd: null,
+      exchange_rate: 7.25,
+      customer_name: record.customer_name || '',
+      order_number: orderNumberMap.get(String(record.order_id || '')) || record.order_number || String(record.order_id || ''),
+      staff_name: record.applicant_name || record.staff_name || '',
+      status: '已确认',
+      notes: buildOtherPaymentLedgerNote(record, record.finance_notes || ''),
+      transaction_date: dayjs(handledAt).format('YYYY-MM-DD'),
+      updated_at: handledAt,
+    }
+    if (UUID_LIKE_RE.test(String(record.order_id || ''))) {
+      payload.order_id = record.order_id
+    }
+    if (record.paypal_receipt_screenshot) {
+      payload.receipt_urls = [record.paypal_receipt_screenshot]
+    }
+    const { error: insertError } = await supabase.from('financial_transactions').insert(payload)
+    if (insertError) throw insertError
+  }
+}
+
 function otherRefundOrderCountLabel(record: any) {
   if (!record) return ''
   if (!['任务退款', '佣金退款', '任务付款', '佣金付款'].includes(record.refund_category || '')) return ''
@@ -1494,10 +1560,14 @@ async function handleOtherProcess() {
   processing.value = true
   try {
     const total = currentProcessTotal.value
-    if (currentProcessRequests.value.every(item => String(item.id).startsWith('mock-other-'))) {
-      const now = new Date().toISOString()
+    const now = new Date().toISOString()
+    const mockIds = currentProcessRequests.value.filter(item => String(item.id).startsWith('mock-other-')).map(item => item.id)
+    const realRecords = currentProcessRequests.value.filter(item => !String(item.id).startsWith('mock-other-'))
+    const realIds = realRecords.map(item => item.id)
+
+    if (mockIds.length) {
       mockOtherRequests.value = mockOtherRequests.value.map(item =>
-        currentProcessRequests.value.some(target => target.id === item.id)
+        mockIds.includes(item.id)
           ? {
               ...item,
               status: '已处理',
@@ -1509,26 +1579,29 @@ async function handleOtherProcess() {
             }
           : item,
       )
-      clearBatchSelection()
-      currentProcessRequests.value = []
-      message.success(`其他付款已处理，合计 ${formatCurrency(total, 'cny')}`)
-      otherProcessOpen.value = false
-      await load()
-      return
     }
 
-    const { error } = await supabase
-      .from('refund_requests')
-      .update({
-        status: '已处理',
-        refund_method: '其他付款',
+    if (realIds.length) {
+      const { error } = await supabase
+        .from('refund_requests')
+        .update({
+          status: '已处理',
+          refund_method: '其他付款',
+          refund_category: otherProcessForm.category,
+          paypal_receipt_screenshot: otherProcessForm.receipt || '',
+          finance_notes: otherProcessForm.notes,
+          handled_at: now,
+        })
+        .in('id', realIds)
+      if (error) throw error
+      await insertOtherPaymentTransactions(realRecords.map(item => ({
+        ...item,
         refund_category: otherProcessForm.category,
-        paypal_receipt_screenshot: otherProcessForm.receipt || '',
         finance_notes: otherProcessForm.notes,
-        handled_at: new Date().toISOString(),
-      })
-      .in('id', currentProcessRequests.value.map(item => item.id))
-    if (error) throw error
+        paypal_receipt_screenshot: otherProcessForm.receipt || '',
+      })), now)
+    }
+
     clearBatchSelection()
     currentProcessRequests.value = []
     message.success(`其他付款已处理，合计 ${formatCurrency(total, 'cny')}`)
