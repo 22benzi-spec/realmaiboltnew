@@ -79,8 +79,8 @@ export const allNavGroups: NavGroup[] = [
     items: [
       { id: 'gift-cards', label: '礼品卡管理', icon: CreditCardOutlined },
       { id: 'paypal', label: 'PayPal', icon: BankOutlined },
-      { id: 'refund-queue', label: '退款审批', icon: SendOutlined },
-      { id: 'refund-ledger', label: '退款账单', icon: FileTextOutlined },
+      { id: 'refund-queue', label: '付款审批', icon: SendOutlined },
+      { id: 'refund-ledger', label: '返款账单', icon: FileTextOutlined },
       { id: 'financial-ledger', label: '交易流水', icon: AccountBookOutlined },
       { id: 'profit-analysis', label: '利润分析', icon: LineChartOutlined },
     ],

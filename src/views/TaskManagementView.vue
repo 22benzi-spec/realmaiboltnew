@@ -148,6 +148,9 @@
               <a-button size="small" class="copy-sub-btn" @click.stop="openCopyModal(record)">
                 <CopyOutlined /> 复制
               </a-button>
+              <a-button size="small" @click.stop="() => openAppendModal(record)">
+                追加订单
+              </a-button>
               <a-popconfirm v-if="canDeleteTask(record)" title="确定删除此任务吗?" @confirm="deleteTask(record.id)">
                 <a-button size="small" type="text" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
               </a-popconfirm>
@@ -503,6 +506,36 @@
         </div>
 
         <a-divider style="margin: 20px 0 16px" />
+        <div class="task-drawer-section-title">修改记录</div>
+        <div v-if="getTaskEditHistory(currentTaskDetail).length" class="task-drawer-timeline">
+          <div
+            v-for="item in getTaskEditHistory(currentTaskDetail)"
+            :key="item.key"
+            class="task-drawer-timeline-item"
+          >
+            <div class="task-drawer-timeline-axis">
+              <span class="task-drawer-timeline-dot edit"></span>
+              <span class="task-drawer-timeline-line"></span>
+            </div>
+            <div class="task-drawer-timeline-content">
+              <div class="task-drawer-timeline-title">
+                {{ item.staff_name || '任务管理' }}修改了 {{ item.changes.length }} 项信息
+              </div>
+              <div class="task-drawer-timeline-meta">
+                <span>{{ fmtTime(item.changed_at) }}</span>
+                <span>剩余 {{ item.affected_sub_count || 0 }} 单子订单被修改了</span>
+              </div>
+              <ul class="task-drawer-edit-list">
+                <li v-for="(change, index) in item.changes" :key="`${item.key}-${index}`">
+                  {{ formatTaskEdit(change) }}
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <a-empty v-else description="暂无修改记录" />
+
+        <a-divider style="margin: 20px 0 16px" />
         <div class="task-drawer-section-title">反馈状态</div>
         <div class="task-drawer-feedback-panel">
           <div class="task-drawer-feedback-row">
@@ -662,6 +695,134 @@
             :placeholder="`输入${quickEditMeta.label}`"
             style="flex:1"
           />
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- 追加订单弹窗 -->
+    <a-modal
+      v-model:open="appendModalOpen"
+      title="追加订单"
+      width="920px"
+      ok-text="确认追加"
+      cancel-text="取消"
+      :confirm-loading="appendSaving"
+      :destroy-on-close="true"
+      @ok="saveAppendOrders"
+      @cancel="resetAppendModal"
+    >
+      <div v-if="appendSourceTask" class="append-modal-body">
+        <div class="append-modal-summary">
+          <div class="append-modal-order">任务：{{ appendSourceTask.order_number || '—' }}</div>
+          <div class="append-modal-count-row">
+            <span class="append-modal-label">增加几单</span>
+            <a-input-number
+              v-model:value="appendCount"
+              :min="1"
+              :precision="0"
+              :controls="true"
+              @change="handleAppendCountChange"
+            />
+          </div>
+        </div>
+        <div class="append-modal-hint">
+          默认沿用主任务信息，可逐条调整新增子订单明细后再提交。
+        </div>
+        <div class="append-batch-card">
+          <div class="append-batch-header">
+            <div class="append-batch-title">批量填写</div>
+            <a-space>
+              <a-button size="small" @click="fillAppendBatchFromFirstRow">读取第 1 单内容</a-button>
+              <a-button type="primary" size="small" @click="applyAppendBatchToAll">应用到全部新增单</a-button>
+            </a-space>
+          </div>
+          <div class="append-grid">
+            <div class="append-field">
+              <label>排单日期</label>
+              <input v-model="appendBatchForm.scheduled_date" type="date" class="bme-date-input append-date-input" />
+            </div>
+            <div class="append-field">
+              <label>ASIN</label>
+              <a-input v-model:value="appendBatchForm.asin" placeholder="输入 ASIN" allow-clear />
+            </div>
+            <div class="append-field">
+              <label>测评类型</label>
+              <a-select v-model:value="appendBatchForm.review_type" placeholder="选择测评类型" allow-clear>
+                <a-select-option v-for="opt in reviewTypeOptions" :key="opt" :value="opt">{{ opt }}</a-select-option>
+              </a-select>
+            </div>
+            <div class="append-field">
+              <label>测评等级</label>
+              <a-select v-model:value="appendBatchForm.review_level" placeholder="选择测评等级" allow-clear>
+                <a-select-option v-for="opt in ['普通', '高等', '极高等']" :key="opt" :value="opt">{{ opt }}</a-select-option>
+              </a-select>
+            </div>
+            <div class="append-field">
+              <label>产品售价</label>
+              <a-input-number
+                v-model:value="appendBatchForm.product_price"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                style="width: 100%"
+                placeholder="输入产品售价"
+              />
+            </div>
+            <div class="append-field append-field-span-2">
+              <label>关键词/链接</label>
+              <a-input v-model:value="appendBatchForm.keyword_or_link" placeholder="输入关键词或粘贴链接" allow-clear />
+            </div>
+            <div class="append-field append-field-span-3">
+              <label>任务备注</label>
+              <a-input v-model:value="appendBatchForm.task_notes" placeholder="输入任务备注" allow-clear />
+            </div>
+          </div>
+        </div>
+        <div class="append-card-list">
+          <div v-for="(row, index) in appendRows" :key="row.key" class="append-card">
+            <div class="append-card-title">追加单 {{ index + 1 }}</div>
+            <div class="append-grid">
+              <div class="append-field">
+                <label>排单日期</label>
+                <input v-model="row.scheduled_date" type="date" class="bme-date-input append-date-input" />
+              </div>
+              <div class="append-field">
+                <label>ASIN</label>
+                <a-input v-model:value="row.asin" placeholder="输入 ASIN" allow-clear />
+              </div>
+              <div class="append-field">
+                <label>测评类型</label>
+                <a-select v-model:value="row.review_type" placeholder="选择测评类型" allow-clear>
+                  <a-select-option v-for="opt in reviewTypeOptions" :key="opt" :value="opt">{{ opt }}</a-select-option>
+                </a-select>
+              </div>
+              <div class="append-field">
+                <label>测评等级</label>
+                <a-select v-model:value="row.review_level" placeholder="选择测评等级" allow-clear>
+                  <a-select-option v-for="opt in ['普通', '高等', '极高等']" :key="opt" :value="opt">{{ opt }}</a-select-option>
+                </a-select>
+              </div>
+              <div class="append-field">
+                <label>产品售价</label>
+                <a-input-number
+                  v-model:value="row.product_price"
+                  :min="0"
+                  :precision="2"
+                  :controls="false"
+                  style="width: 100%"
+                  placeholder="输入产品售价"
+                />
+              </div>
+              <div class="append-field append-field-span-2">
+                <label>关键词/链接</label>
+                <a-input v-model:value="row.keyword_or_link" placeholder="输入关键词或粘贴链接" allow-clear />
+              </div>
+              <div class="append-field append-field-span-3">
+                <label>任务备注</label>
+                <a-input v-model:value="row.task_notes" placeholder="输入任务备注" allow-clear />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </a-modal>
@@ -1073,6 +1234,20 @@ import { supabase } from '../lib/supabase'
 
 // ===== Tab =====
 const activeTab = ref('tasks')
+const ORDER_EDIT_HISTORY_STORAGE_KEY = 'task_management_order_edit_history_v1'
+const ORDER_EDIT_HISTORY_SEED: Record<string, any[]> = {
+  mock_order_pending_a: [
+    {
+      changed_at: '2026-04-14T10:30:00.000Z',
+      staff_name: '任务管理',
+      affected_sub_count: 2,
+      changes: [
+        { field: 'product_price', from: 15.99, to: 17.99 },
+        { field: 'store_name', from: 'AAA', to: 'BBB' },
+      ],
+    },
+  ],
+}
 
 // ===== 任务列表 =====
 const loading = ref(false)
@@ -1091,6 +1266,7 @@ const detailOrderId = ref<string>('')
 const editMode = ref(false)
 const saveLoading = ref(false)
 const editForm = ref<any>({})
+const orderEditHistoryMap = ref<Record<string, any[]>>({})
 
 const taskStatuses = ['待分配', '进行中', '已完成', '已截单', '暂停中']
 const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留评', '已完成', '已取消']
@@ -1368,6 +1544,96 @@ function getTaskStatusJourney(record: any) {
   })
 }
 
+function loadOrderEditHistoryMap() {
+  if (typeof window === 'undefined') return { ...ORDER_EDIT_HISTORY_SEED }
+  try {
+    const raw = window.localStorage.getItem(ORDER_EDIT_HISTORY_STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) : {}
+    const nextMap = typeof parsed === 'object' && parsed ? parsed : {}
+    for (const [orderId, logs] of Object.entries(ORDER_EDIT_HISTORY_SEED)) {
+      if (!Array.isArray(nextMap[orderId])) nextMap[orderId] = logs
+    }
+    window.localStorage.setItem(ORDER_EDIT_HISTORY_STORAGE_KEY, JSON.stringify(nextMap))
+    return nextMap
+  } catch {
+    return { ...ORDER_EDIT_HISTORY_SEED }
+  }
+}
+
+function persistOrderEditHistoryMap() {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(ORDER_EDIT_HISTORY_STORAGE_KEY, JSON.stringify(orderEditHistoryMap.value))
+}
+
+function getTaskEditHistory(record: any) {
+  if (!record) return []
+  const orderId = String(record.id || record.order_id || '')
+  const storedHistory = orderEditHistoryMap.value[orderId] || []
+  const inlineHistory = Array.isArray(record.edit_change_log)
+    ? record.edit_change_log
+    : Array.isArray(record.change_log)
+      ? record.change_log
+      : []
+  const sourceHistory = storedHistory.length ? storedHistory : inlineHistory
+  return sourceHistory
+    .map((item: any, index: number) => ({
+      key: `${orderId}-edit-${index}-${item?.changed_at || item?.at || 'unknown'}`,
+      changed_at: item?.changed_at || item?.at || null,
+      staff_name: item?.staff_name || item?.operator || '任务管理',
+      affected_sub_count: Number(item?.affected_sub_count || item?.sub_count || 0),
+      changes: Array.isArray(item?.changes)
+        ? item.changes
+        : Array.isArray(item?.edits)
+          ? item.edits
+          : [],
+    }))
+    .filter((item: any) => item.changes.length > 0)
+    .sort((a: any, b: any) => dayjs(b.changed_at).valueOf() - dayjs(a.changed_at).valueOf())
+}
+
+function formatTaskEdit(change: any) {
+  const labels: Record<string, string> = {
+    asin: 'ASIN',
+    scheduled_date: '排单日期',
+    review_type: '测评类型',
+    review_level: '测评等级',
+    product_price: '售价',
+    keyword: '关键词',
+    task_notes: '备注',
+    store_name: '店铺',
+  }
+  const label = labels[change?.field] || change?.field || '字段'
+  const formatValue = (field: string, value: any) => {
+    if (value == null || value === '') return '空'
+    if (field === 'product_price') return `$${Number(value).toFixed(2)}`
+    if (field === 'review_type') return formatReviewType(String(value))
+    return String(value)
+  }
+  return `${label} 从 ${formatValue(change?.field, change?.from)} 修改成了 ${formatValue(change?.field, change?.to)}`
+}
+
+function appendTaskEditHistory(orderId: string, entry: any) {
+  if (!orderId) return
+  const list = Array.isArray(orderEditHistoryMap.value[orderId]) ? [...orderEditHistoryMap.value[orderId]] : []
+  list.unshift(entry)
+  orderEditHistoryMap.value = {
+    ...orderEditHistoryMap.value,
+    [orderId]: list,
+  }
+  persistOrderEditHistoryMap()
+
+  const task = tasks.value.find((item: any) => item.id === orderId)
+  if (task) {
+    task.edit_change_log = list
+  }
+  if (currentTaskDetail.value?.id === orderId) {
+    currentTaskDetail.value = {
+      ...currentTaskDetail.value,
+      edit_change_log: list,
+    }
+  }
+}
+
 function openDetail(sub: any, orderId: string) {
   detailRecord.value = { ...sub }
   detailOrderId.value = orderId
@@ -1400,6 +1666,270 @@ function openDetail(sub: any, orderId: string) {
     review_screenshot_url: d.review_screenshot_url || '',
   }
   detailOpen.value = true
+}
+
+type AppendSubOrderFormRow = {
+  key: string
+  asin: string
+  scheduled_date: string
+  review_type: string | undefined
+  review_level: string | undefined
+  product_price: number | undefined
+  keyword_or_link: string
+  task_notes: string
+}
+
+type AppendBatchForm = Omit<AppendSubOrderFormRow, 'key'>
+
+const appendModalOpen = ref(false)
+const appendSaving = ref(false)
+const appendCount = ref(1)
+const appendRows = ref<AppendSubOrderFormRow[]>([])
+const appendBatchForm = ref<AppendBatchForm>({
+  asin: '',
+  scheduled_date: '',
+  review_type: undefined,
+  review_level: undefined,
+  product_price: undefined,
+  keyword_or_link: '',
+  task_notes: '',
+})
+const appendSourceTask = ref<any>(null)
+const appendSourceSub = ref<any>(null)
+let appendRowSeed = 0
+
+function getKeywordOrLinkValue(sub?: any) {
+  if (!sub) return ''
+  if (sub.keyword_type === 'link') return sub.search_link || ''
+  return sub.keyword || ''
+}
+
+function createAppendDraft(task: any, sub?: any): AppendBatchForm {
+  return {
+    asin: sub?.asin || task?.asin || '',
+    scheduled_date: sub?.scheduled_date || '',
+    review_type: formatReviewType(sub?.review_type || sub?.order_type || task?.review_type || task?.order_type) || undefined,
+    review_level: sub?.review_level || task?.review_level || undefined,
+    product_price: sub?.product_price != null ? Number(sub.product_price) : (task?.product_price != null ? Number(task.product_price) : undefined),
+    keyword_or_link: getKeywordOrLinkValue(sub),
+    task_notes: sub?.task_notes || '',
+  }
+}
+
+function createAppendRowFromDraft(draft: AppendBatchForm): AppendSubOrderFormRow {
+  appendRowSeed += 1
+  return {
+    key: `append-row-${Date.now()}-${appendRowSeed}`,
+    asin: draft.asin,
+    scheduled_date: draft.scheduled_date,
+    review_type: draft.review_type,
+    review_level: draft.review_level,
+    product_price: draft.product_price,
+    keyword_or_link: draft.keyword_or_link,
+    task_notes: draft.task_notes,
+  }
+}
+
+function syncAppendBatchForm(task: any, sub?: any) {
+  appendBatchForm.value = createAppendDraft(task, sub)
+}
+
+function resetAppendModal() {
+  appendModalOpen.value = false
+  appendSaving.value = false
+  appendCount.value = 1
+  appendRows.value = []
+  appendBatchForm.value = {
+    asin: '',
+    scheduled_date: '',
+    review_type: undefined,
+    review_level: undefined,
+    product_price: undefined,
+    keyword_or_link: '',
+    task_notes: '',
+  }
+  appendSourceTask.value = null
+  appendSourceSub.value = null
+}
+
+function syncAppendRows(count: number) {
+  const safeCount = Math.max(1, Math.trunc(Number(count) || 1))
+  appendCount.value = safeCount
+  const current = [...appendRows.value]
+  if (current.length > safeCount) {
+    appendRows.value = current.slice(0, safeCount)
+    return
+  }
+  const task = appendSourceTask.value
+  if (!task) return
+  const draft = appendBatchForm.value
+  while (current.length < safeCount) {
+    current.push(createAppendRowFromDraft(draft))
+  }
+  appendRows.value = current
+}
+
+function handleAppendCountChange(value: number | null) {
+  syncAppendRows(value || 1)
+}
+
+function openAppendModal(task: any) {
+  const sourceSub = Array.isArray(subOrdersMap.value[task.id]) && subOrdersMap.value[task.id].length
+    ? { ...subOrdersMap.value[task.id][subOrdersMap.value[task.id].length - 1] }
+    : null
+  appendSourceTask.value = task
+  appendSourceSub.value = sourceSub
+  syncAppendBatchForm(task, sourceSub || undefined)
+  appendCount.value = 1
+  appendRows.value = [createAppendRowFromDraft(appendBatchForm.value)]
+  appendModalOpen.value = true
+}
+
+function fillAppendBatchFromFirstRow() {
+  const first = appendRows.value[0]
+  if (!first) return
+  appendBatchForm.value = {
+    asin: first.asin,
+    scheduled_date: first.scheduled_date,
+    review_type: first.review_type,
+    review_level: first.review_level,
+    product_price: first.product_price,
+    keyword_or_link: first.keyword_or_link,
+    task_notes: first.task_notes,
+  }
+}
+
+function applyAppendBatchToAll() {
+  if (appendRows.value.length === 0) return
+  const draft = appendBatchForm.value
+  appendRows.value = appendRows.value.map((row) => ({
+    ...row,
+    asin: draft.asin,
+    scheduled_date: draft.scheduled_date,
+    review_type: draft.review_type,
+    review_level: draft.review_level,
+    product_price: draft.product_price,
+    keyword_or_link: draft.keyword_or_link,
+    task_notes: draft.task_notes,
+  }))
+}
+
+function parseAppendKeywordInput(value: string) {
+  const normalized = String(value || '').trim()
+  const isLink = /^(https?:\/\/|www\.)/i.test(normalized)
+  return {
+    keyword_type: isLink ? 'link' : 'keyword',
+    keyword: isLink ? '' : normalized,
+    search_link: isLink ? normalized : '',
+  }
+}
+
+async function saveAppendOrders() {
+  if (!appendSourceTask.value?.id) return
+  const count = appendRows.value.length
+  if (count <= 0) {
+    message.warning('请先填写追加单数量')
+    return
+  }
+
+  appendSaving.value = true
+  const sourceTask = appendSourceTask.value
+  const sourceSub = appendSourceSub.value
+  const orderId = String(sourceTask.id)
+
+  try {
+    const rows = appendRows.value.map((row) => {
+      const keywordPayload = parseAppendKeywordInput(row.keyword_or_link)
+      const reviewType = row.review_type
+        ? formatReviewType(row.review_type)
+        : (formatReviewType(sourceSub?.review_type || sourceSub?.order_type || sourceTask.review_type || sourceTask.order_type) || null)
+      return {
+        order_id: orderId,
+        asin: row.asin?.trim() || sourceSub?.asin || sourceTask.asin || null,
+        store_name: sourceSub?.store_name || sourceTask.store_name || null,
+        country: sourceSub?.country || sourceTask.country || null,
+        order_type: sourceSub?.order_type || sourceTask.order_type || reviewType || null,
+        product_price: row.product_price ?? (sourceSub?.product_price != null ? Number(sourceSub.product_price) : sourceTask.product_price),
+        unit_price: sourceSub?.unit_price != null ? Number(sourceSub.unit_price) : (sourceTask.unit_price != null ? Number(sourceTask.unit_price) : null),
+        commission_fee: sourceSub?.commission_fee != null ? Number(sourceSub.commission_fee) : (sourceTask.commission_fee != null ? Number(sourceTask.commission_fee) : 0),
+        exchange_rate: sourceSub?.exchange_rate ?? sourceTask.exchange_rate ?? null,
+        product_image: sourceSub?.product_image || sourceTask.product_image || null,
+        product_name: sourceSub?.product_name || sourceTask.product_name || null,
+        brand_name: sourceSub?.brand_name || sourceTask.brand_name || null,
+        category: sourceSub?.category || sourceTask.category || null,
+        review_level: row.review_level || sourceSub?.review_level || sourceTask.review_level || null,
+        review_type: reviewType,
+        variant_info: sourceSub?.variant_info || sourceTask.variant_info || null,
+        customer_name: sourceSub?.customer_name || sourceTask.customer_name || null,
+        customer_id_str: sourceSub?.customer_id_str || sourceTask.customer_id_str || null,
+        sales_person: sourceSub?.sales_person || sourceTask.sales_person || null,
+        scheduled_date: row.scheduled_date || null,
+        keyword_type: keywordPayload.keyword_type,
+        keyword: keywordPayload.keyword,
+        search_link: keywordPayload.search_link,
+        task_notes: row.task_notes?.trim() || sourceSub?.task_notes || null,
+        notes: sourceSub?.notes || '订单备注：同主任务下的追加子单',
+        status: '待分配',
+      }
+    })
+
+    const { data: insertedRows, error: insertError } = await supabase
+      .from('sub_orders')
+      .insert(rows)
+      .select('id')
+    if (insertError) throw insertError
+
+    const nextQty = Number(sourceTask.order_quantity || 0) + count
+    const { error: orderError } = await supabase
+      .from('erp_orders')
+      .update({
+        order_quantity: nextQty,
+        total_orders: nextQty,
+      })
+      .eq('id', orderId)
+
+    if (orderError) {
+      const insertedIds = (insertedRows || []).map((item: any) => item.id).filter(Boolean)
+      if (insertedIds.length > 0) {
+        await supabase.from('sub_orders').delete().in('id', insertedIds)
+      }
+      throw orderError
+    }
+
+    sourceTask.order_quantity = nextQty
+    sourceTask.total_orders = nextQty
+    sourceTask._sub_total = Number(sourceTask._sub_total || 0) + count
+
+    const taskInList = tasks.value.find((item: any) => item.id === orderId)
+    if (taskInList) {
+      taskInList.order_quantity = nextQty
+      taskInList.total_orders = nextQty
+      taskInList._sub_total = Number(taskInList._sub_total || 0) + count
+    }
+    if (currentTaskDetail.value?.id === orderId) {
+      currentTaskDetail.value = {
+        ...currentTaskDetail.value,
+        order_quantity: nextQty,
+        total_orders: nextQty,
+        _sub_total: Number(currentTaskDetail.value._sub_total || 0) + count,
+      }
+    }
+    if (scheduleModalOrder.value?.id === orderId) {
+      scheduleModalOrder.value = {
+        ...scheduleModalOrder.value,
+        order_quantity: nextQty,
+        total_orders: nextQty,
+      }
+    }
+
+    await loadSubOrders(orderId)
+    message.success(`已追加 ${count} 条子订单`)
+    resetAppendModal()
+  } catch (e: any) {
+    message.error('追加订单失败：' + e.message)
+  } finally {
+    appendSaving.value = false
+  }
 }
 
 function startEdit() {
@@ -1883,6 +2413,9 @@ async function saveQuickEdit() {
   quickEditSaving.value = true
   try {
     const field = quickEditField.value
+    const beforeValue = field === 'review_type'
+      ? formatReviewType(quickEditRecord.value.review_type || quickEditRecord.value.order_type)
+      : quickEditRecord.value[field]
     const value = field === 'product_price'
       ? (quickEditValue.value == null || quickEditValue.value === '' ? null : Number(quickEditValue.value))
       : (typeof quickEditValue.value === 'string' ? quickEditValue.value.trim() : quickEditValue.value) || null
@@ -1895,6 +2428,14 @@ async function saveQuickEdit() {
     if (orderId && subOrdersMap.value[orderId]) {
       const sub = subOrdersMap.value[orderId].find((s: any) => s.id === quickEditRecord.value.id)
       if (sub) Object.assign(sub, updates)
+    }
+    if (orderId && beforeValue !== normalizedValue) {
+      appendTaskEditHistory(orderId, {
+        changed_at: new Date().toISOString(),
+        staff_name: '任务管理',
+        affected_sub_count: 1,
+        changes: [{ field, from: beforeValue, to: normalizedValue }],
+      })
     }
     message.success(`${quickEditMeta.value?.label || '字段'}已更新`)
     quickEditOpen.value = false
@@ -2019,6 +2560,9 @@ async function saveBatchEdit() {
 
     const selectedCount = currentBatchSelectedIds.value.length
     const payload: Record<string, any> = {}
+    const orderId = batchEditOrderId.value
+    const targetSubs = (subOrdersMap.value[orderId] || []).filter((sub: any) => currentBatchSelectedIds.value.includes(sub.id))
+    const changeList: any[] = []
     for (const field of activeBatchEditFields.value) {
       const value = batchEditForm.value[field.key]
       payload[field.key] = field.key === 'product_price'
@@ -2026,12 +2570,31 @@ async function saveBatchEdit() {
         : field.key === 'review_type'
           ? ((value ? formatReviewType(String(value)) : null))
           : (value ?? '') || null
+      const beforeValue = targetSubs[0]
+        ? (field.key === 'review_type'
+          ? formatReviewType(targetSubs[0].review_type || targetSubs[0].order_type)
+          : targetSubs[0][field.key])
+        : null
+      changeList.push({
+        field: field.key,
+        from: beforeValue,
+        to: payload[field.key],
+      })
     }
+    const effectiveChanges = changeList.filter(item => item.from !== item.to)
 
     const { error } = await supabase.from('sub_orders').update(payload).in('id', currentBatchSelectedIds.value)
     if (error) throw error
-    await loadSubOrders(batchEditOrderId.value)
-    selectedSubIdsMap.value[batchEditOrderId.value] = []
+    await loadSubOrders(orderId)
+    selectedSubIdsMap.value[orderId] = []
+    if (orderId && effectiveChanges.length) {
+      appendTaskEditHistory(orderId, {
+        changed_at: new Date().toISOString(),
+        staff_name: '任务管理',
+        affected_sub_count: selectedCount,
+        changes: effectiveChanges,
+      })
+    }
     resetBatchEditForm()
     message.success(`已批量修改 ${selectedCount} 条子订单`)
     editSubModalOpen.value = false
@@ -2100,6 +2663,7 @@ function doConfirmCopy() {
 }
 
 onMounted(() => {
+  orderEditHistoryMap.value = loadOrderEditHistoryMap()
   load()
 })
 </script>
@@ -2293,6 +2857,9 @@ onMounted(() => {
   background: #2563eb;
   margin-top: 4px;
 }
+.task-drawer-timeline-dot.edit {
+  background: #7c3aed;
+}
 .task-drawer-timeline-line {
   width: 2px;
   flex: 1;
@@ -2330,6 +2897,15 @@ onMounted(() => {
 .task-drawer-feedback-key { font-size: 13px; color: #6b7280; flex-shrink: 0; }
 .task-drawer-feedback-date { font-size: 12px; color: #374151; margin-left: 4px; }
 .task-drawer-feedback-notes { font-size: 13px; color: #374151; }
+.task-drawer-edit-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #374151;
+  font-size: 12px;
+}
+.task-drawer-edit-list li + li {
+  margin-top: 4px;
+}
 
 .sub-orders-panel {
   background: #f8fafc;
@@ -2481,7 +3057,119 @@ onMounted(() => {
   -webkit-overflow-scrolling: touch;
 }
 
+.append-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.append-modal-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.append-modal-order {
+  font-size: 13px;
+  color: #374151;
+  font-weight: 500;
+}
+.append-modal-count-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.append-modal-label {
+  font-size: 13px;
+  color: #1a1a2e;
+  font-weight: 600;
+}
+.append-modal-hint {
+  font-size: 12px;
+  color: #6b7280;
+}
+.append-batch-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 14px;
+}
+.append-batch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.append-batch-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+.append-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 56vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.append-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 14px;
+}
+.append-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 12px;
+}
+.append-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.append-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.append-field label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 600;
+}
+.append-field-span-2 {
+  grid-column: span 2;
+}
+.append-field-span-3 {
+  grid-column: span 3;
+}
+.append-date-input {
+  width: 100%;
+}
+
 @media (max-width: 767px) {
+  .append-modal-count-row {
+    margin-left: 0;
+  }
+  .append-batch-header {
+    align-items: flex-start;
+  }
+  .append-grid {
+    grid-template-columns: 1fr;
+  }
+  .append-field-span-2,
+  .append-field-span-3 {
+    grid-column: span 1;
+  }
   .detail-sections {
     max-height: calc(100dvh - 110px);
     padding: 12px;

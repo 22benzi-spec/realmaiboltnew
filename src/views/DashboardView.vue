@@ -144,7 +144,7 @@ const quickLinks = [
   { label: '分配管理', route: 'assignment', icon: UserAddOutlined, colorClass: 'ql-orange' },
   { label: '买手库', route: 'buyers', icon: TeamOutlined, colorClass: 'ql-purple' },
   { label: '抢单大厅', route: 'grab-hall', icon: ThunderboltOutlined, colorClass: 'ql-red' },
-  { label: '退款审批', route: 'refund-queue', icon: DollarOutlined, colorClass: 'ql-cyan' },
+  { label: '付款审批', route: 'refund-queue', icon: DollarOutlined, colorClass: 'ql-cyan' },
 ]
 
 const recentOrders = ref<any[]>([])

@@ -1,13 +1,13 @@
 <template>
   <div class="page-content">
-    <h1 class="page-title">退款账单</h1>
+    <h1 class="page-title">返款账单</h1>
 
     <a-tabs v-model:activeKey="activeTab" @change="onTabChange">
-      <a-tab-pane key="giftcard" tab="礼品卡退款">
+      <a-tab-pane key="giftcard" tab="礼品卡返款">
         <div class="stats-row">
           <div class="stat-card">
             <div class="stat-num">{{ gcStats.count }}</div>
-            <div class="stat-label">退款笔数</div>
+            <div class="stat-label">返款笔数</div>
           </div>
           <div class="stat-card highlight-gold">
             <div class="stat-num gold">${{ gcStats.totalUsd.toFixed(2) }}</div>
@@ -21,12 +21,13 @@
 
         <div class="card-panel">
           <div class="queue-hint">
-            这里已填充礼品卡退款 mock 数据，可直接演示“金额填错后退回礼品卡库，并重新提交返款申请”。
+            这里已填充礼品卡返款 mock 数据，可直接演示“金额填错后退回礼品卡库，并重新提交返款申请”。
           </div>
           <div class="toolbar">
             <a-range-picker v-model:value="gcDateRange" style="width:240px" @change="reloadGiftCardFromFirstPage" allow-clear />
             <a-input-search v-model:value="gcSearch" placeholder="搜索买手/子订单/产品" style="width:220px" allow-clear @search="reloadGiftCardFromFirstPage" />
             <a-button @click="reloadGiftCardFromFirstPage"><ReloadOutlined /></a-button>
+            <a-button @click="exportLedger('giftcard')">导出</a-button>
             <span class="total-hint">共 {{ gcPagination.total }} 条</span>
           </div>
 
@@ -43,23 +44,53 @@
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'order_info'">
                 <div class="cell-info">
-                  <div class="cell-subno">{{ record.sub_order_number || '—' }}</div>
+                  <div class="cell-sub-row">
+                    <div class="cell-subno">{{ record.sub_order_number || '—' }}</div>
+                    <a-tag v-if="record._isNew" color="red" class="new-tag">NEW</a-tag>
+                  </div>
                   <div class="cell-product">{{ record.product_name || '—' }}</div>
                   <div class="cell-meta">{{ record.asin || '' }}</div>
+                  <div v-if="record._batch_label" class="batch-chip">批次 {{ record._batch_label }}</div>
                 </div>
               </template>
               <template v-if="column.key === 'buyer'">
                 <div>{{ record.buyer_name || '—' }}</div>
+                <div v-if="record.chat_account" class="cell-email">聊单号：{{ record.chat_account }}</div>
               </template>
               <template v-if="column.key === 'refund_amount'">
-                <span class="amount-usd">${{ money(record.refund_amount_usd) }}</span>
+                <div class="amount-cell">
+                  <span class="amount-usd">${{ money(record._line_amount_usd) }}</span>
+                  <span v-if="record._batch_count > 1" class="amount-sub">本行需返</span>
+                </div>
+              </template>
+              <template v-if="column.key === 'actual_amount'">
+                <div v-if="record._actual_amount_row_span !== 0 && record._batch_count > 1" class="batch-card">
+                  <div class="batch-card-head">
+                    <span class="batch-card-tag">批次 {{ record._batch_label }}</span>
+                    <span class="batch-card-count">共 {{ record._batch_count }} 笔</span>
+                  </div>
+                  <div class="batch-card-row is-total">
+                    <span>合计实返</span>
+                    <strong>${{ money(record._batch_total_usd) }}</strong>
+                  </div>
+                </div>
+                <div v-else-if="record._actual_amount_row_span !== 0" class="amount-cell">
+                  <span class="amount-usd">${{ money(record._actual_amount_usd) }}</span>
+                  <span class="amount-sub">单笔实返</span>
+                </div>
               </template>
               <template v-if="column.key === 'gift_card'">
-                <div class="gc-cell">
-                  <div class="gc-code-text">{{ record.assigned_gift_card_code || record.assigned_gift_card_number || '—' }}</div>
-                  <div v-if="record.gift_card_face_value_usd" class="gc-face">
-                    面额 ${{ money(record.gift_card_face_value_usd) }}
-                  </div>
+                <div v-if="record._gift_card_row_span !== 0" class="gc-cell">
+                  <div class="gc-code-text">{{ record._gift_card_code_text || '—' }}</div>
+                  <div v-if="record._gift_card_number_text" class="gc-number">{{ record._gift_card_number_text }}</div>
+                  <div v-if="record._gift_card_face_text" class="gc-face">{{ record._gift_card_face_text }}</div>
+                  <a-button
+                    v-if="record._gift_card_code_text"
+                    type="link"
+                    size="small"
+                    class="gift-copy-link"
+                    @click="copyGiftCodes(record)"
+                  >复制卡密</a-button>
                   <a-button
                     v-if="hasGiftReturnTrail(record)"
                     type="link"
@@ -82,7 +113,10 @@
                 <a-tag v-else :color="refundStatusColor(record.refund_status || '已返款')">{{ record.refund_status || '已返款' }}</a-tag>
               </template>
               <template v-if="column.key === 'handled_at'">
-                <span class="time-text">{{ fmtTime(record.handled_at) }}</span>
+                <div class="time-cell">
+                  <span class="time-operator">{{ handlerName(record) }}</span>
+                  <span class="time-text">{{ fmtTime(record.handled_at) }}</span>
+                </div>
               </template>
               <template v-if="column.key === 'notes'">
                 <span class="notes-text">{{ record.finance_notes || '—' }}</span>
@@ -108,15 +142,15 @@
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="paypal" tab="PayPal 退款">
+      <a-tab-pane key="paypal" tab="PayPal 返款">
         <div class="stats-row">
           <div class="stat-card">
             <div class="stat-num">{{ ppStats.count }}</div>
-            <div class="stat-label">退款笔数</div>
+            <div class="stat-label">返款笔数</div>
           </div>
           <div class="stat-card highlight-blue">
             <div class="stat-num blue">${{ ppStats.totalUsd.toFixed(2) }}</div>
-            <div class="stat-label">退款总金额 (USD)</div>
+            <div class="stat-label">返款总金额 (USD)</div>
           </div>
           <div class="stat-card highlight-green">
             <div class="stat-num green">{{ ppStats.resubmitted }}</div>
@@ -126,15 +160,16 @@
 
         <div class="card-panel">
           <div class="queue-hint">
-            这里已填充 PayPal 退款 mock 数据，可直接演示“换我方转款贝宝”以及“换买手贝宝后重新提交返款审批”。
+            这里已填充 PayPal 返款 mock 数据，可直接演示“换我方转款贝宝”以及“换买手贝宝后重新提交返款审批”。
           </div>
           <div class="toolbar">
             <a-range-picker v-model:value="ppDateRange" style="width:240px" @change="reloadPaypalFromFirstPage" allow-clear />
             <a-select v-model:value="ppAccountFilter" style="width:220px" allow-clear placeholder="全部 PayPal 账号" @change="reloadPaypalFromFirstPage">
               <a-select-option v-for="acc in ppAccountList" :key="acc.email" :value="acc.email">{{ acc.email }}</a-select-option>
             </a-select>
-            <a-input-search v-model:value="ppSearch" placeholder="搜索买手/子订单/产品" style="width:220px" allow-clear @search="reloadPaypalFromFirstPage" />
+            <a-input-search v-model:value="ppSearch" placeholder="搜索买手/子订单/产品/邮箱" style="width:220px" allow-clear @search="reloadPaypalFromFirstPage" />
             <a-button @click="reloadPaypalFromFirstPage"><ReloadOutlined /></a-button>
+            <a-button @click="exportLedger('paypal')">导出</a-button>
             <span class="total-hint">共 {{ ppPagination.total }} 条</span>
           </div>
 
@@ -151,17 +186,43 @@
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'order_info'">
                 <div class="cell-info">
-                  <div class="cell-subno">{{ record.sub_order_number || '—' }}</div>
+                  <div class="cell-sub-row">
+                    <div class="cell-subno">{{ record.sub_order_number || '—' }}</div>
+                    <a-tag v-if="record._isNew" color="red" class="new-tag">NEW</a-tag>
+                  </div>
                   <div class="cell-product">{{ record.product_name || '—' }}</div>
                   <div class="cell-meta">{{ record.asin || '' }}</div>
+                  <div v-if="record._batch_label" class="batch-chip">批次 {{ record._batch_label }}</div>
                 </div>
               </template>
               <template v-if="column.key === 'buyer'">
                 <div>{{ record.buyer_name || '—' }}</div>
-                <div v-if="record.buyer_paypal_email" class="cell-email">{{ record.buyer_paypal_email }}</div>
+                <div v-if="record.chat_account" class="cell-email">聊单号：{{ record.chat_account }}</div>
+              </template>
+              <template v-if="column.key === 'buyer_paypal'">
+                <div class="cell-email">{{ record.buyer_paypal_email || '—' }}</div>
               </template>
               <template v-if="column.key === 'refund_amount'">
-                <span class="amount-usd">${{ money(record.refund_amount_usd) }}</span>
+                <div class="amount-cell">
+                  <span class="amount-usd">${{ money(record._line_amount_usd) }}</span>
+                  <span v-if="record._batch_count > 1" class="amount-sub">本行需返</span>
+                </div>
+              </template>
+              <template v-if="column.key === 'actual_amount'">
+                <div v-if="record._actual_amount_row_span !== 0 && record._batch_count > 1" class="batch-card">
+                  <div class="batch-card-head">
+                    <span class="batch-card-tag">批次 {{ record._batch_label }}</span>
+                    <span class="batch-card-count">共 {{ record._batch_count }} 笔</span>
+                  </div>
+                  <div class="batch-card-row is-total">
+                    <span>合计实返</span>
+                    <strong>${{ money(record._batch_total_usd) }}</strong>
+                  </div>
+                </div>
+                <div v-else-if="record._actual_amount_row_span !== 0" class="amount-cell">
+                  <span class="amount-usd">${{ money(record._actual_amount_usd) }}</span>
+                  <span class="amount-sub">单笔实返</span>
+                </div>
               </template>
               <template v-if="column.key === 'paypal_account'">
                 <a-select
@@ -196,7 +257,10 @@
                 </div>
               </template>
               <template v-if="column.key === 'handled_at'">
-                <span class="time-text">{{ fmtTime(record.handled_at) }}</span>
+                <div class="time-cell">
+                  <span class="time-operator">{{ handlerName(record) }}</span>
+                  <span class="time-text">{{ fmtTime(record.handled_at) }}</span>
+                </div>
               </template>
               <template v-if="column.key === 'notes'">
                 <span class="notes-text">{{ record.finance_notes || '—' }}</span>
@@ -233,7 +297,7 @@
       <div v-if="actionRecord" class="action-summary">
         <div>子订单：<strong>{{ actionRecord.sub_order_number || '—' }}</strong></div>
         <div>买手：<strong>{{ actionRecord.buyer_name || '—' }}</strong></div>
-        <div>退款金额：<strong>${{ money(actionRecord.refund_amount_usd) }}</strong></div>
+        <div>返款金额：<strong>${{ money(actionRecord.refund_amount_usd) }}</strong></div>
       </div>
 
       <a-form layout="vertical">
@@ -253,7 +317,7 @@
           <a-input v-model:value="actionForm.reason" placeholder="例如：礼品卡金额填错，回流卡库后重提" />
         </a-form-item>
 
-        <a-form-item label="财务备注">
+        <a-form-item label="账单备注">
           <a-textarea v-model:value="actionForm.notes" :rows="3" placeholder="可选" />
         </a-form-item>
       </a-form>
@@ -286,6 +350,9 @@ const MOCK_LEDGER_PAYPAL_KEY = 'refund-ledger-mock-paypal-v2'
 const MOCK_LEDGER_GIFT_KEY = 'refund-ledger-mock-gift-v2'
 const QUEUE_PAYPAL_EXTRA_KEY = 'refund-queue-extra-paypal-v1'
 const QUEUE_GIFT_EXTRA_KEY = 'refund-queue-extra-gift-v1'
+const GIFT_NEW_BASELINE_KEY = 'refund-ledger-gift-new-baseline-v1'
+const GIFT_NEW_ACK_KEY = 'refund-ledger-gift-new-ack-v1'
+const PAYPAL_NEW_BASELINE_KEY = 'refund-ledger-paypal-new-baseline-v1'
 
 const activeTab = ref('giftcard')
 
@@ -314,6 +381,7 @@ const mockPaypalSeed = [
     product_name: 'Travel Coffee Mug',
     asin: 'B0LEDGERPP01',
     buyer_name: '买手-Linda',
+    chat_account: 'wx-linda-01',
     buyer_paypal_email: 'linda.old@gmail.com',
     refund_amount_usd: 15,
     assigned_paypal_email: 'finance-us-01@company.com',
@@ -333,6 +401,7 @@ const mockPaypalSeed = [
     product_name: 'Charging Dock',
     asin: 'B0LEDGERPP02',
     buyer_name: '买手-Jack',
+    chat_account: 'wx-jack-02',
     buyer_paypal_email: 'jack-old@gmail.com',
     refund_amount_usd: 12.5,
     assigned_paypal_email: 'finance-us-02@company.com',
@@ -353,6 +422,7 @@ const mockPaypalSeed = [
     product_name: 'Air Fryer Liner',
     asin: 'B0LEDGERPP03',
     buyer_name: '买手-Mia',
+    chat_account: 'wx-mia-03',
     buyer_paypal_email: 'mia.fix@gmail.com',
     refund_amount_usd: 9.9,
     assigned_paypal_email: 'finance-us-01@company.com',
@@ -373,6 +443,7 @@ const mockPaypalSeed = [
     product_name: 'Kitchen Scale',
     asin: 'B0LEDGERPP04',
     buyer_name: '买手-Sophia',
+    chat_account: 'wx-sophia-04',
     buyer_paypal_email: 'sophia.pay@gmail.com',
     refund_amount_usd: 18.8,
     assigned_paypal_email: 'finance-us-03@company.com',
@@ -382,6 +453,41 @@ const mockPaypalSeed = [
     refund_status: '已返款',
     water_slip_request_pending: true,
     water_slip_request_note: '业务员已申请追加水单，财务待补传',
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-paypal-5',
+    sub_order_id: 'SUB-LEDGER-PP-005',
+    sub_order_number: 'SO-LEDGER-PP-005',
+    product_name: 'Laptop Stand',
+    asin: 'B0LEDGERPP05',
+    buyer_name: '买手-Linda',
+    chat_account: 'wx-linda-01',
+    buyer_paypal_email: 'linda.old@gmail.com',
+    refund_amount_usd: 11.2,
+    assigned_paypal_email: 'finance-us-01@company.com',
+    paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=PayPal+Batch',
+    handled_at: dayjs().subtract(5, 'hour').toISOString(),
+    finance_notes: '演示：与同买手另一笔一起贝宝返款',
+    refund_status: '已返款',
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-paypal-6',
+    sub_order_id: 'SUB-LEDGER-PP-006',
+    sub_order_number: 'SO-LEDGER-PP-006',
+    product_name: 'Phone Holder',
+    asin: 'B0LEDGERPP06',
+    buyer_name: '买手-Linda',
+    chat_account: 'wx-linda-01',
+    buyer_paypal_email: 'linda.old@gmail.com',
+    refund_amount_usd: 8.8,
+    assigned_paypal_email: 'finance-us-01@company.com',
+    paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=PayPal+Batch',
+    handled_at: dayjs().subtract(5, 'hour').toISOString(),
+    finance_notes: '演示：与同买手另一笔一起贝宝返款',
+    refund_status: '已返款',
+    _demo_new: true,
     _isMock: true,
   },
 ]
@@ -394,6 +500,7 @@ const mockGiftSeed = [
     product_name: 'Ceramic Vase',
     asin: 'B0LEDGERGC01',
     buyer_name: '买手-Amy',
+    chat_account: 'wx-amy-01',
     refund_amount_usd: 20,
     assigned_gift_card_id: 'GC-MOCK-001',
     assigned_gift_card_number: 'GC-5566-0011',
@@ -412,6 +519,7 @@ const mockGiftSeed = [
     product_name: 'Phone Case',
     asin: 'B0LEDGERGC02',
     buyer_name: '买手-Amy',
+    chat_account: 'wx-amy-01',
     refund_amount_usd: 15,
     assigned_gift_card_id: null,
     assigned_gift_card_number: '',
@@ -434,6 +542,7 @@ const mockGiftSeed = [
     product_name: 'Bedside Lamp',
     asin: 'B0LEDGERGC03',
     buyer_name: '买手-Kevin',
+    chat_account: 'wx-kevin-02',
     refund_amount_usd: 10,
     assigned_gift_card_id: 'GC-MOCK-003',
     assigned_gift_card_number: 'GC-5566-0033',
@@ -443,6 +552,45 @@ const mockGiftSeed = [
     finance_notes: '历史礼品卡账单示例',
     refund_status: '返款中',
     gift_returned: false,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-gift-4',
+    sub_order_id: 'SUB-LEDGER-GC-004',
+    sub_order_number: 'SO-LEDGER-GC-004',
+    product_name: 'Storage Basket',
+    asin: 'B0LEDGERGC04',
+    buyer_name: '买手-Amy',
+    chat_account: 'wx-amy-01',
+    refund_amount_usd: 10,
+    assigned_gift_card_id: 'GC-MOCK-004',
+    assigned_gift_card_number: 'GC-5566-0044',
+    assigned_gift_card_code: 'ZXCV-BNMM-POIU',
+    gift_card_face_value_usd: 10,
+    handled_at: dayjs().subtract(8, 'hour').toISOString(),
+    finance_notes: '演示：与同买手另一笔一起发礼品卡',
+    refund_status: '已返款',
+    gift_returned: false,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-gift-5',
+    sub_order_id: 'SUB-LEDGER-GC-005',
+    sub_order_number: 'SO-LEDGER-GC-005',
+    product_name: 'Drawer Organizer',
+    asin: 'B0LEDGERGC05',
+    buyer_name: '买手-Amy',
+    chat_account: 'wx-amy-01',
+    refund_amount_usd: 5,
+    assigned_gift_card_id: 'GC-MOCK-005',
+    assigned_gift_card_number: 'GC-5566-0055',
+    assigned_gift_card_code: 'QAZX-WSXC-EDCV',
+    gift_card_face_value_usd: 5,
+    handled_at: dayjs().subtract(8, 'hour').toISOString(),
+    finance_notes: '演示：与同买手另一笔一起发礼品卡',
+    refund_status: '已返款',
+    gift_returned: false,
+    _demo_new: true,
     _isMock: true,
   },
 ]
@@ -492,29 +640,74 @@ const actionTitle = computed(() => {
 
 const gcColumns = [
   { title: '子订单 / 产品', key: 'order_info', width: 200 },
-  { title: '买手', key: 'buyer', width: 130 },
-  { title: '退款金额', key: 'refund_amount', width: 110 },
-  { title: '卡密', key: 'gift_card', width: 220 },
+  { title: '买手 / 聊单号', key: 'buyer', width: 170 },
+  { title: '需返金额', key: 'refund_amount', width: 110 },
+  { title: '实返金额', key: 'actual_amount', width: 210, customCell: actualAmountCell },
+  { title: '卡密', key: 'gift_card', width: 220, customCell: giftCardCell },
   { title: '返款状态', key: 'refund_status', width: 130 },
-  { title: '处理时间', key: 'handled_at', width: 140 },
-  { title: '财务备注', key: 'notes', width: 220 },
+  { title: '处理人 / 时间', key: 'handled_at', width: 160 },
+  { title: '账单备注', key: 'notes', width: 220 },
   { title: '操作', key: 'action', width: 190, fixed: 'right' as const },
 ]
 
 const ppColumns = [
   { title: '子订单 / 产品', key: 'order_info', width: 200 },
-  { title: '买手', key: 'buyer', width: 170 },
-  { title: '退款金额', key: 'refund_amount', width: 110 },
+  { title: '买手 / 聊单号', key: 'buyer', width: 170 },
+  { title: '买手贝宝', key: 'buyer_paypal', width: 220 },
+  { title: '需返金额', key: 'refund_amount', width: 110 },
+  { title: '实返金额', key: 'actual_amount', width: 210, customCell: actualAmountCell },
   { title: '付款 PayPal', key: 'paypal_account', width: 210 },
   { title: '返款状态', key: 'refund_status', width: 130 },
   { title: '水单', key: 'screenshot', width: 160 },
-  { title: '处理时间', key: 'handled_at', width: 140 },
-  { title: '财务备注', key: 'notes', width: 220 },
+  { title: '处理人 / 时间', key: 'handled_at', width: 160 },
+  { title: '账单备注', key: 'notes', width: 220 },
   { title: '操作', key: 'action', width: 240, fixed: 'right' as const },
 ]
 
 function money(value: any) {
   return Number(value || 0).toFixed(2)
+}
+
+function handlerName(record: any) {
+  if (!record) return '—'
+  return record.refund_operator || record.handled_by || record.processed_by || (record.handled_at ? '财务' : '—')
+}
+
+function actualAmountCell(record: any) {
+  return {
+    rowSpan: record?._actual_amount_row_span ?? 1,
+  }
+}
+
+function giftCardCell(record: any) {
+  return {
+    rowSpan: record?._gift_card_row_span ?? 1,
+  }
+}
+
+function csvCell(value: any) {
+  const text = String(value ?? '').replace(/\r?\n/g, ' / ')
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function downloadCsv(filename: string, headers: string[], rows: Array<Array<any>>) {
+  const csv = ['\ufeff' + headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+function readStorageText(key: string) {
+  if (typeof window === 'undefined') return ''
+  return window.localStorage.getItem(key) || ''
+}
+
+function writeStorageText(key: string, value: string) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(key, value)
 }
 
 function refundStatusColor(status: string) {
@@ -564,6 +757,229 @@ function mergeSeedRecords(seed: any[], stored: any[]) {
   seed.forEach(item => map.set(item.id, clone(item)))
   stored.forEach(item => map.set(item.id, { ...(map.get(item.id) || {}), ...item }))
   return Array.from(map.values())
+}
+
+async function enrichBuyerMeta(rows: any[]) {
+  const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  const subOrderIds = Array.from(new Set(rows.map(item => item.sub_order_id).filter((id: string) => uuidLike.test(String(id)))))
+  if (!subOrderIds.length) return rows
+  const { data: subOrders, error: subOrderError } = await supabase
+    .from('sub_orders')
+    .select('id, buyer_id')
+    .in('id', subOrderIds)
+  if (subOrderError) throw subOrderError
+
+  const buyerIds = Array.from(new Set((subOrders || []).map(item => item.buyer_id).filter(Boolean)))
+  const buyerMap = new Map<string, any>()
+  if (buyerIds.length) {
+    const { data: buyers, error: buyerError } = await supabase
+      .from('erp_buyers')
+      .select('id, chat_account, paypal_email, email')
+      .in('id', buyerIds)
+    if (buyerError) throw buyerError
+    ;(buyers || []).forEach(item => buyerMap.set(item.id, item))
+  }
+
+  const subOrderMap = new Map<string, any>()
+  ;(subOrders || []).forEach(item => subOrderMap.set(item.id, item))
+  return rows.map(item => {
+    const buyer = buyerMap.get(subOrderMap.get(item.sub_order_id)?.buyer_id || '')
+    return {
+      ...item,
+      chat_account: item.chat_account || buyer?.chat_account || '',
+      buyer_paypal_email: item.buyer_paypal_email || buyer?.paypal_email || buyer?.email || '',
+    }
+  })
+}
+
+function annotateBatchDisplay(rows: any[], type: 'paypal' | 'giftcard') {
+  const groups = new Map<string, any[]>()
+  rows.forEach(item => {
+    const handledAt = item.handled_at ? dayjs(item.handled_at).format('YYYY-MM-DD HH:mm:ss') : ''
+    if (!handledAt) return
+    const key = type === 'paypal'
+      ? ['paypal', item.buyer_paypal_email || '', item.assigned_paypal_email || '', handledAt].join('|')
+      : ['giftcard', item.buyer_name || '', handledAt].join('|')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  })
+
+  const metaMap = new Map<string, any>()
+  let batchIndex = 1
+  groups.forEach(group => {
+    const total = group.reduce((sum, item) => sum + Number(item.gift_card_face_value_usd || item.refund_amount_usd || 0), 0)
+    const actualAmounts = group.map(item => Number(item.gift_card_face_value_usd || item.refund_amount_usd || 0))
+    const mergedGiftCodes = group.map(item => item.assigned_gift_card_code || '').filter(Boolean).join('\n')
+    const mergedGiftNumbers = group.map(item => item.assigned_gift_card_number || '').filter(Boolean).join('\n')
+    const mergedGiftFaces = group.map(item => item.gift_card_face_value_usd ? `$${money(item.gift_card_face_value_usd)}` : '').filter(Boolean).join(' + ')
+    const isBatch = group.length > 1
+    const label = isBatch ? `${type === 'paypal' ? 'PP' : 'GC'}-${String(batchIndex).padStart(2, '0')}` : ''
+    if (isBatch) batchIndex += 1
+    group.forEach((item, index) => metaMap.set(item.id, {
+      _batch_label: label,
+      _batch_count: group.length,
+      _batch_total_usd: total,
+      _line_amount_usd: Number(item.refund_amount_usd || item.refund_amount || 0),
+      _actual_amount_usd: actualAmounts[index],
+      _actual_amount_row_span: isBatch ? (index === 0 ? group.length : 0) : 1,
+      _batch_member_ids: group.map(member => member.id),
+      _gift_card_row_span: type === 'giftcard' && isBatch ? (index === 0 ? group.length : 0) : 1,
+      _gift_card_code_text: type === 'giftcard' && isBatch ? mergedGiftCodes : (item.assigned_gift_card_code || item.assigned_gift_card_number || ''),
+      _gift_card_number_text: type === 'giftcard' && isBatch ? mergedGiftNumbers : (item.assigned_gift_card_number || ''),
+      _gift_card_face_text: type === 'giftcard' && isBatch ? `批次面额 ${mergedGiftFaces}` : (item.gift_card_face_value_usd ? `面额 $${money(item.gift_card_face_value_usd)}` : ''),
+    }))
+  })
+
+  return rows.map(item => ({
+    ...item,
+    _batch_label: metaMap.get(item.id)?._batch_label || '',
+    _batch_count: metaMap.get(item.id)?._batch_count || 1,
+    _batch_total_usd: metaMap.get(item.id)?._batch_total_usd || Number(item.gift_card_face_value_usd || item.refund_amount_usd || 0),
+    _line_amount_usd: metaMap.get(item.id)?._line_amount_usd || Number(item.refund_amount_usd || item.refund_amount || 0),
+    _actual_amount_usd: metaMap.get(item.id)?._actual_amount_usd || Number(item.gift_card_face_value_usd || item.refund_amount_usd || 0),
+    _actual_amount_row_span: metaMap.get(item.id)?._actual_amount_row_span ?? 1,
+    _batch_member_ids: metaMap.get(item.id)?._batch_member_ids || [item.id],
+    _gift_card_row_span: metaMap.get(item.id)?._gift_card_row_span ?? 1,
+    _gift_card_code_text: metaMap.get(item.id)?._gift_card_code_text || item.assigned_gift_card_code || item.assigned_gift_card_number || '',
+    _gift_card_number_text: metaMap.get(item.id)?._gift_card_number_text || item.assigned_gift_card_number || '',
+    _gift_card_face_text: metaMap.get(item.id)?._gift_card_face_text || (item.gift_card_face_value_usd ? `面额 $${money(item.gift_card_face_value_usd)}` : ''),
+  }))
+}
+
+function annotateNewFlags(rows: any[], type: 'giftcard' | 'paypal') {
+  const now = new Date().toISOString()
+  if (type === 'giftcard') {
+    let baseline = readStorageText(GIFT_NEW_BASELINE_KEY)
+    if (!baseline) {
+      baseline = now
+      writeStorageText(GIFT_NEW_BASELINE_KEY, baseline)
+    }
+    const ackIds = new Set(readStorageArray<string>(GIFT_NEW_ACK_KEY, []))
+    return rows.map(item => ({
+      ...item,
+      _isNew: !ackIds.has(item.id) && (
+        Boolean(item._demo_new) ||
+        (item.handled_at ? dayjs(item.handled_at).isAfter(dayjs(baseline)) : false)
+      ),
+    }))
+  }
+
+  let baseline = readStorageText(PAYPAL_NEW_BASELINE_KEY)
+  const shouldUseDemoFlag = !baseline
+  if (!baseline) baseline = now
+  const nextRows = rows.map(item => ({
+    ...item,
+    _isNew: (shouldUseDemoFlag && Boolean(item._demo_new)) || (item.handled_at ? dayjs(item.handled_at).isAfter(dayjs(baseline)) : false),
+  }))
+  writeStorageText(PAYPAL_NEW_BASELINE_KEY, now)
+  return nextRows
+}
+
+async function copyGiftCodes(record: any) {
+  const text = String(record?._gift_card_code_text || '').trim()
+  if (!text) {
+    message.warning('暂无可复制卡密')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    const ackIds = Array.from(new Set([
+      ...readStorageArray<string>(GIFT_NEW_ACK_KEY, []),
+      ...(record._batch_member_ids || [record.id]),
+    ]))
+    writeStorageArray(GIFT_NEW_ACK_KEY, ackIds)
+    gcRecords.value = gcRecords.value.map(item =>
+      ackIds.includes(item.id) ? { ...item, _isNew: false } : item,
+    )
+    message.success('卡密已复制')
+  } catch {
+    message.error('复制失败')
+  }
+}
+
+async function fetchGiftLedgerExportRecords() {
+  const filteredMock = filterGiftMockRecords().sort((a, b) => dayjs(b.handled_at).valueOf() - dayjs(a.handled_at).valueOf())
+  let query = supabase
+    .from('refund_requests')
+    .select('id, sub_order_id, sub_order_number, product_name, asin, buyer_name, refund_amount_usd, assigned_gift_card_number, assigned_gift_card_code, gift_card_face_value_usd, handled_at, finance_notes')
+    .eq('status', '已处理')
+    .eq('refund_method', '礼品卡')
+    .order('handled_at', { ascending: false })
+  query = buildDateFilter(query, 'handled_at', gcDateRange.value)
+  if (gcSearch.value) {
+    const kw = `%${gcSearch.value}%`
+    query = query.or(`buyer_name.ilike.${kw},sub_order_number.ilike.${kw},product_name.ilike.${kw}`)
+  }
+  const { data, error } = await query
+  if (error) throw error
+  return annotateBatchDisplay(
+    await enrichBuyerMeta([...filteredMock, ...((data || []).map(item => ({ ...item, _isMock: false })))]),
+    'giftcard',
+  )
+}
+
+async function fetchPaypalLedgerExportRecords() {
+  const filteredMock = filterPaypalMockRecords().sort((a, b) => dayjs(b.handled_at).valueOf() - dayjs(a.handled_at).valueOf())
+  let query = supabase
+    .from('refund_requests')
+    .select('id, sub_order_id, sub_order_number, product_name, asin, buyer_name, buyer_paypal_email, refund_amount_usd, assigned_paypal_email, paypal_receipt_screenshot, handled_at, finance_notes')
+    .eq('status', '已处理')
+    .eq('refund_method', 'PayPal')
+    .order('handled_at', { ascending: false })
+  query = buildDateFilter(query, 'handled_at', ppDateRange.value)
+  if (ppAccountFilter.value) query = query.eq('assigned_paypal_email', ppAccountFilter.value)
+  if (ppSearch.value) {
+    const kw = `%${ppSearch.value}%`
+    query = query.or(`buyer_name.ilike.${kw},sub_order_number.ilike.${kw},product_name.ilike.${kw},buyer_paypal_email.ilike.${kw}`)
+  }
+  const { data, error } = await query
+  if (error) throw error
+  return annotateBatchDisplay(
+    await enrichBuyerMeta([...filteredMock, ...((data || []).map(item => ({ ...item, _isMock: false })))]),
+    'paypal',
+  )
+}
+
+async function exportLedger(type: 'paypal' | 'giftcard') {
+  try {
+    const rows = type === 'paypal' ? await fetchPaypalLedgerExportRecords() : await fetchGiftLedgerExportRecords()
+    const headers = type === 'paypal'
+      ? ['子订单号', '产品', '买手', '聊单号', '买手贝宝', '需返金额', '实返金额', '批次', '付款PayPal', '返款状态', '处理时间', '账单备注']
+      : ['子订单号', '产品', '买手', '聊单号', '需返金额', '实返金额', '批次', '卡号', '卡密', '返款状态', '处理时间', '账单备注']
+    const dataRows = rows.map(item => type === 'paypal'
+      ? [
+          item.sub_order_number || '',
+          item.product_name || '',
+          item.buyer_name || '',
+          item.chat_account || '',
+          item.buyer_paypal_email || '',
+          money(item._line_amount_usd),
+          money(item._batch_count > 1 ? item._batch_total_usd : item._actual_amount_usd),
+          item._batch_label || '',
+          item.assigned_paypal_email || '',
+          item.refund_status || '',
+          fmtTime(item.handled_at),
+          item.finance_notes || '',
+        ]
+      : [
+          item.sub_order_number || '',
+          item.product_name || '',
+          item.buyer_name || '',
+          item.chat_account || '',
+          money(item._line_amount_usd),
+          money(item._batch_count > 1 ? item._batch_total_usd : item._actual_amount_usd),
+          item._batch_label || '',
+          item._gift_card_number_text || '',
+          item._gift_card_code_text || '',
+          item.refund_status || '',
+          fmtTime(item.handled_at),
+          item.finance_notes || '',
+        ])
+    downloadCsv(`返款账单_${type === 'paypal' ? 'PayPal' : '礼品卡'}_${dayjs().format('YYYYMMDD_HHmm')}.csv`, headers, dataRows)
+    message.success('导出成功')
+  } catch (e: any) {
+    message.error(`导出失败：${e.message || e}`)
+  }
 }
 
 function loadMockLedgerState() {
@@ -668,7 +1084,7 @@ function filterPaypalMockRecords() {
     if (ppAccountFilter.value && item.assigned_paypal_email !== ppAccountFilter.value) return false
     if (ppSearch.value) {
       const kw = ppSearch.value.trim().toLowerCase()
-      const haystack = [item.buyer_name, item.buyer_paypal_email, item.sub_order_number, item.product_name].join(' ').toLowerCase()
+      const haystack = [item.buyer_name, item.chat_account, item.buyer_paypal_email, item.sub_order_number, item.product_name].join(' ').toLowerCase()
       if (!haystack.includes(kw)) return false
     }
     return true
@@ -683,7 +1099,7 @@ function filterGiftMockRecords() {
     }
     if (gcSearch.value) {
       const kw = gcSearch.value.trim().toLowerCase()
-      const haystack = [item.buyer_name, item.sub_order_number, item.product_name].join(' ').toLowerCase()
+      const haystack = [item.buyer_name, item.chat_account, item.sub_order_number, item.product_name].join(' ').toLowerCase()
       if (!haystack.includes(kw)) return false
     }
     return true
@@ -715,7 +1131,7 @@ async function loadGiftCardRefunds() {
 
     let query = supabase
       .from('refund_requests')
-      .select('id, sub_order_number, product_name, asin, buyer_name, refund_amount_usd, assigned_gift_card_number, assigned_gift_card_code, gift_card_face_value_usd, handled_at, finance_notes', { count: 'exact' })
+      .select('id, sub_order_id, sub_order_number, product_name, asin, buyer_name, refund_amount_usd, assigned_gift_card_number, assigned_gift_card_code, gift_card_face_value_usd, handled_at, finance_notes', { count: 'exact' })
       .eq('status', '已处理')
       .eq('refund_method', '礼品卡')
       .order('handled_at', { ascending: false })
@@ -728,7 +1144,13 @@ async function loadGiftCardRefunds() {
     else query = query.range(0, -1)
     const { data, count, error } = await query
     if (error) throw error
-    gcRecords.value = [...mockPageRows, ...((data || []).map(item => ({ ...item, _isMock: false })))]
+    gcRecords.value = annotateNewFlags(
+      annotateBatchDisplay(
+        await enrichBuyerMeta([...mockPageRows, ...((data || []).map(item => ({ ...item, _isMock: false })) )]),
+        'giftcard',
+      ),
+      'giftcard',
+    )
     gcPagination.value.total = (count || 0) + mockCount
   } finally {
     gcLoading.value = false
@@ -760,7 +1182,7 @@ async function loadPaypalRefunds() {
 
     let query = supabase
       .from('refund_requests')
-      .select('id, sub_order_number, product_name, asin, buyer_name, buyer_paypal_email, refund_amount_usd, assigned_paypal_email, paypal_receipt_screenshot, handled_at, finance_notes', { count: 'exact' })
+      .select('id, sub_order_id, sub_order_number, product_name, asin, buyer_name, buyer_paypal_email, refund_amount_usd, assigned_paypal_email, paypal_receipt_screenshot, handled_at, finance_notes', { count: 'exact' })
       .eq('status', '已处理')
       .eq('refund_method', 'PayPal')
       .order('handled_at', { ascending: false })
@@ -768,13 +1190,19 @@ async function loadPaypalRefunds() {
     if (ppAccountFilter.value) query = query.eq('assigned_paypal_email', ppAccountFilter.value)
     if (ppSearch.value) {
       const kw = `%${ppSearch.value}%`
-      query = query.or(`buyer_name.ilike.${kw},sub_order_number.ilike.${kw},product_name.ilike.${kw}`)
+      query = query.or(`buyer_name.ilike.${kw},sub_order_number.ilike.${kw},product_name.ilike.${kw},buyer_paypal_email.ilike.${kw}`)
     }
     if (realPageSize > 0) query = query.range(realStart, realStart + realPageSize - 1)
     else query = query.range(0, -1)
     const { data, count, error } = await query
     if (error) throw error
-    ppRecords.value = [...mockPageRows, ...((data || []).map(item => ({ ...item, _isMock: false })))]
+    ppRecords.value = annotateNewFlags(
+      annotateBatchDisplay(
+        await enrichBuyerMeta([...mockPageRows, ...((data || []).map(item => ({ ...item, _isMock: false })) )]),
+        'paypal',
+      ),
+      'paypal',
+    )
     ppPagination.value.total = (count || 0) + mockCount
   } finally {
     ppLoading.value = false
@@ -885,7 +1313,7 @@ async function submitLedgerAction() {
         refund_amount_usd: Number(actionRecord.value.refund_amount_usd || 0),
         product_price: Number(actionRecord.value.refund_amount_usd || 0),
         status: '待处理',
-        notes: `退款账单重新申请：买手 PayPal 已修改。${actionForm.value.notes || ''}`.trim(),
+        notes: `返款账单重新申请：买手 PayPal 已修改。${actionForm.value.notes || ''}`.trim(),
         finance_notes: '',
         paypal_receipt_screenshot: '',
         request_type: 'correction',
@@ -966,7 +1394,7 @@ async function submitLedgerAction() {
         refund_amount_usd: Number(actionForm.value.correctedAmountUsd || 0),
         product_price: Number(actionForm.value.correctedAmountUsd || 0),
         status: '待处理',
-        notes: `退款账单重新提交：原礼品卡 ${returnedCardNumber} 已回流卡库。${actionForm.value.reason || ''}`.trim(),
+        notes: `返款账单重新提交：原礼品卡 ${returnedCardNumber} 已回流卡库。${actionForm.value.reason || ''}`.trim(),
         finance_notes: '',
         request_type: 'correction',
         created_at: now,
@@ -1057,20 +1485,88 @@ onMounted(async () => {
 }
 
 .cell-info { display: flex; flex-direction: column; gap: 2px; }
+.cell-sub-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cell-subno { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 700; color: #1a1a2e; }
 .cell-product { font-size: 12px; color: #374151; }
 .cell-meta { font-size: 11px; color: #9ca3af; }
 .cell-email { font-size: 11px; color: #6b7280; }
+.new-tag { margin: 0; line-height: 16px; }
+.batch-chip {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.18);
+}
 
+.amount-cell { display: flex; flex-direction: column; gap: 2px; }
 .amount-usd { font-weight: 700; color: #dc2626; font-size: 14px; }
+.amount-sub { font-size: 11px; color: #6b7280; }
 .text-gray { color: #9ca3af; font-size: 12px; }
+.time-cell { display: flex; flex-direction: column; gap: 2px; }
+.time-operator { font-size: 11px; color: #6b7280; }
 .time-text { font-size: 12px; color: #374151; }
 .notes-text { font-size: 12px; color: #6b7280; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
+.batch-card {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+}
+.batch-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.batch-card-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+}
+.batch-card-count {
+  font-size: 11px;
+  color: #6b7280;
+}
+.batch-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #1a1a2e;
+}
+.batch-card-row + .batch-card-row {
+  margin-top: 4px;
+}
+.batch-card-row strong {
+  font-size: 13px;
+  color: #1a1a2e;
+}
+.batch-card-row.is-total {
+  padding-top: 4px;
+  border-top: 1px dashed #bfdbfe;
+}
+.batch-card-row.is-total strong {
+  color: #2563eb;
+}
+
 .gc-cell { display: flex; flex-direction: column; gap: 2px; }
-.gc-number { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; font-weight: 600; }
-.gc-code-text { font-family: 'Courier New', monospace; font-size: 12px; color: #059669; font-weight: 700; }
-.gc-face { font-size: 11px; color: #9ca3af; }
+.gc-number { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; font-weight: 600; white-space: pre-line; }
+.gc-code-text { font-family: 'Courier New', monospace; font-size: 12px; color: #059669; font-weight: 700; white-space: pre-line; }
+.gc-face { font-size: 11px; color: #9ca3af; white-space: pre-line; }
+.gift-copy-link { padding: 0; align-self: flex-start; }
 
 .pp-account { font-size: 12px; color: #374151; }
 .screenshot-link { font-size: 12px; color: #2563eb; }
