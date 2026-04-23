@@ -55,26 +55,11 @@
       >
         <template #bodyCell="{ column, record }">
 
-          <template v-if="column.key === 'product'">
-            <div class="product-cell">
-              <img v-if="record.product_image" :src="record.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="(e:any) => e.target.style.display='none'" />
-              <div class="product-info">
-                <div class="product-name" :title="record.product_name">{{ record.product_name || '-' }}</div>
-                <div class="product-meta">
-                  <a :href="'https://www.amazon.com/dp/' + record.asin" target="_blank" class="asin-link">{{ record.asin }}</a>
-                  <span class="sep-dot">·</span>
-                  <span class="country-text">{{ record.country }}</span>
-                </div>
+          <template v-if="column.key === 'sub_no'">
+            <div class="ids-cell">
+              <div class="id-row">
+                <span class="id-val mono">{{ record.sub_order_number }}</span>
               </div>
-            </div>
-          </template>
-
-          <template v-else-if="column.key === 'type'">
-            <div class="type-cell">
-              <a-tag v-if="getDisplayReviewType(record)" :color="getTypeColor(getDisplayReviewType(record))" class="type-tag">
-                {{ getDisplayReviewType(record) }}
-              </a-tag>
-              <span v-else class="empty-text">-</span>
             </div>
           </template>
 
@@ -90,22 +75,53 @@
                 <span v-if="record.buyer_name" class="buyer-name">{{ record.buyer_name }}</span>
                 <span v-else class="empty-text">未分配</span>
               </div>
-              <div v-if="record.buyer_chat_id" class="assign-row">
+              <div class="assign-row">
                 <span class="assign-label">聊单号</span>
-                <span class="chat-id">{{ record.buyer_chat_id }}</span>
+                <span v-if="record.buyer_chat_id" class="chat-id">{{ record.buyer_chat_id }}</span>
+                <span v-else class="empty-text">-</span>
               </div>
             </div>
           </template>
 
-          <template v-else-if="column.key === 'order_ids'">
+          <template v-else-if="column.key === 'country'">
+            <a-tag v-if="record.country" color="default" class="status-tag">{{ record.country }}</a-tag>
+            <span v-else class="empty-text">-</span>
+          </template>
+
+          <template v-else-if="column.key === 'product'">
+            <div class="product-cell">
+              <img v-if="record.product_image" :src="record.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="(e:any) => e.target.style.display='none'" />
+              <div class="product-info">
+                <div class="product-name" :title="record.product_name">{{ record.product_name || '-' }}</div>
+                <div class="product-meta">
+                  <a :href="'https://www.amazon.com/dp/' + record.asin" target="_blank" class="asin-link">{{ record.asin }}</a>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'type_level'">
+            <div class="type-level-cell">
+              <a-tag v-if="getDisplayReviewType(record)" :color="getTypeColor(getDisplayReviewType(record))" class="type-tag">
+                {{ getDisplayReviewType(record) }}
+              </a-tag>
+              <a-tag v-if="record.review_level" color="gold" class="type-tag">
+                {{ record.review_level }}
+              </a-tag>
+              <span v-if="!getDisplayReviewType(record) && !record.review_level" class="empty-text">-</span>
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'order_upload'">
             <div class="ids-cell">
               <div class="id-row">
-                <span class="id-label">子单</span>
-                <span class="id-val mono">{{ record.sub_order_number }}</span>
+                <span class="id-label">订单号</span>
+                <span v-if="record.amazon_order_id" class="id-val mono small">{{ record.amazon_order_id }}</span>
+                <span v-else class="empty-text">-</span>
               </div>
-              <div v-if="record.amazon_order_id" class="id-row">
-                <span class="id-label">亚马逊</span>
-                <span class="id-val mono small">{{ record.amazon_order_id }}</span>
+              <div class="id-row">
+                <span class="id-label">上传</span>
+                <span class="date-text">{{ fmtDate(record.amazon_order_placed_at || '') }}</span>
               </div>
             </div>
           </template>
@@ -116,37 +132,16 @@
                 <span class="price-label">售价</span>
                 <span class="price-val">${{ fmt(record.product_price) }}</span>
               </div>
-              <div v-if="record.actual_paid" class="price-row">
+              <div class="price-row">
                 <span class="price-label">实付</span>
-                <span class="price-val actual">${{ fmt(record.actual_paid) }}</span>
+                <span v-if="record.actual_paid != null" class="price-val actual">${{ fmt(record.actual_paid) }}</span>
+                <span v-else class="empty-text">-</span>
               </div>
-              <div v-if="record.refund_amount > 0" class="price-row">
+              <div class="price-row">
                 <span class="price-label">返款</span>
-                <span class="price-val refund">${{ fmt(record.refund_amount) }}</span>
-                <a-tag v-if="record.refund_method" :color="getRefundColor(record.refund_method)" class="method-tag">{{ record.refund_method }}</a-tag>
+                <span v-if="Number(record.refund_amount) > 0" class="price-val refund">${{ fmt(record.refund_amount) }}</span>
+                <span v-else class="empty-text">-</span>
               </div>
-            </div>
-          </template>
-
-          <template v-else-if="column.key === 'media'">
-            <div class="media-cell">
-              <template v-if="record.fb_link || record.fb_image_url">
-                <div class="media-row">
-                  <span class="media-label">FB</span>
-                  <a v-if="record.fb_link" :href="record.fb_link" target="_blank" class="media-link">链接</a>
-                  <span v-if="record.fb_link && record.fb_image_url" class="sep-dot">·</span>
-                  <span v-if="record.fb_image_url" class="media-img-btn" @click="openImg(record.fb_image_url)">图片</span>
-                </div>
-              </template>
-              <template v-if="record.review_link || record.review_screenshot_url">
-                <div class="media-row">
-                  <span class="media-label">评论</span>
-                  <a v-if="record.review_link" :href="record.review_link" target="_blank" class="media-link">链接</a>
-                  <span v-if="record.review_link && record.review_screenshot_url" class="sep-dot">·</span>
-                  <span v-if="record.review_screenshot_url" class="media-img-btn" @click="openImg(record.review_screenshot_url)">图片</span>
-                </div>
-              </template>
-              <span v-if="!record.fb_link && !record.fb_image_url && !record.review_link && !record.review_screenshot_url" class="empty-text">-</span>
             </div>
           </template>
 
@@ -156,11 +151,14 @@
             </a-tag>
           </template>
 
-          <template v-else-if="column.key === 'refund_status'">
-            <div class="refund-status-wrap">
+          <template v-else-if="column.key === 'refund_info'">
+            <div class="refund-info-wrap">
               <a-tag :color="getRefundStatusColor(getRefundStatus(record))" class="status-tag">
                 {{ getRefundStatus(record) }}
               </a-tag>
+              <span class="date-text">{{ fmtDate(record.refund_date || '') }}</span>
+              <span v-if="record.refund_method" class="refund-method-inline">{{ record.refund_method }}</span>
+              <span v-else class="empty-text">-</span>
               <span v-if="showPrincipalLossHint(record)" class="principal-loss-hint">本金损失</span>
             </div>
           </template>
@@ -172,18 +170,14 @@
           </template>
 
           <template v-else-if="column.key === 'notes'">
-            <div v-if="record.notes" class="notes-inline" :title="record.notes">{{ record.notes }}</div>
+            <div v-if="record.notes || record.task_notes" class="notes-inline" :title="record.notes || record.task_notes">{{ record.notes || record.task_notes }}</div>
             <span v-else class="empty-text">-</span>
-          </template>
-
-          <template v-else-if="column.key === 'created_at'">
-            <span class="date-text">{{ fmtDate(record.created_at) }}</span>
           </template>
 
           <template v-else-if="column.key === 'action'">
             <a-space size="small">
-              <a-button type="link" size="small" class="edit-btn" @click="openEdit(record)">编辑</a-button>
               <a-button type="link" size="small" class="edit-btn" @click="openOpsDetail(record)">详情</a-button>
+              <a-button type="link" size="small" class="edit-btn" @click="openEdit(record)">编辑</a-button>
             </a-space>
           </template>
 
@@ -582,10 +576,12 @@ interface SubOrder {
   buyer_id: string | null
   buyer_chat_id: string
   amazon_order_id: string
+  amazon_order_placed_at?: string
   product_price: number
   actual_paid: number
   refund_amount: number
   refund_method: string
+  refund_date?: string
   refund_sequence?: string
   buyer_paypal_email?: string
   paypal_fee_usd?: number
@@ -606,6 +602,65 @@ const PROBLEM_STATUSES = ['已取消', '已退款', '无此订单', '本金多�
 const REVIEW_TYPE_OPTIONS = ['文字', '图片', '视频', '免评', 'Feedback']
 const REFUND_STATUS_OPTIONS = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '无需返款', '失误多返']
 const REFUND_METHODS = ['PayPal', '礼品卡', '银行转账', '微信', '支付宝', 'Zelle']
+const LIST_PREVIEW_MOCKS = [
+  {
+    sales_person: 'Luna',
+    buyer_name: 'Emma',
+    buyer_chat_id: 'CHAT-90217',
+    country: '美国',
+    product_name: 'Portable Blender Personal Size',
+    asin: 'B0C8PX21LM',
+    review_type: '图片',
+    review_level: '高等',
+    amazon_order_id: '113-9283746-1827364',
+    amazon_order_placed_at: dayjs().subtract(2, 'day').toISOString(),
+    product_price: 39.99,
+    actual_paid: 41.26,
+    refund_amount: 43.5,
+    refund_method: 'PayPal',
+    refund_date: dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    refund_status: '已返款',
+    notes: '买手反馈包装完好，已完成返款',
+  },
+  {
+    sales_person: 'Ivy',
+    buyer_name: 'Sophia',
+    buyer_chat_id: 'TG-11802',
+    country: '英国',
+    product_name: 'Memory Foam Seat Cushion',
+    asin: 'B09W8Q7ZRM',
+    review_type: '文字',
+    review_level: '普通',
+    amazon_order_id: '204-5173628-4419023',
+    amazon_order_placed_at: dayjs().subtract(4, 'day').toISOString(),
+    product_price: 26.8,
+    actual_paid: 27.35,
+    refund_amount: 0,
+    refund_method: '礼品卡',
+    refund_date: '',
+    refund_status: '返款中',
+    notes: '订单已上传，等待财务处理礼品卡',
+  },
+  {
+    sales_person: 'Aiden',
+    buyer_name: 'Mia',
+    buyer_chat_id: 'WA-77129',
+    country: '德国',
+    product_name: 'LED Desk Lamp with USB Port',
+    asin: 'B0BVT92KQP',
+    review_type: '视频',
+    review_level: '极高等',
+    amazon_order_id: '305-6629134-5102287',
+    amazon_order_placed_at: dayjs().subtract(1, 'day').toISOString(),
+    product_price: 54.2,
+    actual_paid: 55.89,
+    refund_amount: 58.0,
+    refund_method: '银行转账',
+    refund_date: dayjs().format('YYYY-MM-DD'),
+    refund_status: '已返款',
+    notes: '视频素材已确认，可作为高等级展示样例',
+  },
+]
 const { currentUser, loadFromStorage } = useCurrentUser()
 
 const loading = ref(false)
@@ -646,18 +701,18 @@ const pagination = ref({
 })
 
 const columns = [
-  { title: '子单号 / 亚马逊单号', key: 'order_ids', width: 200 },
-  { title: '产品', key: 'product', width: 260 },
-  { title: '类型', key: 'type', width: 90, align: 'center' as const },
-  { title: '业务员 / 买手 / 聊单号', key: 'assignment', width: 170 },
-  { title: '售价 / 实付 / 返款', key: 'price_refund', width: 170 },
-  { title: 'FB / 评论', key: 'media', width: 120 },
-  { title: '进度', key: 'progress', width: 110 },
-  { title: '返款状态', key: 'refund_status', width: 110 },
+  { title: '子订单ID', key: 'sub_no', width: 150 },
+  { title: '业务员 / 买手 / 聊单号', key: 'assignment', width: 180 },
+  { title: '国家', key: 'country', width: 80, align: 'center' as const },
+  { title: '产品名称 / ASIN', key: 'product', width: 240 },
+  { title: '类型 / 等级', key: 'type_level', width: 120, align: 'center' as const },
+  { title: '订单号 / 上传时间', key: 'order_upload', width: 170 },
+  { title: '售价 / 实付 / 实返', key: 'price_refund', width: 170 },
+  { title: '返款状态 / 时间 / 方式', key: 'refund_info', width: 160 },
+  { title: '订单进度', key: 'progress', width: 110 },
   { title: '订单状态', key: 'order_status', width: 110 },
-  { title: '备注', key: 'notes', width: 150 },
-  { title: '创建时间', key: 'created_at', width: 90, sorter: (a: SubOrder, b: SubOrder) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime() },
-  { title: '', key: 'action', width: 110, fixed: 'right' as const, align: 'center' as const },
+  { title: '订单备注', key: 'notes', width: 160 },
+  { title: '操作', key: 'action', width: 110, fixed: 'right' as const, align: 'center' as const },
 ]
 
 function normalizeReviewType(value: string) {
@@ -752,6 +807,30 @@ const problemCount = computed(() => allData.value.filter(r => ['无法完成', '
 
 function fmt(n: number | string) { return (Number(n) || 0).toFixed(2) }
 function fmtDate(d: string) { return d ? dayjs(d).format('MM-DD HH:mm') : '-' }
+
+function applyListPreviewMock(row: any, index: number) {
+  const mock = LIST_PREVIEW_MOCKS[index % LIST_PREVIEW_MOCKS.length]
+  return {
+    ...row,
+    sales_person: row.sales_person || mock.sales_person,
+    buyer_name: row.buyer_name || mock.buyer_name,
+    buyer_chat_id: row.buyer_chat_id || mock.buyer_chat_id,
+    country: row.country || mock.country,
+    product_name: row.product_name || mock.product_name,
+    asin: row.asin || mock.asin,
+    review_type: row.review_type || mock.review_type,
+    review_level: row.review_level || mock.review_level,
+    amazon_order_id: row.amazon_order_id || mock.amazon_order_id,
+    amazon_order_placed_at: row.amazon_order_placed_at || mock.amazon_order_placed_at,
+    product_price: Number(row.product_price || 0) > 0 ? row.product_price : mock.product_price,
+    actual_paid: Number(row.actual_paid || 0) > 0 ? row.actual_paid : mock.actual_paid,
+    refund_amount: Number(row.refund_amount || 0) > 0 ? row.refund_amount : mock.refund_amount,
+    refund_method: row.refund_method || mock.refund_method,
+    refund_date: row.refund_date || mock.refund_date,
+    refund_status: row.refund_status || mock.refund_status,
+    notes: row.notes || mock.notes,
+  }
+}
 
 function getProgressColor(s: string) {
   const m: Record<string, string> = {
@@ -1472,8 +1551,8 @@ async function loadData() {
     .select(`
       id, order_id, sub_order_number, asin, product_name, product_image, store_name, brand_name, category, variant_info, keyword, customer_name, task_notes, country,
       order_type, review_level, review_type, sales_person, staff_name,
-      buyer_name, buyer_id, amazon_order_id, buyer_paypal_email, refund_sequence, paypal_fee_usd, buyer_assigned_at, review_submitted_at,
-      product_price, actual_paid, refund_amount, refund_method,
+      buyer_name, buyer_id, amazon_order_id, amazon_order_placed_at, buyer_paypal_email, refund_sequence, paypal_fee_usd, buyer_assigned_at, review_submitted_at,
+      product_price, actual_paid, refund_amount, refund_method, refund_date,
       fb_link, fb_image_url, review_link, review_screenshot_url,
       status, refund_status, notes, created_at
     `)
@@ -1489,13 +1568,13 @@ async function loadData() {
   allData.value = rows.map((r, index) => {
     const shouldInject = principalLossInjected < 3 && index < 12 && (Number(r.refund_amount) > 0 || normalizeRefundStatus(r.refund_status) === '已返款')
     if (shouldInject) principalLossInjected += 1
-    return {
+    return applyListPreviewMock({
       ...r,
       review_type: normalizeReviewType(r.review_type || r.order_type),
       refund_status: normalizeRefundStatus(r.refund_status),
       buyer_chat_id: (r.buyer_id && chatMap[r.buyer_id]) ? chatMap[r.buyer_id] : '',
       _mock_principal_loss: shouldInject,
-    }
+    }, index)
   })
   loading.value = false
 }
@@ -1678,6 +1757,14 @@ onMounted(async () => {
   min-height: 24px;
 }
 
+.type-level-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+}
+
 /* 分配列 */
 .assignment-cell {
   display: flex;
@@ -1818,16 +1905,20 @@ onMounted(async () => {
 }
 
 /* 进度/返款状态列 */
-.refund-status-wrap {
+.refund-info-wrap {
   display: inline-flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 4px;
-  min-width: 72px;
+  min-width: 92px;
 }
 .status-tag {
   font-size: 11px;
   display: inline-block;
+}
+.refund-method-inline {
+  font-size: 11px;
+  color: #64748b;
 }
 .principal-loss-hint {
   font-size: 10px;
@@ -1842,7 +1933,7 @@ onMounted(async () => {
 .notes-inline {
   font-size: 11px;
   color: #64748b;
-  max-width: 130px;
+  max-width: 140px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

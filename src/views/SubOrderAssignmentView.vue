@@ -138,6 +138,7 @@
 
             <div class="task-info">
               <div class="task-top-row">
+                <span class="detail-item-text">主订单ID：</span>
                 <a class="order-num-link">{{ group.order_number }}</a>
                 <a-tag :color="getOrderStatusColor(group.order_status)" class="status-tag">{{ group.order_status }}</a-tag>
                 <a-tag color="default" class="info-tag">{{ group.country }}</a-tag>
@@ -147,19 +148,22 @@
                 <a-tag v-else-if="group.order_type === '视频评'" color="geekblue" class="info-tag">视频评</a-tag>
                 <a-tag v-else-if="group.order_type" color="default" class="info-tag">{{ group.order_type }}</a-tag>
                 <a-tag v-if="group.review_level" color="default" class="info-tag">{{ group.review_level }}</a-tag>
-                <a-tag v-if="group.review_type" color="default" class="info-tag">{{ group.review_type }}</a-tag>
               </div>
               <div class="task-detail-row">
-                <span class="detail-item-text">产品：{{ group.product_name || group.asin }}</span>
+                <span class="detail-item-text">产品名称：{{ group.product_name || '—' }}</span>
                 <span class="detail-sep">ASIN：<span class="mono-sm">{{ group.asin }}</span></span>
-                <span class="detail-sep">店铺：{{ group.store_name }}</span>
-                <span class="detail-sep">品牌：{{ group.brand_name || '—' }}</span>
+                <span class="detail-sep">售价：<span class="price-text">${{ Number(group.product_price || 0).toFixed(2) }}</span></span>
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">类目：{{ group.category || '—' }}</span>
-                <span class="detail-sep">单价：<span class="price-text">${{ Number(group.product_price || 0).toFixed(2) }}</span></span>
                 <span class="detail-sep">客户：{{ group.customer_name || '—' }}</span>
-                <span class="detail-sep">商务：{{ group.sales_person || '—' }}</span>
+              </div>
+              <div class="task-detail-row">
+                <span class="detail-item-text">任务备注：</span>
+                <span class="task-note-text" :title="getGroupRemark(group)">{{ getGroupRemark(group) }}</span>
+              </div>
+              <div class="task-detail-row">
+                <span class="detail-item-text">创建时间：{{ fmtTime(group.created_at) }}</span>
               </div>
             </div>
 
@@ -208,18 +212,15 @@
               :pagination="false"
               row-key="id"
               size="small"
-              :scroll="{ x: 1400 }"
+              :scroll="{ x: 1080 }"
               style="margin-top:10px"
             >
               <template #bodyCell="{ column, record: sub }">
                 <template v-if="column.key === 'sub_no'">
                   <span class="sub-no">{{ sub.sub_order_number }}</span>
                 </template>
-                <template v-if="column.key === 'sub_product'">
-                  <div class="sub-product-cell">
-                    <div v-if="sub.product_name" class="sub-product-name">{{ sub.product_name }}</div>
-                    <div class="sub-asin mono-sm">{{ sub.asin || '—' }}</div>
-                  </div>
+                <template v-if="column.key === 'sub_asin'">
+                  <span class="mono-sm">{{ sub.asin || '—' }}</span>
                 </template>
                 <template v-if="column.key === 'sub_keyword'">
                   <div class="kw-cell" @click="openKwEdit(sub)">
@@ -247,24 +248,16 @@
                   </span>
                   <span v-else class="text-gray">—</span>
                 </template>
-                <template v-if="column.key === 'sub_review_type'">
-                  <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
-                  <span v-else class="text-gray">—</span>
-                </template>
                 <template v-if="column.key === 'sub_review_level'">
                   <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
                   <span v-else class="text-gray">—</span>
                 </template>
+                <template v-if="column.key === 'sub_review_type'">
+                  <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+                  <span v-else class="text-gray">—</span>
+                </template>
                 <template v-if="column.key === 'sub_price'">
                   <span class="price-main">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
-                </template>
-                <template v-if="column.key === 'sub_staff'">
-                  <span v-if="sub.staff_name" class="staff-assigned">{{ sub.staff_name }}</span>
-                  <span v-else class="text-gray">未分配</span>
-                </template>
-                <template v-if="column.key === 'sub_notes'">
-                  <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
-                  <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_action'">
                   <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
@@ -357,149 +350,45 @@
           :pagination="false"
           row-key="id"
           size="small"
-          :scroll="{ x: 1600 }"
+          :scroll="{ x: 1080 }"
         >
           <template #bodyCell="{ column, record: sub }">
-            <template v-if="column.key === 'flat_order'">
-              <span class="flat-order-num">{{ sub._order_number }}</span>
-            </template>
             <template v-if="column.key === 'flat_sub_no'">
               <span class="sub-no">{{ sub.sub_order_number }}</span>
             </template>
-            <template v-if="column.key === 'flat_product'">
-              <div class="sub-product-cell">
-                <div v-if="sub.product_name" class="sub-product-name">{{ sub.product_name }}</div>
-                <div class="sub-asin mono-sm">{{ sub.asin || '—' }}</div>
-              </div>
+            <template v-if="column.key === 'flat_asin'">
+              <span class="mono-sm">{{ sub.asin || '—' }}</span>
             </template>
-
-            <!-- 关键词：行内可编辑 -->
             <template v-if="column.key === 'flat_keyword'">
-              <div v-if="isEditing(sub.id, 'keyword')" class="ice-wrap" @click.stop>
-                <a-input
-                  :ref="(el: any) => setEditRef(el)"
-                  v-model:value="editingValue"
-                  size="small"
-                  style="width:100%"
-                  @blur="saveInlineEdit(sub, 'keyword')"
-                  @keyup.enter="saveInlineEdit(sub, 'keyword')"
-                  @keyup.esc="cancelEdit"
-                />
-              </div>
-              <div v-else class="ice-cell" @click="startEdit(sub.id, 'keyword', sub.keyword || '')">
-                <template v-if="sub.keyword_type === 'link'">
-                  <a-tag color="cyan" size="small"><LinkOutlined /> 链接</a-tag>
-                </template>
-                <template v-else-if="sub.keyword">
-                  <span class="keyword-tag">{{ sub.keyword }}</span>
-                </template>
-                <template v-else>
-                  <span class="ice-placeholder">点击编辑</span>
-                </template>
-                <EditOutlined class="ice-icon" />
-              </div>
+              <template v-if="sub.keyword_type === 'link'">
+                <a-tag color="cyan" size="small"><LinkOutlined /> 链接</a-tag>
+              </template>
+              <template v-else-if="sub.keyword">
+                <span class="keyword-tag">{{ sub.keyword }}</span>
+              </template>
+              <template v-else>
+                <span class="text-gray">—</span>
+              </template>
             </template>
-
-            <!-- 测评类型：行内 select -->
             <template v-if="column.key === 'flat_type'">
-              <div v-if="isEditing(sub.id, 'order_type')" class="ice-wrap" @click.stop>
-                <a-select
-                  :ref="(el: any) => setEditRef(el)"
-                  v-model:value="editingValue"
-                  size="small"
-                  style="width:90px"
-                  @change="saveInlineEdit(sub, 'order_type')"
-                  @blur="cancelEdit"
-                >
-                  <a-select-option v-for="t in orderTypeOptions" :key="t" :value="t">{{ t }}</a-select-option>
-                </a-select>
-              </div>
-              <div v-else class="ice-cell" @click="startEdit(sub.id, 'order_type', sub.order_type || '')">
-                <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
-                <span v-else class="ice-placeholder">类型</span>
-                <EditOutlined class="ice-icon" />
-              </div>
-              <span v-if="sub.country" class="flat-country">{{ sub.country }}</span>
+              <a-tag v-if="sub.order_type" :color="getOrderTypeTagColor(sub.order_type)" size="small">{{ sub.order_type }}</a-tag>
+              <span v-else class="text-gray">—</span>
             </template>
-
-            <!-- 测评等级：行内 select -->
             <template v-if="column.key === 'flat_level'">
-              <div v-if="isEditing(sub.id, 'review_level')" class="ice-wrap" @click.stop>
-                <a-select
-                  :ref="(el: any) => setEditRef(el)"
-                  v-model:value="editingValue"
-                  size="small"
-                  style="width:80px"
-                  @change="saveInlineEdit(sub, 'review_level')"
-                  @blur="cancelEdit"
-                >
-                  <a-select-option value="普通">普通</a-select-option>
-                  <a-select-option value="高等">高等</a-select-option>
-                  <a-select-option value="极高等">极高等</a-select-option>
-                </a-select>
-              </div>
-              <div v-else class="ice-cell" @click="startEdit(sub.id, 'review_level', sub.review_level || '')">
-                <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
-                <span v-else class="ice-placeholder">等级</span>
-                <EditOutlined class="ice-icon" />
-              </div>
+              <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
+              <span v-else class="text-gray">—</span>
             </template>
-
-            <!-- 排期日期：行内 date input -->
             <template v-if="column.key === 'flat_scheduled'">
-              <div v-if="isEditing(sub.id, 'scheduled_date')" class="ice-wrap" @click.stop>
-                <input
-                  :ref="(el: any) => setEditRef(el)"
-                  type="date"
-                  v-model="editingValue"
-                  class="ice-date-input"
-                  @blur="saveInlineEdit(sub, 'scheduled_date')"
-                  @keyup.enter="saveInlineEdit(sub, 'scheduled_date')"
-                  @keyup.esc="cancelEdit"
-                />
-              </div>
-              <div v-else class="ice-cell" @click="startEdit(sub.id, 'scheduled_date', sub.scheduled_date || '')">
-                <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
-                  {{ sub.scheduled_date }}
-                </span>
-                <span v-else class="ice-placeholder">设置排期</span>
-                <EditOutlined class="ice-icon" />
-              </div>
+              <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'date-overdue' : 'date-normal'">
+                {{ sub.scheduled_date }}
+              </span>
+              <span v-else class="text-gray">—</span>
             </template>
-
             <template v-if="column.key === 'flat_price'">
               <span class="price-main">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
             </template>
-            <template v-if="column.key === 'flat_staff'">
-              <span v-if="sub.staff_name" class="staff-assigned">{{ sub.staff_name }}</span>
-              <span v-else class="text-gray">未分配</span>
-            </template>
-
-            <!-- 备注：行内编辑 -->
-            <template v-if="column.key === 'flat_notes'">
-              <div v-if="isEditing(sub.id, 'task_notes')" class="ice-wrap" @click.stop>
-                <a-input
-                  :ref="(el: any) => setEditRef(el)"
-                  v-model:value="editingValue"
-                  size="small"
-                  style="width:100%"
-                  @blur="saveInlineEdit(sub, 'task_notes')"
-                  @keyup.enter="saveInlineEdit(sub, 'task_notes')"
-                  @keyup.esc="cancelEdit"
-                />
-              </div>
-              <div v-else class="ice-cell" @click="startEdit(sub.id, 'task_notes', sub.task_notes || '')">
-                <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
-                <span v-else class="ice-placeholder">点击添加备注</span>
-                <EditOutlined class="ice-icon" />
-              </div>
-            </template>
-
             <template v-if="column.key === 'flat_action'">
-              <div class="flat-action-btns">
-                <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
-                <a-button type="link" size="small" style="color:#059669" @click="openRowEdit(sub)">编辑</a-button>
-              </div>
+              <a-button type="link" size="small" @click="openSingleAssign(sub)">分配</a-button>
             </template>
           </template>
         </a-table>
@@ -1377,30 +1266,25 @@ const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留
 const countries = ['美国', '德国', '英国', '加拿大']
 
 const subColumns = [
-  { title: '子订单号', key: 'sub_no', width: 165 },
-  { title: '产品名/ASIN', key: 'sub_product', width: 180 },
+  { title: '子订单ID', key: 'sub_no', width: 165 },
+  { title: 'ASIN', key: 'sub_asin', width: 145 },
+  { title: '排期日期', key: 'sub_scheduled', width: 105 },
+  { title: '等级', key: 'sub_review_level', width: 80 },
+  { title: '类型', key: 'sub_review_type', width: 90 },
+  { title: '售价', key: 'sub_price', width: 90 },
   { title: '关键词', key: 'sub_keyword', width: 130 },
-  { title: '变体', key: 'sub_variant', width: 80 },
-  { title: '排期日期', key: 'sub_scheduled', width: 95 },
-  { title: '测评类型', key: 'sub_review_type', width: 80 },
-  { title: '测评等级', key: 'sub_review_level', width: 80 },
-  { title: '产品售价', key: 'sub_price', width: 90 },
-  { title: '商务', key: 'sub_staff', width: 90 },
-  { title: '备注', key: 'sub_notes', width: 130 },
-  { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
+  { title: '分配', key: 'sub_action', width: 90, fixed: 'right' as const },
 ]
 
 const flatColumns = [
-  { title: '主订单', key: 'flat_order', width: 150 },
-  { title: '子订单号', key: 'flat_sub_no', width: 165 },
-  { title: '产品名/ASIN', key: 'flat_product', width: 170 },
-  { title: '关键词 (点击编辑)', key: 'flat_keyword', width: 140 },
-  { title: '类型/国家 (点击编辑)', key: 'flat_type', width: 130 },
-  { title: '等级 (点击编辑)', key: 'flat_level', width: 100 },
-  { title: '排期 (点击编辑)', key: 'flat_scheduled', width: 110 },
-  { title: '商务', key: 'flat_staff', width: 80 },
-  { title: '备注 (点击编辑)', key: 'flat_notes', width: 130 },
-  { title: '操作', key: 'flat_action', width: 100, fixed: 'right' as const },
+  { title: '子订单ID', key: 'flat_sub_no', width: 165 },
+  { title: 'ASIN', key: 'flat_asin', width: 145 },
+  { title: '排期日期', key: 'flat_scheduled', width: 105 },
+  { title: '等级', key: 'flat_level', width: 80 },
+  { title: '类型', key: 'flat_type', width: 90 },
+  { title: '售价', key: 'flat_price', width: 90 },
+  { title: '关键词', key: 'flat_keyword', width: 130 },
+  { title: '分配', key: 'flat_action', width: 90, fixed: 'right' as const },
 ]
 
 const groupedOrders = computed(() => {
@@ -1412,6 +1296,7 @@ const groupedOrders = computed(() => {
         order_id: oid,
         order_number: sub._order_number || '',
         order_status: sub._order_status || '',
+        created_at: sub._order_created_at || sub.created_at || null,
         asin: sub.asin,
         product_name: sub.product_name,
         store_name: sub.store_name,
@@ -1422,6 +1307,8 @@ const groupedOrders = computed(() => {
         review_level: sub.review_level,
         category: sub.category,
         product_price: sub.product_price,
+        notes: sub._order_notes || '',
+        task_notes: sub.task_notes || '',
         customer_name: sub.customer_name,
         sales_person: sub.sales_person,
         subs: [],
@@ -1454,6 +1341,15 @@ function getSubStatusColor(status: string) {
 
 function isOverdue(dateStr: string) {
   return dayjs(dateStr).isBefore(dayjs(), 'day')
+}
+
+function fmtTime(t: string | null) {
+  if (!t) return '—'
+  return dayjs(t).format('YYYY-MM-DD HH:mm')
+}
+
+function getGroupRemark(group: any) {
+  return String(group?.notes || group?.task_notes || '—')
 }
 
 function toggleExpand(orderId: string) {
@@ -1584,7 +1480,7 @@ async function load() {
     if (orderIds.length > 0) {
       const { data: orders } = await supabase
         .from('erp_orders')
-        .select('id, order_number, status')
+        .select('id, order_number, status, created_at, notes')
         .in('id', orderIds)
       ;(orders || []).forEach((o: any) => { orderMap[o.id] = o })
     }
@@ -1593,6 +1489,8 @@ async function load() {
       ...s,
       _order_number: orderMap[s.order_id]?.order_number || '',
       _order_status: orderMap[s.order_id]?.status || '',
+      _order_created_at: orderMap[s.order_id]?.created_at || null,
+      _order_notes: orderMap[s.order_id]?.notes || '',
     }))
 
     if (searchText.value) {
@@ -1859,6 +1757,14 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 .detail-sep { color: #6b7280; padding-left: 12px; }
 .mono-sm { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
 .price-text { color: #16a34a; font-weight: 600; }
+.task-note-text {
+  color: #6b7280;
+  display: inline-block;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .task-stats {
   display: flex;

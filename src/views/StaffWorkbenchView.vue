@@ -118,6 +118,10 @@
                     class="main-order-card"
                   >
                     <div class="main-order-main-row">
+                      <div class="main-order-expand-btn" @click="toggleOrderExpand(group.order_id)">
+                        <RightOutlined :class="['main-order-expand-icon', { expanded: expandedOrderIds.includes(group.order_id) }]" />
+                      </div>
+
                       <div class="main-order-product-img">
                         <img
                           v-if="group.product_image"
@@ -131,72 +135,107 @@
 
                       <div class="main-order-info">
                         <div class="main-order-title-row">
+                          <span class="detail-item-text">主订单ID：</span>
                           <span class="main-order-number">{{ group.order_number || '未关联主订单' }}</span>
-                          <a-tag :color="getMainOrderStatusColor(group.order_status)" class="status-tag">{{ group.order_status || '进行中' }}</a-tag>
                           <a-tag v-if="group.country" color="default" class="info-tag">{{ group.country }}</a-tag>
-                          <a-tag v-if="group.order_type" color="default" class="info-tag">{{ group.order_type }}</a-tag>
-                          <a-tag v-if="group.review_level" color="default" class="info-tag">{{ group.review_level }}</a-tag>
+                          <a-tag
+                            v-if="formatReviewType(group.review_type || group.order_type)"
+                            :color="getWorkbenchOrderTypeColor(group.review_type || group.order_type)"
+                            class="info-tag"
+                          >
+                            {{ formatReviewType(group.review_type || group.order_type) }}
+                          </a-tag>
+                          <a-tag v-if="group.review_level" color="gold" class="info-tag">{{ group.review_level }}</a-tag>
                         </div>
                         <div class="main-order-detail-row">
-                          <span class="detail-item-text">产品：{{ group.product_name || group.asin || '—' }}</span>
+                          <span class="detail-item-text">产品名称：{{ group.product_name || group.asin || '—' }}</span>
                           <span class="detail-sep">ASIN：<span class="mono-sm">{{ group.asin || '—' }}</span></span>
                           <span class="detail-sep">店铺：{{ group.store_name || '—' }}</span>
-                          <span class="detail-sep">品牌：{{ group.brand_name || '—' }}</span>
-                        </div>
-                        <div class="main-order-detail-row">
-                          <span class="detail-item-text">类目：{{ group.category || '—' }}</span>
-                          <span class="detail-sep">客户：{{ group.customer_name || '—' }}</span>
-                          <span class="detail-sep">商务：{{ group.sales_person || '—' }}</span>
                           <span class="detail-sep">售价：<span class="price-text">${{ Number(group.product_price || 0).toFixed(2) }}</span></span>
                         </div>
                         <div class="main-order-detail-row">
-                          <span class="detail-sep">今日 {{ group.todayCount }}</span>
-                          <span class="detail-sep">明日 {{ group.tomorrowCount }}</span>
-                          <span class="detail-sep">后日 {{ group.dayAfterTomorrowCount }}</span>
-                          <span class="detail-sep">总待操作 {{ group.actionableSubCount }}</span>
+                          <span class="detail-item-text">变体信息：{{ group.variant_info || '—' }}</span>
+                        </div>
+                        <div class="main-order-detail-row">
+                          <span class="detail-item-text">任务备注：</span>
+                          <span class="main-order-note" :title="group.task_notes || '—'">{{ group.task_notes || '—' }}</span>
                         </div>
                       </div>
-                    </div>
 
-                    <div class="main-order-footer">
-                      <div class="main-order-progress">
-                        <span class="main-order-progress-text">待分配 {{ group.actionableSubCount }} / {{ group.subs.length }}</span>
-                        <div class="main-order-progress-bar">
-                          <div class="main-order-progress-fill" :style="{ width: `${getGroupCompletionPct(group)}%` }"></div>
+                      <div class="main-order-stats">
+                        <div class="main-order-stat-item">
+                          <span class="main-order-stat-label">待操作</span>
+                          <span class="main-order-stat-value">{{ group.actionableSubCount }}<span class="main-order-stat-unit">单</span></span>
+                        </div>
+                        <div class="main-order-stat-divider"></div>
+                        <div class="main-order-stat-item">
+                          <span class="main-order-stat-label">今日</span>
+                          <span class="main-order-stat-value">{{ group.todayCount }}<span class="main-order-stat-unit">单</span></span>
+                        </div>
+                        <div class="main-order-stat-divider"></div>
+                        <div class="main-order-stat-item">
+                          <span class="main-order-stat-label">明日</span>
+                          <span class="main-order-stat-value">{{ group.tomorrowCount }}<span class="main-order-stat-unit">单</span></span>
+                        </div>
+                        <div class="main-order-stat-divider"></div>
+                        <div class="main-order-stat-item">
+                          <span class="main-order-stat-label">后日</span>
+                          <span class="main-order-stat-value">{{ group.dayAfterTomorrowCount }}<span class="main-order-stat-unit">单</span></span>
                         </div>
                       </div>
-                      <div class="main-order-sub-preview">
-                        <span v-for="sub in group.subs.slice(0, 3)" :key="sub.id" class="sub-preview-chip">
-                          {{ sub.sub_order_number }}
-                        </span>
-                        <span v-if="group.subs.length > 3" class="sub-preview-chip more">+{{ group.subs.length - 3 }} 个子单</span>
-                      </div>
+
                       <div class="main-order-actions">
-                        <a-button size="small" @click="openMainOrderDetail(group)">查看详情</a-button>
-                        <a-button type="primary" ghost size="small" @click="toggleOrderExpand(group.order_id)">
+                        <a-button size="small" @click="toggleOrderExpand(group.order_id)">
                           {{ expandedOrderIds.includes(group.order_id) ? '收起子订单' : '展开子订单' }}
                         </a-button>
+                        <a-button size="small" @click="openMainOrderDetail(group)">详情</a-button>
                       </div>
                     </div>
 
                     <div v-if="expandedOrderIds.includes(group.order_id)" class="inline-sub-list">
-                      <div v-for="sub in group.subs" :key="sub.id" class="inline-sub-row">
-                        <div class="inline-sub-main">
-                          <div class="inline-sub-line">
-                            <span class="inline-sub-no">{{ sub.sub_order_number }}</span>
-                          </div>
-                          <div class="inline-sub-meta">
-                            <span>排单日期：{{ sub.scheduled_date || '—' }}</span>
-                            <span>ASIN / 产品名：{{ sub.asin || '—' }} / {{ sub.product_name || '—' }}</span>
-                            <span>售价：<span class="price-text">${{ Number(sub.product_price || 0).toFixed(2) }}</span></span>
-                            <span>测评类型：{{ formatReviewType(sub.review_type || sub.order_type) || '—' }}</span>
-                            <span>测评等级：{{ sub.review_level || '—' }}</span>
-                            <span>关键词：{{ sub.keyword || '—' }}</span>
-                          </div>
+                      <div class="inline-sub-grid inline-sub-header">
+                        <div>子订单ID</div>
+                        <div>产品名称 / ASIN</div>
+                        <div>排期日期</div>
+                        <div>等级</div>
+                        <div>类型</div>
+                        <div>售价</div>
+                        <div>关键词</div>
+                        <div>操作</div>
+                      </div>
+                      <div v-for="sub in group.subs" :key="sub.id" class="inline-sub-grid inline-sub-row">
+                        <div class="inline-sub-no">{{ sub.sub_order_number }}</div>
+                        <div class="inline-sub-product">
+                          <div class="inline-sub-product-name">{{ sub.product_name || '—' }}</div>
+                          <div class="inline-sub-asin">{{ sub.asin || '—' }}</div>
                         </div>
-                        <a-space>
-                          <a-button size="small" type="primary" ghost @click="focusTask(sub)">编辑</a-button>
-                        </a-space>
+                        <div>
+                          <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'inline-date-overdue' : 'inline-date-normal'">{{ sub.scheduled_date }}</span>
+                          <span v-else class="text-gray">—</span>
+                        </div>
+                        <div>
+                          <a-tag v-if="sub.review_level" color="gold" size="small">{{ sub.review_level }}</a-tag>
+                          <span v-else class="text-gray">—</span>
+                        </div>
+                        <div>
+                          <a-tag
+                            v-if="formatReviewType(sub.review_type || sub.order_type)"
+                            :color="getWorkbenchOrderTypeColor(sub.review_type || sub.order_type)"
+                            size="small"
+                          >
+                            {{ formatReviewType(sub.review_type || sub.order_type) }}
+                          </a-tag>
+                          <span v-else class="text-gray">—</span>
+                        </div>
+                        <div class="inline-sub-price">${{ Number(sub.product_price || 0).toFixed(2) }}</div>
+                        <div>
+                          <span v-if="sub.keyword" class="inline-keyword">{{ sub.keyword }}</span>
+                          <span v-else class="text-gray">—</span>
+                        </div>
+                        <div class="inline-sub-actions">
+                          <a-button size="small" @click.stop="openTaskOpsDetail(sub)">详情</a-button>
+                          <a-button size="small" type="primary" ghost @click.stop="focusTask(sub)">编辑</a-button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -211,7 +250,7 @@
                     <div class="wb-section-title">待完善订单</div>
                     <div class="wb-section-desc">已分配买手后进入这里，重点看待返款、待下单和待留评等具体环节</div>
                   </div>
-                  <span class="wb-section-count">{{ improvingTasks.length }} 个子订单</span>
+                  <span class="wb-section-count">{{ improvingOrderGroups.length }} 个主订单</span>
                 </div>
                 <div class="wb-stage-overview">
                   <div class="wb-stage-card">
@@ -225,6 +264,117 @@
                   <div class="wb-stage-card">
                     <span class="wb-stage-label">待留评</span>
                     <strong class="wb-stage-value">{{ improvingSummary.needReviewCount }}</strong>
+                  </div>
+                </div>
+                <div v-if="improvingOrderGroups.length === 0" class="empty-list compact-empty">
+                  <a-empty description="暂无待完善订单" />
+                </div>
+                <div v-else class="main-order-list">
+                  <div
+                    v-for="group in improvingOrderGroups"
+                    :key="group.order_id"
+                    class="main-order-card"
+                  >
+                    <div class="main-order-main-row">
+                      <div class="main-order-expand-btn" @click="toggleOrderExpand(group.order_id)">
+                        <RightOutlined :class="['main-order-expand-icon', { expanded: expandedOrderIds.includes(group.order_id) }]" />
+                      </div>
+
+                      <div class="main-order-product-img">
+                        <img
+                          v-if="group.product_image"
+                          :src="group.product_image"
+                          class="main-order-thumb"
+                          referrerpolicy="no-referrer"
+                          @error="onImgError"
+                        />
+                        <div v-else class="main-order-thumb-placeholder">?</div>
+                      </div>
+
+                      <div class="main-order-info">
+                        <div class="main-order-title-row">
+                          <span class="detail-item-text">主订单ID：</span>
+                          <span class="main-order-number">{{ group.order_number || '未关联主订单' }}</span>
+                          <a-tag v-if="group.country" color="default" class="info-tag">{{ group.country }}</a-tag>
+                          <a-tag
+                            v-if="formatReviewType(group.review_type || group.order_type)"
+                            :color="getWorkbenchOrderTypeColor(group.review_type || group.order_type)"
+                            class="info-tag"
+                          >
+                            {{ formatReviewType(group.review_type || group.order_type) }}
+                          </a-tag>
+                          <a-tag v-if="group.review_level" color="gold" class="info-tag">{{ group.review_level }}</a-tag>
+                          <a-tag :color="getMainOrderStatusColor(getImprovingGroupStatus(group))" class="status-tag">
+                            {{ getImprovingGroupStatus(group) }}
+                          </a-tag>
+                        </div>
+                        <div class="main-order-detail-row">
+                          <span class="detail-item-text">产品名称：{{ group.product_name || group.asin || '—' }}</span>
+                          <span class="detail-sep">ASIN：<span class="mono-sm">{{ group.asin || '—' }}</span></span>
+                          <span class="detail-sep">售价：<span class="price-text">${{ Number(group.product_price || 0).toFixed(2) }}</span></span>
+                        </div>
+                        <div class="main-order-detail-row">
+                          <span class="detail-item-text">店铺：{{ group.store_name || '—' }}</span>
+                          <span class="detail-sep">变体信息：{{ group.variant_info || '—' }}</span>
+                        </div>
+                        <div class="main-order-detail-row">
+                          <span class="detail-item-text">任务备注：</span>
+                          <span class="main-order-note" :title="group.task_notes || '—'">{{ group.task_notes || '—' }}</span>
+                        </div>
+                      </div>
+
+                      <div class="main-order-actions">
+                        <a-button size="small" @click="toggleOrderExpand(group.order_id)">
+                          {{ expandedOrderIds.includes(group.order_id) ? '收起子订单' : '展开子订单' }}
+                        </a-button>
+                        <a-button size="small" @click="openMainOrderDetail(group)">详情</a-button>
+                      </div>
+                    </div>
+
+                    <div v-if="expandedOrderIds.includes(group.order_id)" class="improving-sub-list">
+                      <div class="improving-sub-grid improving-sub-header">
+                        <div>子订单ID</div>
+                        <div>买手 / 聊单号</div>
+                        <div>产品名称 / ASIN</div>
+                        <div>类型 / 等级</div>
+                        <div>售价 / 实付 / 实返</div>
+                        <div>返款状态 / 时间 / 方式</div>
+                        <div>订单进度</div>
+                        <div>订单状态</div>
+                        <div>订单备注</div>
+                        <div>操作</div>
+                      </div>
+                      <div v-for="sub in group.subs" :key="sub.id" class="improving-sub-grid improving-sub-row">
+                        <div class="inline-sub-no">{{ sub.sub_order_number }}</div>
+                        <div>{{ getImprovingBuyerChat(sub) }}</div>
+                        <div class="improving-product-cell">
+                          <div class="inline-sub-product-name">{{ sub.product_name || '—' }}</div>
+                          <div class="inline-sub-asin">{{ sub.asin || '—' }}</div>
+                        </div>
+                        <div>{{ getImprovingTypeLevel(sub) }}</div>
+                        <div class="improving-stack-cell">
+                          <span>售价：{{ getImprovingPricePaidRefund(sub).price }}</span>
+                          <span>实付：{{ getImprovingPricePaidRefund(sub).actualPaid }}</span>
+                          <span>实返：{{ getImprovingPricePaidRefund(sub).refundAmount }}</span>
+                        </div>
+                        <div class="improving-stack-cell">
+                          <span>状态：{{ getImprovingRefundSummary(sub).status }}</span>
+                          <span>时间：{{ getImprovingRefundSummary(sub).time }}</span>
+                          <span>方式：{{ getImprovingRefundSummary(sub).method }}</span>
+                        </div>
+                        <div>
+                          <span :class="getTaskProgressBadgeClass(sub)">{{ getTaskProgressLabel(sub) }}</span>
+                        </div>
+                        <div>
+                          <a-tag :color="getStatusColor(sub.status)" size="small">{{ sub.status || '—' }}</a-tag>
+                        </div>
+                        <div class="improving-note-cell" :title="getImprovingOrderNote(sub)">{{ getImprovingOrderNote(sub) }}</div>
+                        <div class="inline-sub-actions">
+                          <a-button size="small" @click.stop="openTaskOpsDetail(sub)">详情</a-button>
+                          <a-button size="small" type="primary" ghost @click.stop="focusTask(sub)">编辑</a-button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -257,14 +407,14 @@
             </div>
 
             <div
-              v-if="wbNav !== 'afterSale' && displayedTaskCards.length === 0 && (wbNav !== 'pending' || wbViewMode === 'sub')"
+              v-if="wbNav !== 'afterSale' && displayedTaskCards.length === 0 && (wbNav !== 'pending' || wbViewMode === 'sub') && !(wbNav === 'improving' && wbViewMode === 'order')"
               class="empty-list compact-empty"
             >
               <a-empty :description="wbNav === 'reviewFollow' ? '暂无评论跟进订单' : wbNav === 'pending' ? '暂无待操作订单' : '暂无待完善订单'" />
             </div>
 
             <!-- 任务卡片列表 -->
-            <div v-if="wbNav !== 'afterSale' && displayedTaskCards.length > 0" class="task-card-list">
+            <div v-if="wbNav !== 'afterSale' && displayedTaskCards.length > 0 && !(wbNav === 'improving' && wbViewMode === 'order')" class="task-card-list">
             <div
               v-for="task in displayedTaskCards"
               :key="task.id"
@@ -272,78 +422,137 @@
             >
               <!-- 任务卡头 -->
               <div class="task-card-header" @click="toggleExpand(task)">
-                <div class="card-header-left">
-                  <span class="toggle-icon">{{ task._expanded ? '▼' : '▶' }}</span>
-                  <img v-if="task.product_image" :src="task.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="onImgError" />
-                  <div v-else class="product-thumb-placeholder"><span>?</span></div>
+                <template v-if="wbNav === 'improving'">
+                  <div class="card-header-left improving-flat-left">
+                    <span class="toggle-icon">{{ task._expanded ? '▼' : '▶' }}</span>
+                    <img v-if="task.product_image" :src="task.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="onImgError" />
+                    <div v-else class="product-thumb-placeholder"><span>?</span></div>
 
-                  <div class="task-meta">
-                    <div class="meta-row1">
-                      <span class="sub-no-text">{{ task.sub_order_number }}</span>
-                      <!-- <a-tag :color="getStatusColor(task.status)" style="margin-left:6px;font-size:11px">{{ task.status }}</a-tag> -->
-                      <a-tag v-if="isOverdue(task.scheduled_date) && !isDone(task.status)" color="error" style="font-size:10px">日超期 {{ overdayCount(task.scheduled_date) }} 天</a-tag>
-                      <a-tag v-if="task.order_type" color="default" style="font-size:10px">{{ task.order_type }}</a-tag>
-                      <template v-if="task.keyword_type === 'link' && task.search_link">
-                        <a :href="task.search_link" target="_blank" rel="noopener noreferrer" class="keyword-badge keyword-link-badge" @click.stop>
-                          链接操作
-                        </a>
-                      </template>
-                      <div v-else-if="task.keyword" class="keyword-badge">{{ task.keyword }}</div>
-                      <span v-if="task.product_name" class="product-name-sm">{{ task.product_name }}</span>
-                    </div>
-                    <div class="meta-row2">
-                      <span v-if="task._order_number" class="order-chip">{{ task._order_number }}</span>
-                      <span class="mono-sm">{{ task.asin }}</span>
-                      <span class="sep">{{ task.store_name }}</span>
-                      <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
-                      <span v-if="task.category" class="sep text-gray">{{ task.category }}</span>
-                      <span v-if="task.country" class="sep text-gray">{{ task.country }}</span>
-                    </div>
-                    <div class="meta-row3">
-                      <span class="meta-focus-item"><span class="meta-focus-label">测评等级</span><span class="meta-focus-value">{{ task.review_level || '—' }}</span></span>
-                      <span class="meta-focus-item"><span class="meta-focus-label">指定变体</span><span class="meta-focus-value">{{ task.variant_info || '—' }}</span></span>
-                      <span class="meta-focus-item meta-focus-item-wide"><span class="meta-focus-label">任务备注</span><span class="meta-focus-value">{{ task.task_notes || '—' }}</span></span>
+                    <div class="task-meta improving-flat-meta">
+                      <div class="meta-row1">
+                        <span class="sub-no-text">{{ task.sub_order_number }}</span>
+                        <a-tag :color="getStatusColor(task.status)" style="font-size:10px">{{ task.status || '—' }}</a-tag>
+                        <span v-if="task._order_number" class="order-chip">{{ task._order_number }}</span>
+                      </div>
+                      <div class="improving-flat-grid">
+                        <div class="improving-flat-cell">
+                          <span class="improving-flat-label">买手 / 聊单号</span>
+                          <span class="improving-flat-value">{{ getImprovingBuyerChat(task) }}</span>
+                        </div>
+                        <div class="improving-flat-cell">
+                          <span class="improving-flat-label">产品名称 / ASIN</span>
+                          <span class="improving-flat-value">{{ task.product_name || '—' }} / {{ task.asin || '—' }}</span>
+                        </div>
+                        <div class="improving-flat-cell">
+                          <span class="improving-flat-label">类型 / 等级</span>
+                          <span class="improving-flat-value">{{ getImprovingTypeLevel(task) }}</span>
+                        </div>
+                        <div class="improving-flat-cell">
+                          <span class="improving-flat-label">售价 / 实付 / 实返</span>
+                          <span class="improving-flat-value">
+                            {{ getImprovingPricePaidRefund(task).price }} / {{ getImprovingPricePaidRefund(task).actualPaid }} / {{ getImprovingPricePaidRefund(task).refundAmount }}
+                          </span>
+                        </div>
+                        <div class="improving-flat-cell">
+                          <span class="improving-flat-label">返款状态 / 时间 / 方式</span>
+                          <span class="improving-flat-value">
+                            {{ getImprovingRefundSummary(task).status }} / {{ getImprovingRefundSummary(task).time }} / {{ getImprovingRefundSummary(task).method }}
+                          </span>
+                        </div>
+                        <div class="improving-flat-cell">
+                          <span class="improving-flat-label">订单进度</span>
+                          <span class="improving-flat-value">{{ getTaskProgressLabel(task) }}</span>
+                        </div>
+                        <div class="improving-flat-cell improving-flat-cell-wide">
+                          <span class="improving-flat-label">订单备注</span>
+                          <span class="improving-flat-value">{{ getImprovingOrderNote(task) }}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div class="card-header-right">
-                  <div v-if="task.scheduled_date" :class="['date-badge', isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-ok']">
-                    截止 {{ task.scheduled_date }}
+                  <div class="card-header-right improving-flat-right">
+                    <a-space size="small" @click.stop>
+                      <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
+                      <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
+                    </a-space>
                   </div>
-                  <!-- 进度点 -->
-                  <div class="progress-dots">
-                    <span v-for="(_step, i) in workflowSteps" :key="i" :class="['dot', getStepDone(task, i) ? 'done' : getStepCurrent(task, i) ? 'current' : 'pending']"></span>
+                </template>
+
+                <template v-else>
+                  <div class="card-header-left">
+                    <span class="toggle-icon">{{ task._expanded ? '▼' : '▶' }}</span>
+                    <img v-if="task.product_image" :src="task.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="onImgError" />
+                    <div v-else class="product-thumb-placeholder"><span>?</span></div>
+
+                    <div class="task-meta">
+                      <div class="meta-row1">
+                        <span class="sub-no-text">{{ task.sub_order_number }}</span>
+                        <!-- <a-tag :color="getStatusColor(task.status)" style="margin-left:6px;font-size:11px">{{ task.status }}</a-tag> -->
+                        <a-tag v-if="isOverdue(task.scheduled_date) && !isDone(task.status)" color="error" style="font-size:10px">日超期 {{ overdayCount(task.scheduled_date) }} 天</a-tag>
+                        <a-tag v-if="task.order_type" color="default" style="font-size:10px">{{ task.order_type }}</a-tag>
+                        <template v-if="task.keyword_type === 'link' && task.search_link">
+                          <a :href="task.search_link" target="_blank" rel="noopener noreferrer" class="keyword-badge keyword-link-badge" @click.stop>
+                            链接操作
+                          </a>
+                        </template>
+                        <div v-else-if="task.keyword" class="keyword-badge">{{ task.keyword }}</div>
+                        <span v-if="task.product_name" class="product-name-sm">{{ task.product_name }}</span>
+                      </div>
+                      <div class="meta-row2">
+                        <span v-if="task._order_number" class="order-chip">{{ task._order_number }}</span>
+                        <span class="mono-sm">{{ task.asin }}</span>
+                        <span class="sep">{{ task.store_name }}</span>
+                        <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
+                        <span v-if="task.category" class="sep text-gray">{{ task.category }}</span>
+                        <span v-if="task.country" class="sep text-gray">{{ task.country }}</span>
+                      </div>
+                      <div class="meta-row3">
+                        <span class="meta-focus-item"><span class="meta-focus-label">测评等级</span><span class="meta-focus-value">{{ task.review_level || '—' }}</span></span>
+                        <span class="meta-focus-item"><span class="meta-focus-label">指定变体</span><span class="meta-focus-value">{{ task.variant_info || '—' }}</span></span>
+                        <span class="meta-focus-item meta-focus-item-wide"><span class="meta-focus-label">任务备注</span><span class="meta-focus-value">{{ task.task_notes || '—' }}</span></span>
+                      </div>
+                    </div>
                   </div>
-                  <div class="header-assign">
-                    <span :class="getTaskProgressBadgeClass(task)">{{ getTaskProgressLabel(task) }}</span>
-                    <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
+
+                  <div class="card-header-right">
+                    <div v-if="task.scheduled_date" :class="['date-badge', isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-ok']">
+                      截止 {{ task.scheduled_date }}
+                    </div>
+                    <!-- 进度点 -->
+                    <div class="progress-dots">
+                      <span v-for="(_step, i) in workflowSteps" :key="i" :class="['dot', getStepDone(task, i) ? 'done' : getStepCurrent(task, i) ? 'current' : 'pending']"></span>
+                    </div>
+                    <div class="header-assign">
+                      <span :class="getTaskProgressBadgeClass(task)">{{ getTaskProgressLabel(task) }}</span>
+                      <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
+                    </div>
+                    <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px;margin:0">{{ refundStatusLabel(task.refund_status) }}</a-tag>
+                    <span
+                      v-if="wbNav === 'reviewFollow' && getReviewFollowDateBadgeText(task)"
+                      class="review-follow-date"
+                    >
+                      {{ getReviewFollowDateBadgeText(task) }}
+                    </span>
+                    <span
+                      v-if="wbNav === 'reviewFollow' && getReviewFollowFilterCategory(task) === '超时跟进'"
+                      class="review-follow-overdue"
+                    >
+                      {{ getReviewFollowOverdueLabel(task) }}
+                    </span>
+                    <a-space size="small" @click.stop>
+                      <a-button
+                        v-if="shouldShowReviewFollowAction(task)"
+                        size="small"
+                        ghost
+                        :class="getReviewFollowActionLabel(task) === '无法完成' ? 'follow-review-btn danger' : 'follow-review-btn'"
+                        @click.stop="handleReviewFollowAction(task)"
+                      >{{ getReviewFollowActionLabel(task) }}</a-button>
+                      <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
+                      <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
+                    </a-space>
                   </div>
-                  <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px;margin:0">{{ refundStatusLabel(task.refund_status) }}</a-tag>
-                  <span
-                    v-if="wbNav === 'reviewFollow' && getReviewFollowDateBadgeText(task)"
-                    class="review-follow-date"
-                  >
-                    {{ getReviewFollowDateBadgeText(task) }}
-                  </span>
-                  <span
-                    v-if="wbNav === 'reviewFollow' && getReviewFollowFilterCategory(task) === '超时跟进'"
-                    class="review-follow-overdue"
-                  >
-                    {{ getReviewFollowOverdueLabel(task) }}
-                  </span>
-                  <a-space size="small" @click.stop>
-                    <a-button
-                      v-if="shouldShowReviewFollowAction(task)"
-                      size="small"
-                      ghost
-                      :class="getReviewFollowActionLabel(task) === '无法完成' ? 'follow-review-btn danger' : 'follow-review-btn'"
-                      @click.stop="handleReviewFollowAction(task)"
-                    >{{ getReviewFollowActionLabel(task) }}</a-button>
-                    <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
-                    <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
-                  </a-space>
-                </div>
+                </template>
               </div>
 
               <!-- 展开：步骤化做单流程 -->
@@ -1080,7 +1289,7 @@ import { message } from 'ant-design-vue'
 import {
   TeamOutlined, UserOutlined, CheckCircleFilled,
   SwapOutlined, LoadingOutlined, ExclamationCircleOutlined,
-  ArrowRightOutlined, ClockCircleOutlined
+  ArrowRightOutlined, ClockCircleOutlined, RightOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -1251,6 +1460,7 @@ const pendingListTasks = computed(() => {
   return todayPendingBuyerMatchTasks.value
 })
 const pendingOrderGroups = computed(() => buildWorkbenchGroups(pendingListTasks.value).filter(group => group.actionableSubCount > 0))
+const improvingOrderGroups = computed(() => buildWorkbenchGroups(improvingTasks.value).filter(group => group.actionableSubCount > 0))
 const todayActionableTasks = computed(() => todayRelevantTasks.value.filter(task => !isDone(task.status)))
 const todayImprovingRelevantTasks = computed(() => todayRelevantTasks.value.filter(task => !!task.buyer_id))
 const todayReviewFollowRelevantTasks = computed(() =>
@@ -1261,9 +1471,10 @@ const reviewFollowupTasks = computed(() =>
 )
 const displayedTaskCards = computed(() => {
   if (wbNav.value === 'pending') return wbViewMode.value === 'sub' ? pendingListTasks.value : []
+  if (wbNav.value === 'improving') return wbViewMode.value === 'sub' ? improvingTasks.value : []
   if (wbNav.value === 'reviewFollow') return getSortedReviewFollowTasks(reviewFollowupTasks.value)
   if (wbNav.value === 'afterSale') return []
-  return improvingTasks.value
+  return []
 })
 const wbNavItems = computed<Array<{ key: WorkbenchNavKey; label: string; count: number }>>(() => ([
   { key: 'pending', label: '待操作订单', count: todayPendingBuyerMatchTasks.value.length },
@@ -1324,6 +1535,8 @@ function buildWorkbenchGroups(sourceTasks: any[]) {
         order_type: task.order_type || '',
         review_type: task.review_type || '',
         review_level: task.review_level || '',
+        variant_info: task.variant_info || '',
+        task_notes: task.task_notes || '',
         subs: [],
       })
     }
@@ -1561,6 +1774,47 @@ function hasReviewDone(task: any) {
 function getGroupCompletionPct(group: any) {
   if (!group?.subs?.length) return 0
   return Math.round((group.completedCount / group.subs.length) * 100)
+}
+
+function getImprovingGroupStatus(group: any) {
+  return group?.order_status || '进行中'
+}
+
+function getImprovingBuyerChat(task: any) {
+  const buyer = String(task?.buyer_name || '').trim()
+  const chat = String(task?.buyer_chat_id || task?.buyer_id || '').trim()
+  if (buyer && chat) return `${buyer} / ${chat}`
+  return buyer || chat || '—'
+}
+
+function getImprovingTypeLevel(task: any) {
+  const type = formatReviewType(task?.review_type || task?.order_type)
+  const level = String(task?.review_level || '').trim()
+  if (type && level) return `${type} / ${level}`
+  return type || level || '—'
+}
+
+function getImprovingPricePaidRefund(task: any) {
+  const price = Number(task?.product_price || 0)
+  const actualPaid = Number(task?._refund_request_latest_processed?.actual_paid_usd || task?.actual_paid_usd || 0)
+  const refundAmount = Number(task?._refund_request_latest_processed?.refund_amount_usd || task?.refund_amount || 0)
+  return {
+    price: `$${price.toFixed(2)}`,
+    actualPaid: actualPaid > 0 ? `$${actualPaid.toFixed(2)}` : '—',
+    refundAmount: refundAmount > 0 ? `$${refundAmount.toFixed(2)}` : '—',
+  }
+}
+
+function getImprovingRefundSummary(task: any) {
+  const latest = task?._refund_request_latest_processed
+  const status = refundStatusLabel(task?.refund_status || '') || '—'
+  const time = fmtTime(latest?.handled_at || latest?.updated_at || task?.refund_date || null)
+  const method = latest?.refund_method || task?.refund_method || '—'
+  return { status, time, method }
+}
+
+function getImprovingOrderNote(task: any) {
+  return String(task?.notes || '').trim() || '—'
 }
 
 function fmtTime(t: string | null) {
@@ -4092,15 +4346,31 @@ onMounted(() => {
 .main-order-list { display: flex; flex-direction: column; gap: 12px; }
 .main-order-card {
   background: #fff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #f0f0f0;
   border-radius: 12px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  overflow: hidden;
 }
 .main-order-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
-.main-order-main-row { display: flex; align-items: flex-start; gap: 14px; }
+.main-order-main-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding: 14px 12px 14px 0;
+  transition: background 0.15s;
+}
+.main-order-main-row:hover { background: #fafbff; }
+.main-order-expand-btn {
+  width: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 3px;
+  cursor: pointer;
+  color: #9ca3af;
+}
+.main-order-expand-icon { font-size: 11px; transition: transform 0.2s; }
+.main-order-expand-icon.expanded { transform: rotate(90deg); color: #2563eb; }
 .main-order-product-img { width: 56px; height: 56px; flex-shrink: 0; }
 .main-order-thumb {
   width: 56px;
@@ -4121,86 +4391,164 @@ onMounted(() => {
   justify-content: center;
   font-size: 18px;
 }
-.main-order-info { min-width: 0; flex: 1; }
-.main-order-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.main-order-number { font-size: 15px; font-weight: 700; color: #1a1a2e; font-family: 'Courier New', monospace; }
+.main-order-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; margin-left: 12px; }
+.main-order-title-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.main-order-number { font-size: 13px; font-weight: 700; color: #1a1a2e; font-family: 'Courier New', monospace; }
 .status-tag { margin-inline-end: 0; }
 .info-tag { margin-inline-end: 0; }
 .main-order-detail-row {
   display: flex;
-  gap: 12px;
+  align-items: center;
   flex-wrap: wrap;
-  margin-top: 6px;
   font-size: 12px;
   color: #6b7280;
+  line-height: 1.6;
 }
 .detail-item-text { color: #374151; }
-.detail-sep { color: #6b7280; }
+.detail-sep { color: #6b7280; padding-left: 12px; }
 .danger-text { color: #dc2626; font-weight: 600; }
 .price-text { color: #16a34a; font-weight: 600; }
-.main-order-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.main-order-progress { display: flex; align-items: center; gap: 10px; min-width: 220px; flex: 1; }
-.main-order-progress-text { font-size: 12px; color: #6b7280; white-space: nowrap; }
-.main-order-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.main-order-progress-bar {
-  flex: 1;
-  height: 8px;
-  background: #e5e7eb;
-  border-radius: 999px;
+.main-order-note {
+  color: #6b7280;
+  display: inline-block;
+  max-width: 360px;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.main-order-progress-fill {
-  height: 100%;
-  background: #2563eb;
-  border-radius: 999px;
-  transition: width 0.2s ease;
-}
-.inline-sub-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border-top: 1px solid #f0f0f0;
-  padding-top: 12px;
-}
-.inline-sub-row {
+.main-order-stats {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  background: #f9fafb;
+  flex-shrink: 0;
+  margin: 0 20px;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 12px;
   border: 1px solid #e5e7eb;
-  border-radius: 10px;
 }
-.inline-sub-main { flex: 1; min-width: 0; }
-.inline-sub-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.inline-sub-no { font-size: 12px; font-weight: 700; color: #1a1a2e; font-family: 'Courier New', monospace; }
-.inline-sub-checkpoint {
-  font-size: 11px;
-  color: #7c3aed;
-  background: #f5f3ff;
-  border: 1px solid #ddd6fe;
-  border-radius: 999px;
-  padding: 2px 8px;
+.main-order-stat-item { display: flex; flex-direction: column; align-items: center; min-width: 50px; gap: 2px; }
+.main-order-stat-label { font-size: 11px; color: #9ca3af; line-height: 1; }
+.main-order-stat-value { font-size: 20px; font-weight: 700; line-height: 1.2; color: #1a1a2e; }
+.main-order-stat-unit { font-size: 12px; font-weight: 400; color: #9ca3af; margin-left: 1px; }
+.main-order-stat-divider { width: 1px; height: 32px; background: #e5e7eb; margin: 0 10px; }
+.main-order-actions { display: flex; align-items: center; gap: 8px; padding-left: 8px; flex-shrink: 0; align-self: center; }
+.inline-sub-list {
+  background: #f8fafc;
+  border-top: 1px dashed #e5e7eb;
+  padding: 12px 16px 16px 32px;
 }
-.inline-sub-meta {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 6px;
+.inline-sub-grid {
+  display: grid;
+  grid-template-columns: 140px 1.7fr 120px 90px 100px 100px 1.1fr 140px;
+  align-items: center;
+}
+.inline-sub-header {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+}
+.inline-sub-header > div {
+  padding: 10px 12px;
   font-size: 12px;
+  font-weight: 600;
   color: #6b7280;
 }
-.main-order-sub-preview { display: flex; gap: 8px; flex-wrap: wrap; }
-.sub-preview-chip {
+.inline-sub-row {
+  background: #fff;
+  border-left: 1px solid #e5e7eb;
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #f0f0f0;
+}
+.inline-sub-row:last-child {
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0 0 10px 10px;
+}
+.inline-sub-row > div { padding: 10px 12px; min-width: 0; font-size: 12px; color: #374151; }
+.inline-sub-no { font-size: 11px; font-weight: 700; color: #374151; font-family: 'Courier New', monospace; }
+.inline-sub-product-name {
+  font-size: 12px;
+  color: #374151;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline-sub-asin { font-family: 'Courier New', monospace; font-size: 11px; color: #6b7280; margin-top: 2px; }
+.inline-date-normal { font-size: 12px; color: #374151; }
+.inline-date-overdue { font-size: 12px; color: #dc2626; font-weight: 600; }
+.inline-sub-price { font-size: 12px; font-weight: 600; color: #16a34a; }
+.inline-keyword {
+  display: inline-block;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline-sub-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+}
+.improving-sub-list {
+  background: #f8fafc;
+  border-top: 1px dashed #e5e7eb;
+  padding: 12px 16px 16px 32px;
+}
+.improving-sub-grid {
+  display: grid;
+  grid-template-columns: 130px 170px 1.4fr 120px 150px 170px 110px 110px 1.1fr 140px;
+  align-items: center;
+}
+.improving-sub-header {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+}
+.improving-sub-header > div {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.improving-sub-row {
+  background: #fff;
+  border-left: 1px solid #e5e7eb;
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #f0f0f0;
+}
+.improving-sub-row:last-child {
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0 0 10px 10px;
+}
+.improving-sub-row > div {
+  padding: 10px 12px;
+  min-width: 0;
+  font-size: 12px;
+  color: #374151;
+}
+.improving-product-cell { min-width: 0; }
+.improving-stack-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   font-size: 11px;
   color: #374151;
-  background: #f3f4f6;
-  border-radius: 999px;
-  padding: 3px 8px;
-  font-family: 'Courier New', monospace;
 }
-.sub-preview-chip.more { color: #6b7280; font-family: inherit; }
+.improving-note-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .task-drawer-header { display: flex; align-items: flex-start; }
 .task-drawer-product { display: flex; gap: 16px; align-items: flex-start; }
@@ -4363,6 +4711,38 @@ onMounted(() => {
 .price-sm { font-size: 12px; font-weight: 600; color: #16a34a; padding-left: 10px; }
 .text-gray { color: #9ca3af; }
 .card-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-left: 12px; }
+.improving-flat-left { align-items: flex-start; }
+.improving-flat-meta { gap: 8px; }
+.improving-flat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.improving-flat-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.improving-flat-cell-wide { grid-column: span 2; }
+.improving-flat-label {
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1;
+}
+.improving-flat-value {
+  font-size: 12px;
+  color: #374151;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.improving-flat-right {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
 .keyword-badge { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: 500; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 .keyword-link-badge { background: #ecfeff; color: #0891b2; border-color: #a5f3fc; text-decoration: none; cursor: pointer; display: inline-block; }
 .keyword-link-badge:hover { background: #cffafe; color: #0e7490; }

@@ -46,6 +46,7 @@
 
             <div class="task-info">
               <div class="task-top-row">
+                <span class="detail-item-text">主订单ID：</span>
                 <a class="order-num-link">{{ record.order_number }}</a>
                 <a-tag :color="getStatusColor(record.status)" class="status-tag">{{ record.status }}</a-tag>
                 <a-tag color="default" class="info-tag">{{ record.country }}</a-tag>
@@ -58,31 +59,21 @@
                 <a-tag v-if="record.review_level" :color="getReviewLevelColor(record.review_level)" class="info-tag">{{ record.review_level }}</a-tag>
               </div>
               <div class="task-detail-row">
-                <span class="detail-item-text">产品：{{ record.product_name || record.asin }}</span>
+                <span class="detail-item-text">产品名称：{{ record.product_name || '—' }}</span>
                 <span class="detail-sep">ASIN：<span class="mono-sm">{{ record.asin }}</span></span>
-                <span class="detail-sep">店铺：{{ record.store_name }}</span>
-                <span class="detail-sep">品牌：{{ record.brand_name || '—' }}</span>
-              </div>
-              <div class="task-detail-row">
-                <span class="detail-item-text">类目：{{ record.category || '—' }}</span>
-                <span class="detail-sep">客户：{{ record.customer_name || '—' }}</span>
-                <span class="detail-sep">商务：{{ record.sales_person || '—' }}</span>
                 <span class="detail-sep">售价：<span class="price-text">${{ Number(record.product_price || 0).toFixed(2) }}</span></span>
               </div>
               <div class="task-detail-row">
-                <a-tag v-if="record.variant_info" color="blue" style="font-size:11px">指定变体：{{ record.variant_info }}</a-tag>
-                <a-tag v-else color="default" style="font-size:11px">变体随意</a-tag>
-                <span class="detail-sep remark-text">备注：一定要买跟卖店铺</span>
+                <span class="detail-item-text">客户：{{ record.customer_name || '—' }}</span>
+                <span class="detail-sep">商务：{{ record.sales_person || '—' }}</span>
+                <span class="detail-sep">类目：{{ record.category || '—' }}</span>
+              </div>
+              <div class="task-detail-row">
+                <span class="detail-item-text">任务备注：</span>
+                <span class="task-note-text" :title="getTaskRemark(record)">{{ getTaskRemark(record) }}</span>
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">创建时间：{{ fmtTime(record.created_at) }}</span>
-                <span
-                  v-if="record.status === '暂停中' || record.status === '已截单'"
-                  class="detail-sep"
-                >
-                  状态时间：{{ fmtTime(getTaskCurrentStatusTime(record)) }}
-                </span>
-                <span v-if="record.status_reason" class="detail-sep">原因：{{ record.status_reason }}</span>
               </div>
             </div>
 
@@ -241,7 +232,7 @@
               :pagination="false"
               row-key="id"
               size="small"
-              :scroll="{ x: 2320 }"
+              :scroll="{ x: 1860 }"
               style="margin-top:10px"
             >
               <template #bodyCell="{ column, record: sub }">
@@ -251,7 +242,6 @@
                 <template v-if="column.key === 'sub_asin'">
                   <div class="editable-cell editable-cell-stack" @click="openQuickEdit(sub, 'asin')">
                     <div class="asin-code">{{ sub.asin || '—' }}</div>
-                    <div v-if="sub.product_name" class="asin-name">{{ sub.product_name }}</div>
                     <EditOutlined class="kw-edit-icon" />
                   </div>
                 </template>
@@ -280,44 +270,65 @@
                     <EditOutlined class="kw-edit-icon" />
                   </div>
                 </template>
-                <template v-if="column.key === 'sub_review_type'">
-                  <div class="editable-cell" @click="openQuickEdit(sub, 'review_type')">
-                    <a-tag v-if="formatReviewType(sub.review_type || sub.order_type)" :color="getOrderTypeTagColor(sub.review_type || sub.order_type)" size="small">{{ formatReviewType(sub.review_type || sub.order_type) }}</a-tag>
-                    <span v-else class="text-gray">—</span>
+                <template v-if="column.key === 'sub_type_level'">
+                  <div class="editable-cell editable-cell-stack" @click="openQuickEdit(sub, 'review_type')">
+                    <a-tag v-if="formatReviewType(sub.review_type || sub.order_type)" :color="getOrderTypeTagColor(sub.review_type || sub.order_type)" size="small">
+                      {{ formatReviewType(sub.review_type || sub.order_type) }}
+                    </a-tag>
+                    <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">
+                      {{ sub.review_level }}
+                    </a-tag>
+                    <span v-if="!formatReviewType(sub.review_type || sub.order_type) && !sub.review_level" class="text-gray">—</span>
                     <EditOutlined class="kw-edit-icon" />
                   </div>
                 </template>
-                <template v-if="column.key === 'sub_review_level'">
-                  <div class="editable-cell" @click="openQuickEdit(sub, 'review_level')">
-                    <a-tag v-if="sub.review_level" :color="getReviewLevelTagColor(sub.review_level)" size="small">{{ sub.review_level }}</a-tag>
-                    <span v-else class="text-gray">—</span>
-                    <EditOutlined class="kw-edit-icon" />
+                <template v-if="column.key === 'sub_staff_buyer'">
+                  <div class="info-stack-cell">
+                    <div><span class="info-stack-label">业务员</span>{{ sub.staff_name || '未分配' }}</div>
+                    <div><span class="info-stack-label">买手</span>{{ sub.buyer_name || '—' }}</div>
                   </div>
                 </template>
-                <template v-if="column.key === 'sub_price_paid'">
+                <template v-if="column.key === 'sub_order_upload'">
+                  <div class="info-stack-cell">
+                    <div>
+                      <span class="info-stack-label">订单号</span>
+                      <span v-if="sub.amazon_order_id" class="order-num-sm">{{ sub.amazon_order_id }}</span>
+                      <span v-else class="text-gray">—</span>
+                    </div>
+                    <div>
+                      <span class="info-stack-label">上传</span>
+                      <span class="created-at-text">{{ fmtTime(getSubUploadTime(sub)) }}</span>
+                    </div>
+                  </div>
+                </template>
+                <template v-if="column.key === 'sub_price_paid_refund'">
                   <div class="price-pair-cell editable-cell-stack" @click="openQuickEdit(sub, 'product_price')">
                     <div class="price-pair-row">
                       <span class="price-pair-label">售价</span>
                       <span class="price-text">${{ Number(sub.product_price || 0).toFixed(2) }}</span>
                       <EditOutlined class="kw-edit-icon" />
                     </div>
-                    <div v-if="sub.actual_paid" class="price-pair-row">
+                    <div class="price-pair-row">
                       <span class="price-pair-label">实付</span>
-                      <span class="price-text actual-paid-text">${{ Number(sub.actual_paid).toFixed(2) }}</span>
+                      <span v-if="sub.actual_paid != null" class="price-text actual-paid-text">${{ Number(sub.actual_paid).toFixed(2) }}</span>
+                      <span v-else class="text-gray">—</span>
+                    </div>
+                    <div class="price-pair-row">
+                      <span class="price-pair-label">实返</span>
+                      <span v-if="sub.refund_amount != null" class="refund-amount refund-actual">¥{{ Number(sub.refund_amount).toFixed(2) }}</span>
+                      <span v-else class="text-gray">—</span>
                     </div>
                   </div>
                 </template>
-                <template v-if="column.key === 'sub_staff'">
-                  <span v-if="sub.staff_name" class="staff-name">{{ sub.staff_name }}</span>
-                  <span v-else class="text-gray">未分配</span>
-                </template>
-                <template v-if="column.key === 'sub_buyer'">
-                  <span v-if="sub.buyer_name">{{ sub.buyer_name }}</span>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'sub_amazon_order'">
-                  <span v-if="sub.amazon_order_id" class="order-num-sm">{{ sub.amazon_order_id }}</span>
-                  <span v-else class="text-gray">—</span>
+                <template v-if="column.key === 'sub_refund_info'">
+                  <div class="refund-status-cell">
+                    <a-tag v-if="normalizeRefundStatus(sub.refund_status)" :color="getRefundStatusTagColor(sub.refund_status)" size="small">
+                      {{ normalizeRefundStatus(sub.refund_status) }}
+                    </a-tag>
+                    <span v-else class="text-gray">—</span>
+                    <span v-if="sub.refund_method" class="refund-method-tag">方式：{{ sub.refund_method }}</span>
+                    <span v-if="showPrincipalLossHint(sub)" class="principal-loss-hint">本金损失</span>
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_progress'">
                   <a-tag :color="getSubStatusColor(getSubProgressLabel(sub))" size="small">{{ getSubProgressLabel(sub) }}</a-tag>
@@ -325,49 +336,8 @@
                 <template v-if="column.key === 'sub_order_status'">
                   <a-tag :color="getSubOrderStatusColor(sub.order_status)" size="small">{{ sub.order_status || '正常' }}</a-tag>
                 </template>
-                <template v-if="column.key === 'sub_review'">
-                  <a v-if="sub.review_screenshot_url" :href="sub.review_screenshot_url" target="_blank" class="media-link">
-                    <PictureOutlined /> 查看
-                  </a>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'sub_fb'">
-                  <a v-if="sub.fb_screenshot_url" :href="sub.fb_screenshot_url" target="_blank" class="media-link">
-                    <PictureOutlined /> 查看
-                  </a>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'sub_refund'">
-                  <div v-if="sub.commission_fee || sub.refund_amount" class="price-pair-cell">
-                    <div v-if="sub.commission_fee" class="price-pair-row">
-                      <span class="price-pair-label">应返</span>
-                      <span class="refund-amount">¥{{ Number(sub.commission_fee).toFixed(2) }}</span>
-                    </div>
-                    <div v-if="sub.refund_amount" class="price-pair-row">
-                      <span class="price-pair-label">实返</span>
-                      <span class="refund-amount refund-actual">¥{{ Number(sub.refund_amount).toFixed(2) }}</span>
-                    </div>
-                  </div>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'sub_refund_method'">
-                  <span v-if="sub.refund_method" class="refund-method-tag">{{ sub.refund_method }}</span>
-                  <span v-else class="text-gray">—</span>
-                </template>
-                <template v-if="column.key === 'sub_refund_status'">
-                  <div class="refund-status-cell">
-                    <a-tag v-if="normalizeRefundStatus(sub.refund_status)" :color="getRefundStatusTagColor(sub.refund_status)" size="small">
-                      {{ normalizeRefundStatus(sub.refund_status) }}
-                    </a-tag>
-                    <span v-else class="text-gray">—</span>
-                    <span v-if="showPrincipalLossHint(sub)" class="principal-loss-hint">本金损失</span>
-                  </div>
-                </template>
-                <template v-if="column.key === 'sub_created_at'">
-                  <span class="created-at-text">{{ sub.created_at ? dayjs(sub.created_at).format('MM-DD HH:mm') : '—' }}</span>
-                </template>
                 <template v-if="column.key === 'sub_notes'">
-                  <span v-if="sub.task_notes" class="notes-text">{{ sub.task_notes }}</span>
+                  <span v-if="getSubRemark(sub)" class="notes-text" :title="getSubRemark(sub)">{{ getSubRemark(sub) }}</span>
                   <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_action'">
@@ -1277,25 +1247,18 @@ const pauseStatusReasons = ['库存不足', '链接问题', '店铺问题', '计
 const cutoffStatusReasons = ['未按计划做单', '库存不足', '链接问题', '店铺问题', '计划调整', '目标达成', '风控预警', '不知原因']
 
 const subColumns = [
-  { title: '子订单号', key: 'sub_no', width: 165 },
-  { title: '排单日期', key: 'sub_scheduled', width: 95 },
-  { title: 'ASIN / 产品名', key: 'sub_asin', width: 160 },
+  { title: '子订单ID', key: 'sub_no', width: 165 },
+  { title: 'ASIN', key: 'sub_asin', width: 145 },
+  { title: '排单日期', key: 'sub_scheduled', width: 110 },
+  { title: '类型 / 等级', key: 'sub_type_level', width: 120 },
   { title: '关键词', key: 'sub_keyword', width: 130 },
-  { title: '测评类型', key: 'sub_review_type', width: 80 },
-  { title: '测评等级', key: 'sub_review_level', width: 75 },
-  { title: '售价 / 实付', key: 'sub_price_paid', width: 110 },
-  { title: '业务员', key: 'sub_staff', width: 80 },
-  { title: '买手', key: 'sub_buyer', width: 80 },
-  { title: '亚马逊订单号', key: 'sub_amazon_order', width: 145 },
+  { title: '业务员 / 买手', key: 'sub_staff_buyer', width: 145 },
+  { title: '订单号 / 上传时间', key: 'sub_order_upload', width: 180 },
+  { title: '售价 / 实付 / 实返', key: 'sub_price_paid_refund', width: 150 },
+  { title: '返款状态 / 方式', key: 'sub_refund_info', width: 145 },
   { title: '订单进度', key: 'sub_progress', width: 120 },
   { title: '订单状态', key: 'sub_order_status', width: 100 },
-  { title: '评价', key: 'sub_review', width: 70 },
-  { title: 'FB', key: 'sub_fb', width: 60 },
-  { title: '应返 / 实返', key: 'sub_refund', width: 130 },
-  { title: '返款方式', key: 'sub_refund_method', width: 90 },
-  { title: '返款状态', key: 'sub_refund_status', width: 120 },
-  { title: '创建时间', key: 'sub_created_at', width: 115 },
-  { title: '备注', key: 'sub_notes', width: 130 },
+  { title: '订单备注', key: 'sub_notes', width: 160 },
   { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
 ]
 
@@ -1462,6 +1425,18 @@ function isOverdue(dateStr: string) {
 function fmtTime(t: string | null) {
   if (!t) return '—'
   return dayjs(t).format('YYYY-MM-DD HH:mm')
+}
+
+function getTaskRemark(record: any) {
+  return String(record?.notes || record?.task_notes || '—')
+}
+
+function getSubUploadTime(sub: any) {
+  return sub?.amazon_order_placed_at || null
+}
+
+function getSubRemark(sub: any) {
+  return String(sub?.notes || sub?.task_notes || '').trim()
 }
 
 function getTaskCurrentStatusTime(record: any) {
@@ -2766,7 +2741,14 @@ onMounted(() => {
 .detail-sep { color: #6b7280; padding-left: 12px; }
 .mono-sm { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
 .price-text { color: #16a34a; font-weight: 600; }
-.remark-text { color: #6b7280; }
+.task-note-text {
+  color: #6b7280;
+  display: inline-block;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .task-stats {
   display: flex;
@@ -3023,10 +3005,22 @@ onMounted(() => {
 .prog-dot.pending { background: #d1d5db; }
 .prog-label { font-size: 10px; color: #6b7280; margin-left: 2px; }
 .staff-name { color: #374151; font-size: 12px; }
-.notes-text { font-size: 11px; color: #6b7280; max-width: 120px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.notes-text { font-size: 11px; color: #6b7280; max-width: 150px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .text-gray { color: #9ca3af; font-size: 12px; }
 .text-red { color: #dc2626; }
 .remark-text { color: #dc2626; font-weight: 500; font-size: 12px; }
+.info-stack-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #374151;
+}
+.info-stack-label {
+  display: inline-block;
+  min-width: 40px;
+  color: #6b7280;
+}
 
 .empty-list { padding: 40px 0; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
