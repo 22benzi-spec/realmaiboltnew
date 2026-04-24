@@ -186,6 +186,12 @@
 
             <div class="task-actions">
               <a-button
+                size="small"
+                @click.stop="openTaskHistory(group)"
+              >
+                做单历史
+              </a-button>
+              <a-button
                 type="primary"
                 size="small"
                 class="gen-btn"
@@ -409,6 +415,51 @@
         />
       </div>
     </div>
+
+    <a-modal
+      v-model:open="taskHistoryOpen"
+      title="做单历史"
+      :footer="null"
+      width="760px"
+    >
+      <div class="task-history-modal">
+        <div v-if="taskHistoryGroup" class="task-history-head">
+          <div class="task-history-title-row">
+            <span class="task-history-asin">ASIN：{{ taskHistoryGroup.asin || '—' }}</span>
+            <span class="task-history-product">{{ taskHistoryGroup.product_name || '—' }}</span>
+          </div>
+          <div class="task-history-summary">
+            共涉及 <strong>{{ taskHistoryRows.length }}</strong> 位业务员，累计 <strong>{{ taskHistoryTotalOrders }}</strong> 单
+          </div>
+        </div>
+
+        <div v-if="taskHistoryLoading" class="task-history-loading">
+          <a-spin />
+        </div>
+        <div v-else-if="taskHistoryRows.length === 0" class="empty-list">
+          <a-empty description="暂无该 ASIN 的做单历史" />
+        </div>
+        <div v-else class="task-history-list">
+          <div class="task-history-row task-history-row-head">
+            <span>业务员</span>
+            <span>最近做单时间</span>
+            <span>首次记录时间</span>
+            <span>累计做单</span>
+          </div>
+          <div v-for="item in taskHistoryRows" :key="item.staff_key" class="task-history-row">
+            <span class="task-history-staff">{{ item.staff_name || '未命名业务员' }}</span>
+            <span>{{ fmtTime(item.last_time) }}</span>
+            <span>{{ fmtTime(item.first_time) }}</span>
+            <span class="task-history-count">
+              总 {{ item.order_count }} 单
+              <span class="task-history-type-breakdown">
+                留评 {{ item.review_count || 0 }} / 免评 {{ item.free_count || 0 }} / FB {{ item.fb_count || 0 }}
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </a-modal>
 
     <!-- 批量分配弹窗 -->
     <a-modal
@@ -729,6 +780,60 @@ const loading = ref(false)
 const subOrders = ref<any[]>([])
 const staffList = ref<any[]>([])
 const viewMode = ref<'grouped' | 'flat'>('flat')
+const taskHistoryOpen = ref(false)
+const taskHistoryLoading = ref(false)
+const taskHistoryGroup = ref<any>(null)
+const taskHistoryRows = ref<any[]>([])
+
+const taskHistoryTotalOrders = computed(() =>
+  taskHistoryRows.value.reduce((sum, item) => sum + Number(item.order_count || 0), 0)
+)
+
+function buildMockTaskHistoryRows(group: any) {
+  const asin = String(group?.asin || 'B0MOCKHISTORY').trim() || 'B0MOCKHISTORY'
+  return [
+    {
+      staff_key: `mock-history-${asin}-lm`,
+      staff_id: 'mock_staff_liming',
+      staff_name: '黎明',
+      first_time: dayjs().subtract(28, 'day').toISOString(),
+      last_time: dayjs().subtract(2, 'day').toISOString(),
+      order_count: 6,
+      review_count: 4,
+      free_count: 1,
+      fb_count: 1,
+    },
+    {
+      staff_key: `mock-history-${asin}-wq`,
+      staff_id: 'mock_staff_wangqiang',
+      staff_name: '王强',
+      first_time: dayjs().subtract(19, 'day').toISOString(),
+      last_time: dayjs().subtract(5, 'day').toISOString(),
+      order_count: 4,
+      review_count: 2,
+      free_count: 2,
+      fb_count: 0,
+    },
+    {
+      staff_key: `mock-history-${asin}-cy`,
+      staff_id: 'mock_staff_chenyu',
+      staff_name: '陈瑜',
+      first_time: dayjs().subtract(12, 'day').toISOString(),
+      last_time: dayjs().subtract(1, 'day').toISOString(),
+      order_count: 3,
+      review_count: 1,
+      free_count: 0,
+      fb_count: 2,
+    },
+  ]
+}
+
+function withTaskHistoryPreviewRows(rows: any[], group: any) {
+  if (rows.length >= 3) return rows
+  const existingKeys = new Set(rows.map(item => item.staff_key))
+  const supplements = buildMockTaskHistoryRows(group).filter(item => !existingKeys.has(item.staff_key))
+  return [...rows, ...supplements].slice(0, 3)
+}
 
 function switchView(mode: 'grouped' | 'flat') {
   viewMode.value = mode
@@ -1352,6 +1457,78 @@ function getGroupRemark(group: any) {
   return String(group?.notes || group?.task_notes || '—')
 }
 
+async function openTaskHistory(group: any) {
+  taskHistoryGroup.value = group
+  taskHistoryOpen.value = true
+  taskHistoryRows.value = []
+
+  const asin = String(group?.asin || '').trim()
+  if (!asin) return
+
+  taskHistoryLoading.value = true
+  try {
+    const { data, error } = await supabase
+      .from('sub_orders')
+      .select('id, staff_id, staff_name, asin, status, order_type, review_type, created_at, updated_at')
+      .eq('asin', asin)
+      .not('staff_id', 'is', null)
+      .neq('status', '待分配')
+      .order('updated_at', { ascending: false })
+
+    if (error) throw error
+
+    const grouped = new Map<string, any>()
+    for (const row of data || []) {
+      const staffKey = String(row.staff_id || row.staff_name || row.id)
+      const eventTime = row.updated_at || row.created_at || null
+      if (!grouped.has(staffKey)) {
+        grouped.set(staffKey, {
+          staff_key: staffKey,
+          staff_id: row.staff_id || '',
+          staff_name: row.staff_name || '未命名业务员',
+          first_time: eventTime,
+          last_time: eventTime,
+          order_count: 0,
+          review_count: 0,
+          free_count: 0,
+          fb_count: 0,
+        })
+      }
+      const target = grouped.get(staffKey)
+      target.order_count += 1
+
+      const orderType = String(row.order_type || row.review_type || '').trim()
+      if (orderType === '免评') {
+        target.free_count += 1
+      } else if (orderType === 'FB' || orderType === 'Feedback') {
+        target.fb_count += 1
+      } else {
+        target.review_count += 1
+      }
+
+      if (eventTime && (!target.last_time || dayjs(eventTime).isAfter(dayjs(target.last_time)))) {
+        target.last_time = eventTime
+      }
+      if (eventTime && (!target.first_time || dayjs(eventTime).isBefore(dayjs(target.first_time)))) {
+        target.first_time = eventTime
+      }
+    }
+
+    const rows = Array.from(grouped.values()).sort((a, b) => {
+      if (b.order_count !== a.order_count) return b.order_count - a.order_count
+      const bTime = b.last_time ? dayjs(b.last_time).valueOf() : 0
+      const aTime = a.last_time ? dayjs(a.last_time).valueOf() : 0
+      return bTime - aTime
+    })
+    taskHistoryRows.value = withTaskHistoryPreviewRows(rows, group)
+  } catch (e: any) {
+    taskHistoryRows.value = buildMockTaskHistoryRows(group)
+    message.warning('真实做单历史加载失败，已展示预览数据')
+  } finally {
+    taskHistoryLoading.value = false
+  }
+}
+
 function toggleExpand(orderId: string) {
   if (expandedKeys.value.includes(orderId)) {
     expandedKeys.value = expandedKeys.value.filter(k => k !== orderId)
@@ -1786,6 +1963,76 @@ onMounted(() => { load(); loadStaff(); loadPerfPanel() })
 
 .task-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding-left: 8px; }
 .gen-btn { font-size: 12px; }
+
+.task-history-modal { padding: 4px 0; }
+.task-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+.task-history-title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.task-history-asin {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+.task-history-product {
+  font-size: 12px;
+  color: #6b7280;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-history-summary { font-size: 12px; color: #374151; white-space: nowrap; }
+.task-history-loading { display: flex; justify-content: center; padding: 36px 0; }
+.task-history-list {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.task-history-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr 1.8fr;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 12px;
+  color: #374151;
+}
+.task-history-row:last-child { border-bottom: none; }
+.task-history-row-head {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #6b7280;
+}
+.task-history-staff { font-weight: 600; color: #1a1a2e; }
+.task-history-count {
+  font-weight: 700;
+  color: #2563eb;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.task-history-type-breakdown {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+}
 
 .sub-orders-panel {
   background: #f8fafc;

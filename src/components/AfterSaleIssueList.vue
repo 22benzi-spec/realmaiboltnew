@@ -70,8 +70,8 @@
           <template v-if="column.key === 'sub_info'">
             <div class="cell-info">
               <a class="link-text" @click="openDetail(record)">{{ record.sub_order_number }}</a>
-              <div class="cell-meta">{{ record.asin }} · {{ record.store_name }}</div>
-              <div v-if="record.old_amazon_order_id" class="cell-amazon-id">AMZ: {{ record.old_amazon_order_id }}</div>
+              <div class="cell-meta">{{ record.product_name || '--' }} / {{ record.asin || '--' }}</div>
+              <div class="cell-amazon-id">订单号: {{ record.old_amazon_order_id || '--' }}</div>
             </div>
           </template>
           <template v-if="column.key === 'client'">
@@ -79,8 +79,9 @@
             <div v-if="record.business_manager_name" class="cell-meta">商务: {{ record.business_manager_name }}</div>
           </template>
           <template v-if="column.key === 'buyer'">
-            <div>{{ record.buyer_name || '--' }}</div>
-            <div class="cell-meta">{{ record.staff_name }}</div>
+            <div>{{ record.staff_name || '--' }}</div>
+            <div class="cell-meta">买手: {{ record.buyer_name || '--' }}</div>
+            <div class="cell-meta">聊单号: {{ getBuyerChatDisplay(record) }}</div>
           </template>
           <template v-if="column.key === 'order_status'">
             <a-tag :color="issueTypeColor[record.issue_type] || 'default'">{{ record.issue_type }}</a-tag>
@@ -485,22 +486,22 @@ const editForm = reactive({
 })
 
 const columns = [
-  { title: '子订单信息', key: 'sub_info', width: 200 },
+  { title: '子订单ID / 产品名称 / ASIN / 订单号', key: 'sub_info', width: 240 },
   { title: '客户/商务', key: 'client', width: 140 },
-  { title: '买手/业务员', key: 'buyer', width: 120 },
+  { title: '业务员 / 买手 / 聊单号', key: 'buyer', width: 180 },
   { title: '订单状态', key: 'order_status', width: 95 },
   { title: '本金状态', key: 'principal_status', width: 110 },
   { title: '售后进度', key: 'after_sale_progress', width: 220 },
   { title: '备注', key: 'remark', width: 180 },
   {
-    title: '创建时间',
+    title: '上传时间',
     dataIndex: 'created_at',
     key: 'created_at',
     width: 100,
     customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '',
   },
   {
-    title: '更新时间',
+    title: '入库时间',
     dataIndex: 'updated_at',
     key: 'updated_at',
     width: 100,
@@ -508,6 +509,10 @@ const columns = [
   },
   { title: '操作', key: 'action', width: 300, fixed: 'right' as const },
 ]
+
+function getBuyerChatDisplay(record: any) {
+  return record?.buyer_chat_id || record?.buyer_number || record?.buyer_id || '--'
+}
 
 async function loadStats() {
   let query = supabase.from('after_sale_issues').select('issue_status')

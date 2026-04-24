@@ -248,6 +248,18 @@
           退款将生成待审批流水，需财务审批后执行
         </div>
         <div class="ar-field">
+          <label class="ar-label">一级分类</label>
+          <a-select v-model:value="addRecordForm.primary_category" style="width:100%" @change="onAddRecordPrimaryChange">
+            <a-select-option v-for="item in addRecordPrimaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="ar-field">
+          <label class="ar-label">二级分类</label>
+          <a-select v-model:value="addRecordForm.secondary_categories" mode="multiple" style="width:100%" placeholder="可多选">
+            <a-select-option v-for="item in addRecordSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="ar-field">
           <label class="ar-label">
             {{ addRecordType === '退款' ? '退款金额（元）' : '补款金额（人民币）' }}
             <span v-if="addRecordType === '退款'" class="required">*</span>
@@ -497,7 +509,65 @@ const addRecordOpen = ref(false)
 const addRecordSaving = ref(false)
 const addRecordType = ref<'补款' | '退款'>('补款')
 const addRecordFiles = ref<any[]>([])
+const billingTransactionCategoryOptions = [
+  {
+    value: '业务收入',
+    label: '业务收入',
+    children: [
+      { value: '任务收入', label: '任务收入' },
+      { value: '补款收入', label: '补款收入' },
+    ],
+  },
+  {
+    value: '业务支出',
+    label: '业务支出',
+    children: [
+      { value: '截单退款', label: '截单退款' },
+      { value: '赔付佣金', label: '赔付佣金' },
+      { value: '退差价', label: '退差价' },
+    ],
+  },
+  {
+    value: '运营支出',
+    label: '运营支出',
+    children: [
+      { value: 'IP采购', label: 'IP采购' },
+      { value: '服务器', label: '服务器' },
+      { value: '账号购买', label: '账号购买' },
+      { value: '礼品卡', label: '礼品卡' },
+      { value: '信用卡', label: '信用卡' },
+    ],
+  },
+  {
+    value: '行政办公',
+    label: '行政办公',
+    children: [
+      { value: '行政支出', label: '行政支出' },
+      { value: '行政冲销', label: '行政冲销' },
+    ],
+  },
+  {
+    value: '其他收入',
+    label: '其他收入',
+    children: [{ value: '其他收入', label: '其他收入' }],
+  },
+  {
+    value: '其他支出',
+    label: '其他支出',
+    children: [{ value: '其他支出', label: '其他支出' }],
+  },
+]
+const addRecordPrimaryOptions = computed(() => billingTransactionCategoryOptions.filter(item =>
+  addRecordType.value === '退款'
+    ? ['业务支出', '运营支出', '行政办公', '其他支出'].includes(item.value)
+    : ['业务收入', '其他收入'].includes(item.value),
+))
+const addRecordSecondaryOptions = computed(() =>
+  addRecordPrimaryOptions.value.find(item => item.value === addRecordForm.value.primary_category)?.children || [],
+)
 const addRecordForm = ref({
+  primary_category: '业务收入',
+  secondary_categories: ['补款收入'] as string[],
   amount_cny: undefined as number | undefined,
   amount_usd: undefined as number | undefined,
   payment_date_picker: null as any,
@@ -508,10 +578,21 @@ const addRecordForm = ref({
   update_debt_status: 'none',
 })
 
+function onAddRecordPrimaryChange() {
+  const nextValues = addRecordForm.value.secondary_categories.filter(value =>
+    addRecordSecondaryOptions.value.some(item => item.value === value),
+  )
+  addRecordForm.value.secondary_categories = nextValues.length
+    ? nextValues
+    : (addRecordSecondaryOptions.value[0] ? [addRecordSecondaryOptions.value[0].value] : [])
+}
+
 function openAddRecord(type: '补款' | '退款') {
   addRecordType.value = type
   addRecordFiles.value = []
   addRecordForm.value = {
+    primary_category: type === '退款' ? '业务支出' : '业务收入',
+    secondary_categories: [type === '退款' ? '截单退款' : '补款收入'],
     amount_cny: undefined,
     amount_usd: undefined,
     payment_date_picker: dayjs(),
@@ -521,6 +602,7 @@ function openAddRecord(type: '补款' | '退款') {
     notes: '',
     update_debt_status: 'none',
   }
+  onAddRecordPrimaryChange()
   addRecordOpen.value = true
 }
 
@@ -528,6 +610,14 @@ async function saveRecord() {
   if (!props.order?.id) return
   if (!addRecordForm.value.payment_date_picker) {
     message.warning('请选择日期')
+    return
+  }
+  if (!addRecordForm.value.primary_category) {
+    message.warning('请选择一级分类')
+    return
+  }
+  if (!addRecordForm.value.secondary_categories.length) {
+    message.warning('请选择二级分类')
     return
   }
   addRecordSaving.value = true
@@ -554,6 +644,8 @@ async function saveRecord() {
     const isRefund = addRecordType.value === '退款'
     const amountCny = Number(addRecordForm.value.amount_cny || 0)
     const amountUsd = Number(addRecordForm.value.amount_usd || 0)
+    const secondaryCategories = addRecordForm.value.secondary_categories
+    const categorySummary = secondaryCategories.join(' / ')
 
     if (isRefund) {
       if (amountCny <= 0) {
@@ -572,7 +664,8 @@ async function saveRecord() {
 
     const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
       transaction_no: transactionNo,
-      transaction_type: isRefund ? '退款' : '批次收款',
+      entry_scope: addRecordForm.value.primary_category,
+      transaction_type: secondaryCategories[0],
       direction: isRefund ? '支出' : '收入',
       amount_cny: amountCny,
       amount_usd: isRefund ? 0 : amountUsd,
@@ -583,7 +676,7 @@ async function saveRecord() {
       order_number: props.order.order_number,
       staff_name: addRecordForm.value.recorded_by,
       status: isRefund ? '待审批' : '已确认',
-      notes: `${addRecordType.value} - ${addRecordForm.value.payment_method}${addRecordForm.value.notes ? ' | ' + addRecordForm.value.notes : ''}`,
+      notes: `${categorySummary} - ${addRecordForm.value.payment_method}${addRecordForm.value.notes ? ' | ' + addRecordForm.value.notes : ''}`,
       transaction_date: paymentDate,
       receipt_urls: receiptUrls,
     }).select('id').maybeSingle()
@@ -599,7 +692,7 @@ async function saveRecord() {
       payment_method: addRecordForm.value.payment_method,
       payer_name: addRecordForm.value.payer_name,
       recorded_by: addRecordForm.value.recorded_by,
-      notes: addRecordForm.value.notes,
+      notes: [`分类: ${categorySummary}`, addRecordForm.value.notes].filter(Boolean).join(' | '),
       payment_type: addRecordType.value,
       receipt_urls: receiptUrls,
     })

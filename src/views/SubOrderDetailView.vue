@@ -539,6 +539,7 @@
     <SubOrderOpsDrawer
       v-model:open="opsDetailOpen"
       :sub-order-id="opsDetailTarget?.id || ''"
+      :fallback-detail="opsDetailTarget"
     />
   </div>
 </template>
@@ -661,6 +662,323 @@ const LIST_PREVIEW_MOCKS = [
     notes: '视频素材已确认，可作为高等级展示样例',
   },
 ]
+
+function buildSyntheticListPreviewRows() {
+  const now = dayjs()
+  return [
+    {
+      id: 'preview-sub-order-001',
+      order_id: 'preview-order-001',
+      sub_order_number: 'SUB-PREVIEW-001',
+      asin: 'B0C8PX21LM',
+      product_name: 'Portable Blender Personal Size',
+      product_image: '',
+      store_name: 'US-Preview-Store',
+      brand_name: 'BlendNova',
+      category: 'Kitchen',
+      variant_info: '粉色便携款',
+      keyword: 'portable blender',
+      customer_name: '杭州云海贸易',
+      task_notes: '预览数据：优先匹配北美买手',
+      country: '美国',
+      order_type: '图片',
+      review_level: '高等',
+      review_type: '图片',
+      sales_person: 'Luna',
+      staff_name: 'Luna',
+      buyer_name: 'Emma',
+      buyer_id: 'preview-buyer-001',
+      buyer_chat_id: 'CHAT-90217',
+      amazon_order_id: '',
+      amazon_order_placed_at: '',
+      product_price: 39.99,
+      actual_paid: 0,
+      refund_amount: 0,
+      refund_method: '',
+      refund_date: '',
+      refund_sequence: '预付',
+      buyer_paypal_email: 'emma-preview@example.com',
+      paypal_fee_usd: 0,
+      buyer_assigned_at: now.subtract(1, 'day').toISOString(),
+      review_submitted_at: '',
+      fb_link: '',
+      fb_image_url: '',
+      review_link: '',
+      review_screenshot_url: '',
+      status: '已分配',
+      refund_status: '未返款',
+      notes: '预览交互：待下单场景',
+      created_at: now.subtract(1, 'day').toISOString(),
+      status_change_log: [
+        {
+          from_status: '待分配',
+          to_status: '已分配',
+          reason: '业务员完成首次匹配',
+          changed_at: now.subtract(1, 'day').add(2, 'hour').toISOString(),
+        },
+      ],
+      _edit_change_log: [
+        {
+          at: now.subtract(1, 'day').add(2, 'hour').toISOString(),
+          staff_name: 'Luna',
+          edits: [
+            { field: 'buyer_name', from: '空', to: 'Emma' },
+            { field: 'buyer_chat_id', from: '空', to: 'CHAT-90217' },
+          ],
+        },
+      ],
+      _is_preview_mock: true,
+    },
+    {
+      id: 'preview-sub-order-002',
+      order_id: 'preview-order-002',
+      sub_order_number: 'SUB-PREVIEW-002',
+      asin: 'B09W8Q7ZRM',
+      product_name: 'Memory Foam Seat Cushion',
+      product_image: '',
+      store_name: 'UK-Preview-Store',
+      brand_name: 'SoftEase',
+      category: 'Home',
+      variant_info: '灰色加厚款',
+      keyword: 'seat cushion',
+      customer_name: '深圳森语家居',
+      task_notes: '预览数据：观察返款中状态',
+      country: '英国',
+      order_type: '文字',
+      review_level: '普通',
+      review_type: '文字',
+      sales_person: 'Ivy',
+      staff_name: 'Ivy',
+      buyer_name: 'Sophia',
+      buyer_id: 'preview-buyer-002',
+      buyer_chat_id: 'TG-11802',
+      amazon_order_id: '204-5173628-4419023',
+      amazon_order_placed_at: now.subtract(4, 'day').toISOString(),
+      product_price: 26.8,
+      actual_paid: 27.35,
+      refund_amount: 27.35,
+      refund_method: '礼品卡',
+      refund_date: '',
+      refund_sequence: '评后返',
+      buyer_paypal_email: '',
+      paypal_fee_usd: 0,
+      buyer_assigned_at: now.subtract(5, 'day').toISOString(),
+      review_submitted_at: '',
+      fb_link: '',
+      fb_image_url: '',
+      review_link: '',
+      review_screenshot_url: '',
+      status: '已下单',
+      refund_status: '返款中',
+      notes: '预览交互：待留评 + 返款中',
+      created_at: now.subtract(5, 'day').toISOString(),
+      status_change_log: [
+        {
+          from_status: '待分配',
+          to_status: '已分配',
+          reason: '主管指派业务员',
+          changed_at: now.subtract(5, 'day').add(1, 'hour').toISOString(),
+        },
+        {
+          from_status: '已分配',
+          to_status: '已下单',
+          reason: '已上传 Amazon 订单号',
+          changed_at: now.subtract(4, 'day').add(2, 'hour').toISOString(),
+        },
+      ],
+      _edit_change_log: [
+        {
+          at: now.subtract(5, 'day').add(1, 'hour').toISOString(),
+          staff_name: 'Ivy',
+          edits: [
+            { field: 'buyer_name', from: '空', to: 'Sophia' },
+          ],
+        },
+        {
+          at: now.subtract(4, 'day').add(2, 'hour').toISOString(),
+          staff_name: 'Sophia',
+          edits: [
+            { field: 'amazon_order_id', from: '空', to: '204-5173628-4419023' },
+          ],
+        },
+      ],
+      _is_preview_mock: true,
+    },
+    {
+      id: 'preview-sub-order-003',
+      order_id: 'preview-order-003',
+      sub_order_number: 'SUB-PREVIEW-003',
+      asin: 'B0BVT92KQP',
+      product_name: 'LED Desk Lamp with USB Port',
+      product_image: '',
+      store_name: 'DE-Preview-Store',
+      brand_name: 'Lumina',
+      category: 'Office',
+      variant_info: '黑色欧规版',
+      keyword: 'desk lamp',
+      customer_name: '宁波朗行科技',
+      task_notes: '预览数据：完整闭环样例',
+      country: '德国',
+      order_type: '视频',
+      review_level: '极高等',
+      review_type: '视频',
+      sales_person: 'Aiden',
+      staff_name: 'Aiden',
+      buyer_name: 'Mia',
+      buyer_id: 'preview-buyer-003',
+      buyer_chat_id: 'WA-77129',
+      amazon_order_id: '305-6629134-5102287',
+      amazon_order_placed_at: now.subtract(3, 'day').toISOString(),
+      product_price: 54.2,
+      actual_paid: 55.89,
+      refund_amount: 58.0,
+      refund_method: '银行转账',
+      refund_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
+      refund_sequence: '评后返',
+      buyer_paypal_email: '',
+      paypal_fee_usd: 0,
+      buyer_assigned_at: now.subtract(4, 'day').toISOString(),
+      review_submitted_at: now.subtract(1, 'day').toISOString(),
+      fb_link: '',
+      fb_image_url: '',
+      review_link: 'https://example.com/review/preview-003',
+      review_screenshot_url: 'https://placehold.co/320x180/e2e8f0/64748b?text=Review+Preview',
+      status: '已完成',
+      refund_status: '已返款',
+      notes: '预览交互：已完成 + 已返款',
+      created_at: now.subtract(6, 'day').toISOString(),
+      _mock_principal_loss: true,
+      status_change_log: [
+        {
+          from_status: '待分配',
+          to_status: '已分配',
+          reason: '优先分配高等级买手',
+          changed_at: now.subtract(5, 'day').toISOString(),
+        },
+        {
+          from_status: '已分配',
+          to_status: '已下单',
+          reason: '订单号已回传',
+          changed_at: now.subtract(3, 'day').add(4, 'hour').toISOString(),
+        },
+        {
+          from_status: '已下单',
+          to_status: '已完成',
+          reason: '评论凭证已上传',
+          changed_at: now.subtract(1, 'day').add(3, 'hour').toISOString(),
+        },
+      ],
+      _edit_change_log: [
+        {
+          at: now.subtract(5, 'day').toISOString(),
+          staff_name: 'Aiden',
+          edits: [
+            { field: 'buyer_name', from: '空', to: 'Mia' },
+            { field: 'buyer_chat_id', from: '空', to: 'WA-77129' },
+          ],
+        },
+        {
+          at: now.subtract(3, 'day').add(4, 'hour').toISOString(),
+          staff_name: 'Mia',
+          edits: [
+            { field: 'amazon_order_id', from: '空', to: '305-6629134-5102287' },
+          ],
+        },
+        {
+          at: now.subtract(1, 'day').add(2, 'hour').toISOString(),
+          staff_name: 'Mia',
+          edits: [
+            { field: 'review_screenshot_url', from: '空', to: '已上传凭证' },
+          ],
+        },
+      ],
+      _is_preview_mock: true,
+    },
+    {
+      id: 'preview-sub-order-004',
+      order_id: 'preview-order-004',
+      sub_order_number: 'SUB-PREVIEW-004',
+      asin: 'B0DROP9K11',
+      product_name: 'Travel Makeup Mirror',
+      product_image: '',
+      store_name: 'US-Preview-Store-2',
+      brand_name: 'GlowKit',
+      category: 'Beauty',
+      variant_info: '白色补光版',
+      keyword: 'makeup mirror',
+      customer_name: '广州芊羽美妆',
+      task_notes: '预览数据：掉评异常样例',
+      country: '美国',
+      order_type: '图片',
+      review_level: '高等',
+      review_type: '图片',
+      sales_person: 'Nora',
+      staff_name: 'Nora',
+      buyer_name: 'Olivia',
+      buyer_id: 'preview-buyer-004',
+      buyer_chat_id: 'LINE-44902',
+      amazon_order_id: '407-1122334-8899001',
+      amazon_order_placed_at: now.subtract(7, 'day').toISOString(),
+      product_price: 31.5,
+      actual_paid: 32.1,
+      refund_amount: 33.8,
+      refund_method: 'PayPal',
+      refund_date: now.subtract(3, 'day').format('YYYY-MM-DD'),
+      refund_sequence: '评后返',
+      buyer_paypal_email: 'olivia-preview@example.com',
+      paypal_fee_usd: 1.7,
+      buyer_assigned_at: now.subtract(8, 'day').toISOString(),
+      review_submitted_at: now.subtract(4, 'day').toISOString(),
+      fb_link: '',
+      fb_image_url: '',
+      review_link: '',
+      review_screenshot_url: '',
+      status: '已掉评',
+      refund_status: '已返款',
+      notes: '预览交互：掉评异常处理样例',
+      created_at: now.subtract(8, 'day').toISOString(),
+      status_change_log: [
+        {
+          from_status: '待分配',
+          to_status: '已分配',
+          reason: '首次匹配买手',
+          changed_at: now.subtract(7, 'day').add(1, 'hour').toISOString(),
+        },
+        {
+          from_status: '已分配',
+          to_status: '已掉评',
+          reason: '评论掉落，转异常处理',
+          changed_at: now.subtract(2, 'day').toISOString(),
+        },
+      ],
+      _edit_change_log: [
+        {
+          at: now.subtract(7, 'day').add(1, 'hour').toISOString(),
+          staff_name: 'Nora',
+          edits: [
+            { field: 'buyer_name', from: '空', to: 'Olivia' },
+            { field: 'buyer_chat_id', from: '空', to: 'LINE-44902' },
+          ],
+        },
+        {
+          at: now.subtract(6, 'day').add(3, 'hour').toISOString(),
+          staff_name: 'Olivia',
+          edits: [
+            { field: 'amazon_order_id', from: '空', to: '407-1122334-8899001' },
+          ],
+        },
+        {
+          at: now.subtract(2, 'day').toISOString(),
+          staff_name: 'Nora',
+          edits: [
+            { field: 'buyer_name', from: 'Olivia', to: '空' },
+          ],
+        },
+      ],
+      _is_preview_mock: true,
+    },
+  ] as any[]
+}
 const { currentUser, loadFromStorage } = useCurrentUser()
 
 const loading = ref(false)
@@ -1546,37 +1864,45 @@ async function loadBuyers() {
 
 async function loadData() {
   loading.value = true
-  const { data } = await supabase
-    .from('sub_orders')
-    .select(`
-      id, order_id, sub_order_number, asin, product_name, product_image, store_name, brand_name, category, variant_info, keyword, customer_name, task_notes, country,
-      order_type, review_level, review_type, sales_person, staff_name,
-      buyer_name, buyer_id, amazon_order_id, amazon_order_placed_at, buyer_paypal_email, refund_sequence, paypal_fee_usd, buyer_assigned_at, review_submitted_at,
-      product_price, actual_paid, refund_amount, refund_method, refund_date,
-      fb_link, fb_image_url, review_link, review_screenshot_url,
-      status, refund_status, notes, created_at
-    `)
-    .order('created_at', { ascending: false })
-  const rows = (data || []) as any[]
-  const buyerIds = [...new Set(rows.filter(r => r.buyer_id).map(r => r.buyer_id))]
-  let chatMap: Record<string, string> = {}
-  if (buyerIds.length > 0) {
-    const { data: buyers } = await supabase.from('buyers').select('id, chat_order_id').in('id', buyerIds)
-    if (buyers) buyers.forEach((b: any) => { if (b.chat_order_id) chatMap[b.id] = b.chat_order_id })
+  try {
+    const { data } = await supabase
+      .from('sub_orders')
+      .select(`
+        id, order_id, sub_order_number, asin, product_name, product_image, store_name, brand_name, category, variant_info, keyword, customer_name, task_notes, country,
+        order_type, review_level, review_type, sales_person, staff_name,
+        buyer_name, buyer_id, amazon_order_id, amazon_order_placed_at, buyer_paypal_email, refund_sequence, paypal_fee_usd, buyer_assigned_at, review_submitted_at,
+        product_price, actual_paid, refund_amount, refund_method, refund_date,
+        fb_link, fb_image_url, review_link, review_screenshot_url,
+        status, refund_status, notes, created_at
+      `)
+      .order('created_at', { ascending: false })
+    const rows = (data || []) as any[]
+    const buyerIds = [...new Set(rows.filter(r => r.buyer_id).map(r => r.buyer_id))]
+    let chatMap: Record<string, string> = {}
+    if (buyerIds.length > 0) {
+      const { data: buyers } = await supabase.from('buyers').select('id, chat_order_id').in('id', buyerIds)
+      if (buyers) buyers.forEach((b: any) => { if (b.chat_order_id) chatMap[b.id] = b.chat_order_id })
+    }
+    let principalLossInjected = 0
+    const mappedRows = rows.map((r, index) => {
+      const shouldInject = principalLossInjected < 3 && index < 12 && (Number(r.refund_amount) > 0 || normalizeRefundStatus(r.refund_status) === '已返款')
+      if (shouldInject) principalLossInjected += 1
+      return applyListPreviewMock({
+        ...r,
+        review_type: normalizeReviewType(r.review_type || r.order_type),
+        refund_status: normalizeRefundStatus(r.refund_status),
+        buyer_chat_id: (r.buyer_id && chatMap[r.buyer_id]) ? chatMap[r.buyer_id] : '',
+        _mock_principal_loss: shouldInject,
+      }, index)
+    })
+    const previewRows = buildSyntheticListPreviewRows()
+    allData.value = [...previewRows, ...mappedRows]
+  } catch (e: any) {
+    allData.value = buildSyntheticListPreviewRows() as any
+    message.warning('真实订单数据加载失败，已展示预览数据')
+  } finally {
+    loading.value = false
   }
-  let principalLossInjected = 0
-  allData.value = rows.map((r, index) => {
-    const shouldInject = principalLossInjected < 3 && index < 12 && (Number(r.refund_amount) > 0 || normalizeRefundStatus(r.refund_status) === '已返款')
-    if (shouldInject) principalLossInjected += 1
-    return applyListPreviewMock({
-      ...r,
-      review_type: normalizeReviewType(r.review_type || r.order_type),
-      refund_status: normalizeRefundStatus(r.refund_status),
-      buyer_chat_id: (r.buyer_id && chatMap[r.buyer_id]) ? chatMap[r.buyer_id] : '',
-      _mock_principal_loss: shouldInject,
-    }, index)
-  })
-  loading.value = false
 }
 
 function applyFilters() { pagination.value.current = 1 }

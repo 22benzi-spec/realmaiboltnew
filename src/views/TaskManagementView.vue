@@ -73,15 +73,16 @@
                 <span class="task-note-text" :title="getTaskRemark(record)">{{ getTaskRemark(record) }}</span>
               </div>
               <div class="task-detail-row">
-                <span class="detail-item-text">创建时间：{{ fmtTime(record.created_at) }}</span>
+                <span class="detail-item-text">任务总量：{{ record.order_quantity || 0 }} 单</span>
+                <span class="detail-sep">创建时间：{{ fmtTime(record.created_at) }}</span>
               </div>
             </div>
 
             <div class="task-stats">
-              <!-- 左侧：总量 / 已下单 / 排期 -->
+              <!-- 左侧：子订单 / 已下单 / 排期 -->
               <div class="stat-item">
-                <span class="stat-label">总量</span>
-                <span class="stat-val stat-total">{{ record.order_quantity || 0 }}</span>
+                <span class="stat-label">子订单</span>
+                <span class="stat-val stat-total">{{ record._sub_total || 0 }}</span>
               </div>
               <div class="stat-divider"></div>
               <div class="stat-item">
@@ -121,11 +122,10 @@
                 size="small"
                 class="task-status-select"
                 :loading="taskStatusSavingId === record.id"
+                :options="getTaskStatusSelectOptions(record)"
                 @change="(value: string) => requestTaskStatusChange(record, value)"
                 @click.stop
-              >
-                <a-select-option v-for="s in taskStatuses" :key="s" :value="s">{{ s }}</a-select-option>
-              </a-select>
+              />
               <a-button
                 type="primary"
                 size="small"
@@ -1245,6 +1245,7 @@ const reviewTypeOptions = ['文字', '图片', '视频', '免评', 'Feedback']
 const countries = ['美国', '德国', '英国', '加拿大']
 const pauseStatusReasons = ['库存不足', '链接问题', '店铺问题', '计划调整', '风控预警', '不知原因']
 const cutoffStatusReasons = ['未按计划做单', '库存不足', '链接问题', '店铺问题', '计划调整', '目标达成', '风控预警', '不知原因']
+const manualTaskStatuses = ['已截单', '暂停中']
 
 const subColumns = [
   { title: '子订单ID', key: 'sub_no', width: 165 },
@@ -1285,6 +1286,13 @@ function getTaskStatusReasonOptions(status: string) {
   if (status === '暂停中') return pauseStatusReasons
   if (status === '已截单') return cutoffStatusReasons
   return []
+}
+
+function getTaskStatusSelectOptions(record: any) {
+  const current = String(record?.status || '').trim()
+  return [...new Set([current, ...manualTaskStatuses])]
+    .filter(Boolean)
+    .map(status => ({ label: status, value: status }))
 }
 
 function getSubStatusColor(status: string) {
@@ -2088,6 +2096,11 @@ async function load() {
 
 function requestTaskStatusChange(record: any, nextStatus: string) {
   if (!record?.id || !nextStatus || nextStatus === record.status) return
+
+  if (!manualTaskStatuses.includes(nextStatus)) {
+    message.warning('任务状态仅支持人工变更为已截单或暂停中')
+    return
+  }
 
   if (isTaskStatusReasonRequired(nextStatus)) {
     pendingTaskStatusRecord.value = record
