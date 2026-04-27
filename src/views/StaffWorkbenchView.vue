@@ -80,7 +80,7 @@
               >
                 返回主订单列表
               </a-button>
-              <div v-if="wbNav !== 'pending'" class="wb-view-toggle">
+              <div v-if="wbNav !== 'pending' && wbNav !== 'reviewFollow'" class="wb-view-toggle">
                 <span :class="['wb-vbtn', wbViewMode === 'order' ? 'active' : '']" @click="wbViewMode = 'order'">主订单视角</span>
                 <span :class="['wb-vbtn', wbViewMode === 'sub' ? 'active' : '']" @click="wbViewMode = 'sub'">子订单平铺</span>
               </div>
@@ -394,7 +394,7 @@
                 />
               </div>
             </div>
-            <div v-if="wbViewMode === 'order' && wbNav === 'reviewFollow'" class="workbench-sections">
+            <div v-if="wbNav === 'reviewFollow'" class="workbench-sections">
               <div class="wb-section">
                 <div class="wb-section-header">
                   <div>
@@ -403,18 +403,84 @@
                   </div>
                   <span class="wb-section-count">{{ reviewFollowupTasks.length }} 个子订单</span>
                 </div>
+                <div v-if="displayedReviewFollowTasks.length === 0" class="empty-list compact-empty">
+                  <a-empty description="暂无评论跟进订单" />
+                </div>
+                <div v-else class="review-follow-list">
+                  <div class="review-follow-grid review-follow-header">
+                    <div>子订单ID</div>
+                    <div>上传时间</div>
+                    <div>买手 / 聊单号</div>
+                    <div>产品名称 / ASIN</div>
+                    <div>类型 / 等级</div>
+                    <div>售价 / 实付 / 实返</div>
+                    <div>返款状态 / 时间 / 方式</div>
+                    <div>订单进度</div>
+                    <div>订单状态</div>
+                    <div>评论进度</div>
+                    <div>订单备注</div>
+                    <div>操作</div>
+                  </div>
+                  <div v-for="task in displayedReviewFollowTasks" :key="task.id" class="review-follow-grid review-follow-row">
+                    <div class="inline-sub-no">{{ task.sub_order_number }}</div>
+                    <div>{{ getReviewFollowUploadTime(task) }}</div>
+                    <div>{{ getImprovingBuyerChat(task) }}</div>
+                    <div class="improving-product-cell">
+                      <div class="inline-sub-product-name">{{ task.product_name || '—' }}</div>
+                      <div class="inline-sub-asin">{{ task.asin || '—' }}</div>
+                    </div>
+                    <div>{{ getImprovingTypeLevel(task) }}</div>
+                    <div class="improving-stack-cell">
+                      <span>售价：{{ getImprovingPricePaidRefund(task).price }}</span>
+                      <span>实付：{{ getImprovingPricePaidRefund(task).actualPaid }}</span>
+                      <span>实返：{{ getImprovingPricePaidRefund(task).refundAmount }}</span>
+                    </div>
+                    <div class="improving-stack-cell">
+                      <span>状态：{{ getImprovingRefundSummary(task).status }}</span>
+                      <span>时间：{{ getImprovingRefundSummary(task).time }}</span>
+                      <span>方式：{{ getImprovingRefundSummary(task).method }}</span>
+                    </div>
+                    <div>
+                      <span :class="getTaskProgressBadgeClass(task)">{{ getTaskProgressLabel(task) }}</span>
+                    </div>
+                    <div>
+                      <a-tag :color="getStatusColor(task.status)" size="small">{{ task.status || '—' }}</a-tag>
+                    </div>
+                    <div class="review-follow-progress-cell">
+                      <div class="review-follow-progress-stack">
+                        <span :class="['review-follow-progress-chip', getReviewFollowProgressClass(task)]">{{ getReviewFollowProgressText(task) }}</span>
+                        <span class="review-follow-progress-time">{{ getReviewFollowProgressTime(task) }}</span>
+                      </div>
+                    </div>
+                    <div class="improving-note-cell" :title="getImprovingOrderNote(task)">{{ getImprovingOrderNote(task) }}</div>
+                    <div class="inline-sub-actions">
+                      <a-button size="small" type="primary" ghost @click.stop="openReviewFollowEditor(task)">编辑</a-button>
+                      <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
+                      <a-popover trigger="click" placement="bottomRight" overlay-class-name="review-follow-popover">
+                        <template #content>
+                          <div class="review-follow-more-menu">
+                            <a-button size="small" @click.stop="handleReviewFollowAction(task, '已催评')">已催评</a-button>
+                            <a-button size="small" @click.stop="handleReviewFollowAction(task, '已上评')">已上评</a-button>
+                            <a-button size="small" danger @click.stop="handleReviewFollowAction(task, '无法完成')">无法完成</a-button>
+                          </div>
+                        </template>
+                        <a-button size="small" @click.stop>更多操作</a-button>
+                      </a-popover>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
             <div
-              v-if="wbNav !== 'afterSale' && displayedTaskCards.length === 0 && (wbNav !== 'pending' || wbViewMode === 'sub') && !(wbNav === 'improving' && wbViewMode === 'order')"
+              v-if="wbNav !== 'afterSale' && wbNav !== 'reviewFollow' && displayedTaskCards.length === 0 && (wbNav !== 'pending' || wbViewMode === 'sub') && !(wbNav === 'improving' && wbViewMode === 'order')"
               class="empty-list compact-empty"
             >
-              <a-empty :description="wbNav === 'reviewFollow' ? '暂无评论跟进订单' : wbNav === 'pending' ? '暂无待操作订单' : '暂无待完善订单'" />
+              <a-empty :description="wbNav === 'pending' ? '暂无待操作订单' : '暂无待完善订单'" />
             </div>
 
             <!-- 任务卡片列表 -->
-            <div v-if="wbNav !== 'afterSale' && displayedTaskCards.length > 0 && !(wbNav === 'improving' && wbViewMode === 'order')" class="task-card-list">
+            <div v-if="wbNav !== 'afterSale' && wbNav !== 'reviewFollow' && displayedTaskCards.length > 0 && !(wbNav === 'improving' && wbViewMode === 'order')" class="task-card-list">
             <div
               v-for="task in displayedTaskCards"
               :key="task.id"
@@ -528,18 +594,6 @@
                       <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
                     </div>
                     <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px;margin:0">{{ refundStatusLabel(task.refund_status) }}</a-tag>
-                    <span
-                      v-if="wbNav === 'reviewFollow' && getReviewFollowDateBadgeText(task)"
-                      class="review-follow-date"
-                    >
-                      {{ getReviewFollowDateBadgeText(task) }}
-                    </span>
-                    <span
-                      v-if="wbNav === 'reviewFollow' && getReviewFollowFilterCategory(task) === '超时跟进'"
-                      class="review-follow-overdue"
-                    >
-                      {{ getReviewFollowOverdueLabel(task) }}
-                    </span>
                     <a-space size="small" @click.stop>
                       <a-button
                         v-if="shouldShowReviewFollowAction(task)"
@@ -1381,8 +1435,8 @@ const mainOrderDetailLoading = ref(false)
 const currentMainOrderDetail = ref<any>(null)
 
 type WorkbenchNavKey = 'pending' | 'improving' | 'reviewFollow' | 'afterSale'
-const PROBLEM_TASK_STATUSES = ['已取消', '已退款', '无此订单', '本金多返', '不下单', '评论不显示', '评论被拒', '买手失联', '买手拒绝上评', '卖家要求不上评']
-const REVIEW_FOLLOW_FAILURE_REASONS = ['已掉评', '评论不显示', '评论被拒', '买手失联', '买手拒绝上评', '卖家要求不上评']
+const PROBLEM_TASK_STATUSES = ['已取消', '已退款', '无此订单', '本金多返', '不下单', '传前掉评', '评论不显示', '评论被拒', '买手失联', '买手拒绝上评', '链接无法上评', '卖家要求不上评']
+const REVIEW_FOLLOW_FAILURE_REASONS = ['传前掉评', '评论被拒', '评论不显示', '买手失联', '买手拒绝上评', '链接无法上评', '卖家要求不上评']
 
 const workflowSteps = [0, 1, 2, 3, 4]
 const wbViewMode = ref<'order' | 'sub'>('order')
@@ -1468,6 +1522,9 @@ const todayReviewFollowRelevantTasks = computed(() =>
 )
 const reviewFollowupTasks = computed(() =>
   actionableTasks.value.filter(task => isReviewTrackableTask(task))
+)
+const displayedReviewFollowTasks = computed(() =>
+  getSortedReviewFollowTasks(reviewFollowupTasks.value)
 )
 const displayedTaskCards = computed(() => {
   if (wbNav.value === 'pending') return wbViewMode.value === 'sub' ? pendingListTasks.value : []
@@ -1688,7 +1745,7 @@ function isReviewFollowOverdue(task: any) {
 function getReviewFollowOverdueLabel(task: any) {
   const baseCategory = getReviewFollowBaseCategory(task)
   if (baseCategory === '待催评') return '催评超时'
-  if (baseCategory === '待传评') return '待传评超时'
+  if (baseCategory === '待传评') return '传评超时'
   return '上评超时'
 }
 
@@ -1716,6 +1773,48 @@ function getReviewFollowActionLabel(task: any) {
   return ''
 }
 
+function getReviewFollowProgressText(task: any) {
+  const category = getReviewFollowFilterCategory(task)
+  const baseCategory = getReviewFollowBaseCategory(task)
+  if (category === '超时跟进') return getReviewFollowOverdueLabel(task)
+  if (baseCategory === '待传评') return '待传评'
+  if (baseCategory === '已上评待显示') return '已上评待显示'
+  if (baseCategory === '已催评') return '已催评'
+  return '待催评'
+}
+
+function getReviewFollowProgressClass(task: any) {
+  const category = getReviewFollowFilterCategory(task)
+  const baseCategory = getReviewFollowBaseCategory(task)
+  if (category === '超时跟进') return 'is-overdue'
+  if (baseCategory === '待传评') return 'is-upload'
+  if (baseCategory === '已上评待显示') return 'is-submitted'
+  if (baseCategory === '已催评') return 'is-followed'
+  return 'is-pending'
+}
+
+function getReviewFollowUploadTime(task: any) {
+  return fmtShortTime(task.review_submitted_at || task.review_uploaded_at || task.updated_at || null)
+}
+
+function getReviewFollowProgressTime(task: any) {
+  const category = getReviewFollowFilterCategory(task)
+  const baseCategory = getReviewFollowBaseCategory(task)
+  if (category === '超时跟进') {
+    const overdueDays = Math.max(overdayCount(task.scheduled_date), 1)
+    return `超时 ${overdueDays} 天`
+  }
+  if (baseCategory === '已催评' && task.review_followed_at) {
+    const count = Math.max(Number(task.review_follow_count || task._review_follow_count || 1), 1)
+    return `${fmtShortTime(task.review_followed_at)} · 催评${count}次`
+  }
+  if ((baseCategory === '已上评待显示' || baseCategory === '待传评') && task.review_submitted_at) {
+    const days = Math.max(dayjs().diff(dayjs(task.review_submitted_at), 'day'), 0)
+    return `${fmtShortTime(task.review_submitted_at)} · 已上评${days}天`
+  }
+  return '—'
+}
+
 function shouldShowReviewFollowAction(task: any) {
   if (wbNav.value !== 'reviewFollow') return false
   if (getReviewFollowFilterCategory(task) === '超时跟进') return true
@@ -1723,19 +1822,28 @@ function shouldShowReviewFollowAction(task: any) {
   return baseCategory === '待催评' || baseCategory === '已催评'
 }
 
-function handleReviewFollowAction(task: any) {
-  const action = getReviewFollowActionLabel(task)
-  if (action === '催评') {
+function handleReviewFollowAction(task: any, action?: '已催评' | '已上评' | '无法完成') {
+  const resolvedAction = action || getReviewFollowActionLabel(task)
+  if (resolvedAction === '催评' || resolvedAction === '已催评') {
     markReviewFollowed(task)
     return
   }
-  if (action === '已上评') {
+  if (resolvedAction === '已上评') {
     markReviewSubmitted(task)
     return
   }
-  if (action === '无法完成') {
+  if (resolvedAction === '无法完成') {
     openReviewFailureModal(task)
   }
+}
+
+function openReviewFollowEditor(task: any) {
+  wbNav.value = 'improving'
+  wbViewMode.value = 'sub'
+  taskFilter.value = ''
+  taskSearch.value = task.sub_order_number || task._order_number || ''
+  filterTaskList()
+  allTasks.value.forEach(t => { t._expanded = t.id === task.id })
 }
 
 function isTodayReviewFollowUrgentTask(task: any) {
@@ -2253,6 +2361,7 @@ async function markReviewFollowed(task: any) {
       if (error) throw error
     }
     task.review_followed_at = followedAt
+    task._review_follow_count = Math.max(Number(task.review_follow_count || task._review_follow_count || 0) + 1, 1)
     message.success('已记录催评日期')
   } catch (e: any) {
     message.error('记录催评失败：' + e.message)
@@ -2275,7 +2384,7 @@ async function markReviewSubmitted(task: any) {
 
 function openReviewFailureModal(task: any) {
   reviewFailureTarget.value = task
-  reviewFailureForm.value = { reason: '已掉评' }
+  reviewFailureForm.value = { reason: '传前掉评' }
   reviewFailureModalOpen.value = true
 }
 
@@ -3389,6 +3498,10 @@ async function autoReleaseOverdueTasks(tasks: any[]) {
 function setWorkbenchNav(next: WorkbenchNavKey) {
   wbNav.value = next
   if (next === 'pending') wbViewMode.value = 'order'
+  if (next === 'reviewFollow') {
+    wbViewMode.value = 'sub'
+    taskFilter.value = ''
+  }
   if (next === 'afterSale') {
     taskFilter.value = ''
     filterTomorrow.value = false
@@ -4548,6 +4661,103 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.review-follow-list {
+  background: #f8fafc;
+  border-top: 1px dashed #e5e7eb;
+  padding: 12px 16px 16px;
+}
+.review-follow-grid {
+  display: grid;
+  grid-template-columns: 130px 110px 170px 1.4fr 120px 150px 170px 110px 110px 180px 1fr 190px;
+  align-items: center;
+}
+.review-follow-header {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+}
+.review-follow-header > div {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.review-follow-row {
+  background: #fff;
+  border-left: 1px solid #e5e7eb;
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #f0f0f0;
+}
+.review-follow-row:last-child {
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0 0 10px 10px;
+}
+.review-follow-row > div {
+  padding: 10px 12px;
+  min-width: 0;
+  font-size: 12px;
+  color: #374151;
+}
+.review-follow-progress-cell {
+  display: flex;
+  align-items: center;
+}
+.review-follow-progress-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.review-follow-progress-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.review-follow-progress-chip.is-pending {
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.1);
+  border-color: rgba(217, 119, 6, 0.18);
+}
+.review-follow-progress-chip.is-followed {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.18);
+}
+.review-follow-progress-chip.is-submitted {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+  border-color: rgba(124, 58, 237, 0.18);
+}
+.review-follow-progress-chip.is-upload {
+  color: #059669;
+  background: rgba(5, 150, 105, 0.08);
+  border-color: rgba(5, 150, 105, 0.18);
+}
+.review-follow-progress-chip.is-overdue {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.18);
+}
+.review-follow-progress-time {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+.review-follow-more-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 120px;
 }
 
 .task-drawer-header { display: flex; align-items: flex-start; }
