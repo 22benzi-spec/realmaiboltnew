@@ -2,7 +2,10 @@
   <div class="page-content">
     <div class="page-header">
       <h2 class="page-title">交易流水</h2>
-      <a-button type="primary" @click="openAdd">手动记账</a-button>
+      <div class="header-actions">
+        <a-button :disabled="!selectedRowKeys.length" @click="approveSelectedRows">批量审批</a-button>
+        <a-button type="primary" @click="openAdd">手动记账</a-button>
+      </div>
     </div>
 
     <!-- KPI -->
@@ -47,6 +50,7 @@
       :data-source="list"
       :loading="loading"
       :pagination="{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t:number) => `共 ${t} 条` }"
+      :row-selection="rowSelection"
       row-key="id"
       size="middle"
       :scroll="{ x: 1400 }"
@@ -79,12 +83,16 @@
           <a-badge :status="statusBadge[record.status] || 'default'" :text="record.status" />
         </template>
         <template v-if="column.key === 'action'">
-          <a-space>
-            <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
+          <a-space v-if="record.status !== '已确认'">
+            <a-popconfirm v-if="canApprove(record)" title="确认审批通过？" @confirm="approveRow(record)">
+              <a-button type="link" size="small" style="color:#059669">审批</a-button>
+            </a-popconfirm>
+            <a-button type="link" size="small" :disabled="record.status === '已确认'" @click="openEdit(record)">编辑</a-button>
             <a-popconfirm title="确认作废这条流水？" @confirm="voidRow(record.id)">
               <a-button type="link" size="small" danger>作废</a-button>
             </a-popconfirm>
           </a-space>
+          <span v-else class="text-muted">已审批</span>
         </template>
       </template>
     </a-table>
@@ -195,6 +203,8 @@ import { useCurrentUser } from '../composables/useCurrentUser'
 const loading = ref(false)
 const saving = ref(false)
 const list = ref<any[]>([])
+const selectedRowKeys = ref<string[]>([])
+const mockRows = ref<any[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
@@ -319,8 +329,84 @@ const columns = [
   { title: '操作', key: 'action', width: 120, fixed: 'right' as const },
 ]
 
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: string[]) => {
+    selectedRowKeys.value = keys
+  },
+  getCheckboxProps: (record: any) => ({
+    disabled: !canApprove(record),
+  }),
+}))
+
 function formatNum(n: number) {
   return (n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function buildLedgerPreviewRows() {
+  const now = dayjs()
+  return [
+    {
+      id: 'mock-ledger-pending-1',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0001',
+      entry_scope: '业务支出',
+      transaction_type: '截单退款',
+      direction: '支出',
+      amount_cny: 268,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '深圳星河科技',
+      order_number: 'ORD-20260507-001',
+      staff_name: '商务-李婷',
+      handler_name: '',
+      status: '待确认',
+      notes: '付款审批 | 业务支出 / 截单退款',
+      transaction_date: now.format('YYYY-MM-DD'),
+      created_at: now.subtract(20, 'minute').toISOString(),
+      updated_at: now.subtract(20, 'minute').toISOString(),
+    },
+    {
+      id: 'mock-ledger-pending-2',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0002',
+      entry_scope: '运营支出',
+      transaction_type: '礼品卡',
+      direction: '支出',
+      amount_cny: 1450,
+      amount_usd: 200,
+      exchange_rate: 7.25,
+      customer_name: 'Amazon Gift Card Supplier',
+      order_number: '',
+      staff_name: '财务-陈岚',
+      handler_name: '',
+      status: '待确认',
+      notes: '礼品卡采购待审批',
+      transaction_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(1, 'day').hour(15).toISOString(),
+      updated_at: now.subtract(1, 'day').hour(15).toISOString(),
+    },
+    {
+      id: 'mock-ledger-pending-3',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0003',
+      entry_scope: '行政办公',
+      transaction_type: '行政支出',
+      direction: '支出',
+      amount_cny: 320,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '办公室供应商',
+      order_number: '',
+      staff_name: '行政-周宁',
+      handler_name: '管理员',
+      status: '已修改',
+      notes: '办公用品采购，等待复核',
+      transaction_date: now.subtract(2, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(2, 'day').hour(11).toISOString(),
+      updated_at: now.subtract(1, 'day').hour(9).toISOString(),
+    },
+  ]
 }
 
 function inferEntryScope(type: string) {
@@ -430,6 +516,10 @@ function hasAmount(record: any) {
   return Number(record?.amount_cny || 0) > 0 || Number(record?.amount_usd || 0) > 0
 }
 
+function canApprove(record: any) {
+  return ['待确认', '已修改'].includes(String(record?.status || '').trim())
+}
+
 function onScopeChange(scope: string) {
   const nextOptions = transactionCategoryOptions.find(item => item.value === scope)?.children || []
   if (!nextOptions.some(item => item.value === form.transaction_type)) {
@@ -481,7 +571,7 @@ async function loadData() {
       q = q.lte('transaction_date', dateRange.value[1].format('YYYY-MM-DD'))
     }
     const { data } = await q
-    const rows = (data || [])
+    const rows = [...mockRows.value, ...(data || [])]
       .map(normalizeFinancialRow)
       .filter((row: any) => !filterPrimaryCategory.value || row.entry_scope === filterPrimaryCategory.value)
       .filter((row: any) => !filterType.value || row.transaction_type === filterType.value)
@@ -493,6 +583,7 @@ async function loadData() {
     }
     const start = (page.value - 1) * pageSize.value
     list.value = rows.slice(start, start + pageSize.value)
+    selectedRowKeys.value = selectedRowKeys.value.filter(id => list.value.some(row => row.id === id && canApprove(row)))
   } finally { loading.value = false }
 }
 
@@ -503,7 +594,7 @@ async function loadStats() {
     q = q.lte('transaction_date', dateRange.value[1].format('YYYY-MM-DD'))
   }
   const { data } = await q
-  const rows = (data || []).map(normalizeFinancialRow)
+  const rows = [...mockRows.value, ...(data || [])].map(normalizeFinancialRow)
   stats.count = rows.length
   stats.totalIncome = rows.filter(r => r.direction === '收入').reduce((s, r) => s + Number(r.amount_cny || 0), 0)
   stats.totalIncomeUsd = rows.filter(r => r.direction === '收入').reduce((s, r) => s + Number(r.amount_usd || 0), 0)
@@ -525,6 +616,10 @@ function openAdd() {
 
 function openEdit(row: any) {
   const normalized = normalizeFinancialRow(row)
+  if (normalized.status === '已确认') {
+    message.warning('已审批的流水不支持修改')
+    return
+  }
   editId.value = row.id
   Object.assign(form, {
     entry_scope: inferEntryScope(normalized.transaction_type),
@@ -567,8 +662,26 @@ async function handleSave() {
       payload.order_number = null
     }
     if (editId.value) {
+      const target = list.value.find(item => item.id === editId.value)
+      if (target && normalizeTransactionStatus(target.status) === '已确认') {
+        message.warning('已审批的流水不支持修改')
+        return
+      }
+      if (String(editId.value).startsWith('mock-ledger-')) {
+        mockRows.value = mockRows.value.map(item =>
+          item.id === editId.value
+            ? {
+                ...item,
+                ...payload,
+                status: '已修改',
+              }
+            : item,
+        )
+        message.success('已更新')
+      } else {
       await supabase.from('financial_transactions').update(payload).eq('id', editId.value)
       message.success('已更新')
+      }
     } else {
       const { data: noData } = await supabase.rpc('generate_transaction_no')
       payload.transaction_no = noData || `FT-${Date.now()}`
@@ -580,7 +693,80 @@ async function handleSave() {
   } finally { saving.value = false }
 }
 
+async function approveRow(row: any) {
+  if (!row?.id || !canApprove(row)) return
+  if (String(row.id).startsWith('mock-ledger-')) {
+    mockRows.value = mockRows.value.map(item =>
+      item.id === row.id
+        ? {
+            ...item,
+            status: '已确认',
+            handler_name: currentUser.value?.name || row.handler_name || '',
+            updated_at: new Date().toISOString(),
+          }
+        : item,
+    )
+    message.success('已审批')
+    selectedRowKeys.value = selectedRowKeys.value.filter(id => id !== row.id)
+    loadData(); loadStats()
+    return
+  }
+  await supabase
+    .from('financial_transactions')
+    .update({
+      status: '已确认',
+      handler_name: currentUser.value?.name || row.handler_name || '',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', row.id)
+  message.success('已审批')
+  selectedRowKeys.value = selectedRowKeys.value.filter(id => id !== row.id)
+  loadData(); loadStats()
+}
+
+async function approveSelectedRows() {
+  const ids = selectedRowKeys.value.filter(Boolean)
+  if (!ids.length) {
+    message.warning('请先选择待审批流水')
+    return
+  }
+  const mockIds = ids.filter(id => String(id).startsWith('mock-ledger-'))
+  const realIds = ids.filter(id => !String(id).startsWith('mock-ledger-'))
+  if (mockIds.length) {
+    mockRows.value = mockRows.value.map(item =>
+      mockIds.includes(item.id)
+        ? {
+            ...item,
+            status: '已确认',
+            handler_name: currentUser.value?.name || '',
+            updated_at: new Date().toISOString(),
+          }
+        : item,
+    )
+  }
+  if (realIds.length) {
+  await supabase
+    .from('financial_transactions')
+    .update({
+      status: '已确认',
+      handler_name: currentUser.value?.name || '',
+      updated_at: new Date().toISOString(),
+    })
+    .in('id', realIds)
+  }
+  message.success(`已批量审批 ${ids.length} 条`)
+  selectedRowKeys.value = []
+  loadData(); loadStats()
+}
+
 async function voidRow(id: string) {
+  if (String(id).startsWith('mock-ledger-')) {
+    mockRows.value = mockRows.value.filter(item => item.id !== id)
+    message.success('已作废')
+    selectedRowKeys.value = selectedRowKeys.value.filter(key => key !== id)
+    loadData(); loadStats()
+    return
+  }
   await supabase.from('financial_transactions').delete().eq('id', id)
   message.success('已作废')
   loadData(); loadStats()
@@ -588,6 +774,7 @@ async function voidRow(id: string) {
 
 onMounted(() => {
   loadFromStorage()
+  mockRows.value = buildLedgerPreviewRows()
   onScopeChange(form.entry_scope)
   loadData()
   loadStats()
@@ -597,6 +784,7 @@ onMounted(() => {
 <style scoped>
 .page-content { padding: 24px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header-actions { display: flex; gap: 10px; align-items: center; }
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 0; }
 
 .kpi-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
