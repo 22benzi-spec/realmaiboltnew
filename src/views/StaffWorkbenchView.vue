@@ -40,9 +40,13 @@
                 </div>
                 <div class="today-stat">
                   <span class="today-stat-label">子订单</span>
-                  <strong class="today-stat-value">{{ workbenchSummary.todayTotalCount || 0 }}</strong>
-                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayDoneCount }}</span>
-                  <span class="today-stat-sub">{{ workbenchSummary.todayProgressPct }}%</span>
+                  <strong class="today-stat-value">{{ wbNav === 'improving' ? workbenchSummary.todayImprovingSubOrderCount : (workbenchSummary.todayTotalCount || 0) }}</strong>
+                  <span class="today-stat-meta">今日完成 {{ wbNav === 'improving' ? workbenchSummary.todayImprovingDoneCount : workbenchSummary.todayDoneCount }}</span>
+                  <span v-if="wbNav === 'improving'" class="today-stat-breakdown">
+                    <span>已下单 {{ workbenchSummary.todayImprovingOrderedDoneCount }}</span>
+                    <span>已返款 {{ workbenchSummary.todayImprovingRefundDoneCount }}</span>
+                  </span>
+                  <span class="today-stat-sub">{{ wbNav === 'improving' ? workbenchSummary.todayImprovingProgressPct : workbenchSummary.todayProgressPct }}%</span>
                 </div>
               </div>
             </div>
@@ -243,7 +247,7 @@
               </div>
 
             </div>
-            <div v-if="wbViewMode === 'order' && wbNav === 'improving'" class="workbench-sections">
+            <div v-if="wbViewMode === 'order' && wbNav === 'improving' && taskFilter !== '异常订单'" class="workbench-sections">
               <div class="wb-section">
                 <div class="wb-section-header">
                   <div>
@@ -251,20 +255,6 @@
                     <div class="wb-section-desc">已分配买手后进入这里，重点看待返款、待下单和待留评等具体环节</div>
                   </div>
                   <span class="wb-section-count">{{ improvingOrderGroups.length }} 个主订单</span>
-                </div>
-                <div class="wb-stage-overview">
-                  <div class="wb-stage-card">
-                    <span class="wb-stage-label">待返款</span>
-                    <strong class="wb-stage-value">{{ improvingSummary.needRefundCount }}</strong>
-                  </div>
-                  <div class="wb-stage-card">
-                    <span class="wb-stage-label">待下单</span>
-                    <strong class="wb-stage-value">{{ improvingSummary.needOrderCount }}</strong>
-                  </div>
-                  <div class="wb-stage-card">
-                    <span class="wb-stage-label">待留评</span>
-                    <strong class="wb-stage-value">{{ improvingSummary.needReviewCount }}</strong>
-                  </div>
                 </div>
                 <div v-if="improvingOrderGroups.length === 0" class="empty-list compact-empty">
                   <a-empty description="暂无待完善订单" />
@@ -379,6 +369,68 @@
                 </div>
               </div>
             </div>
+            <div v-if="wbNav === 'improving' && (wbViewMode === 'sub' || taskFilter === '异常订单')" class="workbench-sections">
+              <div class="wb-section">
+                <div class="wb-section-header">
+                  <div>
+                    <div class="wb-section-title">{{ taskFilter === '异常订单' ? '异常订单' : '待完善订单' }}</div>
+                    <div class="wb-section-desc">
+                      {{ taskFilter === '异常订单'
+                        ? '仅展示预付已返款后超过 24 小时仍未回传 Amazon 订单号的子订单'
+                        : '按子订单平铺展示，方便业务员逐条处理返款、订单号和留评流程' }}
+                    </div>
+                  </div>
+                  <span class="wb-section-count">{{ displayedImprovingListTasks.length }} 个子订单</span>
+                </div>
+                <div v-if="displayedImprovingListTasks.length === 0" class="empty-list compact-empty">
+                  <a-empty :description="taskFilter === '异常订单' ? '暂无异常订单' : '暂无待完善订单'" />
+                </div>
+                <div v-else class="improving-sub-list improving-sub-standalone">
+                  <div class="improving-sub-grid improving-sub-header">
+                    <div>子订单ID</div>
+                    <div>买手 / 聊单号</div>
+                    <div>产品名称 / ASIN</div>
+                    <div>类型 / 等级</div>
+                    <div>售价 / 实付 / 实返</div>
+                    <div>返款状态 / 时间 / 方式</div>
+                    <div>订单进度</div>
+                    <div>订单状态</div>
+                    <div>订单备注</div>
+                    <div>操作</div>
+                  </div>
+                  <div v-for="task in displayedImprovingListTasks" :key="task.id" class="improving-sub-grid improving-sub-row">
+                    <div class="inline-sub-no">{{ task.sub_order_number }}</div>
+                    <div>{{ getImprovingBuyerChat(task) }}</div>
+                    <div class="improving-product-cell">
+                      <div class="inline-sub-product-name">{{ task.product_name || '—' }}</div>
+                      <div class="inline-sub-asin">{{ task.asin || '—' }}</div>
+                    </div>
+                    <div>{{ getImprovingTypeLevel(task) }}</div>
+                    <div class="improving-stack-cell">
+                      <span>售价：{{ getImprovingPricePaidRefund(task).price }}</span>
+                      <span>实付：{{ getImprovingPricePaidRefund(task).actualPaid }}</span>
+                      <span>实返：{{ getImprovingPricePaidRefund(task).refundAmount }}</span>
+                    </div>
+                    <div class="improving-stack-cell">
+                      <span>状态：{{ getImprovingRefundSummary(task).status }}</span>
+                      <span>时间：{{ getImprovingRefundSummary(task).time }}</span>
+                      <span>方式：{{ getImprovingRefundSummary(task).method }}</span>
+                    </div>
+                    <div>
+                      <span :class="getTaskProgressBadgeClass(task)">{{ getTaskProgressLabel(task) }}</span>
+                    </div>
+                    <div>
+                      <a-tag :color="getStatusColor(task.status)" size="small">{{ task.status || '—' }}</a-tag>
+                    </div>
+                    <div class="improving-note-cell" :title="getImprovingOrderNote(task)">{{ getImprovingOrderNote(task) }}</div>
+                    <div class="inline-sub-actions">
+                      <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
+                      <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div v-if="wbNav === 'afterSale'" class="workbench-sections">
               <div class="wb-section">
                 <div class="wb-section-header">
@@ -473,14 +525,14 @@
             </div>
 
             <div
-              v-if="wbNav !== 'afterSale' && wbNav !== 'reviewFollow' && displayedTaskCards.length === 0 && (wbNav !== 'pending' || wbViewMode === 'sub') && !(wbNav === 'improving' && wbViewMode === 'order')"
+              v-if="wbNav === 'pending' && wbViewMode === 'sub' && displayedTaskCards.length === 0"
               class="empty-list compact-empty"
             >
               <a-empty :description="wbNav === 'pending' ? '暂无待操作订单' : '暂无待完善订单'" />
             </div>
 
             <!-- 任务卡片列表 -->
-            <div v-if="wbNav !== 'afterSale' && wbNav !== 'reviewFollow' && displayedTaskCards.length > 0 && !(wbNav === 'improving' && wbViewMode === 'order')" class="task-card-list">
+            <div v-if="wbNav === 'pending' && wbViewMode === 'sub' && displayedTaskCards.length > 0" class="task-card-list">
             <div
               v-for="task in displayedTaskCards"
               :key="task.id"
@@ -488,129 +540,78 @@
             >
               <!-- 任务卡头 -->
               <div class="task-card-header" @click="toggleExpand(task)">
-                <template v-if="wbNav === 'improving'">
-                  <div class="card-header-left improving-flat-left">
-                    <span class="toggle-icon">{{ task._expanded ? '▼' : '▶' }}</span>
-                    <img v-if="task.product_image" :src="task.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="onImgError" />
-                    <div v-else class="product-thumb-placeholder"><span>?</span></div>
+                <div class="card-header-left">
+                  <span class="toggle-icon">{{ task._expanded ? '▼' : '▶' }}</span>
+                  <img v-if="task.product_image" :src="task.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="onImgError" />
+                  <div v-else class="product-thumb-placeholder"><span>?</span></div>
 
-                    <div class="task-meta improving-flat-meta">
-                      <div class="meta-row1">
-                        <span class="sub-no-text">{{ task.sub_order_number }}</span>
-                        <a-tag :color="getStatusColor(task.status)" style="font-size:10px">{{ task.status || '—' }}</a-tag>
-                        <span v-if="task._order_number" class="order-chip">{{ task._order_number }}</span>
-                      </div>
-                      <div class="improving-flat-grid">
-                        <div class="improving-flat-cell">
-                          <span class="improving-flat-label">买手 / 聊单号</span>
-                          <span class="improving-flat-value">{{ getImprovingBuyerChat(task) }}</span>
-                        </div>
-                        <div class="improving-flat-cell">
-                          <span class="improving-flat-label">产品名称 / ASIN</span>
-                          <span class="improving-flat-value">{{ task.product_name || '—' }} / {{ task.asin || '—' }}</span>
-                        </div>
-                        <div class="improving-flat-cell">
-                          <span class="improving-flat-label">类型 / 等级</span>
-                          <span class="improving-flat-value">{{ getImprovingTypeLevel(task) }}</span>
-                        </div>
-                        <div class="improving-flat-cell">
-                          <span class="improving-flat-label">售价 / 实付 / 实返</span>
-                          <span class="improving-flat-value">
-                            {{ getImprovingPricePaidRefund(task).price }} / {{ getImprovingPricePaidRefund(task).actualPaid }} / {{ getImprovingPricePaidRefund(task).refundAmount }}
-                          </span>
-                        </div>
-                        <div class="improving-flat-cell">
-                          <span class="improving-flat-label">返款状态 / 时间 / 方式</span>
-                          <span class="improving-flat-value">
-                            {{ getImprovingRefundSummary(task).status }} / {{ getImprovingRefundSummary(task).time }} / {{ getImprovingRefundSummary(task).method }}
-                          </span>
-                        </div>
-                        <div class="improving-flat-cell">
-                          <span class="improving-flat-label">订单进度</span>
-                          <span class="improving-flat-value">{{ getTaskProgressLabel(task) }}</span>
-                        </div>
-                        <div class="improving-flat-cell improving-flat-cell-wide">
-                          <span class="improving-flat-label">订单备注</span>
-                          <span class="improving-flat-value">{{ getImprovingOrderNote(task) }}</span>
-                        </div>
-                      </div>
+                  <div class="task-meta">
+                    <div class="meta-row1">
+                      <span class="sub-no-text">{{ task.sub_order_number }}</span>
+                      <!-- <a-tag :color="getStatusColor(task.status)" style="margin-left:6px;font-size:11px">{{ task.status }}</a-tag> -->
+                      <a-tag v-if="isOverdue(task.scheduled_date) && !isDone(task.status)" color="error" style="font-size:10px">日超期 {{ overdayCount(task.scheduled_date) }} 天</a-tag>
+                      <a-tag v-if="task.order_type" color="default" style="font-size:10px">{{ task.order_type }}</a-tag>
+                      <template v-if="task.keyword_type === 'link' && task.search_link">
+                        <a :href="task.search_link" target="_blank" rel="noopener noreferrer" class="keyword-badge keyword-link-badge" @click.stop>
+                          链接操作
+                        </a>
+                      </template>
+                      <div v-else-if="task.keyword" class="keyword-badge">{{ task.keyword }}</div>
+                      <span v-if="task.product_name" class="product-name-sm">{{ task.product_name }}</span>
+                    </div>
+                    <div class="meta-row2">
+                      <span v-if="task._order_number" class="order-chip">{{ task._order_number }}</span>
+                      <span class="mono-sm">{{ task.asin }}</span>
+                      <span class="sep">{{ task.store_name }}</span>
+                      <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
+                      <span v-if="task.category" class="sep text-gray">{{ task.category }}</span>
+                      <span v-if="task.country" class="sep text-gray">{{ task.country }}</span>
+                    </div>
+                    <div class="meta-row3">
+                      <span class="meta-focus-item"><span class="meta-focus-label">测评等级</span><span class="meta-focus-value">{{ task.review_level || '—' }}</span></span>
+                      <span class="meta-focus-item"><span class="meta-focus-label">指定变体</span><span class="meta-focus-value">{{ task.variant_info || '—' }}</span></span>
+                      <span class="meta-focus-item meta-focus-item-wide"><span class="meta-focus-label">任务备注</span><span class="meta-focus-value">{{ task.task_notes || '—' }}</span></span>
                     </div>
                   </div>
+                </div>
 
-                  <div class="card-header-right improving-flat-right">
-                    <a-space size="small" @click.stop>
-                      <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
-                      <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
-                    </a-space>
+                <div class="card-header-right">
+                  <div v-if="task.scheduled_date" :class="['date-badge', isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-ok']">
+                    截止 {{ task.scheduled_date }}
                   </div>
-                </template>
-
-                <template v-else>
-                  <div class="card-header-left">
-                    <span class="toggle-icon">{{ task._expanded ? '▼' : '▶' }}</span>
-                    <img v-if="task.product_image" :src="task.product_image" class="product-thumb" referrerpolicy="no-referrer" @error="onImgError" />
-                    <div v-else class="product-thumb-placeholder"><span>?</span></div>
-
-                    <div class="task-meta">
-                      <div class="meta-row1">
-                        <span class="sub-no-text">{{ task.sub_order_number }}</span>
-                        <!-- <a-tag :color="getStatusColor(task.status)" style="margin-left:6px;font-size:11px">{{ task.status }}</a-tag> -->
-                        <a-tag v-if="isOverdue(task.scheduled_date) && !isDone(task.status)" color="error" style="font-size:10px">日超期 {{ overdayCount(task.scheduled_date) }} 天</a-tag>
-                        <a-tag v-if="task.order_type" color="default" style="font-size:10px">{{ task.order_type }}</a-tag>
-                        <template v-if="task.keyword_type === 'link' && task.search_link">
-                          <a :href="task.search_link" target="_blank" rel="noopener noreferrer" class="keyword-badge keyword-link-badge" @click.stop>
-                            链接操作
-                          </a>
-                        </template>
-                        <div v-else-if="task.keyword" class="keyword-badge">{{ task.keyword }}</div>
-                        <span v-if="task.product_name" class="product-name-sm">{{ task.product_name }}</span>
-                      </div>
-                      <div class="meta-row2">
-                        <span v-if="task._order_number" class="order-chip">{{ task._order_number }}</span>
-                        <span class="mono-sm">{{ task.asin }}</span>
-                        <span class="sep">{{ task.store_name }}</span>
-                        <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
-                        <span v-if="task.category" class="sep text-gray">{{ task.category }}</span>
-                        <span v-if="task.country" class="sep text-gray">{{ task.country }}</span>
-                      </div>
-                      <div class="meta-row3">
-                        <span class="meta-focus-item"><span class="meta-focus-label">测评等级</span><span class="meta-focus-value">{{ task.review_level || '—' }}</span></span>
-                        <span class="meta-focus-item"><span class="meta-focus-label">指定变体</span><span class="meta-focus-value">{{ task.variant_info || '—' }}</span></span>
-                        <span class="meta-focus-item meta-focus-item-wide"><span class="meta-focus-label">任务备注</span><span class="meta-focus-value">{{ task.task_notes || '—' }}</span></span>
-                      </div>
-                    </div>
+                  <!-- 进度点 -->
+                  <div class="progress-dots">
+                    <span v-for="(_step, i) in workflowSteps" :key="i" :class="['dot', getStepDone(task, i) ? 'done' : getStepCurrent(task, i) ? 'current' : 'pending']"></span>
                   </div>
-
-                  <div class="card-header-right">
-                    <div v-if="task.scheduled_date" :class="['date-badge', isOverdue(task.scheduled_date) && !isDone(task.status) ? 'date-overdue' : 'date-ok']">
-                      截止 {{ task.scheduled_date }}
-                    </div>
-                    <!-- 进度点 -->
-                    <div class="progress-dots">
-                      <span v-for="(_step, i) in workflowSteps" :key="i" :class="['dot', getStepDone(task, i) ? 'done' : getStepCurrent(task, i) ? 'current' : 'pending']"></span>
-                    </div>
-                    <div class="header-assign">
-                      <span :class="getTaskProgressBadgeClass(task)">{{ getTaskProgressLabel(task) }}</span>
-                      <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
-                    </div>
-                    <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px;margin:0">{{ refundStatusLabel(task.refund_status) }}</a-tag>
-                    <a-space size="small" @click.stop>
-                      <a-button
-                        v-if="shouldShowReviewFollowAction(task)"
-                        size="small"
-                        ghost
-                        :class="getReviewFollowActionLabel(task) === '无法完成' ? 'follow-review-btn danger' : 'follow-review-btn'"
-                        @click.stop="handleReviewFollowAction(task)"
-                      >{{ getReviewFollowActionLabel(task) }}</a-button>
-                      <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
-                      <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
-                    </a-space>
+                  <div class="header-assign">
+                    <span :class="getTaskProgressBadgeClass(task)">{{ getTaskProgressLabel(task) }}</span>
+                    <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
                   </div>
-                </template>
+                  <a-tag v-if="task.refund_status && task.refund_status !== '无需退款'" color="orange" style="font-size:10px;margin:0">{{ refundStatusLabel(task.refund_status) }}</a-tag>
+                  <a-space size="small" @click.stop>
+                    <a-button
+                      v-if="shouldShowReviewFollowAction(task)"
+                      size="small"
+                      ghost
+                      :class="getReviewFollowActionLabel(task) === '无法完成' ? 'follow-review-btn danger' : 'follow-review-btn'"
+                      @click.stop="handleReviewFollowAction(task)"
+                    >{{ getReviewFollowActionLabel(task) }}</a-button>
+                    <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
+                    <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
+                  </a-space>
+                </div>
               </div>
 
               <!-- 展开：步骤化做单流程 -->
               <div v-if="task._expanded" class="workflow-body">
+                <div
+                  v-if="getTaskDeadlineAlert(task)"
+                  :class="['task-deadline-alert', getTaskDeadlineAlert(task)?.type === 'danger' ? 'is-danger' : 'is-warning']"
+                >
+                  <span class="task-deadline-alert-label">{{ getTaskDeadlineAlert(task)?.reason }}</span>
+                  <span class="task-deadline-alert-time">截止 {{ getTaskDeadlineAlert(task)?.deadlineText }}</span>
+                  <span class="task-deadline-alert-detail">{{ getTaskDeadlineAlert(task)?.detail }}</span>
+                </div>
                 <!-- 产品信息栏 -->
                 <div class="product-info-bar">
                   <div class="pi-item"><span class="pi-label">产品名称</span><span class="pi-val">{{ task.product_name || '—' }}</span></div>
@@ -1338,7 +1339,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   TeamOutlined, UserOutlined, CheckCircleFilled,
@@ -1451,7 +1452,6 @@ const filterTabs = computed(() => {
   if (wbNav.value === 'pending') {
     return [
       { label: '全部', value: '', count: pendingBuyerMatchTasks.value.length },
-      { label: '待分配', value: '待分配', count: pendingBuyerMatchTasks.value.filter(t => t.status === '待分配').length },
     ]
   }
   if (wbNav.value === 'improving') {
@@ -1459,6 +1459,7 @@ const filterTabs = computed(() => {
       { label: '全部', value: '', count: improvingTasks.value.length },
       { label: '待返款', value: '待返款', count: improvingTasks.value.filter(t => getImprovingFilterCategory(t) === '待返款').length },
       { label: '待下单', value: '待下单', count: improvingTasks.value.filter(t => getImprovingFilterCategory(t) === '待下单').length },
+      { label: '异常订单', value: '异常订单', count: improvingTasks.value.filter(t => isImprovingAbnormalTask(t)).length },
     ]
   }
   if (wbNav.value === 'reviewFollow') {
@@ -1501,6 +1502,7 @@ const afterSaleTasks = computed(() =>
 const today = computed(() => dayjs().format('YYYY-MM-DD'))
 const tomorrow = computed(() => dayjs().add(1, 'day').format('YYYY-MM-DD'))
 const dayAfterTomorrow = computed(() => dayjs().add(2, 'day').format('YYYY-MM-DD'))
+const nowTick = ref(dayjs())
 const todayRelevantTasks = computed(() =>
   filteredTasks.value.filter(task => task.scheduled_date === today.value)
 )
@@ -1526,9 +1528,16 @@ const reviewFollowupTasks = computed(() =>
 const displayedReviewFollowTasks = computed(() =>
   getSortedReviewFollowTasks(reviewFollowupTasks.value)
 )
+const displayedImprovingListTasks = computed(() =>
+  improvingTasks.value.slice().sort((a, b) => {
+    const dateCmp = (a.scheduled_date || '').localeCompare(b.scheduled_date || '')
+    if (dateCmp !== 0) return dateCmp
+    return (a.sub_order_number || '').localeCompare(b.sub_order_number || '')
+  })
+)
 const displayedTaskCards = computed(() => {
   if (wbNav.value === 'pending') return wbViewMode.value === 'sub' ? pendingListTasks.value : []
-  if (wbNav.value === 'improving') return wbViewMode.value === 'sub' ? improvingTasks.value : []
+  if (wbNav.value === 'improving') return []
   if (wbNav.value === 'reviewFollow') return getSortedReviewFollowTasks(reviewFollowupTasks.value)
   if (wbNav.value === 'afterSale') return []
   return []
@@ -1546,6 +1555,13 @@ const workbenchSummary = computed(() => {
   const todayTotalCount = todayRelevantTasks.value.length
   const todayImprovingDoneCount = todayImprovingRelevantTasks.value.filter(task => isDone(task.status)).length
   const todayImprovingTotalCount = todayImprovingRelevantTasks.value.length
+  const todayImprovingOrderedDoneCount = todayImprovingRelevantTasks.value.filter(task =>
+    !!task.amazon_order_placed_at && dayjs(task.amazon_order_placed_at).isSame(dayjs(), 'day')
+  ).length
+  const todayImprovingRefundDoneCount = todayImprovingRelevantTasks.value.filter(task => {
+    const refundDoneAt = getTaskLatestRefundHandledAt(task)
+    return !!refundDoneAt && dayjs(refundDoneAt).isSame(dayjs(), 'day')
+  }).length
   const todayReviewFollowDoneCount = todayReviewFollowRelevantTasks.value.filter(task => hasReviewDone(task)).length
   const todayReviewFollowCount = todayReviewFollowRelevantTasks.value.length
   const todayCompletedOrderCount = todayOrderGroups.filter(group => group.actionableSubCount === 0 && group.subs.length > 0).length
@@ -1561,6 +1577,8 @@ const workbenchSummary = computed(() => {
     todayProgressPct: todayTotalCount ? Math.round((todayDoneCount / todayTotalCount) * 100) : 0,
     todayImprovingSubOrderCount: todayImprovingTotalCount,
     todayImprovingDoneCount,
+    todayImprovingOrderedDoneCount,
+    todayImprovingRefundDoneCount,
     todayImprovingProgressPct: todayImprovingTotalCount ? Math.round((todayImprovingDoneCount / todayImprovingTotalCount) * 100) : 0,
     todayReviewFollowCount,
     todayReviewFollowDoneCount,
@@ -1669,6 +1687,74 @@ function isOverdue(dateStr: string) {
 function overdayCount(dateStr: string) {
   if (!dateStr) return 0
   return dayjs().diff(dayjs(dateStr), 'day')
+}
+
+function getTaskLatestRefundHandledAt(task: any) {
+  return task?._refund_request_latest_processed?.handled_at
+    || task?._refund_request_latest_processed?.updated_at
+    || task?.refund_date
+    || null
+}
+
+function getTaskEffectiveRefundSequence(task: any) {
+  return task?._refund_request_latest_processed?.refund_sequence
+    || task?._refund_request_pending?.refund_sequence
+    || task?._sel_refund_sequence
+    || task?.refund_sequence
+    || ''
+}
+
+function isImprovingAbnormalTask(task: any) {
+  if (!task?.buyer_id || isDone(task?.status) || !!task?.amazon_order_id) return false
+  if (!['预付', '先退款后给单'].includes(getTaskEffectiveRefundSequence(task))) return false
+  if (!['已退款', '已返款'].includes(task?.refund_status || '') && task?._refund_request_latest_processed?.status !== '已处理') return false
+  const refundHandledAt = getTaskLatestRefundHandledAt(task)
+  if (!refundHandledAt) return false
+  return nowTick.value.diff(dayjs(refundHandledAt), 'hour', true) >= 24
+}
+
+function getImprovingTimeoutReason(task: any) {
+  if (!task?.buyer_id || isDone(task?.status)) return ''
+  const checkpoint = getTaskCheckpoint(task)
+  if (['待申请返款', '待返款完成'].includes(checkpoint)) return '返款超时'
+  if (checkpoint === '待填写订单号') return '上传订单号超时'
+  return ''
+}
+
+function getTaskDeadlineMoment(task: any) {
+  if (!task?.scheduled_date) return null
+  return dayjs(task.scheduled_date).endOf('day')
+}
+
+function formatRemainingDuration(totalMinutes: number) {
+  const minutes = Math.max(Math.floor(totalMinutes), 0)
+  const hours = Math.floor(minutes / 60)
+  const remainMinutes = minutes % 60
+  if (hours <= 0) return `${remainMinutes}分钟`
+  if (remainMinutes <= 0) return `${hours}小时`
+  return `${hours}小时${remainMinutes}分钟`
+}
+
+function getTaskDeadlineAlert(task: any) {
+  const reason = getImprovingTimeoutReason(task)
+  const deadline = getTaskDeadlineMoment(task)
+  if (!reason || !deadline) return null
+  const diffMinutes = deadline.diff(nowTick.value, 'minute')
+  if (diffMinutes > 180) return null
+  if (diffMinutes >= 0) {
+    return {
+      type: 'warning',
+      reason,
+      deadlineText: fmtShortTime(deadline.toISOString()),
+      detail: `倒计时 ${formatRemainingDuration(diffMinutes)}`,
+    }
+  }
+  return {
+    type: 'danger',
+    reason,
+    deadlineText: fmtShortTime(deadline.toISOString()),
+    detail: `已超时 ${formatRemainingDuration(Math.abs(diffMinutes))}`,
+  }
 }
 
 function getDangerClass(task: any) {
@@ -2633,6 +2719,81 @@ function buildMockTasks() {
       _is_mock: true,
       __mock_refund_fee_usd: 1.8,
       __mock_paypal_email: 'ava.wilson@example.com',
+      __mock_refund_requests: [
+        {
+          id: 'mock_rr_abnormal_1011',
+          sub_order_id: 'mock_overdue_improving_1011',
+          status: '已处理',
+          request_type: 'initial',
+          refund_method: 'PayPal',
+          refund_sequence: '预付',
+          refund_amount_usd: 41.30,
+          actual_paid_usd: 39.50,
+          paypal_fee_usd: 1.8,
+          buyer_paypal_email: 'ava.wilson@example.com',
+          notes: '预付已完成，等待买手回传 Amazon 订单号',
+          finance_notes: '财务已于昨日完成预付返款',
+          created_at: now.subtract(34, 'hour').toISOString(),
+          handled_at: now.subtract(30, 'hour').toISOString(),
+          updated_at: now.subtract(30, 'hour').toISOString(),
+        },
+      ],
+    },
+    {
+      id: 'mock_abnormal_prepay_1011b',
+      order_id: 'mock_order_1011b',
+      _order_number: 'MOCK-2026-1011B',
+      _order_status: '进行中',
+      sub_order_number: 'SUB-MOCK-1011B',
+      status: '进行中',
+      staff_name: '张敏',
+      buyer_id: 'mock_buyer_amanda',
+      buyer_name: 'Amanda Garcia',
+      refund_status: '已返款',
+      refund_method: '礼品卡',
+      refund_sequence: '预付',
+      refund_amount: 28.8,
+      product_name: '车载磁吸支架',
+      brand_name: 'RealmAI',
+      category: 'Automotive',
+      review_level: 'A',
+      asin: 'B0MOCK1011B',
+      store_name: 'US-Store-11B',
+      country: 'US',
+      product_price: 28.8,
+      scheduled_date: yesterday,
+      keyword: 'car phone mount',
+      order_type: '图外评',
+      review_type: '图片评',
+      customer_name: '东莞路航配件',
+      sales_person: '王浩',
+      variant_info: '出风口款',
+      task_notes: '商务备注：礼品卡预付已完成，但买手超过 24 小时仍未回传订单号',
+      notes: '订单备注：异常订单 mock',
+      created_at: now.subtract(3, 'day').toISOString(),
+      buyer_assigned_at: now.subtract(55, 'hour').toISOString(),
+      _is_mock: true,
+      __mock_refund_requests: [
+        {
+          id: 'mock_rr_abnormal_1011b',
+          sub_order_id: 'mock_abnormal_prepay_1011b',
+          status: '已处理',
+          request_type: 'initial',
+          refund_method: '礼品卡',
+          refund_sequence: '预付',
+          refund_amount_usd: 28.8,
+          actual_paid_usd: 28.8,
+          gift_card_face_value_usd: 28.8,
+          paypal_fee_usd: 0,
+          assigned_gift_card_number: 'GC-1011B-INIT',
+          assigned_gift_card_code: 'ABN-11BB-24HH',
+          notes: '预付礼品卡已发放，等待订单号回传',
+          finance_notes: '财务已在 26 小时前完成返款',
+          created_at: now.subtract(28, 'hour').toISOString(),
+          handled_at: now.subtract(26, 'hour').toISOString(),
+          updated_at: now.subtract(26, 'hour').toISOString(),
+        },
+      ],
     },
     {
       id: 'mock_overdue_review_1012',
@@ -3520,7 +3681,11 @@ function setFilter(val: string) {
 function filterTaskList() {
   let list = allTasks.value
   if (taskFilter.value) {
-    if (wbNav.value === 'improving') list = list.filter(t => getImprovingFilterCategory(t) === taskFilter.value)
+    if (wbNav.value === 'improving') {
+      list = list.filter(t => taskFilter.value === '异常订单'
+        ? isImprovingAbnormalTask(t)
+        : getImprovingFilterCategory(t) === taskFilter.value)
+    }
     else if (wbNav.value === 'reviewFollow') list = list.filter(t => getReviewFollowFilterCategory(t) === taskFilter.value)
     else list = list.filter(t => t.status === taskFilter.value)
   }
@@ -4246,10 +4411,22 @@ async function releaseToHall(task: any) {
   }
 }
 
+let deadlineTicker: number | null = null
+
 onMounted(() => {
+  deadlineTicker = window.setInterval(() => {
+    nowTick.value = dayjs()
+  }, 30000)
   loadFromStorage()
   loadStaff()
   loadBuyers()
+})
+
+onUnmounted(() => {
+  if (deadlineTicker !== null) {
+    window.clearInterval(deadlineTicker)
+    deadlineTicker = null
+  }
 })
 </script>
 
@@ -4299,7 +4476,7 @@ onMounted(() => {
 
 /* 顶部筛选栏 */
 .top-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; background: #fff; border-radius: 10px; padding: 10px 16px; border: 1px solid #f0f0f0; }
-.filter-tabs { display: flex; gap: 4px; }
+.filter-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .filter-tab {
   padding: 4px 12px;
   border-radius: 20px;
@@ -4374,6 +4551,19 @@ onMounted(() => {
 .today-stat-value { font-size: 24px; line-height: 1; color: #1a1a2e; }
 .today-stat-value.danger { color: #dc2626; }
 .today-stat-meta { font-size: 12px; color: #6b7280; }
+.today-stat-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #2563eb;
+}
+.today-stat-breakdown span {
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
 .today-stat-sub { font-size: 12px; color: #059669; font-weight: 600; }
 .today-focus-foot {
   display: flex;
@@ -4438,22 +4628,6 @@ onMounted(() => {
   padding: 4px 10px;
   white-space: nowrap;
 }
-.wb-stage-overview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-.wb-stage-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.wb-stage-label { font-size: 12px; color: #6b7280; }
-.wb-stage-value { font-size: 22px; line-height: 1; color: #1a1a2e; }
 .compact-empty { padding: 24px 0; }
 
 .main-order-list { display: flex; flex-direction: column; gap: 12px; }
@@ -4615,6 +4789,11 @@ onMounted(() => {
   background: #f8fafc;
   border-top: 1px dashed #e5e7eb;
   padding: 12px 16px 16px 32px;
+}
+.improving-sub-standalone {
+  background: transparent;
+  border-top: none;
+  padding: 0;
 }
 .improving-sub-grid {
   display: grid;
@@ -5091,6 +5270,38 @@ onMounted(() => {
 
 /* 工作流主体 */
 .workflow-body { border-top: 1px solid #e5e7eb; }
+.task-deadline-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fffbeb;
+}
+.task-deadline-alert.is-warning {
+  background: rgba(217, 119, 6, 0.08);
+}
+.task-deadline-alert.is-danger {
+  background: rgba(220, 38, 38, 0.08);
+}
+.task-deadline-alert-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+.task-deadline-alert-time,
+.task-deadline-alert-detail {
+  font-size: 12px;
+  color: #6b7280;
+}
+.task-deadline-alert-detail {
+  color: #d97706;
+  font-weight: 600;
+}
+.task-deadline-alert.is-danger .task-deadline-alert-detail {
+  color: #dc2626;
+}
 
 /* 产品信息栏 */
 .product-info-bar {
@@ -5524,7 +5735,6 @@ onMounted(() => {
   .workbench-layout { flex-direction: column; }
   .staff-sidebar { width: 100%; }
   .today-focus-stats,
-  .wb-stage-overview { grid-template-columns: 1fr; }
   .filter-right { width: 100%; margin-left: 0; flex-wrap: wrap; }
 }
 </style>
