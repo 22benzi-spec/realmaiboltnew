@@ -66,9 +66,8 @@
               </span>
             </div>
             <div class="filter-right">
-              <a-checkbox v-model:checked="filterTomorrow" @change="filterTaskList">明日</a-checkbox>
-              <a-checkbox v-model:checked="filterDayAfterTomorrow" @change="filterTaskList">后日</a-checkbox>
-              <a-checkbox v-model:checked="filterSoon" @change="filterTaskList">即将预期</a-checkbox>
+              <a-checkbox v-if="wbNav === 'pending'" v-model:checked="filterTomorrow" @change="filterTaskList">明日</a-checkbox>
+              <a-checkbox v-if="wbNav === 'pending'" v-model:checked="filterDayAfterTomorrow" @change="filterTaskList">后日</a-checkbox>
               <a-input-search
                 v-model:value="taskSearch"
                 :placeholder="taskSearchPlaceholder"
@@ -3662,6 +3661,14 @@ function setWorkbenchNav(next: WorkbenchNavKey) {
   if (next === 'reviewFollow') {
     wbViewMode.value = 'sub'
     taskFilter.value = ''
+    filterTomorrow.value = false
+    filterDayAfterTomorrow.value = false
+    filterSoon.value = false
+  }
+  if (next === 'improving') {
+    filterTomorrow.value = false
+    filterDayAfterTomorrow.value = false
+    filterSoon.value = false
   }
   if (next === 'afterSale') {
     taskFilter.value = ''
@@ -3689,13 +3696,10 @@ function filterTaskList() {
     else if (wbNav.value === 'reviewFollow') list = list.filter(t => getReviewFollowFilterCategory(t) === taskFilter.value)
     else list = list.filter(t => t.status === taskFilter.value)
   }
-  if (filterTomorrow.value) list = list.filter(t => t.scheduled_date === tomorrow.value)
-  if (filterDayAfterTomorrow.value) list = list.filter(t => t.scheduled_date === dayAfterTomorrow.value)
-  if (filterSoon.value) list = list.filter(t => {
-    if (!t.scheduled_date || isDone(t.status)) return false
-    const diff = dayjs(t.scheduled_date).diff(dayjs(), 'day')
-    return diff >= 0 && diff <= 2
-  })
+  if (wbNav.value === 'pending') {
+    if (filterTomorrow.value) list = list.filter(t => t.scheduled_date === tomorrow.value)
+    if (filterDayAfterTomorrow.value) list = list.filter(t => t.scheduled_date === dayAfterTomorrow.value)
+  }
   if (taskSearch.value) {
     const kw = taskSearch.value.toLowerCase()
     list = list.filter(t => {

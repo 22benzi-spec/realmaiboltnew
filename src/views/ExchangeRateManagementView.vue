@@ -4,27 +4,7 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">汇率管理</h1>
-          <div class="page-subtitle">按天维护汇率，支持参考昨日数据并按项带入。</div>
-        </div>
-        <a-space wrap>
-          <a-date-picker v-model:value="selectedDate" :allow-clear="false" @change="handleDateChange" />
-          <a-button @click="loadSelectedDate" :loading="loadingCurrent">刷新</a-button>
-          <a-button type="primary" @click="saveDailyRates" :loading="saving" :disabled="!canEdit">保存</a-button>
-        </a-space>
-      </div>
-
-      <div class="kpi-row">
-        <div class="kpi-card">
-          <div class="kpi-label">录入日期</div>
-          <div class="kpi-val">{{ selectedDate.format('YYYY-MM-DD') }}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">当前状态</div>
-          <div class="kpi-val" :class="statusMeta.className">{{ statusMeta.label }}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">已维护币种</div>
-          <div class="kpi-val">{{ completedCount }}/4</div>
+          <div class="page-subtitle">按天维护汇率，昨日数据仅作弱提示参考，录入区采用更紧凑的填写布局。</div>
         </div>
       </div>
 
@@ -45,13 +25,16 @@
         description="商务可以查看历史与当天数据，财务和管理员可以录入保存。"
       />
 
-      <a-card class="section-card" :loading="loadingCurrent" title="当日录入">
+      <a-card class="section-card entry-card" :loading="loadingCurrent" title="当日录入">
+        <template #extra>
+          <a-button type="primary" @click="saveDailyRates" :loading="saving" :disabled="!canEdit">保存</a-button>
+        </template>
         <div class="compact-panel">
           <div class="compact-panel-head">
             <div>
               <div class="section-title">美元现汇牌价</div>
               <div class="section-desc">
-                <span>可以只带入昨天其中一项，不需要整页一起沿用。</span>
+                <span>昨日数据仅供参考，保持弱化展示。</span>
                 <span v-if="previousSnapshotDate">昨日参考：{{ previousSnapshotDate }}</span>
               </div>
             </div>
@@ -71,10 +54,7 @@
                   :disabled="!canEdit"
                   placeholder="填写"
                 />
-                <span class="prev-value">昨日 {{ formatRate(previousDaily.usdCashBuyRate) }}</span>
-                <a-button size="small" @click="copyPreviousUsd('buy')" :disabled="!canEdit || previousDaily.usdCashBuyRate === null">
-                  带入
-                </a-button>
+                <span class="reference-value">昨日 {{ formatRate(previousDaily.usdCashBuyRate) }}</span>
               </div>
             </div>
 
@@ -91,10 +71,7 @@
                   :disabled="!canEdit"
                   placeholder="填写"
                 />
-                <span class="prev-value">昨日 {{ formatRate(previousDaily.usdCashSellRate) }}</span>
-                <a-button size="small" @click="copyPreviousUsd('sell')" :disabled="!canEdit || previousDaily.usdCashSellRate === null">
-                  带入
-                </a-button>
+                <span class="reference-value">昨日 {{ formatRate(previousDaily.usdCashSellRate) }}</span>
               </div>
             </div>
           </div>
@@ -106,11 +83,8 @@
               <tr>
                 <th>国家</th>
                 <th>币种</th>
-                <th>昨日实时</th>
-                <th>今日实时</th>
-                <th>昨日建议</th>
-                <th>今日建议</th>
-                <th>快捷操作</th>
+                <th>实时汇率</th>
+                <th>建议接单汇率</th>
               </tr>
             </thead>
             <tbody>
@@ -122,57 +96,35 @@
                   </div>
                 </td>
                 <td>{{ row.currency_code }}/CNY</td>
-                <td class="prev-cell">{{ formatRate(previousRateMap[row.country_code]?.realtime_rate) }}</td>
                 <td>
-                  <a-input-number
-                    v-model:value="row.realtime_rate"
-                    :min="0"
-                    :precision="4"
-                    :controls="false"
-                    size="small"
-                    class="small-input"
-                    :disabled="!canEdit"
-                    placeholder="填写"
-                  />
-                </td>
-                <td class="prev-cell">{{ formatRate(previousRateMap[row.country_code]?.suggested_rate) }}</td>
-                <td>
-                  <a-input-number
-                    v-model:value="row.suggested_rate"
-                    :min="0"
-                    :precision="4"
-                    :controls="false"
-                    size="small"
-                    class="small-input"
-                    :disabled="!canEdit"
-                    placeholder="填写"
-                  />
+                  <div class="input-with-reference">
+                    <a-input-number
+                      v-model:value="row.realtime_rate"
+                      :min="0"
+                      :precision="4"
+                      :controls="false"
+                      size="small"
+                      class="small-input"
+                      :disabled="!canEdit"
+                      placeholder="填写"
+                    />
+                    <span class="reference-value">昨日 {{ formatRate(previousRateMap[row.country_code]?.realtime_rate) }}</span>
+                  </div>
                 </td>
                 <td>
-                  <a-space size="small" wrap>
-                    <a-button
+                  <div class="input-with-reference">
+                    <a-input-number
+                      v-model:value="row.suggested_rate"
+                      :min="0"
+                      :precision="4"
+                      :controls="false"
                       size="small"
-                      @click="copyPreviousRate(row.country_code, 'realtime_rate')"
-                      :disabled="!canEdit || previousRateMap[row.country_code]?.realtime_rate === null || previousRateMap[row.country_code]?.realtime_rate === undefined"
-                    >
-                      带入实时
-                    </a-button>
-                    <a-button
-                      size="small"
-                      @click="copyPreviousRate(row.country_code, 'suggested_rate')"
-                      :disabled="!canEdit || previousRateMap[row.country_code]?.suggested_rate === null || previousRateMap[row.country_code]?.suggested_rate === undefined"
-                    >
-                      带入建议
-                    </a-button>
-                    <a-button
-                      size="small"
-                      type="link"
-                      @click="copyPreviousCountry(row.country_code)"
-                      :disabled="!canEdit || !previousRateMap[row.country_code]"
-                    >
-                      全带入
-                    </a-button>
-                  </a-space>
+                      class="small-input"
+                      :disabled="!canEdit"
+                      placeholder="填写"
+                    />
+                    <span class="reference-value">昨日 {{ formatRate(previousRateMap[row.country_code]?.suggested_rate) }}</span>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -191,26 +143,39 @@
           <a-button type="primary" @click="loadHistory" :loading="historyLoading">查询</a-button>
         </div>
 
+        <div class="history-hint">
+          默认按日期成组展示同一天 4 个国家的数据；只有筛选国家为美国时，表格才额外展示现汇买入价和卖出价。
+        </div>
+
+        <a-alert
+          v-if="showingHistoryMock"
+          type="info"
+          show-icon
+          class="status-alert"
+          message="当前为历史记录展示效果预览"
+          description="暂无真实历史数据时，下面使用 mock 数据展示按日期分组，以及美国附带现汇买入价和卖出价时的版式效果。"
+        />
+
         <a-table
           :columns="historyColumns"
-          :data-source="historyRows"
+          :data-source="historyTableRows"
           :loading="historyLoading"
           row-key="key"
           size="middle"
           :pagination="{ pageSize: 12, showSizeChanger: false, showTotal: (t:number) => `共 ${t} 条` }"
-          :scroll="{ x: 980 }"
+          :scroll="{ x: historyScrollX }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'realtime_rate'">
               <div>{{ formatRate(record.realtime_rate) }}</div>
               <div v-if="record.realtime_delta !== null" class="delta-text" :class="record.realtime_delta >= 0 ? 'delta-up' : 'delta-down'">
-                {{ record.realtime_delta >= 0 ? '+' : '' }}{{ record.realtime_delta.toFixed(2) }}%
+                {{ record.realtime_delta >= 0 ? '+' : '' }}{{ record.realtime_delta.toFixed(2) }}
               </div>
             </template>
             <template v-if="column.key === 'suggested_rate'">
               <div>{{ formatRate(record.suggested_rate) }}</div>
               <div v-if="record.suggested_delta !== null" class="delta-text" :class="record.suggested_delta >= 0 ? 'delta-up' : 'delta-down'">
-                {{ record.suggested_delta >= 0 ? '+' : '' }}{{ record.suggested_delta.toFixed(2) }}%
+                {{ record.suggested_delta >= 0 ? '+' : '' }}{{ record.suggested_delta.toFixed(2) }}
               </div>
             </template>
             <template v-if="column.key === 'usd_cash_buy_rate'">
@@ -242,7 +207,6 @@ import { supabase } from '../lib/supabase'
 import { useCurrentUser } from '../composables/useCurrentUser'
 
 type CountryCode = 'US' | 'DE' | 'UK' | 'CA'
-type RateField = 'realtime_rate' | 'suggested_rate'
 
 interface CountryConfig {
   country_code: CountryCode
@@ -291,6 +255,7 @@ interface HistoryRow {
   suggested_delta: number | null
   usd_cash_buy_rate: number | null
   usd_cash_sell_rate: number | null
+  date_row_span?: number
 }
 
 const COUNTRY_CONFIGS: CountryConfig[] = [
@@ -327,22 +292,153 @@ const recordState = reactive({
   mode: 'empty' as 'empty' | 'draft' | 'existing',
 })
 
-const historyColumns = [
-  { title: '日期', dataIndex: 'rate_date', key: 'rate_date', width: 110 },
-  { title: '国家', dataIndex: 'country_name', key: 'country_name', width: 100 },
-  { title: '币种', dataIndex: 'currency_code', key: 'currency_code', width: 90 },
-  { title: '实时汇率', key: 'realtime_rate', width: 150 },
-  { title: '建议接单汇率', key: 'suggested_rate', width: 150 },
-  { title: '美元现汇买入价', key: 'usd_cash_buy_rate', width: 140 },
-  { title: '美元现汇卖出价', key: 'usd_cash_sell_rate', width: 140 },
-]
-
 const canView = computed(() => ['商务', '财务', '管理员'].includes(currentUser.value.role))
 const canEdit = computed(() => ['财务', '管理员'].includes(currentUser.value.role))
 
-const completedCount = computed(() =>
-  rateRows.value.filter(row => row.realtime_rate !== null && row.suggested_rate !== null).length,
-)
+const historyMockRows: HistoryRow[] = [
+  {
+    key: 'mock-1-US',
+    rate_date: dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    country_code: 'US',
+    country_name: '美国',
+    currency_code: 'USD',
+    realtime_rate: 7.2388,
+    suggested_rate: 7.2599,
+    realtime_delta: 0.01,
+    suggested_delta: 0.01,
+    usd_cash_buy_rate: 7.2098,
+    usd_cash_sell_rate: 7.2789,
+  },
+  {
+    key: 'mock-1-DE',
+    rate_date: dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    country_code: 'DE',
+    country_name: '德国',
+    currency_code: 'EUR',
+    realtime_rate: 7.8921,
+    suggested_rate: 7.918,
+    realtime_delta: -0.03,
+    suggested_delta: -0.02,
+    usd_cash_buy_rate: null,
+    usd_cash_sell_rate: null,
+  },
+  {
+    key: 'mock-1-UK',
+    rate_date: dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    country_code: 'UK',
+    country_name: '英国',
+    currency_code: 'GBP',
+    realtime_rate: 9.1543,
+    suggested_rate: 9.1875,
+    realtime_delta: 0.04,
+    suggested_delta: 0.03,
+    usd_cash_buy_rate: null,
+    usd_cash_sell_rate: null,
+  },
+  {
+    key: 'mock-1-CA',
+    rate_date: dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    country_code: 'CA',
+    country_name: '加拿大',
+    currency_code: 'CAD',
+    realtime_rate: 5.3124,
+    suggested_rate: 5.3368,
+    realtime_delta: -0.01,
+    suggested_delta: 0.02,
+    usd_cash_buy_rate: null,
+    usd_cash_sell_rate: null,
+  },
+  {
+    key: 'mock-2-US',
+    rate_date: dayjs().subtract(2, 'day').format('YYYY-MM-DD'),
+    country_code: 'US',
+    country_name: '美国',
+    currency_code: 'USD',
+    realtime_rate: 7.2256,
+    suggested_rate: 7.2525,
+    realtime_delta: null,
+    suggested_delta: null,
+    usd_cash_buy_rate: 7.2034,
+    usd_cash_sell_rate: 7.2712,
+  },
+  {
+    key: 'mock-2-DE',
+    rate_date: dayjs().subtract(2, 'day').format('YYYY-MM-DD'),
+    country_code: 'DE',
+    country_name: '德国',
+    currency_code: 'EUR',
+    realtime_rate: 7.9186,
+    suggested_rate: 7.9412,
+    realtime_delta: null,
+    suggested_delta: null,
+    usd_cash_buy_rate: null,
+    usd_cash_sell_rate: null,
+  },
+  {
+    key: 'mock-2-UK',
+    rate_date: dayjs().subtract(2, 'day').format('YYYY-MM-DD'),
+    country_code: 'UK',
+    country_name: '英国',
+    currency_code: 'GBP',
+    realtime_rate: 9.1168,
+    suggested_rate: 9.1601,
+    realtime_delta: null,
+    suggested_delta: null,
+    usd_cash_buy_rate: null,
+    usd_cash_sell_rate: null,
+  },
+  {
+    key: 'mock-2-CA',
+    rate_date: dayjs().subtract(2, 'day').format('YYYY-MM-DD'),
+    country_code: 'CA',
+    country_name: '加拿大',
+    currency_code: 'CAD',
+    realtime_rate: 5.3208,
+    suggested_rate: 5.3199,
+    realtime_delta: null,
+    suggested_delta: null,
+    usd_cash_buy_rate: null,
+    usd_cash_sell_rate: null,
+  },
+]
+
+const historyColumns = computed(() => {
+  const columns = [
+    {
+      title: '日期',
+      dataIndex: 'rate_date',
+      key: 'rate_date',
+      width: 110,
+      customCell: (record: HistoryRow) => ({ rowSpan: record.date_row_span ?? 1 }),
+    },
+    { title: '国家', dataIndex: 'country_name', key: 'country_name', width: 100 },
+    { title: '币种', dataIndex: 'currency_code', key: 'currency_code', width: 90 },
+    { title: '实时汇率', key: 'realtime_rate', width: 150 },
+    { title: '建议接单汇率', key: 'suggested_rate', width: 150 },
+  ]
+
+  if (historyCountry.value === 'US') {
+    columns.push(
+      { title: '现汇买入价', key: 'usd_cash_buy_rate', width: 130 },
+      { title: '现汇卖出价', key: 'usd_cash_sell_rate', width: 130 },
+    )
+  }
+
+  return columns
+})
+
+const showingHistoryMock = computed(() => historyRows.value.length === 0)
+
+const historyTableRows = computed(() => {
+  const baseRows = historyRows.value.length ? historyRows.value : historyMockRows
+  const filteredRows = historyCountry.value
+    ? baseRows.filter(row => row.country_code === historyCountry.value)
+    : baseRows
+
+  return applyHistoryDateGrouping(filteredRows)
+})
+
+const historyScrollX = computed(() => (historyCountry.value === 'US' ? 980 : 760))
 
 const statusMeta = computed(() => {
   if (recordState.mode === 'existing') {
@@ -351,7 +447,7 @@ const statusMeta = computed(() => {
       className: 'green',
       alertType: 'success' as const,
       message: `已加载 ${selectedDate.value.format('YYYY-MM-DD')} 的记录`,
-      description: '可以只调整有波动的字段，再重新保存。',
+      description: '可以直接微调今日录入值，再重新保存。',
     }
   }
   if (recordState.mode === 'draft') {
@@ -360,7 +456,7 @@ const statusMeta = computed(() => {
       className: 'orange',
       alertType: 'warning' as const,
       message: previousSnapshotDate.value ? `已找到 ${previousSnapshotDate.value} 的参考值` : '当天暂无记录',
-      description: '支持按单项或按单个国家带入昨日数据。',
+      description: '今日建议价会默认沿用昨日值，仍可按需修改。',
     }
   }
   return {
@@ -405,6 +501,24 @@ function formatRate(value: number | null | undefined) {
   return value === null || value === undefined ? '-' : Number(value).toFixed(4)
 }
 
+function applyHistoryDateGrouping(rows: HistoryRow[]) {
+  return rows.map((row, index, list) => {
+    const previousDate = index > 0 ? list[index - 1].rate_date : null
+    if (row.rate_date === previousDate) {
+      return {
+        ...row,
+        date_row_span: 0,
+      }
+    }
+
+    const rowSpan = list.slice(index).filter(item => item.rate_date === row.rate_date).length
+    return {
+      ...row,
+      date_row_span: rowSpan,
+    }
+  })
+}
+
 function getCountryOrder(countryCode: CountryCode) {
   return COUNTRY_CONFIGS.findIndex(item => item.country_code === countryCode)
 }
@@ -431,6 +545,11 @@ function setPreviousReference(snapshot: SnapshotRow | null, items: SnapshotItemR
 function hydrateCurrentForm(snapshot: SnapshotRow | null, items: SnapshotItemRow[]) {
   if (!snapshot) {
     resetCurrentForm()
+    rateRows.value = COUNTRY_CONFIGS.map(country => ({
+      ...country,
+      realtime_rate: null,
+      suggested_rate: previousRateMap[country.country_code]?.suggested_rate ?? null,
+    }))
     return
   }
 
@@ -499,28 +618,6 @@ async function loadSelectedDate() {
   } finally {
     loadingCurrent.value = false
   }
-}
-
-function copyPreviousUsd(type: 'buy' | 'sell') {
-  if (type === 'buy') {
-    dailyForm.usdCashBuyRate = previousDaily.usdCashBuyRate
-  } else {
-    dailyForm.usdCashSellRate = previousDaily.usdCashSellRate
-  }
-  if (recordState.mode !== 'existing') recordState.mode = 'draft'
-}
-
-function copyPreviousRate(countryCode: CountryCode, field: RateField) {
-  const current = rateRows.value.find(item => item.country_code === countryCode)
-  const previous = previousRateMap[countryCode]
-  if (!current || !previous) return
-  current[field] = previous[field] ?? null
-  if (recordState.mode !== 'existing') recordState.mode = 'draft'
-}
-
-function copyPreviousCountry(countryCode: CountryCode) {
-  copyPreviousRate(countryCode, 'realtime_rate')
-  copyPreviousRate(countryCode, 'suggested_rate')
 }
 
 function validateBeforeSave() {
@@ -613,7 +710,7 @@ async function saveDailyRates() {
 
 function calcDelta(current: number | null, previous: number | null) {
   if (current === null || previous === null || previous === 0) return null
-  return ((current - previous) / previous) * 100
+  return current - previous
 }
 
 async function loadHistory() {
@@ -726,45 +823,6 @@ onMounted(async () => {
   font-size: 13px;
 }
 
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.kpi-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
-}
-
-.kpi-label {
-  font-size: 12px;
-  color: #6b7280;
-  margin-bottom: 8px;
-}
-
-.kpi-val {
-  font-size: 20px;
-  font-weight: 700;
-  color: #1a1a2e;
-}
-
-.kpi-val.green {
-  color: #059669;
-}
-
-.kpi-val.orange {
-  color: #d97706;
-}
-
-.kpi-val.red {
-  color: #dc2626;
-}
-
 .status-alert {
   margin-bottom: 16px;
 }
@@ -772,6 +830,11 @@ onMounted(async () => {
 .section-card {
   margin-bottom: 20px;
   border-radius: 12px;
+}
+
+.entry-card {
+  max-width: 1080px;
+  margin-right: auto;
 }
 
 .compact-panel {
@@ -828,12 +891,13 @@ onMounted(async () => {
 }
 
 .small-input {
-  width: 120px;
+  width: 112px;
 }
 
-.prev-value {
+.reference-value {
   color: #6b7280;
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .rate-table-wrap {
@@ -842,7 +906,7 @@ onMounted(async () => {
 
 .rate-table {
   width: 100%;
-  min-width: 960px;
+  min-width: 680px;
   border-collapse: separate;
   border-spacing: 0;
   border: 1px solid #e5e7eb;
@@ -853,7 +917,7 @@ onMounted(async () => {
 
 .rate-table th,
 .rate-table td {
-  padding: 12px 10px;
+  padding: 10px 10px;
   border-bottom: 1px solid #f0f0f0;
   text-align: left;
   vertical-align: middle;
@@ -882,9 +946,11 @@ onMounted(async () => {
   color: #1a1a2e;
 }
 
-.prev-cell {
-  color: #6b7280;
-  white-space: nowrap;
+.input-with-reference {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .filter-bar {
@@ -892,6 +958,12 @@ onMounted(async () => {
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 16px;
+}
+
+.history-hint {
+  margin-bottom: 12px;
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .delta-text {
@@ -912,8 +984,7 @@ onMounted(async () => {
     flex-direction: column;
   }
 
-  .usd-grid,
-  .kpi-row {
+  .usd-grid {
     grid-template-columns: 1fr;
   }
 }
