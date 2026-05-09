@@ -251,20 +251,144 @@
         </div>
 
         <a-modal v-model:open="groupDetailOpen" title="主订单详情" :footer="null" width="760px">
-          <a-descriptions v-if="currentGroupDetail" :column="2" bordered size="small">
-            <a-descriptions-item label="主订单ID">{{ currentGroupDetail.order_number || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="国家">{{ currentGroupDetail.country || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="类型">{{ getGroupReviewType(currentGroupDetail) }}</a-descriptions-item>
-            <a-descriptions-item label="等级">{{ getGroupReviewLevel(currentGroupDetail) }}</a-descriptions-item>
-            <a-descriptions-item label="产品名称" :span="2">{{ currentGroupDetail.product_name || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="ASIN">{{ currentGroupDetail.asin || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="售价">${{ Number(currentGroupDetail.product_price || 0).toFixed(2) }}</a-descriptions-item>
-            <a-descriptions-item label="店铺">{{ currentGroupDetail.store_name || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="变体信息">{{ getGroupVariantInfo(currentGroupDetail) }}</a-descriptions-item>
-            <a-descriptions-item label="任务备注" :span="2">{{ getGroupRemark(currentGroupDetail) }}</a-descriptions-item>
-            <a-descriptions-item label="代抢单">{{ currentGroupDetail.subCount || 0 }}</a-descriptions-item>
-            <a-descriptions-item label="最长已逾期">{{ getGroupMaxExpiredDays(currentGroupDetail) }} 天</a-descriptions-item>
-          </a-descriptions>
+          <template v-if="currentGroupDetail">
+            <div class="task-drawer-header">
+              <div class="task-drawer-header-main">
+                <div class="task-drawer-img-wrap">
+                  <img
+                    v-if="currentGroupDetail.product_image"
+                    :src="currentGroupDetail.product_image"
+                    class="task-drawer-img"
+                    referrerpolicy="no-referrer"
+                    @error="onImgError($event)"
+                  />
+                  <div v-else class="task-drawer-img-placeholder"><PictureOutlined /></div>
+                </div>
+                <div class="task-drawer-header-info">
+                  <div class="task-drawer-asin">{{ currentGroupDetail.asin || '—' }}</div>
+                  <div v-if="currentGroupDetail.product_name" class="task-drawer-product-name">{{ currentGroupDetail.product_name }}</div>
+                  <div class="task-drawer-tag-row">
+                    <a-tag color="default">{{ currentGroupDetail.country || '—' }}</a-tag>
+                    <a-tag color="orange">待抢单</a-tag>
+                  </div>
+                </div>
+                <div class="task-drawer-header-side">
+                  <span class="task-drawer-header-side-value">第{{ getGroupAsinOrderTimes(currentGroupDetail) }}次下单</span>
+                </div>
+              </div>
+            </div>
+
+            <a-divider style="margin: 16px 0" />
+
+            <div class="task-drawer-overview-grid">
+              <div class="task-drawer-overview-card">
+                <div class="task-drawer-overview-title">产品信息</div>
+                <div class="task-drawer-info-grid compact">
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">店铺</span>
+                    <span class="task-drawer-info-value">{{ currentGroupDetail.store_name || '—' }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">品牌</span>
+                    <span class="task-drawer-info-value">{{ getGroupBrandName(currentGroupDetail) }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">售价</span>
+                    <span class="task-drawer-info-value is-price">${{ Number(currentGroupDetail.product_price || 0).toFixed(2) }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">类目</span>
+                    <span class="task-drawer-info-value">{{ getGroupCategory(currentGroupDetail) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="task-drawer-overview-card">
+                <div class="task-drawer-overview-title">任务信息</div>
+                <div class="task-drawer-info-grid compact">
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">等级</span>
+                    <span class="task-drawer-info-value">{{ getGroupReviewLevel(currentGroupDetail) }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">类型</span>
+                    <span class="task-drawer-info-value">{{ getGroupReviewTypeSummary(currentGroupDetail) }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">变体信息</span>
+                    <span class="task-drawer-info-value">{{ getGroupVariantInfo(currentGroupDetail) }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">总单量</span>
+                    <span class="task-drawer-info-value">{{ currentGroupDetail.subCount || 0 }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">排期天数</span>
+                    <span class="task-drawer-info-value">{{ getGroupScheduleDays(currentGroupDetail) }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">创建时间</span>
+                    <span class="task-drawer-info-value">{{ getGroupCreatedTime(currentGroupDetail) }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">客户名称</span>
+                    <span class="task-drawer-info-value">{{ currentGroupDetail.customer_name || '—' }}</span>
+                  </div>
+                  <div class="task-drawer-row">
+                    <span class="task-drawer-info-label">对接商务</span>
+                    <span class="task-drawer-info-value">{{ getGroupSalesPerson(currentGroupDetail) }}</span>
+                  </div>
+                  <div class="task-drawer-row task-drawer-row-wide">
+                    <span class="task-drawer-info-label">任务备注</span>
+                    <span class="task-drawer-info-value">{{ getGroupRemark(currentGroupDetail) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="task-drawer-overview-card">
+                <div class="task-drawer-overview-title">任务进度</div>
+                <div class="task-drawer-progress-grid compact">
+                  <div class="task-drawer-progress-item is-match">
+                    <span class="task-drawer-progress-label">买手匹配</span>
+                    <strong class="task-drawer-progress-value">0</strong>
+                  </div>
+                  <div class="task-drawer-progress-item is-ordered">
+                    <span class="task-drawer-progress-label">已下单</span>
+                    <strong class="task-drawer-progress-value">0</strong>
+                  </div>
+                  <div class="task-drawer-progress-item is-refunded">
+                    <span class="task-drawer-progress-label">已返款</span>
+                    <strong class="task-drawer-progress-value">0</strong>
+                  </div>
+                  <div class="task-drawer-progress-item is-reviewed">
+                    <span class="task-drawer-progress-label">已留评</span>
+                    <strong class="task-drawer-progress-value">0</strong>
+                  </div>
+                  <div class="task-drawer-progress-item is-dropped">
+                    <span class="task-drawer-progress-label">已掉评</span>
+                    <strong class="task-drawer-progress-value">0</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <a-divider style="margin: 20px 0 16px" />
+            <div class="task-drawer-section-title">修改记录</div>
+            <a-empty description="暂无修改记录" />
+
+            <a-divider style="margin: 20px 0 16px" />
+            <div class="task-drawer-section-title">反馈状态</div>
+            <div class="task-drawer-feedback-panel">
+              <div class="task-drawer-feedback-row">
+                <span class="task-drawer-feedback-key">订单反馈：</span>
+                <a-tag color="default">未反馈</a-tag>
+              </div>
+              <div class="task-drawer-feedback-row">
+                <span class="task-drawer-feedback-key">评论反馈：</span>
+                <a-tag color="default">未反馈</a-tag>
+              </div>
+            </div>
+          </template>
         </a-modal>
 
         <a-modal v-model:open="subDetailOpen" title="子订单详情" :footer="null" width="760px">
@@ -431,19 +555,56 @@ function getGroupReviewType(group: any) {
   return values.length ? values.join(' / ') : '—'
 }
 
+function getGroupReviewTypeSummary(group: any) {
+  const counts = new Map<string, number>()
+  for (const sub of group?.subs || []) {
+    const type = String(sub.review_type || sub.order_type || '').trim()
+    if (!type) continue
+    counts.set(type, (counts.get(type) || 0) + 1)
+  }
+  const rows = Array.from(counts.entries()).map(([type, qty]) => `${type} x${qty}`)
+  return rows.length ? rows.join(' / ') : '—'
+}
+
 function getGroupReviewLevel(group: any) {
   const values = Array.from(new Set((group?.subs || []).map((sub: any) => sub.review_level).filter(Boolean)))
   return values.length ? values.join(' / ') : '—'
 }
 
+function getGroupBrandName(group: any) {
+  return (group?.subs || []).map((sub: any) => String(sub.brand_name || '').trim()).find(Boolean) || group?.brand_name || '—'
+}
+
+function getGroupCategory(group: any) {
+  return (group?.subs || []).map((sub: any) => String(sub.category || '').trim()).find(Boolean) || group?.category || '—'
+}
+
 function getGroupVariantInfo(group: any) {
   const value = (group?.subs || []).map((sub: any) => String(sub.variant_info || '').trim()).find(Boolean)
-  return value || '—'
+  return value || '默认变体'
 }
 
 function getGroupRemark(group: any) {
   const value = (group?.subs || []).map((sub: any) => String(sub.task_notes || sub.notes || '').trim()).find(Boolean)
   return value || '—'
+}
+
+function getGroupSalesPerson(group: any) {
+  return (group?.subs || []).map((sub: any) => String(sub.sales_person || '').trim()).find(Boolean) || group?.sales_person || '—'
+}
+
+function getGroupScheduleDays(group: any) {
+  const days = new Set((group?.subs || []).map((sub: any) => sub.scheduled_date).filter(Boolean))
+  return days.size
+}
+
+function getGroupCreatedTime(group: any) {
+  const value = (group?.subs || []).map((sub: any) => sub.created_at).filter(Boolean).sort()[0]
+  return value ? fmtTime(value) : '—'
+}
+
+function getGroupAsinOrderTimes(group: any) {
+  return Number(group?._asin_total_orders || group?.subCount || 0)
 }
 
 function getGroupMaxExpiredDays(group: any) {
@@ -986,6 +1147,159 @@ onMounted(() => {
 .log-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
 .log-duration { font-size: 12px; color: #6b7280; font-weight: 600; }
 .log-duration.is-long { color: #d97706; }
+
+.task-drawer-header { display: flex; align-items: flex-start; }
+.task-drawer-header-main {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+.task-drawer-header-info { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.task-drawer-header-side {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.task-drawer-header-side-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+.task-drawer-img-wrap { width: 80px; height: 80px; flex-shrink: 0; }
+.task-drawer-img { width: 80px; height: 80px; object-fit: cover; border-radius: 12px; border: 1px solid #e5e7eb; display: block; background: #fff; }
+.task-drawer-img-placeholder { width: 80px; height: 80px; border-radius: 12px; border: 1px dashed #d1d5db; background: #f9fafb; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 28px; }
+.task-drawer-product-name { font-size: 20px; font-weight: 700; color: #111827; line-height: 1.4; }
+.task-drawer-asin { font-size: 17px; font-weight: 700; color: #1e40af; letter-spacing: 0.2px; }
+.task-drawer-tag-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.task-drawer-section-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px; }
+.task-drawer-overview-grid {
+  display: grid;
+  gap: 10px;
+}
+.task-drawer-overview-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 10px 12px 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.task-drawer-overview-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.task-drawer-overview-title::before {
+  content: '';
+  width: 4px;
+  height: 14px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+.task-drawer-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.task-drawer-info-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.task-drawer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid #eef2f7;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.task-drawer-row-wide {
+  grid-column: 1 / -1;
+}
+.task-drawer-info-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #6b7280;
+  flex-shrink: 0;
+  min-width: 64px;
+  padding-right: 10px;
+  margin-right: 2px;
+  border-right: 1px solid #dbe3ee;
+}
+.task-drawer-info-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.45;
+  word-break: break-word;
+  text-align: right;
+  flex: 1;
+}
+.task-drawer-info-value.is-price {
+  color: #059669;
+  font-size: 15px;
+  font-weight: 700;
+}
+.task-drawer-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.task-drawer-progress-grid.compact .task-drawer-progress-item {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  padding: 9px 8px 8px;
+  text-align: center;
+}
+.task-drawer-progress-item.is-match { background: #ecfdf5; border-color: #d1fae5; }
+.task-drawer-progress-item.is-ordered { background: #eff6ff; border-color: #dbeafe; }
+.task-drawer-progress-item.is-refunded { background: #fffbeb; border-color: #fde68a; }
+.task-drawer-progress-item.is-reviewed { background: #eef2ff; border-color: #c7d2fe; }
+.task-drawer-progress-item.is-dropped { background: #fef2f2; border-color: #fecaca; }
+.task-drawer-progress-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+.task-drawer-progress-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: #1a1a2e;
+}
+.task-drawer-feedback-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+.task-drawer-feedback-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.task-drawer-feedback-key { font-size: 13px; color: #6b7280; flex-shrink: 0; }
 
 @media (max-width: 1200px) {
   .hall-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }

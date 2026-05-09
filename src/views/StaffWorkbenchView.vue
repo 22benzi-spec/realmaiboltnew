@@ -1181,7 +1181,7 @@
       <a-spin :spinning="mainOrderDetailLoading">
         <template v-if="currentMainOrderDetail">
           <div class="task-drawer-header">
-            <div class="task-drawer-product">
+            <div class="task-drawer-header-main">
               <div class="task-drawer-img-wrap">
                 <img
                   v-if="currentMainOrderDetail.product_image"
@@ -1192,85 +1192,109 @@
                 />
                 <div v-else class="task-drawer-img-placeholder">?</div>
               </div>
-              <div>
-                <div v-if="currentMainOrderDetail.product_name" class="task-drawer-product-name">{{ currentMainOrderDetail.product_name }}</div>
+              <div class="task-drawer-header-info">
                 <div class="task-drawer-asin">{{ currentMainOrderDetail.asin || '—' }}</div>
-                <div class="task-drawer-store">{{ currentMainOrderDetail.store_name || '—' }}</div>
+                <div v-if="currentMainOrderDetail.product_name" class="task-drawer-product-name">{{ currentMainOrderDetail.product_name }}</div>
                 <div class="task-drawer-tag-row">
-                  <a-tag :color="getMainOrderStatusColor(currentMainOrderDetail.status)">{{ currentMainOrderDetail.status || '待分配' }}</a-tag>
                   <a-tag color="default">{{ currentMainOrderDetail.country || '—' }}</a-tag>
-                  <template v-for="item in getWorkbenchTaskTypeRows(currentMainOrderDetail)" :key="item.type">
-                    <a-tag :color="getWorkbenchOrderTypeColor(item.type)">{{ item.type }}</a-tag>
-                  </template>
+                  <a-tag :color="getMainOrderStatusColor(currentMainOrderDetail.status)">{{ currentMainOrderDetail.status || '待分配' }}</a-tag>
                 </div>
+              </div>
+              <div class="task-drawer-header-side">
+                <span class="task-drawer-header-side-value">第{{ currentMainOrderDetail._asin_total_orders || currentMainOrderDetail.order_quantity || 0 }}次下单</span>
               </div>
             </div>
           </div>
 
           <a-divider style="margin: 16px 0" />
 
-          <a-descriptions :column="2" bordered size="small">
-            <a-descriptions-item label="任务编号" :span="2">
-              <span class="task-drawer-order-num">{{ currentMainOrderDetail.order_number || '—' }}</span>
-            </a-descriptions-item>
-            <a-descriptions-item label="产品名称" :span="2">{{ currentMainOrderDetail.product_name || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="ASIN">{{ currentMainOrderDetail.asin || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="店铺">{{ currentMainOrderDetail.store_name || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="品牌">{{ currentMainOrderDetail.brand_name || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="国家">{{ currentMainOrderDetail.country || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="测评等级">{{ currentMainOrderDetail.review_level || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="类目">{{ currentMainOrderDetail.category || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="下单类型">
-              <div class="task-drawer-type-list">
-                <template v-for="item in getWorkbenchTaskTypeRows(currentMainOrderDetail)" :key="`${item.type}-${item.qty}`">
-                  <div class="task-drawer-type-row">
-                    <a-tag :color="getWorkbenchOrderTypeColor(item.type)" size="small">{{ item.type }}</a-tag>
-                    <span class="task-drawer-type-qty">&times;{{ item.qty }}</span>
-                  </div>
-                </template>
-                <span v-if="getWorkbenchTaskTypeRows(currentMainOrderDetail).length === 0">-</span>
-              </div>
-            </a-descriptions-item>
-            <a-descriptions-item label="任务状态">
-              <a-tag :color="getMainOrderStatusColor(currentMainOrderDetail.status)">{{ currentMainOrderDetail.status || '待分配' }}</a-tag>
-            </a-descriptions-item>
-            <a-descriptions-item label="任务数量">{{ currentMainOrderDetail.order_quantity || 0 }}</a-descriptions-item>
-            <a-descriptions-item label="已生成子订单">{{ currentMainOrderDetail._sub_total || 0 }}</a-descriptions-item>
-            <a-descriptions-item label="已下单">{{ currentMainOrderDetail._ordered_count || 0 }}</a-descriptions-item>
-            <a-descriptions-item label="已留评">{{ currentMainOrderDetail._review_count || 0 }}</a-descriptions-item>
-            <a-descriptions-item label="买手匹配">{{ currentMainOrderDetail._scheduled_count || 0 }}</a-descriptions-item>
-            <a-descriptions-item label="排期天数">{{ currentMainOrderDetail._schedule_days || 0 }}</a-descriptions-item>
-            <a-descriptions-item label="变体信息">{{ getWorkbenchTaskVariantText(currentMainOrderDetail) }}</a-descriptions-item>
-            <a-descriptions-item label="对接商务">{{ currentMainOrderDetail.sales_person || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="客户名称">{{ currentMainOrderDetail.customer_name || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="创建时间">{{ fmtTime(currentMainOrderDetail.created_at) }}</a-descriptions-item>
-            <a-descriptions-item label="备注" :span="2">{{ currentMainOrderDetail.notes || '-' }}</a-descriptions-item>
-          </a-descriptions>
-
-          <a-divider style="margin: 20px 0 16px" />
-          <div class="task-drawer-section-title">状态变更记录</div>
-          <div class="task-drawer-timeline">
-            <div
-              v-for="item in getWorkbenchTaskStatusJourney(currentMainOrderDetail)"
-              :key="item.key"
-              class="task-drawer-timeline-item"
-            >
-              <div class="task-drawer-timeline-axis">
-                <span class="task-drawer-timeline-dot"></span>
-                <span class="task-drawer-timeline-line"></span>
-              </div>
-              <div class="task-drawer-timeline-content">
-                <div class="task-drawer-timeline-title">
-                  <template v-if="item.kind === 'created'">
-                    创建任务
-                  </template>
-                  <template v-else>
-                    状态由「{{ item.from_status || '初始状态' }}」变更为「{{ item.to_status || '未知状态' }}」
-                  </template>
+          <div class="task-drawer-overview-grid">
+            <div class="task-drawer-overview-card">
+              <div class="task-drawer-overview-title">产品信息</div>
+              <div class="task-drawer-info-grid compact">
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">店铺</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.store_name || '—' }}</span>
                 </div>
-                <div class="task-drawer-timeline-meta">
-                  <span>{{ fmtTime(item.changed_at) }}</span>
-                  <span v-if="item.reason">原因：{{ item.reason }}</span>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">品牌</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.brand_name || '—' }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">售价</span>
+                  <span class="task-drawer-info-value is-price">${{ Number(currentMainOrderDetail.product_price || 0).toFixed(2) }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">类目</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.category || '—' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="task-drawer-overview-card">
+              <div class="task-drawer-overview-title">任务信息</div>
+              <div class="task-drawer-info-grid compact">
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">等级</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.review_level || '—' }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">类型</span>
+                  <span class="task-drawer-info-value">{{ getWorkbenchTaskTypeSummary(currentMainOrderDetail) }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">变体信息</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.variant_info || '默认变体' }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">总单量</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.order_quantity || 0 }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">排期天数</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail._schedule_days || 0 }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">创建时间</span>
+                  <span class="task-drawer-info-value">{{ fmtTime(currentMainOrderDetail.created_at) }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">客户名称</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.customer_name || '—' }}</span>
+                </div>
+                <div class="task-drawer-row">
+                  <span class="task-drawer-info-label">对接商务</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.sales_person || '—' }}</span>
+                </div>
+                <div class="task-drawer-row task-drawer-row-wide">
+                  <span class="task-drawer-info-label">任务备注</span>
+                  <span class="task-drawer-info-value">{{ currentMainOrderDetail.notes || '—' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="task-drawer-overview-card">
+              <div class="task-drawer-overview-title">任务进度</div>
+              <div class="task-drawer-progress-grid compact">
+                <div class="task-drawer-progress-item is-match">
+                  <span class="task-drawer-progress-label">买手匹配</span>
+                  <strong class="task-drawer-progress-value">{{ currentMainOrderDetail._scheduled_count || 0 }}</strong>
+                </div>
+                <div class="task-drawer-progress-item is-ordered">
+                  <span class="task-drawer-progress-label">已下单</span>
+                  <strong class="task-drawer-progress-value">{{ currentMainOrderDetail._ordered_count || 0 }}</strong>
+                </div>
+                <div class="task-drawer-progress-item is-refunded">
+                  <span class="task-drawer-progress-label">已返款</span>
+                  <strong class="task-drawer-progress-value">{{ currentMainOrderDetail._refunded_count || 0 }}</strong>
+                </div>
+                <div class="task-drawer-progress-item is-reviewed">
+                  <span class="task-drawer-progress-label">已留评</span>
+                  <strong class="task-drawer-progress-value">{{ currentMainOrderDetail._review_count || 0 }}</strong>
+                </div>
+                <div class="task-drawer-progress-item is-dropped">
+                  <span class="task-drawer-progress-label">已掉评</span>
+                  <strong class="task-drawer-progress-value">{{ getWorkbenchTaskDroppedCount(currentMainOrderDetail) }}</strong>
                 </div>
               </div>
             </div>
@@ -1278,24 +1302,29 @@
 
           <a-divider style="margin: 20px 0 16px" />
           <div class="task-drawer-section-title">修改记录</div>
-          <div v-if="getWorkbenchOrderEditHistory(currentMainOrderDetail).length" class="task-drawer-timeline">
+          <div v-if="getWorkbenchTaskChangeTimeline(currentMainOrderDetail).length" class="task-drawer-timeline">
             <div
-              v-for="item in getWorkbenchOrderEditHistory(currentMainOrderDetail)"
+              v-for="item in getWorkbenchTaskChangeTimeline(currentMainOrderDetail)"
               :key="item.key"
               class="task-drawer-timeline-item"
             >
               <div class="task-drawer-timeline-axis">
-                <span class="task-drawer-timeline-dot edit"></span>
+                <span :class="['task-drawer-timeline-dot', item.timeline_type]"></span>
                 <span class="task-drawer-timeline-line"></span>
               </div>
               <div class="task-drawer-timeline-content">
-                <div class="task-drawer-timeline-title">
-                  {{ item.staff_name || '系统' }}修改了 {{ item.changes.length }} 项信息
+                <div class="task-drawer-timeline-title task-drawer-timeline-title-row">
+                  <span :class="['task-drawer-change-chip', `is-${item.timeline_type}`]">
+                    {{ getWorkbenchTaskChangeTypeLabel(item) }}
+                  </span>
+                  <span>{{ getWorkbenchTaskChangeTitle(item) }}</span>
                 </div>
                 <div class="task-drawer-timeline-meta">
                   <span>{{ fmtTime(item.changed_at) }}</span>
+                  <span v-if="item.timeline_type === 'status' && item.reason">原因：{{ item.reason }}</span>
+                  <span v-if="item.timeline_type === 'edit'">影响 {{ item.affected_sub_count || 0 }} 单</span>
                 </div>
-                <ul class="task-drawer-edit-list">
+                <ul v-if="item.timeline_type === 'edit'" class="task-drawer-edit-list">
                   <li v-for="(change, index) in item.changes" :key="`${item.key}-${index}`">
                     {{ formatWorkbenchOrderEdit(change) }}
                   </li>
@@ -1325,10 +1354,6 @@
               <span v-if="currentMainOrderDetail.review_feedback_date" class="task-drawer-feedback-date">
                 {{ currentMainOrderDetail.review_feedback_date }}
               </span>
-            </div>
-            <div v-if="currentMainOrderDetail.feedback_notes" class="task-drawer-feedback-row">
-              <span class="task-drawer-feedback-key">反馈备注：</span>
-              <span class="task-drawer-feedback-notes">{{ currentMainOrderDetail.feedback_notes }}</span>
             </div>
           </div>
         </template>
@@ -2043,9 +2068,19 @@ function getWorkbenchTaskTypeRows(record: any) {
   }))
 }
 
+function getWorkbenchTaskTypeSummary(record: any) {
+  const rows = getWorkbenchTaskTypeRows(record)
+  if (!rows.length) return '—'
+  return rows.map((item: { type: string; qty: number }) => `${item.type} x${item.qty}`).join(' / ')
+}
+
 function getWorkbenchTaskVariantText(record: any) {
   const variantInfo = String(record?.variant_info || '').trim()
   return variantInfo ? `指定变体 (${variantInfo})` : '默认变体'
+}
+
+function getWorkbenchTaskDroppedCount(record: any) {
+  return Number(record?._dropped_count || 0)
 }
 
 function getWorkbenchTaskStatusTimeline(record: any) {
@@ -2060,18 +2095,7 @@ function getWorkbenchTaskStatusTimeline(record: any) {
     }))
     : []
 
-  const createdEntry = record?.created_at
-    ? [{
-      key: `${record.id || record.order_id}-created`,
-      kind: 'created',
-      from_status: '',
-      to_status: '',
-      reason: '',
-      changed_at: record.created_at,
-    }]
-    : []
-
-  return [...history, ...createdEntry].sort((a, b) => {
+  return history.sort((a: any, b: any) => {
     const left = dayjs(a.changed_at).valueOf()
     const right = dayjs(b.changed_at).valueOf()
     return left - right
@@ -2094,6 +2118,7 @@ function getWorkbenchOrderEditHistory(record: any) {
     key: `${record.id || record.order_id}-edit-${index}-${entry?.changed_at || entry?.at || 'unknown'}`,
     changed_at: entry?.changed_at || entry?.at || null,
     staff_name: entry?.staff_name || entry?.operator || '系统',
+    affected_sub_count: Number(entry?.affected_sub_count || entry?.sub_count || 0),
     changes: Array.isArray(entry?.changes)
       ? entry.changes
       : Array.isArray(entry?.edits)
@@ -2103,8 +2128,49 @@ function getWorkbenchOrderEditHistory(record: any) {
   return normalized.filter((entry: any) => entry.changes.length > 0)
 }
 
-function formatWorkbenchOrderEdit(change: any) {
+function getWorkbenchTaskChangeTimeline(record: any) {
+  if (!record) return []
+  const statusItems = getWorkbenchTaskStatusTimeline(record).map((item: any) => ({
+    ...item,
+    timeline_type: 'status',
+  }))
+  const editItems = getWorkbenchOrderEditHistory(record).map((item: any) => ({
+    ...item,
+    timeline_type: 'edit',
+  }))
+  return [...statusItems, ...editItems].sort((a: any, b: any) => {
+    const left = dayjs(a.changed_at).valueOf()
+    const right = dayjs(b.changed_at).valueOf()
+    return left - right
+  })
+}
+
+function getWorkbenchTaskChangeTypeLabel(item: any) {
+  if (item?.timeline_type === 'status') return '状态'
+  return '修改'
+}
+
+function getWorkbenchTaskChangeTitle(item: any) {
+  if (item?.timeline_type === 'status') {
+    return `状态：${item.from_status || '初始'} -> ${item.to_status || '未知'}`
+  }
+  return getWorkbenchTaskChangeSummary(item?.changes || []) || '字段修改'
+}
+
+function getWorkbenchTaskChangeSummary(changes: any[]) {
+  if (!Array.isArray(changes) || changes.length === 0) return ''
+  const labels = changes.map((change: any) => getWorkbenchOrderEditFieldLabel(String(change?.field || '')))
+  const uniqueLabels = [...new Set(labels)].filter(Boolean)
+  if (uniqueLabels.length === 1) return `${uniqueLabels[0]}`
+  if (uniqueLabels.length === 2) return `${uniqueLabels[0]}、${uniqueLabels[1]}`
+  return `${uniqueLabels.slice(0, 2).join('、')}等 ${uniqueLabels.length} 项`
+}
+
+function getWorkbenchOrderEditFieldLabel(field: string) {
   const labels: Record<string, string> = {
+    asin: 'ASIN',
+    scheduled_date: '排单日期',
+    product_name: '产品名称',
     product_price: '售价',
     store_name: '店铺',
     review_level: '测评等级',
@@ -2113,15 +2179,21 @@ function formatWorkbenchOrderEdit(change: any) {
     customer_name: '客户名称',
     sales_person: '商务',
     category: '类目',
+    task_notes: '任务备注',
+    notes: '备注',
   }
-  const label = labels[change?.field] || change?.field || '字段'
+  return labels[field] || field || '字段'
+}
+
+function formatWorkbenchOrderEdit(change: any) {
+  const label = getWorkbenchOrderEditFieldLabel(change?.field)
   const fromVal = change?.field === 'product_price' && change?.from != null
     ? `$${Number(change.from).toFixed(2)}`
     : String(change?.from ?? '空')
   const toVal = change?.field === 'product_price' && change?.to != null
     ? `$${Number(change.to).toFixed(2)}`
     : String(change?.to ?? '空')
-  return `${label} 从 ${fromVal} 修改为 ${toVal}`
+  return `${label}：${fromVal} -> ${toVal}`
 }
 
 function buildWorkbenchMainOrderDetail(group: any, order?: any, subOrders: any[] = [], schedules: any[] = []) {
@@ -2133,6 +2205,8 @@ function buildWorkbenchMainOrderDetail(group: any, order?: any, subOrders: any[]
   const scheduledCount = targetSubs.filter((sub: any) => !!sub.buyer_name || !!sub.buyer_id).length
   const orderedCount = targetSubs.filter((sub: any) => !!sub.amazon_order_id).length
   const reviewCount = targetSubs.filter((sub: any) => ['已完成', '已留评'].includes(sub.status)).length
+  const refundedCount = targetSubs.filter((sub: any) => ['已退款', '已返款'].includes(sub.refund_status || '')).length
+  const droppedCount = targetSubs.filter((sub: any) => sub.status === '已掉评').length
   const fallbackEditLog = MOCK_ORDER_EDIT_HISTORY[group?.order_id || order?.id] || []
 
   return {
@@ -2163,6 +2237,9 @@ function buildWorkbenchMainOrderDetail(group: any, order?: any, subOrders: any[]
     _scheduled_count: scheduledCount,
     _ordered_count: orderedCount,
     _review_count: reviewCount,
+    _refunded_count: refundedCount,
+    _dropped_count: droppedCount,
+    _asin_total_orders: Number(order?.order_quantity || group?.order_quantity || targetSubs.length || 0),
     _schedule_days: uniqueScheduleDays.size,
     _edit_change_log: getWorkbenchOrderEditHistory(order || group).length ? getWorkbenchOrderEditHistory(order || group) : fallbackEditLog,
     status_change_log: Array.isArray(order?.status_change_log) ? order.status_change_log : [],
@@ -4944,33 +5021,155 @@ onUnmounted(() => {
 }
 
 .task-drawer-header { display: flex; align-items: flex-start; }
-.task-drawer-product { display: flex; gap: 16px; align-items: flex-start; }
-.task-drawer-img-wrap {
-  width: 84px;
-  height: 84px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
+.task-drawer-header-main {
   display: flex;
+  gap: 16px;
   align-items: center;
-  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
-.task-drawer-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.task-drawer-img-placeholder { font-size: 20px; color: #9ca3af; }
-.task-drawer-product-name { font-size: 15px; font-weight: 600; color: #1a1a2e; margin-bottom: 2px; }
-.task-drawer-asin { font-size: 12px; color: #6b7280; font-family: 'Courier New', monospace; }
-.task-drawer-store { font-size: 13px; color: #374151; margin-top: 2px; }
-.task-drawer-tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.task-drawer-header-info { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.task-drawer-header-side {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.task-drawer-header-side-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+.task-drawer-img-wrap { width: 80px; height: 80px; flex-shrink: 0; }
+.task-drawer-img { width: 80px; height: 80px; object-fit: cover; border-radius: 12px; border: 1px solid #e5e7eb; display: block; background: #fff; }
+.task-drawer-img-placeholder { width: 80px; height: 80px; border-radius: 12px; border: 1px dashed #d1d5db; background: #f9fafb; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 28px; }
+.task-drawer-product-name { font-size: 20px; font-weight: 700; color: #111827; line-height: 1.4; }
+.task-drawer-asin { font-size: 17px; font-weight: 700; color: #1e40af; letter-spacing: 0.2px; }
+.task-drawer-tag-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .task-drawer-order-num { font-family: 'Courier New', monospace; font-weight: 700; font-size: 14px; color: #2563eb; }
 .task-drawer-section-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px; }
+.task-drawer-overview-grid {
+  display: grid;
+  gap: 10px;
+}
+.task-drawer-overview-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 10px 12px 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.task-drawer-overview-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.task-drawer-overview-title::before {
+  content: '';
+  width: 4px;
+  height: 14px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+.task-drawer-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.task-drawer-info-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.task-drawer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid #eef2f7;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.task-drawer-row-wide {
+  grid-column: 1 / -1;
+}
+.task-drawer-info-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #6b7280;
+  flex-shrink: 0;
+  min-width: 64px;
+  padding-right: 10px;
+  margin-right: 2px;
+  border-right: 1px solid #dbe3ee;
+}
+.task-drawer-info-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.45;
+  word-break: break-word;
+  text-align: right;
+  flex: 1;
+}
+.task-drawer-info-value.is-price {
+  color: #059669;
+  font-size: 15px;
+  font-weight: 700;
+}
+.task-drawer-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.task-drawer-progress-grid.compact .task-drawer-progress-item {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  padding: 9px 8px 8px;
+  text-align: center;
+}
+.task-drawer-progress-item.is-match { background: #ecfdf5; border-color: #d1fae5; }
+.task-drawer-progress-item.is-ordered { background: #eff6ff; border-color: #dbeafe; }
+.task-drawer-progress-item.is-refunded { background: #fffbeb; border-color: #fde68a; }
+.task-drawer-progress-item.is-reviewed { background: #eef2ff; border-color: #c7d2fe; }
+.task-drawer-progress-item.is-dropped { background: #fef2f2; border-color: #fecaca; }
+.task-drawer-progress-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+.task-drawer-progress-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: #1a1a2e;
+}
 .task-drawer-type-list { display: flex; flex-direction: column; gap: 6px; }
 .task-drawer-type-row { display: flex; align-items: center; gap: 6px; }
 .task-drawer-type-qty { font-size: 12px; color: #6b7280; }
 .task-drawer-timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  padding: 14px 18px;
 }
 .task-drawer-timeline-item {
   display: flex;
@@ -4988,11 +5187,14 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .task-drawer-timeline-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #2563eb;
-  margin-top: 6px;
+  margin-top: 4px;
+}
+.task-drawer-timeline-dot.status {
+  background: #2563eb;
 }
 .task-drawer-timeline-dot.edit {
   background: #7c3aed;
@@ -5011,6 +5213,13 @@ onUnmounted(() => {
   font-size: 13px;
   color: #1a1a2e;
   font-weight: 600;
+  line-height: 1.6;
+}
+.task-drawer-timeline-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .task-drawer-timeline-meta {
   margin-top: 4px;
@@ -5028,6 +5237,23 @@ onUnmounted(() => {
 }
 .task-drawer-edit-list li + li {
   margin-top: 4px;
+}
+.task-drawer-change-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.task-drawer-change-chip.is-status {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+}
+.task-drawer-change-chip.is-edit {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
 }
 .task-drawer-feedback-panel {
   display: flex;
