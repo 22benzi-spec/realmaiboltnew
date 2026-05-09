@@ -50,7 +50,7 @@
         size="middle"
         :row-selection="rowSelection"
         @change="handleTableChange"
-        :scroll="{ x: 1900 }"
+        :scroll="{ x: 2165 }"
         :row-class-name="getRowClass"
       >
         <template #bodyCell="{ column, record }">
@@ -232,6 +232,37 @@
             <a-tag :color="getStatusColor(record.status)" size="small">{{ record.status || '待分配' }}</a-tag>
           </template>
 
+          <template v-if="column.key === 'order_progress'">
+            <div class="order-progress-cell">
+              <div class="progress-bar-wrap">
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill" :style="{ width: `${getOrderProgressPct(record)}%` }"></div>
+                </div>
+                <span class="progress-pct">{{ getOrderProgressPct(record) }}%</span>
+              </div>
+              <div class="progress-stats-row">
+                <span>下单 {{ record._ordered_count || 0 }}</span>
+                <span>/</span>
+                <span>留评 {{ record._review_count || 0 }}</span>
+              </div>
+            </div>
+          </template>
+
+          <template v-if="column.key === 'review_fb'">
+            <div class="review-fb-cell">
+              <a
+                v-for="item in getOrderReviewFbItems(record)"
+                :key="item.label"
+                :href="item.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                :class="['review-fb-link', `is-${item.type}`]"
+              >
+                {{ item.label }}
+              </a>
+            </div>
+          </template>
+
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="viewDetail(record)">详情</a-button>
@@ -248,6 +279,7 @@
 
     <!-- Detail Drawer -->
     <a-drawer
+      v-if="false"
       v-model:open="drawerOpen"
       :title="`任务详情 - ${currentOrder?.order_number}`"
       width="820"
@@ -511,6 +543,13 @@
         </div>
       </template>
     </a-drawer>
+
+    <SubOrderOpsDrawer
+      v-model:open="drawerOpen"
+      sub-order-id=""
+      :fallback-detail="getOrderListDetailFallback(currentOrder)"
+      detail-mode="improving"
+    />
 
     <!-- Feedback Modal -->
     <a-modal
@@ -795,6 +834,7 @@ import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import BillingDrawer from '../components/BillingDrawer.vue'
 import GroupBillingDrawer from '../components/GroupBillingDrawer.vue'
+import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 const loading = ref(false)
 const orders = ref<any[]>([])
@@ -924,6 +964,8 @@ const columns = [
   { title: '商务备注', key: 'notes', width: 140 },
   { title: '商务', key: 'sales_person', width: 110 },
   { title: '任务状态', key: 'task_status', width: 95 },
+  { title: '订单进度', key: 'order_progress', width: 135 },
+  { title: '评论/FB', key: 'review_fb', width: 130 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 100, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
   { title: '操作', key: 'action', width: 160, fixed: 'right' as const },
 ]
@@ -964,6 +1006,81 @@ function getOrderProgressPct(record: any): number {
   const total = Number(record.order_quantity || 0)
   if (!total) return 0
   return Math.round(((record._review_count || 0) / total) * 100)
+}
+
+function getOrderReviewFbItems(record: any) {
+  const seed = encodeURIComponent(String(record?.order_number || record?.id || 'order'))
+  const linkUrl = record?.review_link || record?.fb_link || `https://example.com/review/${seed}`
+  const imageUrl = record?.review_screenshot_url || record?.review_image_url || record?.product_image || `https://picsum.photos/seed/${seed}/900/600`
+  return [
+    { label: '链接', type: 'link', url: linkUrl },
+    { label: '图片', type: 'image', url: imageUrl },
+  ]
+}
+
+function getOrderListDetailFallback(record: any) {
+  if (!record) return null
+  const seed = encodeURIComponent(String(record.order_number || record.id || 'order'))
+  return {
+    ...record,
+    _is_preview_mock: true,
+    id: `order-list-detail-${record.id || record.order_number || seed}`,
+    sub_order_number: record.order_number || record.id || '—',
+    _order_number: record.order_number || '',
+    order_id: record.id || '',
+    status: record.status || '进行中',
+    order_type: record.order_type || (Array.isArray(record.order_types) ? record.order_types[0] : '') || record.review_type || '',
+    review_type: record.review_type || record.order_type || '',
+    review_level: record.review_level || record.level || '—',
+    buyer_name: record.buyer_name || 'Mock Buyer',
+    staff_name: record.staff_name || record.sales_person || '业务员',
+    buyer_chat_id: record.chat_order_id || `CHAT-${String(record.order_number || seed).slice(-4)}`,
+    buyer_assigned_at: record.buyer_assigned_at || dayjs(record.created_at || undefined).add(6, 'hour').toISOString(),
+    amazon_order_id: record.amazon_order_id || '113-9283746-1827364',
+    _preview_old_amazon_order_id: record._preview_old_amazon_order_id || '113-0000000-0000000',
+    amazon_order_placed_at: record.amazon_order_placed_at || dayjs(record.created_at || undefined).add(1, 'day').toISOString(),
+    review_link: record.review_link || record.fb_link || `https://example.com/review/${seed}`,
+    review_submitted_at: record.review_submitted_at || dayjs(record.created_at || undefined).add(2, 'day').toISOString(),
+    review_screenshot_url: record.review_screenshot_url || record.product_image || `https://picsum.photos/seed/${seed}/900/600`,
+    refund_status: record.refund_status || (Number(record._refund_count || 0) > 0 ? '已返款' : '未返款'),
+    refund_method: record._refund_method_summary || record.refund_method || 'PayPal',
+    refund_sequence: record.refund_sequence || '预付',
+    refund_amount: Number(record._refund_total || record.product_price || 0),
+    actual_paid_usd: Number(record.product_price || 0),
+    notes: record.notes || '订单列表详情预览',
+    task_notes: record.task_notes || record.notes || '任务信息来自订单列表',
+    _asin_total_orders: Number(record._asin_total_orders || record.order_quantity || 1),
+    __mock_refund_requests: [
+      {
+        id: `order-list-refund-${record.id || seed}`,
+        status: Number(record._refund_count || 0) > 0 ? '已处理' : '待处理',
+        request_type: 'initial',
+        refund_method: record._refund_method_summary || 'PayPal',
+        refund_sequence: '预付',
+        refund_amount_usd: Number(record._refund_total || record.product_price || 0),
+        actual_paid_usd: Number(record.product_price || 0),
+        created_at: dayjs(record.created_at || undefined).add(30, 'hour').toISOString(),
+        handled_at: dayjs(record.created_at || undefined).add(34, 'hour').toISOString(),
+        updated_at: dayjs(record.created_at || undefined).add(34, 'hour').toISOString(),
+      },
+    ],
+    edit_change_log: [
+      {
+        changed_at: dayjs(record.created_at || undefined).add(36, 'hour').toISOString(),
+        staff_name: record.sales_person || '业务员',
+        changes: [
+          { field: 'amazon_order_id', from: '113-0000000-0000000', to: record.amazon_order_id || '113-9283746-1827364' },
+        ],
+      },
+    ],
+    __mock_after_sale_issue: {
+      id: `order-list-after-sale-${record.id || seed}`,
+      issue_type: '无此订单',
+      issue_status: '处理中',
+      created_at: dayjs(record.created_at || undefined).add(58, 'hour').toISOString(),
+      updated_at: dayjs(record.created_at || undefined).add(58, 'hour').toISOString(),
+    },
+  }
 }
 
 function getStatusColor(status: string) {
@@ -1717,6 +1834,23 @@ onMounted(() => {
 .ps-item b { color: #374151; }
 .ps-sep { color: #d1d5db; }
 .ps-total { color: #9ca3af; }
+.review-fb-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.review-fb-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  line-height: 18px;
+}
+.review-fb-link.is-image {
+  border-color: #d1fae5;
+  background: #ecfdf5;
+  color: #059669;
+}
 
 .sub-status-summary { display: flex; flex-direction: column; gap: 2px; }
 .ss-item { font-size: 11px; padding: 1px 6px; border-radius: 3px; display: inline-block; width: fit-content; }

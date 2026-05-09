@@ -391,7 +391,7 @@
           </template>
         </a-modal>
 
-        <a-modal v-model:open="subDetailOpen" title="子订单详情" :footer="null" width="760px">
+        <a-modal v-if="false" v-model:open="subDetailOpen" title="子订单详情" :footer="null" width="760px">
           <a-descriptions v-if="currentSubDetail" :column="2" bordered size="small">
             <a-descriptions-item label="子订单ID">{{ currentSubDetail.sub_order_number || '—' }}</a-descriptions-item>
             <a-descriptions-item label="排期日期">{{ currentSubDetail.scheduled_date || '—' }}</a-descriptions-item>
@@ -403,6 +403,12 @@
             <a-descriptions-item label="关键词" :span="2">{{ currentSubDetail.keyword || '—' }}</a-descriptions-item>
           </a-descriptions>
         </a-modal>
+        <SubOrderOpsDrawer
+          v-model:open="subDetailOpen"
+          :sub-order-id="currentSubDetail?.id || ''"
+          :fallback-detail="currentSubDetail"
+          detail-mode="improving"
+        />
       </a-tab-pane>
 
       <a-tab-pane key="log" tab="抢单记录">
@@ -453,6 +459,7 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
+import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 const activeTab = ref('hall')
 const hallViewMode = ref<'order' | 'sub'>('order')

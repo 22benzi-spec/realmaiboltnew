@@ -1133,6 +1133,7 @@
       v-model:open="taskOpsDetailOpen"
       :sub-order-id="taskOpsDetailTarget?.id || ''"
       :fallback-detail="taskOpsDetailTarget"
+      detail-mode="improving"
     />
 
     <a-modal
@@ -2773,6 +2774,7 @@ function buildMockTasks() {
       refund_status: '已退款',
       refund_method: 'PayPal',
       refund_sequence: '预付',
+      refund_amount: 41.3,
       product_name: '婴儿监护摄像头',
       brand_name: 'RealmAI',
       category: 'Home',
@@ -2781,6 +2783,7 @@ function buildMockTasks() {
       store_name: 'US-Store-11',
       country: 'US',
       product_price: 39.5,
+      actual_paid_usd: 39.5,
       scheduled_date: twoDaysAgo,
       keyword: 'baby monitor camera',
       order_type: '图外评',
@@ -2792,7 +2795,28 @@ function buildMockTasks() {
       notes: '订单备注：逾期后保留在待完善订单跟进',
       created_at: now.subtract(4, 'day').toISOString(),
       buyer_assigned_at: now.subtract(3, 'day').toISOString(),
+      amazon_order_id: '113-9283746-1827364',
+      amazon_order_placed_at: now.subtract(2, 'day').toISOString(),
+      review_link: 'https://amazon.com/review/mock-1011',
+      review_submitted_at: now.subtract(18, 'hour').toISOString(),
+      _asin_total_orders: 8,
       _is_mock: true,
+      edit_change_log: [
+        {
+          changed_at: now.subtract(20, 'hour').toISOString(),
+          staff_name: '李倩',
+          changes: [
+            { field: 'amazon_order_id', from: '113-0000000-0000000', to: '113-9283746-1827364' },
+          ],
+        },
+      ],
+      __mock_after_sale_issue: {
+        id: 'mock_after_sale_1011',
+        issue_type: '无此订单',
+        issue_status: '处理中',
+        created_at: now.subtract(16, 'hour').toISOString(),
+        updated_at: now.subtract(16, 'hour').toISOString(),
+      },
       __mock_refund_fee_usd: 1.8,
       __mock_paypal_email: 'ava.wilson@example.com',
       __mock_refund_requests: [

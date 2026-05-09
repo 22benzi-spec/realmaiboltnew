@@ -170,33 +170,6 @@
               </div>
             </div>
 
-            <div v-if="getTaskStatusTimeline(record).length" class="task-status-history">
-              <div class="task-status-history-title">状态记录</div>
-              <div class="task-status-history-list">
-                <div
-                  v-for="item in getTaskStatusTimeline(record)"
-                  :key="item.key"
-                  class="task-status-history-item"
-                >
-                  <div class="task-status-history-main">
-                    <template v-if="item.kind === 'created'">
-                      <span class="task-status-history-text">创建任务</span>
-                    </template>
-                    <template v-else>
-                      <a-tag :color="getStatusColor(item.to_status)" size="small">{{ item.to_status || '未知状态' }}</a-tag>
-                      <span class="task-status-history-text">
-                        {{ item.from_status || '初始状态' }} -> {{ item.to_status || '未知状态' }}
-                      </span>
-                    </template>
-                  </div>
-                  <div class="task-status-history-meta">
-                    <span>{{ fmtTime(item.changed_at) }}</span>
-                    <span v-if="item.reason">原因：{{ item.reason }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <!-- 排期一览 -->
             <div v-if="schedulesMap[record.id]?.length" class="schedules-preview">
               <div class="schedules-preview-title">排期一览</div>
@@ -232,7 +205,7 @@
               :pagination="false"
               row-key="id"
               size="small"
-              :scroll="{ x: 1860 }"
+              :scroll="{ x: 1990 }"
               style="margin-top:10px"
             >
               <template #bodyCell="{ column, record: sub }">
@@ -332,6 +305,20 @@
                 </template>
                 <template v-if="column.key === 'sub_progress'">
                   <a-tag :color="getSubStatusColor(getSubProgressLabel(sub))" size="small">{{ getSubProgressLabel(sub) }}</a-tag>
+                </template>
+                <template v-if="column.key === 'sub_review_fb'">
+                  <div class="review-fb-cell">
+                    <a
+                      v-for="item in getSubReviewFbItems(sub)"
+                      :key="item.label"
+                      :href="item.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      :class="['review-fb-link', `is-${item.type}`]"
+                    >
+                      {{ item.label }}
+                    </a>
+                  </div>
                 </template>
                 <template v-if="column.key === 'sub_order_status'">
                   <a-tag :color="getSubOrderStatusColor(sub.order_status)" size="small">{{ sub.order_status || '正常' }}</a-tag>
@@ -823,6 +810,7 @@
 
     <!-- 子订单详情/编辑弹窗 -->
     <a-modal
+      v-if="false"
       v-model:open="detailOpen"
       :title="editMode ? '编辑子订单' : '子订单详情'"
       :footer="null"
@@ -1083,6 +1071,13 @@
       </div>
     </a-modal>
 
+    <SubOrderOpsDrawer
+      v-model:open="detailOpen"
+      :sub-order-id="detailRecord?.id || ''"
+      :fallback-detail="detailRecord"
+      detail-mode="improving"
+    />
+
     <!-- 批量修改子订单弹窗 -->
     <a-modal
       v-model:open="editSubModalOpen"
@@ -1225,6 +1220,7 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
+import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 // ===== Tab =====
 const activeTab = ref('tasks')
@@ -1338,6 +1334,7 @@ const subColumns = [
   { title: '售价 / 实付 / 实返', key: 'sub_price_paid_refund', width: 150 },
   { title: '返款状态 / 方式', key: 'sub_refund_info', width: 145 },
   { title: '订单进度', key: 'sub_progress', width: 120 },
+  { title: '评论/FB', key: 'sub_review_fb', width: 130 },
   { title: '订单状态', key: 'sub_order_status', width: 100 },
   { title: '订单备注', key: 'sub_notes', width: 160 },
   { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
@@ -1391,6 +1388,16 @@ function getSubProgressLabel(sub: any): string {
   if (sub.amazon_order_id) return '已下单'
   if (sub.buyer_id) return '已分配'
   return '待分配'
+}
+
+function getSubReviewFbItems(sub: any) {
+  const seed = encodeURIComponent(String(sub?.sub_order_number || sub?.id || 'sub-order'))
+  const linkUrl = sub?.review_link || sub?.fb_link || sub?.keyword_link || `https://example.com/review/${seed}`
+  const imageUrl = sub?.review_screenshot_url || sub?.review_image_url || sub?.product_image || `https://picsum.photos/seed/${seed}/900/600`
+  return [
+    { label: '链接', type: 'link', url: linkUrl },
+    { label: '图片', type: 'image', url: imageUrl },
+  ]
 }
 
 function getReviewLevelColor(level: string) {
@@ -3382,6 +3389,23 @@ onMounted(() => {
 .text-gray { color: #9ca3af; font-size: 12px; }
 .text-red { color: #dc2626; }
 .remark-text { color: #dc2626; font-weight: 500; font-size: 12px; }
+.review-fb-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.review-fb-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  line-height: 18px;
+}
+.review-fb-link.is-image {
+  border-color: #d1fae5;
+  background: #ecfdf5;
+  color: #059669;
+}
 .info-stack-cell {
   display: flex;
   flex-direction: column;
