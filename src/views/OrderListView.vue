@@ -50,7 +50,7 @@
         size="middle"
         :row-selection="rowSelection"
         @change="handleTableChange"
-        :scroll="{ x: 2165 }"
+        :scroll="{ x: 1900 }"
         :row-class-name="getRowClass"
       >
         <template #bodyCell="{ column, record }">
@@ -232,37 +232,6 @@
             <a-tag :color="getStatusColor(record.status)" size="small">{{ record.status || '待分配' }}</a-tag>
           </template>
 
-          <template v-if="column.key === 'order_progress'">
-            <div class="order-progress-cell">
-              <div class="progress-bar-wrap">
-                <div class="progress-bar-bg">
-                  <div class="progress-bar-fill" :style="{ width: `${getOrderProgressPct(record)}%` }"></div>
-                </div>
-                <span class="progress-pct">{{ getOrderProgressPct(record) }}%</span>
-              </div>
-              <div class="progress-stats-row">
-                <span>下单 {{ record._ordered_count || 0 }}</span>
-                <span>/</span>
-                <span>留评 {{ record._review_count || 0 }}</span>
-              </div>
-            </div>
-          </template>
-
-          <template v-if="column.key === 'review_fb'">
-            <div class="review-fb-cell">
-              <a
-                v-for="item in getOrderReviewFbItems(record)"
-                :key="item.label"
-                :href="item.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                :class="['review-fb-link', `is-${item.type}`]"
-              >
-                {{ item.label }}
-              </a>
-            </div>
-          </template>
-
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="viewDetail(record)">详情</a-button>
@@ -279,7 +248,6 @@
 
     <!-- Detail Drawer -->
     <a-drawer
-      v-if="false"
       v-model:open="drawerOpen"
       :title="`任务详情 - ${currentOrder?.order_number}`"
       width="820"
@@ -301,13 +269,9 @@
             <div>
               <div v-if="currentOrder.product_name" class="detail-product-name">{{ currentOrder.product_name }}</div>
               <div class="detail-asin">{{ currentOrder.asin }}</div>
-              <div class="detail-store">{{ currentOrder.store_name }}</div>
               <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+                <a-tag v-if="currentOrder.country" color="default">{{ currentOrder.country }}</a-tag>
                 <a-tag :color="getStatusColor(currentOrder.status)">{{ currentOrder.status }}</a-tag>
-                <a-tag :color="currentOrder.billing_status === '未完成' ? 'red' : 'green'">入账{{ currentOrder.billing_status || '已完成' }}</a-tag>
-                <a-tag v-if="hasRealDebt(currentOrder)" color="orange">欠款 &yen;{{ Number(currentOrder.debt_amount).toFixed(0) }}</a-tag>
-                <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">溢款退&yen;{{ Number(currentOrder.debt_amount).toFixed(0) }}</a-tag>
-                <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="green">已结清</a-tag>
               </div>
             </div>
           </div>
@@ -315,53 +279,100 @@
 
         <a-divider style="margin: 16px 0" />
 
-        <a-descriptions :column="2" bordered size="small">
-          <a-descriptions-item label="任务编号" :span="2">
-            <span class="detail-order-num">{{ currentOrder.order_number }}</span>
-          </a-descriptions-item>
-          <a-descriptions-item label="产品名称" :span="2" v-if="currentOrder.product_name">
-            {{ currentOrder.product_name }}
-          </a-descriptions-item>
-          <a-descriptions-item label="ASIN">{{ currentOrder.asin }}</a-descriptions-item>
-          <a-descriptions-item label="店铺">{{ currentOrder.store_name }}</a-descriptions-item>
-          <a-descriptions-item label="品牌">{{ currentOrder.brand_name || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="国家">{{ currentOrder.country }}</a-descriptions-item>
-          <a-descriptions-item label="产品售价">
-            {{ currentOrder.product_price ? `$ ${Number(currentOrder.product_price).toFixed(2)}` : '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="接单汇率">
-            {{ currentOrder.exchange_rate ? Number(currentOrder.exchange_rate).toFixed(2) : '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="佣金">
-            {{ getCommissionUnitPrice(currentOrder) > 0 ? `¥ ${getCommissionUnitPrice(currentOrder).toFixed(2)}` : '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="测评类型">{{ currentOrder.review_type }}</a-descriptions-item>
-          <a-descriptions-item label="下单类型">
-            <div class="order-types-cell">
-              <template v-if="hasMultipleTypes(currentOrder)">
-                <div v-for="t in currentOrder.order_types" :key="t" class="type-qty-row">
-                  <a-tag :color="getOrderTypeColor(t)" size="small">{{ t }}</a-tag>
-                  <span class="type-qty">&times;{{ getTypeQty(currentOrder, t) }}</span>
-                </div>
-              </template>
-              <template v-else>
-                <a-tag :color="getOrderTypeColor(currentOrder.order_type)" size="small">{{ currentOrder.order_type || '-' }}</a-tag>
-                <span class="type-qty">&times;{{ currentOrder.order_quantity }}</span>
-              </template>
+        <div class="detail-overview-grid">
+          <div class="detail-overview-card">
+            <div class="detail-overview-title">产品信息</div>
+            <div class="detail-info-grid compact">
+              <div class="detail-info-row">
+                <span class="detail-info-label">店铺</span>
+                <span class="detail-info-value">{{ currentOrder.store_name || '—' }}</span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">品牌</span>
+                <span class="detail-info-value">{{ currentOrder.brand_name || '—' }}</span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">售价</span>
+                <span class="detail-info-value is-price">{{ currentOrder.product_price ? `$ ${Number(currentOrder.product_price).toFixed(2)}` : '—' }}</span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">类目</span>
+                <span class="detail-info-value">{{ currentOrder.category || '—' }}</span>
+              </div>
             </div>
-          </a-descriptions-item>
-          <a-descriptions-item label="总下单数量">{{ currentOrder.order_quantity }}</a-descriptions-item>
-          <a-descriptions-item label="状态">
-            <a-tag :color="getStatusColor(currentOrder.status)">{{ currentOrder.status }}</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="对接商务">{{ currentOrder.sales_person || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="客户名称">
-            <span>{{ currentOrder.customer_name || '-' }}</span>
-            <a-tag v-if="currentOrder.feedback_channel" :color="currentOrder.feedback_channel === '群组' ? 'blue' : 'cyan'" size="small" style="margin-left:6px">{{ currentOrder.feedback_channel }}</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="创建时间" :span="2">{{ dayjs(currentOrder.created_at).format('YYYY-MM-DD HH:mm') }}</a-descriptions-item>
-          <a-descriptions-item label="备注" :span="2">{{ currentOrder.notes || '-' }}</a-descriptions-item>
-        </a-descriptions>
+          </div>
+
+          <div class="detail-overview-card">
+            <div class="detail-overview-title">任务信息</div>
+            <div class="detail-info-grid compact">
+              <div class="detail-info-row">
+                <span class="detail-info-label">等级</span>
+                <span class="detail-info-value">{{ currentOrder.review_level || currentOrder.review_type || '—' }}</span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">类型</span>
+                <span class="detail-info-value">
+                  <span class="detail-inline-types">
+                    <template v-if="hasMultipleTypes(currentOrder)">
+                      <span v-for="t in currentOrder.order_types" :key="t" class="detail-inline-type">
+                        <a-tag :color="getOrderTypeColor(t)" size="small">{{ t }}</a-tag>
+                        <span>&times;{{ getTypeQty(currentOrder, t) }}</span>
+                      </span>
+                    </template>
+                    <template v-else>
+                      <a-tag :color="getOrderTypeColor(currentOrder.order_type)" size="small">{{ currentOrder.order_type || '—' }}</a-tag>
+                      <span>&times;{{ currentOrder.order_quantity || 0 }}</span>
+                    </template>
+                  </span>
+                </span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">总单量</span>
+                <span class="detail-info-value">{{ currentOrder.order_quantity || 0 }}</span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">接单汇率</span>
+                <span class="detail-info-value">{{ currentOrder.exchange_rate ? Number(currentOrder.exchange_rate).toFixed(2) : '—' }}</span>
+              </div>
+              <div class="detail-info-row detail-info-row-wide">
+                <span class="detail-info-label">佣金</span>
+                <span class="detail-info-value">
+                  <span class="detail-inline-types">
+                    <template v-if="hasMultipleTypes(currentOrder)">
+                      <span v-for="t in currentOrder.order_types" :key="t" class="detail-inline-type">
+                        <a-tag :color="getOrderTypeColor(t)" size="small">{{ t }}</a-tag>
+                        <span>¥{{ getTypeUnitPrice(currentOrder, t).toFixed(2) }}</span>
+                      </span>
+                    </template>
+                    <template v-else>
+                      <a-tag :color="getOrderTypeColor(currentOrder.order_type)" size="small">{{ currentOrder.order_type || '—' }}</a-tag>
+                      <span>¥{{ getCommissionUnitPrice(currentOrder).toFixed(2) }}</span>
+                    </template>
+                  </span>
+                </span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">客户名称</span>
+                <span class="detail-info-value">
+                  {{ currentOrder.customer_name || '—' }}
+                  <a-tag v-if="currentOrder.feedback_channel" :color="currentOrder.feedback_channel === '群组' ? 'blue' : 'cyan'" size="small" style="margin-left:6px">{{ currentOrder.feedback_channel }}</a-tag>
+                </span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">对接商务</span>
+                <span class="detail-info-value">{{ currentOrder.sales_person || '—' }}</span>
+              </div>
+              <div class="detail-info-row">
+                <span class="detail-info-label">创建时间</span>
+                <span class="detail-info-value">{{ currentOrder.created_at ? dayjs(currentOrder.created_at).format('YYYY-MM-DD HH:mm') : '—' }}</span>
+              </div>
+              <div class="detail-info-row detail-info-row-wide">
+                <span class="detail-info-label">商务备注</span>
+                <span class="detail-info-value">{{ currentOrder.notes || '—' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <a-divider style="margin: 20px 0 16px" />
         <div class="detail-section-title">金额明细</div>
@@ -397,7 +408,7 @@
           <div class="amount-divider amount-divider-bold"></div>
           <div class="amount-row amount-row-total">
             <div style="display:flex;align-items:center;gap:8px">
-              <span class="amount-label-total">应收总额</span>
+              <span class="amount-label-total">基础应收</span>
               <span class="amount-desc">产品回款 + 佣金</span>
             </div>
             <span class="amount-total">&yen;{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
@@ -408,7 +419,6 @@
         <a-divider style="margin: 20px 0 16px" />
         <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>反馈状态</span>
-          <a-button size="small" type="link" @click="openFeedbackModal(currentOrder)">编辑反馈</a-button>
         </div>
         <div class="feedback-panel">
           <div class="feedback-info-row">
@@ -438,21 +448,20 @@
         <!-- Billing + Payment Records (Merged) -->
         <a-divider style="margin: 20px 0 16px" />
         <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
-          <span>账单 & 收款记录</span>
-          <a-button size="small" type="link" @click="openBillingDrawer(currentOrder)">账单管理</a-button>
+          <span>资金汇总</span>
         </div>
 
         <!-- Billing Summary -->
         <div class="billing-panel" :class="{ 'billing-warn': currentOrder.billing_status === '未完成', 'billing-debt': hasRealDebt(currentOrder) }">
           <div class="billing-summary-row">
             <div class="billing-summary-item">
-              <span class="billing-summary-label">签单金额</span>
+              <span class="billing-summary-label">实际应收</span>
               <span class="billing-summary-val">&yen;{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
               <span class="billing-summary-hint">本次任务约定总价</span>
             </div>
             <div class="billing-summary-divider"></div>
             <div class="billing-summary-item">
-              <span class="billing-summary-label">累计到账</span>
+              <span class="billing-summary-label">净到账</span>
               <span class="billing-summary-val" :style="{ color: paymentTotal > 0 ? '#16a34a' : '#9ca3af' }">&yen;{{ paymentTotal.toFixed(2) }}</span>
               <span class="billing-summary-hint">
                 <template v-if="paymentsByType.base > 0">首款¥{{ paymentsByType.base.toFixed(0) }}</template>
@@ -463,7 +472,7 @@
             </div>
             <div class="billing-summary-divider"></div>
             <div class="billing-summary-item">
-              <span class="billing-summary-label">剩余待结</span>
+              <span class="billing-summary-label">差价金额</span>
               <span class="billing-summary-val" :style="{ color: paymentDiff < 0 ? '#dc2626' : paymentDiff > 0 ? '#2563eb' : '#16a34a' }">
                 <template v-if="paymentDiff < 0">&yen;{{ Math.abs(paymentDiff).toFixed(2) }}</template>
                 <template v-else-if="paymentDiff > 0">-&yen;{{ paymentDiff.toFixed(2) }}</template>
@@ -490,11 +499,11 @@
             </div>
             <template v-if="hasRealDebt(currentOrder) || hasRealSurplus(currentOrder)">
               <div class="billing-info-row">
-                <span class="billing-key">{{ hasRealSurplus(currentOrder) ? '溢收金额：' : '欠款金额：' }}</span>
+                <span class="billing-key">差价金额：</span>
                 <span :class="hasRealSurplus(currentOrder) ? 'surplus-amount-text' : 'debt-amount-text'">&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
               </div>
               <div class="billing-info-row billing-notes-row" v-if="currentOrder.debt_notes">
-                <span class="billing-key">{{ hasRealSurplus(currentOrder) ? '溢款说明：' : '欠款说明：' }}</span>
+                <span class="billing-key">差价说明：</span>
                 <span class="debt-notes-text">{{ currentOrder.debt_notes }}</span>
               </div>
               <div class="billing-info-row" v-if="currentOrder.debt_marked_by">
@@ -508,48 +517,47 @@
         </div>
 
         <!-- Payment Flow Records -->
-        <div class="payment-records-title">流水明细</div>
-        <div v-if="batchPayments.length === 0" class="payment-empty">暂无收款流水</div>
-        <div v-else class="payment-list">
-          <div v-for="p in batchPayments" :key="p.id" class="payment-card" :class="getPaymentCardClass(p.payment_type)">
-            <div class="payment-main">
-              <div class="payment-top">
-                <span class="payment-amount" :class="p.payment_type === '退款' ? 'payment-amount-refund' : ''">
-                  {{ p.payment_type === '退款' ? '-' : '' }}&yen;{{ Number(p.amount_cny).toFixed(2) }}
+        <div class="payment-records-title">交易明细</div>
+        <div v-if="batchPayments.length === 0" class="payment-mock-tip">暂无真实资金流水，以下为示例渲染</div>
+        <div class="payment-lines">
+          <div class="payment-line payment-line-head">
+            <span>时间</span>
+            <span>交易类型</span>
+            <span>收支方向</span>
+            <span>金额</span>
+            <span>方式</span>
+            <span>备注</span>
+          </div>
+          <div v-for="p in displayBatchPayments" :key="p.id" class="payment-line" :class="{ 'payment-line-mock': p._isMock }">
+            <span class="payment-line-date">{{ p.payment_date || '-' }}</span>
+            <span>
+              <a-tag :color="getPaymentTypeColor(p.payment_type)" size="small">{{ getPaymentTransactionType(p) }}</a-tag>
+              <a-tag v-if="p._isMock" color="default" size="small">示例</a-tag>
+            </span>
+            <span>
+              <a-tag :color="getPaymentDirectionColor(getPaymentDirection(p))" size="small">{{ getPaymentDirection(p) }}</a-tag>
+            </span>
+            <span :class="getPaymentDirection(p) === '支出' ? 'payment-line-refund' : 'payment-line-income'">
+              {{ getPaymentDirection(p) === '支出' ? '-' : '+' }}&yen;{{ Number(p.amount_cny || 0).toFixed(2) }}
+            </span>
+            <span class="payment-line-meta">
+              <template v-if="p.payment_method">{{ p.payment_method }}</template>
+              <template v-else>-</template>
+            </span>
+            <span class="payment-line-notes">
+              {{ p.notes || '-' }}
+              <template v-if="p.payment_group_id && p.group_orders && p.group_orders.length > 1">
+                <br />
+                合并：
+                <span v-for="(go, gi) in p.group_orders" :key="gi">
+                  {{ go.asin || go.order_number }}<template v-if="go.allocated_amount">(&yen;{{ Number(go.allocated_amount).toFixed(0) }})</template><template v-if="Number(gi) < p.group_orders.length - 1"> / </template>
                 </span>
-                <a-tag :color="getPaymentTypeColor(p.payment_type)" size="small">{{ p.payment_type || '基础收款' }}</a-tag>
-              </div>
-              <div class="payment-meta">
-                <span>{{ p.payment_date }}</span>
-                <span v-if="p.payment_method" class="payment-method">{{ p.payment_method }}</span>
-                <span v-if="p.payer_name" class="payment-payer">{{ p.payer_name }}</span>
-              </div>
-              <div v-if="p.payment_group_id && p.group_orders && p.group_orders.length > 1" class="payment-group-info">
-                <span class="payment-group-label">合并收款订单：</span>
-                <span v-for="(go, gi) in p.group_orders" :key="gi" class="payment-group-order">
-                  {{ go.asin || go.order_number }}
-                  <span v-if="go.allocated_amount" class="payment-group-alloc">(&yen;{{ Number(go.allocated_amount).toFixed(0) }})</span>
-                  <span v-if="gi < p.group_orders.length - 1"> / </span>
-                </span>
-              </div>
-              <div v-if="p.notes" class="payment-notes">{{ p.notes }}</div>
-            </div>
-            <div class="payment-actions">
-              <a-popconfirm title="确认删除此收款记录？" @confirm="deletePayment(p)">
-                <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
-              </a-popconfirm>
-            </div>
+              </template>
+            </span>
           </div>
         </div>
       </template>
     </a-drawer>
-
-    <SubOrderOpsDrawer
-      v-model:open="drawerOpen"
-      sub-order-id=""
-      :fallback-detail="getOrderListDetailFallback(currentOrder)"
-      detail-mode="improving"
-    />
 
     <!-- Feedback Modal -->
     <a-modal
@@ -788,8 +796,8 @@
               <span class="bill-line-asin">{{ line.asin }}</span>
               <div class="bill-line-right">
                 <div class="bill-line-breakdown">
-                  <span class="bill-breakdown-item">签单 ¥{{ line.totalAmount.toFixed(0) }}</span>
-                  <span class="bill-breakdown-sep">已收 ¥{{ line.receivedAmount.toFixed(0) }}</span>
+                  <span class="bill-breakdown-item">实际应收 ¥{{ line.totalAmount.toFixed(0) }}</span>
+                  <span class="bill-breakdown-sep">净到账 ¥{{ line.receivedAmount.toFixed(0) }}</span>
                 </div>
                 <span :class="['bill-line-amount', line.needAmount <= 0 ? 'bill-amount-ok' : 'bill-amount-owed']">
                   {{ line.needAmount <= 0 ? '已结清' : `需补 ¥${line.needAmount.toFixed(0)}` }}
@@ -834,7 +842,6 @@ import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import BillingDrawer from '../components/BillingDrawer.vue'
 import GroupBillingDrawer from '../components/GroupBillingDrawer.vue'
-import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 const loading = ref(false)
 const orders = ref<any[]>([])
@@ -891,6 +898,48 @@ const batchPayments = ref<any[]>([])
 const sameCustomerOrders = ref<any[]>([])
 const groupPaySelected = ref<string[]>([])
 const groupAllocations = reactive<Record<string, number | null>>({})
+
+const mockBatchPayments = computed(() => {
+  const order = currentOrder.value || {}
+  const baseAmount = Number(order.total_amount || 7751.4)
+  const supplementAmount = Number(order.debt_status === 'owed' ? order.debt_amount : 35) || 35
+  const refundAmount = Number(order.debt_status === 'surplus' ? order.debt_amount : 28) || 28
+  const today = dayjs().format('YYYY-MM-DD')
+  return [
+    {
+      id: 'mock-base-payment',
+      _isMock: true,
+      payment_type: '基础收款',
+      amount_cny: baseAmount,
+      payment_date: today,
+      payment_method: '银行转账',
+      payer_name: order.customer_name || '客户',
+      notes: '客户基础入账示例',
+    },
+    {
+      id: 'mock-supplement-payment',
+      _isMock: true,
+      payment_type: '补款',
+      amount_cny: supplementAmount,
+      payment_date: today,
+      payment_method: '账务确认',
+      payer_name: order.customer_name || '客户',
+      notes: '客户需补款示例',
+    },
+    {
+      id: 'mock-refund-payment',
+      _isMock: true,
+      payment_type: '退款',
+      amount_cny: refundAmount,
+      payment_date: today,
+      payment_method: '银行转账',
+      payer_name: order.customer_name || '客户',
+      notes: '我方退款示例',
+    },
+  ]
+})
+
+const displayBatchPayments = computed(() => batchPayments.value.length ? batchPayments.value : mockBatchPayments.value)
 
 const paymentTotal = computed(() => {
   return batchPayments.value.reduce((s, p) => {
@@ -964,8 +1013,6 @@ const columns = [
   { title: '商务备注', key: 'notes', width: 140 },
   { title: '商务', key: 'sales_person', width: 110 },
   { title: '任务状态', key: 'task_status', width: 95 },
-  { title: '订单进度', key: 'order_progress', width: 135 },
-  { title: '评论/FB', key: 'review_fb', width: 130 },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 100, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
   { title: '操作', key: 'action', width: 160, fixed: 'right' as const },
 ]
@@ -1006,81 +1053,6 @@ function getOrderProgressPct(record: any): number {
   const total = Number(record.order_quantity || 0)
   if (!total) return 0
   return Math.round(((record._review_count || 0) / total) * 100)
-}
-
-function getOrderReviewFbItems(record: any) {
-  const seed = encodeURIComponent(String(record?.order_number || record?.id || 'order'))
-  const linkUrl = record?.review_link || record?.fb_link || `https://example.com/review/${seed}`
-  const imageUrl = record?.review_screenshot_url || record?.review_image_url || record?.product_image || `https://picsum.photos/seed/${seed}/900/600`
-  return [
-    { label: '链接', type: 'link', url: linkUrl },
-    { label: '图片', type: 'image', url: imageUrl },
-  ]
-}
-
-function getOrderListDetailFallback(record: any) {
-  if (!record) return null
-  const seed = encodeURIComponent(String(record.order_number || record.id || 'order'))
-  return {
-    ...record,
-    _is_preview_mock: true,
-    id: `order-list-detail-${record.id || record.order_number || seed}`,
-    sub_order_number: record.order_number || record.id || '—',
-    _order_number: record.order_number || '',
-    order_id: record.id || '',
-    status: record.status || '进行中',
-    order_type: record.order_type || (Array.isArray(record.order_types) ? record.order_types[0] : '') || record.review_type || '',
-    review_type: record.review_type || record.order_type || '',
-    review_level: record.review_level || record.level || '—',
-    buyer_name: record.buyer_name || 'Mock Buyer',
-    staff_name: record.staff_name || record.sales_person || '业务员',
-    buyer_chat_id: record.chat_order_id || `CHAT-${String(record.order_number || seed).slice(-4)}`,
-    buyer_assigned_at: record.buyer_assigned_at || dayjs(record.created_at || undefined).add(6, 'hour').toISOString(),
-    amazon_order_id: record.amazon_order_id || '113-9283746-1827364',
-    _preview_old_amazon_order_id: record._preview_old_amazon_order_id || '113-0000000-0000000',
-    amazon_order_placed_at: record.amazon_order_placed_at || dayjs(record.created_at || undefined).add(1, 'day').toISOString(),
-    review_link: record.review_link || record.fb_link || `https://example.com/review/${seed}`,
-    review_submitted_at: record.review_submitted_at || dayjs(record.created_at || undefined).add(2, 'day').toISOString(),
-    review_screenshot_url: record.review_screenshot_url || record.product_image || `https://picsum.photos/seed/${seed}/900/600`,
-    refund_status: record.refund_status || (Number(record._refund_count || 0) > 0 ? '已返款' : '未返款'),
-    refund_method: record._refund_method_summary || record.refund_method || 'PayPal',
-    refund_sequence: record.refund_sequence || '预付',
-    refund_amount: Number(record._refund_total || record.product_price || 0),
-    actual_paid_usd: Number(record.product_price || 0),
-    notes: record.notes || '订单列表详情预览',
-    task_notes: record.task_notes || record.notes || '任务信息来自订单列表',
-    _asin_total_orders: Number(record._asin_total_orders || record.order_quantity || 1),
-    __mock_refund_requests: [
-      {
-        id: `order-list-refund-${record.id || seed}`,
-        status: Number(record._refund_count || 0) > 0 ? '已处理' : '待处理',
-        request_type: 'initial',
-        refund_method: record._refund_method_summary || 'PayPal',
-        refund_sequence: '预付',
-        refund_amount_usd: Number(record._refund_total || record.product_price || 0),
-        actual_paid_usd: Number(record.product_price || 0),
-        created_at: dayjs(record.created_at || undefined).add(30, 'hour').toISOString(),
-        handled_at: dayjs(record.created_at || undefined).add(34, 'hour').toISOString(),
-        updated_at: dayjs(record.created_at || undefined).add(34, 'hour').toISOString(),
-      },
-    ],
-    edit_change_log: [
-      {
-        changed_at: dayjs(record.created_at || undefined).add(36, 'hour').toISOString(),
-        staff_name: record.sales_person || '业务员',
-        changes: [
-          { field: 'amazon_order_id', from: '113-0000000-0000000', to: record.amazon_order_id || '113-9283746-1827364' },
-        ],
-      },
-    ],
-    __mock_after_sale_issue: {
-      id: `order-list-after-sale-${record.id || seed}`,
-      issue_type: '无此订单',
-      issue_status: '处理中',
-      created_at: dayjs(record.created_at || undefined).add(58, 'hour').toISOString(),
-      updated_at: dayjs(record.created_at || undefined).add(58, 'hour').toISOString(),
-    },
-  }
 }
 
 function getStatusColor(status: string) {
@@ -1148,14 +1120,32 @@ function getRowClass(record: any): string {
 }
 
 function getPaymentTypeColor(type: string) {
-  const map: Record<string, string> = { '基础收款': 'green', '补款': 'orange', '退款': 'red' }
+  const map: Record<string, string> = { '基础收款': 'green', '补款': 'cyan', '退款': 'red', '账面抵消': 'blue' }
   return map[type] || 'green'
 }
 
-function getPaymentCardClass(type: string) {
-  if (type === '补款') return 'payment-card-supplement'
-  if (type === '退款') return 'payment-card-refund'
-  return ''
+function getPaymentTransactionType(payment: any) {
+  if (payment?.transaction_type) return payment.transaction_type
+  const map: Record<string, string> = {
+    '基础收款': '任务收入',
+    '补款': '补款收入',
+    '退款': '截单退款',
+    '账面抵消': '账面抵消',
+  }
+  return map[payment?.payment_type] || payment?.payment_type || '任务收入'
+}
+
+function getPaymentDirection(payment: any) {
+  const direction = payment?.direction || payment?.transaction_direction
+  if (['收入', '支出', '账面抵消'].includes(direction)) return direction
+  if (payment?.payment_type === '退款') return '支出'
+  if (payment?.payment_type === '账面抵消') return '账面抵消'
+  return '收入'
+}
+
+function getPaymentDirectionColor(direction: string) {
+  const map: Record<string, string> = { '收入': 'green', '支出': 'red', '账面抵消': 'blue' }
+  return map[direction] || 'default'
 }
 
 function onImgError(e: Event) {
@@ -1834,23 +1824,6 @@ onMounted(() => {
 .ps-item b { color: #374151; }
 .ps-sep { color: #d1d5db; }
 .ps-total { color: #9ca3af; }
-.review-fb-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.review-fb-link {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 7px;
-  border: 1px solid #bfdbfe;
-  border-radius: 999px;
-  background: #eff6ff;
-  color: #2563eb;
-  font-size: 11px;
-  line-height: 18px;
-}
-.review-fb-link.is-image {
-  border-color: #d1fae5;
-  background: #ecfdf5;
-  color: #059669;
-}
 
 .sub-status-summary { display: flex; flex-direction: column; gap: 2px; }
 .ss-item { font-size: 11px; padding: 1px 6px; border-radius: 3px; display: inline-block; width: fit-content; }
@@ -1970,9 +1943,96 @@ onMounted(() => {
 .detail-img-placeholder { width: 80px; height: 80px; border-radius: 10px; border: 1px dashed #d1d5db; background: #f9fafb; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 28px; }
 .detail-product-name { font-size: 15px; font-weight: 600; color: #111827; margin-bottom: 2px; }
 .detail-asin { font-size: 16px; font-weight: 700; color: #1e40af; }
-.detail-store { font-size: 13px; color: #6b7280; margin-top: 2px; }
 .detail-order-num { font-family: 'Courier New', monospace; font-weight: 700; font-size: 14px; color: #1e3a8a; }
 .detail-section-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px; }
+
+.detail-overview-grid {
+  display: grid;
+  gap: 10px;
+}
+.detail-overview-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.detail-overview-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.detail-overview-title::before {
+  content: '';
+  width: 4px;
+  height: 14px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+.detail-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.detail-info-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.detail-info-row {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+.detail-info-row-wide {
+  grid-column: 1 / -1;
+}
+.detail-info-label {
+  display: inline-flex;
+  align-items: center;
+  width: 78px;
+  align-self: stretch;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  background: #eef2f7;
+  border-right: 1px solid #dbe3ee;
+  flex-shrink: 0;
+}
+.detail-info-value {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  word-break: break-word;
+}
+.detail-info-value.mono {
+  font-family: 'Courier New', monospace;
+}
+.detail-info-value.is-price {
+  color: #059669;
+  font-size: 15px;
+}
+.detail-inline-types {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.detail-inline-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
 
 .amount-breakdown { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 20px; }
 .amount-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; }
@@ -2029,38 +2089,57 @@ onMounted(() => {
 .refund-label { color: #dc2626; }
 .refund-val { color: #dc2626; }
 
-.payment-empty {
+.payment-empty,
+.payment-mock-tip {
   text-align: center; color: #9ca3af; padding: 20px; font-size: 13px;
   background: #f9fafb; border-radius: 10px; border: 1px dashed #e5e7eb;
 }
-.payment-list { display: flex; flex-direction: column; gap: 8px; }
-.payment-card {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-  background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 16px;
-  transition: border-color 0.2s;
+.payment-mock-tip { margin-bottom: 8px; padding: 10px 14px; }
+.payment-lines {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
 }
-.payment-card:hover { border-color: #93c5fd; }
-.payment-card-supplement { border-left: 3px solid #d97706; }
-.payment-card-refund { border-left: 3px solid #dc2626; background: #fef2f2; }
-.payment-main { flex: 1; min-width: 0; }
-.payment-top { display: flex; align-items: center; gap: 8px; }
-.payment-amount { font-size: 16px; font-weight: 700; color: #16a34a; font-family: 'Courier New', monospace; }
-.payment-amount-refund { color: #dc2626; }
-.payment-meta {
-  display: flex; gap: 10px; font-size: 12px; color: #6b7280; margin-top: 4px;
+.payment-line {
+  display: grid;
+  grid-template-columns: 92px 118px 86px 120px 120px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 12px;
+  color: #374151;
 }
-.payment-method { color: #2563eb; }
-.payment-payer { color: #374151; }
-.payment-notes { font-size: 12px; color: #9ca3af; margin-top: 2px; }
-.payment-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-
-.payment-group-info {
-  margin-top: 4px; padding: 6px 10px; background: #f0f9ff; border-radius: 6px;
-  font-size: 12px; color: #1e40af; border: 1px solid #bfdbfe;
+.payment-line:last-child { border-bottom: none; }
+.payment-line-head {
+  background: #f9fafb;
+  color: #6b7280;
+  font-weight: 600;
 }
-.payment-group-label { font-weight: 600; color: #1d4ed8; }
-.payment-group-order { font-weight: 500; }
-.payment-group-alloc { color: #6b7280; font-size: 11px; }
+.payment-line-mock {
+  background: #fcfcfd;
+}
+.payment-line-date {
+  color: #6b7280;
+  font-family: 'Courier New', monospace;
+}
+.payment-line-income {
+  color: #16a34a;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+}
+.payment-line-refund {
+  color: #dc2626;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+}
+.payment-line-meta,
+.payment-line-notes {
+  color: #6b7280;
+  line-height: 1.5;
+  word-break: break-word;
+}
 
 .debt-form { display: flex; flex-direction: column; gap: 16px; padding: 4px 0; }
 .debt-field { display: flex; flex-direction: column; gap: 6px; }

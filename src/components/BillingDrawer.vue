@@ -21,12 +21,12 @@
         <div class="billing-header-right">
           <div class="billing-summary-trio">
             <div class="trio-item">
-              <div class="trio-label">签单应收</div>
+              <div class="trio-label">实际应收</div>
               <div class="trio-val trio-expect">¥{{ Number(order.total_amount || 0).toFixed(2) }}</div>
             </div>
             <div class="trio-divider"></div>
             <div class="trio-item">
-              <div class="trio-label">累计已收</div>
+              <div class="trio-label">净到账</div>
               <div class="trio-val trio-received" :style="{ color: paymentTotal > 0 ? '#16a34a' : '#9ca3af' }">
                 ¥{{ paymentTotal.toFixed(2) }}
               </div>
@@ -75,13 +75,13 @@
             </div>
             <div class="debt-view-row">
               <span class="dv-label">账款情况</span>
-              <a-tag v-if="order.debt_status === 'owed'" color="orange" size="small">客户欠款 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}</a-tag>
-              <a-tag v-else-if="order.debt_status === 'surplus'" color="blue" size="small">我方溢收 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}</a-tag>
+              <a-tag v-if="order.debt_status === 'owed'" color="orange" size="small">客户需补款 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}</a-tag>
+              <a-tag v-else-if="order.debt_status === 'surplus'" color="blue" size="small">需退客户 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}</a-tag>
               <a-tag v-else-if="order.debt_status === 'cleared'" color="green" size="small">已结清</a-tag>
               <a-tag v-else color="default" size="small">无异常</a-tag>
             </div>
             <div v-if="order.debt_notes" class="debt-view-row">
-              <span class="dv-label">备注说明</span>
+              <span class="dv-label">差价说明</span>
               <span class="dv-val">{{ order.debt_notes }}</span>
             </div>
             <div v-if="order.debt_marked_by" class="debt-view-row">
@@ -106,14 +106,14 @@
               <label class="edit-label">账款情况</label>
               <a-radio-group v-model:value="debtForm.debt_status" size="small">
                 <a-radio-button value="none">无异常</a-radio-button>
-                <a-radio-button value="owed">客户欠款</a-radio-button>
-                <a-radio-button value="surplus">我方溢收</a-radio-button>
+                <a-radio-button value="owed">客户需补款</a-radio-button>
+                <a-radio-button value="surplus">需退客户</a-radio-button>
                 <a-radio-button value="cleared">已结清</a-radio-button>
               </a-radio-group>
             </div>
             <template v-if="debtForm.debt_status === 'owed' || debtForm.debt_status === 'surplus'">
               <div class="edit-field">
-                <label class="edit-label">{{ debtForm.debt_status === 'surplus' ? '溢收金额（元）' : '欠款金额（元）' }}</label>
+                <label class="edit-label">差价金额（元）</label>
                 <a-input-number
                   v-model:value="debtForm.debt_amount"
                   style="width:200px"
@@ -122,7 +122,7 @@
                 />
               </div>
               <div class="edit-field">
-                <label class="edit-label">备注说明</label>
+                <label class="edit-label">差价说明</label>
                 <a-textarea
                   v-model:value="debtForm.debt_notes"
                   :rows="2"
@@ -137,97 +137,27 @@
           </div>
         </div>
 
-        <!-- 区块二：补款记录 -->
+        <!-- 区块二：款项操作 -->
         <div class="billing-section">
           <div class="section-header">
-            <span class="section-title">补款记录</span>
-            <a-tag v-if="supplementTotal > 0" color="green" size="small">+¥{{ supplementTotal.toFixed(2) }}</a-tag>
+            <span class="section-title">款项操作</span>
+            <span class="section-hint">补款和退款明细请在详情页流水中查看</span>
+          </div>
+          <div class="billing-action-row">
             <a-button
-              type="link"
-              size="small"
+              type="primary"
               @click="openAddRecord('补款')"
-            >+ 新增补款</a-button>
-          </div>
-
-          <div v-if="supplementRecords.length === 0" class="records-empty">暂无补款记录</div>
-          <div v-else class="records-list">
-            <div
-              v-for="p in supplementRecords"
-              :key="p.id"
-              class="record-card record-supplement"
             >
-              <div class="record-left">
-                <div class="record-amount-wrap">
-                  <div v-if="Number(p.amount_cny || 0) > 0" class="record-amount">+¥{{ Number(p.amount_cny).toFixed(2) }}</div>
-                  <div v-if="Number(p.amount_usd || 0) > 0" class="record-amount record-amount-usd">+$ {{ Number(p.amount_usd).toFixed(2) }}</div>
-                </div>
-                <div class="record-meta">
-                  <span>{{ p.payment_date }}</span>
-                  <span v-if="p.payment_method" class="meta-dot">·</span>
-                  <span v-if="p.payment_method">{{ p.payment_method }}</span>
-                  <span v-if="p.payer_name" class="meta-dot">·</span>
-                  <span v-if="p.payer_name">{{ p.payer_name }}</span>
-                </div>
-                <div v-if="p.notes" class="record-notes">{{ p.notes }}</div>
-                <div v-if="p.receipt_urls && p.receipt_urls.length" class="record-receipts">
-                  <a v-for="(url, i) in p.receipt_urls" :key="i" :href="url" target="_blank" class="receipt-link">
-                    凭证{{ i + 1 }}
-                  </a>
-                </div>
-              </div>
-              <div class="record-right">
-                <a-popconfirm title="确认删除此补款记录？" @confirm="deleteRecord(p)">
-                  <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
-                </a-popconfirm>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 区块三：退款记录 -->
-        <div class="billing-section">
-          <div class="section-header">
-            <span class="section-title">退款记录</span>
-            <a-tag v-if="refundTotal > 0" color="orange" size="small">-¥{{ refundTotal.toFixed(2) }}</a-tag>
+              录入补款
+            </a-button>
             <a-button
-              type="link"
-              size="small"
               danger
               @click="openAddRecord('退款')"
-            >+ 新增退款</a-button>
+            >
+              提交退款
+            </a-button>
           </div>
           <div class="refund-hint">退款提交后将生成待审批的退款流水，需财务审批后执行。</div>
-
-          <div v-if="refundRecords.length === 0" class="records-empty">暂无退款记录</div>
-          <div v-else class="records-list">
-            <div
-              v-for="p in refundRecords"
-              :key="p.id"
-              class="record-card record-refund"
-            >
-              <div class="record-left">
-                <div class="record-amount record-amount-refund">-¥{{ Number(p.amount_cny).toFixed(2) }}</div>
-                <div class="record-meta">
-                  <span>{{ p.payment_date }}</span>
-                  <span v-if="p.payment_method" class="meta-dot">·</span>
-                  <span v-if="p.payment_method">{{ p.payment_method }}</span>
-                  <span v-if="p.payer_name" class="meta-dot">·</span>
-                  <span v-if="p.payer_name">{{ p.payer_name }}</span>
-                </div>
-                <div v-if="p.notes" class="record-notes">{{ p.notes }}</div>
-                <div v-if="p.receipt_urls && p.receipt_urls.length" class="record-receipts">
-                  <a v-for="(url, i) in p.receipt_urls" :key="i" :href="url" target="_blank" class="receipt-link">
-                    凭证{{ i + 1 }}
-                  </a>
-                </div>
-              </div>
-              <div class="record-right">
-                <a-popconfirm title="确认删除此退款记录？" @confirm="deleteRecord(p)">
-                  <a-button type="text" size="small" danger><DeleteOutlined /></a-button>
-                </a-popconfirm>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </template>
@@ -235,10 +165,10 @@
     <!-- 新增补款/退款 Modal -->
     <a-modal
       v-model:open="addRecordOpen"
-      :title="addRecordType === '退款' ? '新增退款' : '新增补款'"
+      :title="addRecordType === '退款' ? '提交退款' : '录入补款'"
       :confirm-loading="addRecordSaving"
       @ok="saveRecord"
-      :ok-text="addRecordType === '退款' ? '提交退款' : '保存补款'"
+      :ok-text="addRecordType === '退款' ? '提交退款' : '录入补款'"
       :ok-button-props="{ danger: addRecordType === '退款' }"
       cancel-text="取消"
       width="480px"
@@ -351,7 +281,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import { useCurrentUser } from '../composables/useCurrentUser'
 import dayjs from 'dayjs'
@@ -392,8 +322,8 @@ const paymentDiff = computed(() => {
 })
 
 const diffLabel = computed(() => {
-  if (paymentDiff.value > 0.005) return '待收差额'
-  if (paymentDiff.value < -0.005) return '待退差额'
+  if (paymentDiff.value > 0.005) return '差价金额'
+  if (paymentDiff.value < -0.005) return '差价金额'
   return '已结清'
 })
 
@@ -422,7 +352,7 @@ const needsAttention = computed(() => {
 
 const alertText = computed(() => {
   if (!props.order) return ''
-  if (props.order.debt_status === 'owed') return '累计已收金额已覆盖欠款，建议将账款情况标记为已结清'
+  if (props.order.debt_status === 'owed') return '净到账已覆盖差价金额，建议将账款情况标记为已结清'
   if (props.order.debt_status === 'surplus') return '退款已处理，建议将账款情况标记为已结清'
   return ''
 })
@@ -433,7 +363,6 @@ async function loadPayments() {
     .from('batch_payments')
     .select('*')
     .eq('batch_id', props.order.id)
-    .in('payment_type', ['补款', '退款'])
     .order('payment_date', { ascending: false })
   payments.value = data || []
 }
@@ -915,6 +844,20 @@ async function deleteRecord(payment: any) {
   font-size: 12px;
   color: #6b7280;
   font-weight: 500;
+}
+
+.section-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.billing-action-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 2px;
 }
 
 .records-empty {

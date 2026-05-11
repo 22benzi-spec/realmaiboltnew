@@ -48,7 +48,7 @@
         :data-source="filteredData"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1680 }"
+        :scroll="{ x: 1810 }"
         row-key="id"
         size="small"
         @change="onTableChange"
@@ -149,6 +149,22 @@
             <a-tag :color="getProgressColor(computeProgress(record))" class="status-tag">
               {{ computeProgress(record) }}
             </a-tag>
+          </template>
+
+          <template v-else-if="column.key === 'review_fb'">
+            <div class="review-fb-cell">
+              <a
+                v-for="item in getReviewFbItems(record)"
+                :key="item.label"
+                :href="item.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                :class="['review-fb-link', `is-${item.type}`]"
+              >
+                {{ item.label }}
+              </a>
+              <span v-if="getReviewFbItems(record).length === 0" class="empty-text">-</span>
+            </div>
           </template>
 
           <template v-else-if="column.key === 'refund_info'">
@@ -540,6 +556,7 @@
       v-model:open="opsDetailOpen"
       :sub-order-id="opsDetailTarget?.id || ''"
       :fallback-detail="opsDetailTarget"
+      detail-mode="improving"
     />
   </div>
 </template>
@@ -1028,6 +1045,7 @@ const columns = [
   { title: '售价 / 实付 / 实返', key: 'price_refund', width: 170 },
   { title: '返款状态 / 时间 / 方式', key: 'refund_info', width: 160 },
   { title: '订单进度', key: 'progress', width: 110 },
+  { title: '评论/FB', key: 'review_fb', width: 130 },
   { title: '订单状态', key: 'order_status', width: 110 },
   { title: '订单备注', key: 'notes', width: 160 },
   { title: '操作', key: 'action', width: 110, fixed: 'right' as const, align: 'center' as const },
@@ -1059,6 +1077,19 @@ function normalizeRefundStatus(value: string) {
 
 function getDisplayReviewType(record: Pick<SubOrder, 'review_type' | 'order_type'>) {
   return normalizeReviewType(record.review_type || record.order_type || '')
+}
+
+function firstFilledValue(...values: any[]) {
+  return values.map(value => String(value || '').trim()).find(Boolean) || ''
+}
+
+function getReviewFbItems(record: SubOrder) {
+  const reviewUrl = firstFilledValue(record.review_link, record.review_screenshot_url)
+  const fbUrl = firstFilledValue(record.fb_link, record.fb_image_url)
+  const items: Array<{ label: string; type: string; url: string }> = []
+  if (reviewUrl) items.push({ label: '评论', type: 'review', url: reviewUrl })
+  if (fbUrl) items.push({ label: 'FB', type: 'fb', url: fbUrl })
+  return items
 }
 
 function showPrincipalLossHint(record: any) {
@@ -2254,6 +2285,30 @@ onMounted(async () => {
   border: 1px solid rgba(220, 38, 38, 0.18);
   border-radius: 999px;
   padding: 2px 6px;
+}
+
+.review-fb-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.review-fb-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  line-height: 18px;
+  text-decoration: none;
+}
+.review-fb-link.is-fb {
+  border-color: #d1fae5;
+  background: #ecfdf5;
+  color: #059669;
 }
 
 .notes-inline {
