@@ -97,6 +97,10 @@
           <template v-if="column.key === 'buyer'">
             <div>{{ record.buyer_name || '—' }}</div>
           </template>
+          <template v-if="column.key === 'country'">
+            <a-tag v-if="record.country" color="default">{{ record.country }}</a-tag>
+            <span v-else class="text-gray">—</span>
+          </template>
           <template v-if="column.key === 'paypal_email'">
             <span class="mono-cell">{{ record.buyer_paypal_email || '—' }}</span>
           </template>
@@ -109,21 +113,6 @@
           <template v-if="column.key === 'notes_col'">
             <span class="note-preview">{{ record.notes || '—' }}</span>
           </template>
-          <template v-if="column.key === 'receipt'">
-            <a-space size="small">
-              <a v-if="record.paypal_receipt_screenshot" :href="record.paypal_receipt_screenshot" target="_blank" class="result-link">查看水单</a>
-              <a
-                v-if="activeTab === 'paypal'"
-                class="re-edit-link"
-                @click="openPaypalReceipt(record)"
-              >{{ record.paypal_receipt_screenshot ? '补传水单' : '上传水单' }}</a>
-              <a
-                v-else-if="activeTab === 'other' && record.status === '待处理'"
-                class="re-edit-link"
-                @click="openOtherProcess(record)"
-              >{{ record.paypal_receipt_screenshot ? '补传水单' : '上传水单' }}</a>
-            </a-space>
-          </template>
           <template v-if="column.key === 'refund_method'">
             <a-tag :color="methodColor(record.refund_method)">{{ refundMethodLabel(record) }}</a-tag>
             <div v-if="record.refund_sequence" class="cell-seq">{{ record.refund_sequence }}</div>
@@ -133,7 +122,6 @@
             <div v-if="activeTab === 'other' && getOtherUsdAmount(record) > 0" class="cell-product-price">
               USD ${{ money(getOtherUsdAmount(record)) }} / 汇率 {{ formatExchangeRate(getOtherExchangeRate(record)) }}
             </div>
-            <div v-if="activeTab === 'other' && otherRefundOrderCountLabel(record)" class="cell-product-price">退款单量 {{ otherRefundOrderCountLabel(record) }}</div>
             <div v-else-if="record.product_price" class="cell-product-price">产品售价 ${{ money(record.product_price) }}</div>
           </template>
           <template v-if="column.key === 'refund_category'">
@@ -143,11 +131,11 @@
               <span v-if="record.refund_reason" class="type-reason">{{ record.refund_reason }}</span>
             </div>
           </template>
-          <template v-if="column.key === 'order_ref'">
-            <span class="mono-cell">{{ formatLinkedId(record.order_id) }}</span>
-          </template>
-          <template v-if="column.key === 'sub_order_ref'">
-            <span class="mono-cell">{{ formatLinkedId(record.sub_order_id) }}</span>
+          <template v-if="column.key === 'task_info'">
+            <div class="type-stack">
+              <span class="type-secondary">{{ record.asin || '—' }}</span>
+              <span class="type-primary mono-cell">{{ formatLinkedId(record.order_id) }}</span>
+            </div>
           </template>
           <template v-if="column.key === 'payout_account'">
             <div>{{ record.payout_account || '—' }}</div>
@@ -155,29 +143,28 @@
               {{ getProcessMetaText(record) }}
             </div>
           </template>
-          <template v-if="column.key === 'refund_order_count'">
-            <span>{{ otherRefundOrderCountLabel(record) || '—' }}</span>
+          <template v-if="column.key === 'refund_info'">
+            <div class="type-stack">
+              <span class="type-secondary">{{ getOtherRefundCountLabel(record) || getOtherRefundTypeLabel(record) || '—' }}</span>
+              <span v-if="getOtherRefundCountLabel(record) && getOtherRefundTypeLabel(record)" class="type-primary">{{ getOtherRefundTypeLabel(record) }}</span>
+            </div>
           </template>
           <template v-if="column.key === 'action'">
             <a-space size="small" wrap>
-              <a-button
-                v-if="activeTab === 'paypal' && record.status === '待处理'"
-                type="primary"
-                size="small"
-                @click="openPaypalProcess(record)"
-              >返款</a-button>
+              <template v-if="activeTab === 'paypal' && record.status === '待处理'">
+                <a-button type="primary" size="small" @click="openPaypalProcess(record)">返款</a-button>
+                <a-button size="small" @click="openPaypalReceipt(record)">{{ record.paypal_receipt_screenshot ? '补传水单' : '上传水单' }}</a-button>
+              </template>
               <a-button
                 v-else-if="activeTab === 'gift' && record.status === '待处理'"
                 type="primary"
                 size="small"
                 @click="openGiftProcess(record)"
               >礼品卡返款</a-button>
-              <a-button
-                v-else-if="activeTab === 'other' && record.status === '待处理'"
-                type="primary"
-                size="small"
-                @click="openOtherProcess(record)"
-              >处理付款</a-button>
+              <template v-else-if="activeTab === 'other' && record.status === '待处理'">
+                <a-button type="primary" size="small" @click="openOtherProcess(record)">处理付款</a-button>
+                <a-button size="small" @click="openOtherReceipt(record)">{{ record.paypal_receipt_screenshot ? '补传水单' : '上传水单' }}</a-button>
+              </template>
               <span v-else class="text-gray">—</span>
             </a-space>
           </template>
@@ -185,7 +172,7 @@
       </a-table>
     </div>
 
-    <a-drawer v-model:open="detailOpen" title="退款详情" width="620" placement="right">
+    <a-drawer v-model:open="detailOpen" title="付款详情" width="620" placement="right">
       <template v-if="currentRequest">
         <div class="drawer-section">
           <div class="drawer-section-title">申请信息</div>
@@ -318,7 +305,7 @@
       :confirm-loading="processing"
       @ok="handlePaypalProcess"
     >
-      <div v-if="currentRequest" class="process-summary">
+      <div v-if="currentRequest && paypalModalMode !== 'receipt'" class="process-summary">
         <div>返款单数：<strong>{{ currentProcessRequests.length }}</strong></div>
         <div>子订单：<strong>{{ currentProcessSubOrdersText }}</strong></div>
         <div>业务员：<strong>{{ currentProcessRequests[0]?.staff_name || '—' }}</strong></div>
@@ -335,15 +322,15 @@
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="水单是否需要">
+        <a-form-item v-if="paypalModalMode !== 'receipt'" label="水单情况">
           <a-select :value="currentRequest?._receipt_required || '不需要'" style="width:100%" disabled>
             <a-select-option v-for="item in receiptNeedOptions" :key="item" :value="item">{{ item }}</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="水单截图 URL">
+        <a-form-item v-if="paypalModalMode === 'receipt'" label="上传截图">
           <a-input v-model:value="paypalProcessForm.receipt" placeholder="粘贴水单截图 URL..." />
         </a-form-item>
-        <a-form-item label="账单备注">
+        <a-form-item v-if="paypalModalMode !== 'receipt'" label="账单备注">
           <a-textarea v-model:value="paypalProcessForm.notes" :rows="3" placeholder="可选" />
         </a-form-item>
       </a-form>
@@ -418,12 +405,12 @@
 
     <a-modal
       v-model:open="otherProcessOpen"
-      title="处理其他付款"
+      :title="otherProcessMode === 'receipt' ? '上传水单' : '处理其他付款'"
       width="560px"
       :confirm-loading="processing"
       @ok="handleOtherProcess"
     >
-      <div v-if="currentRequest" class="process-summary">
+      <div v-if="currentRequest && otherProcessMode !== 'receipt'" class="process-summary">
         <div>付款单数：<strong>{{ currentProcessRequests.length }}</strong></div>
         <div>关联主订单ID：<strong>{{ currentProcessOrderIdsText }}</strong></div>
         <div>关联子订单ID：<strong>{{ currentProcessSubOrdersText }}</strong></div>
@@ -437,32 +424,32 @@
         <div v-if="showOtherProcessUsdFields">汇率：<strong>{{ formatExchangeRate(otherProcessForm.exchangeRate) }}</strong></div>
       </div>
       <a-form layout="vertical">
-        <a-form-item label="一级分类">
+        <a-form-item v-if="otherProcessMode !== 'receipt'" label="一级分类">
           <a-input :value="otherProcessForm.primaryCategory" readonly />
         </a-form-item>
-        <a-form-item label="二级分类">
+        <a-form-item v-if="otherProcessMode !== 'receipt'" label="二级分类">
           <a-select :value="otherProcessForm.category" mode="multiple" style="width:100%" disabled>
             <a-select-option v-for="item in otherProcessSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item v-if="showOtherProcessUsdFields" label="金额 (USD)">
+        <a-form-item v-if="otherProcessMode !== 'receipt' && showOtherProcessUsdFields" label="金额 (USD)">
           <a-input-number :value="otherProcessForm.amountUsd" style="width:100%" disabled />
         </a-form-item>
-        <a-form-item v-if="showOtherProcessUsdFields" label="汇率">
+        <a-form-item v-if="otherProcessMode !== 'receipt' && showOtherProcessUsdFields" label="汇率">
           <a-input-number :value="otherProcessForm.exchangeRate" style="width:100%" disabled />
         </a-form-item>
-        <a-form-item label="付款方式" required>
+        <a-form-item v-if="otherProcessMode !== 'receipt'" label="付款方式" required>
           <a-select v-model:value="otherProcessForm.paymentMethod" style="width:100%">
             <a-select-option v-for="item in payoutMethodOptions" :key="item" :value="item">{{ item }}</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="付款账号" required>
+        <a-form-item v-if="otherProcessMode !== 'receipt'" label="付款账号" required>
           <a-input v-model:value="otherProcessForm.paymentAccount" placeholder="填写本次财务付款账号" />
         </a-form-item>
-        <a-form-item label="水单截图 URL">
+        <a-form-item v-if="otherProcessMode === 'receipt'" label="上传截图">
           <a-input v-model:value="otherProcessForm.receipt" placeholder="粘贴水单截图 URL..." />
         </a-form-item>
-        <a-form-item label="账单备注">
+        <a-form-item v-if="otherProcessMode !== 'receipt'" label="账单备注">
           <a-textarea v-model:value="otherProcessForm.notes" :rows="3" placeholder="可选" />
         </a-form-item>
       </a-form>
@@ -582,6 +569,7 @@ const selectedGiftRecommendationId = ref('')
 const selectedGiftFaceValues = ref<number[]>([])
 const selectedBatchRows = ref<any[]>([])
 const paypalModalMode = ref<'process' | 'receipt'>('process')
+const otherProcessMode = ref<'process' | 'receipt'>('process')
 
 const otherPaymentCategoryOptions = [
   {
@@ -632,6 +620,7 @@ const mockPaypalRequests = ref<any[]>([
     id: 'mock-paypal-1',
     sub_order_id: 'SUB-PP-20260415-001',
     sub_order_number: 'SO-PP-20260415-001',
+    country: '美国',
     buyer_name: '买手-Linda',
     buyer_paypal_email: 'linda.demo@gmail.com',
     product_name: 'USB Desk Lamp',
@@ -652,6 +641,7 @@ const mockPaypalRequests = ref<any[]>([
     id: 'mock-paypal-2',
     sub_order_id: 'SUB-PP-20260415-002',
     sub_order_number: 'SO-PP-20260415-002',
+    country: '美国',
     buyer_name: '买手-Linda',
     buyer_paypal_email: 'linda.demo@gmail.com',
     product_name: 'Portable Blender',
@@ -672,6 +662,7 @@ const mockPaypalRequests = ref<any[]>([
     id: 'mock-paypal-3',
     sub_order_id: 'SUB-PP-20260414-009',
     sub_order_number: 'SO-PP-20260414-009',
+    country: '英国',
     buyer_name: '买手-Jason',
     buyer_paypal_email: 'jason.demo@gmail.com',
     product_name: 'Mini Air Purifier',
@@ -695,6 +686,7 @@ const mockGiftRequests = ref<any[]>([
     id: 'mock-gift-1',
     sub_order_id: 'SUB-GC-20260415-001',
     sub_order_number: 'SO-GC-20260415-001',
+    country: '美国',
     buyer_name: '买手-Amy',
     product_name: 'Silk Pillowcase',
     asin: 'B0GIFT001',
@@ -713,6 +705,7 @@ const mockGiftRequests = ref<any[]>([
     id: 'mock-gift-2',
     sub_order_id: 'SUB-GC-20260415-002',
     sub_order_number: 'SO-GC-20260415-002',
+    country: '美国',
     buyer_name: '买手-Amy',
     product_name: 'Phone Tripod',
     asin: 'B0GIFT002',
@@ -731,6 +724,7 @@ const mockGiftRequests = ref<any[]>([
     id: 'mock-gift-3',
     sub_order_id: 'SUB-GC-20260414-011',
     sub_order_number: 'SO-GC-20260414-011',
+    country: '德国',
     buyer_name: '买手-Kevin',
     product_name: 'LED Strip Light',
     asin: 'B0GIFT003',
@@ -755,6 +749,9 @@ const mockOtherRequests = ref<any[]>([
     id: 'mock-other-1',
     order_id: 'ORD-20260415-001',
     sub_order_id: 'SUB-20260415-001',
+    asin: 'B0OTHER001',
+    country: '美国',
+    review_type: '文字',
     customer_name: '深圳星河科技',
     refund_reason: '产品截单付款',
     applicant_name: '商务-李婷',
@@ -774,6 +771,9 @@ const mockOtherRequests = ref<any[]>([
     id: 'mock-other-2',
     order_id: 'ORD-20260414-016',
     sub_order_id: 'SUB-20260414-064',
+    asin: 'B0OTHER002',
+    country: '英国',
+    review_type: '图片',
     customer_name: '宁波优品贸易',
     refund_reason: '任务取消付款',
     applicant_name: '商务-王晨',
@@ -794,6 +794,9 @@ const mockOtherRequests = ref<any[]>([
     id: 'mock-other-2b',
     order_id: 'ORD-20260414-016',
     sub_order_id: 'SUB-20260414-063',
+    asin: 'B0OTHER003',
+    country: '英国',
+    review_type: '图片',
     customer_name: '宁波优品贸易',
     refund_reason: '任务取消付款',
     applicant_name: '商务-王晨',
@@ -814,6 +817,9 @@ const mockOtherRequests = ref<any[]>([
     id: 'mock-other-3',
     order_id: 'ORD-20260413-008',
     sub_order_id: 'SUB-20260413-022',
+    asin: 'B0OTHER004',
+    country: '德国',
+    review_type: '免评',
     customer_name: '杭州远帆品牌',
     refund_reason: '佣金差额付款',
     applicant_name: '商务-周敏',
@@ -1070,12 +1076,13 @@ const tableColumns = computed(() => {
   if (activeTab.value === 'paypal') {
     return [
       { title: '子订单信息', key: 'info', width: 210 },
+      { title: '国家', key: 'country', width: 90, align: 'center' as const },
       { title: '业务员', dataIndex: 'staff_name', key: 'staff_name', width: 110 },
-      { title: '返款截图是否需要', key: 'receipt_required', width: 130 },
       { title: '返款次数', key: 'refund_times', width: 90 },
       { title: '买手邮箱', key: 'paypal_email', width: 190 },
-      { title: '备注', key: 'notes_col', width: 180 },
       { title: '申请金额', key: 'refund_amount', width: 120 },
+      { title: '水单情况', key: 'receipt_required', width: 100 },
+      { title: '备注', key: 'notes_col', width: 180 },
       {
         title: '申请时间',
         dataIndex: 'created_at',
@@ -1083,18 +1090,18 @@ const tableColumns = computed(() => {
         width: 120,
         customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '',
       },
-      { title: '水单', key: 'receipt', width: 140 },
-      { title: '操作', key: 'action', width: 90, fixed: 'right' as const },
+      { title: '操作', key: 'action', width: 180, fixed: 'right' as const },
     ]
   }
   if (activeTab.value === 'gift') {
     return [
       { title: '子订单信息', key: 'info', width: 220 },
+      { title: '国家', key: 'country', width: 90, align: 'center' as const },
       { title: '业务员', dataIndex: 'staff_name', key: 'staff_name', width: 110 },
       { title: '买手', key: 'buyer', width: 150 },
       { title: '返款次数', key: 'refund_times', width: 90 },
-      { title: '备注', key: 'notes_col', width: 180 },
       { title: '申请金额', key: 'refund_amount', width: 120 },
+      { title: '备注', key: 'notes_col', width: 180 },
       {
         title: '申请时间',
         dataIndex: 'created_at',
@@ -1106,15 +1113,15 @@ const tableColumns = computed(() => {
     ]
   }
   return [
-    { title: '关联主订单ID', key: 'order_ref', width: 160 },
-    { title: '关联子订单ID', key: 'sub_order_ref', width: 160 },
+    { title: '任务信息', key: 'task_info', width: 170 },
+    { title: '国家', key: 'country', width: 90, align: 'center' as const },
     { title: '收款对象', dataIndex: 'customer_name', key: 'customer_name', width: 140 },
+    { title: '付款账号', key: 'payout_account', width: 180 },
+    { title: '付款金额', key: 'refund_amount', width: 130 },
     { title: '交易类型', key: 'refund_category', width: 180 },
-    { title: '申请人', dataIndex: 'applicant_name', key: 'applicant_name', width: 120 },
-    { title: '收款账号', key: 'payout_account', width: 180 },
-    { title: '退款单量', key: 'refund_order_count', width: 100 },
+    { title: '退款信息', key: 'refund_info', width: 150 },
     { title: '备注', key: 'notes_col', width: 180 },
-    { title: '付款金额(人民币)', key: 'refund_amount', width: 130 },
+    { title: '申请人', dataIndex: 'applicant_name', key: 'applicant_name', width: 120 },
     {
       title: '申请时间',
       dataIndex: 'created_at',
@@ -1122,8 +1129,7 @@ const tableColumns = computed(() => {
       width: 120,
       customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '',
     },
-    { title: '水单', key: 'receipt', width: 140 },
-    { title: '操作', key: 'action', width: 120, fixed: 'right' as const },
+    { title: '操作', key: 'action', width: 180, fixed: 'right' as const },
   ]
 })
 
@@ -1188,6 +1194,17 @@ function formatLinkedId(value: any) {
   return text || '--'
 }
 
+function normalizeReviewType(value: any) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw === '文字评' || raw === '文字') return '文字'
+  if (raw === '图片评' || raw === '图片') return '图片'
+  if (raw === '视频评' || raw === '视频') return '视频'
+  if (raw === '免评') return '免评'
+  if (raw === 'Feedback') return 'Feedback'
+  return raw
+}
+
 function parseOtherPaymentSecondaryValues(value: any) {
   const raw = Array.isArray(value) ? value : String(value || '').split('|')
   return raw.map(item => String(item || '').trim()).filter(Boolean)
@@ -1238,6 +1255,14 @@ function getOtherPaymentTypeText(record: any) {
   return `${primary} / ${secondary}`
 }
 
+function getOtherRefundTypeLabel(record: any) {
+  return normalizeReviewType(record?.review_type || record?.order_type || '')
+}
+
+function getOtherRefundCountLabel(record: any) {
+  return otherRefundOrderCountLabel(record)
+}
+
 function normalizeOtherRequestRow(record: any) {
   return {
     ...record,
@@ -1249,7 +1274,37 @@ function normalizeOtherRequestRow(record: any) {
     refund_reason: record?.refund_reason || '',
     refund_amount_usd: Number(record?.refund_amount_usd || 0),
     exchange_rate: record?.exchange_rate ? Number(record.exchange_rate) : null,
+    country: record?.country || '',
+    asin: record?.asin || '',
+    review_type: normalizeReviewType(record?.review_type || record?.order_type || ''),
   }
+}
+
+async function enrichQueueSubOrderMeta(rows: any[]) {
+  const subOrderIds = Array.from(new Set(
+    rows
+      .map(item => String(item?.sub_order_id || '').trim())
+      .filter(id => UUID_LIKE_RE.test(id)),
+  ))
+  if (!subOrderIds.length) return rows
+  const { data: subOrders, error } = await supabase
+    .from('sub_orders')
+    .select('id, country, asin, order_id, sub_order_number, review_type, order_type')
+    .in('id', subOrderIds)
+  if (error) throw error
+  const subOrderMap = new Map<string, any>()
+  ;(subOrders || []).forEach(item => subOrderMap.set(item.id, item))
+  return rows.map(item => {
+    const subOrder = subOrderMap.get(String(item?.sub_order_id || '').trim())
+    return {
+      ...item,
+      country: item?.country || subOrder?.country || '',
+      asin: item?.asin || subOrder?.asin || '',
+      order_id: item?.order_id || subOrder?.order_id || '',
+      sub_order_number: item?.sub_order_number || subOrder?.sub_order_number || '',
+      review_type: normalizeReviewType(item?.review_type || item?.order_type || subOrder?.review_type || subOrder?.order_type || ''),
+    }
+  })
 }
 
 function getOtherUsdAmount(record: any) {
@@ -1546,10 +1601,11 @@ function getOrderSearchText(value: any) {
 function openOtherProcess(record?: any, useSelection = false) {
   const targets = useSelection ? selectedBatchRows.value : (record ? [record] : [])
   if (!targets.length) {
-    message.warning('请先选择要处理的退款记录')
+    message.warning('请先选择要处理的付款记录')
     return
   }
   setProcessRequests(targets)
+  otherProcessMode.value = 'process'
   const { primary } = resolveOtherPaymentCategories(targets[0])
   otherProcessForm.primaryCategory = primary
   otherProcessForm.category = parseOtherPaymentSecondaryValues(targets[0]?.refund_category)
@@ -1560,6 +1616,22 @@ function openOtherProcess(record?: any, useSelection = false) {
   otherProcessForm.paymentAccount = meta.account
   otherProcessForm.receipt = targets[0]?.paypal_receipt_screenshot || ''
   otherProcessForm.notes = targets[0]?.finance_notes || ''
+  otherProcessOpen.value = true
+}
+
+function openOtherReceipt(record: any) {
+  setProcessRequests([record])
+  otherProcessMode.value = 'receipt'
+  const { primary } = resolveOtherPaymentCategories(record)
+  otherProcessForm.primaryCategory = primary
+  otherProcessForm.category = parseOtherPaymentSecondaryValues(record?.refund_category)
+  otherProcessForm.amountUsd = getOtherUsdAmount(record)
+  otherProcessForm.exchangeRate = getOtherExchangeRate(record) || 7.25
+  const meta = extractOtherProcessPaymentMeta(record)
+  otherProcessForm.paymentMethod = meta.method
+  otherProcessForm.paymentAccount = meta.account
+  otherProcessForm.receipt = record?.paypal_receipt_screenshot || ''
+  otherProcessForm.notes = record?.finance_notes || ''
   otherProcessOpen.value = true
 }
 
@@ -1701,7 +1773,7 @@ async function load() {
   try {
     hydrateQueueMockStorage()
     if (activeTab.value === 'other') {
-      const realRows = await fetchRealOtherRequests()
+      const realRows = await enrichQueueSubOrderMeta(await fetchRealOtherRequests())
       const filtered = annotateRefundRequests(filterOtherRequestRows([...mockOtherRequests.value, ...realRows]))
       pagination.value.total = filtered.length
       const from = (pagination.value.current - 1) * pagination.value.pageSize
@@ -1741,7 +1813,8 @@ async function load() {
     }
     const { data, count, error } = await query
     if (error) throw error
-    requests.value = [...mockPageRows, ...annotateRefundRequests(data || [])]
+    const enrichedRows = await enrichQueueSubOrderMeta(data || [])
+    requests.value = [...mockPageRows, ...annotateRefundRequests(enrichedRows)]
     pagination.value.total = (count || 0) + mockCount
   } finally {
     loading.value = false
@@ -1878,7 +1951,7 @@ async function handleOtherSubmit() {
 
 async function handlePaypalProcess() {
   if (!currentProcessRequests.value.length) return
-  if (!selectedPaypalAccountId.value) {
+  if (paypalModalMode.value !== 'receipt' && !selectedPaypalAccountId.value) {
     message.warning('请选择我方转款贝宝邮箱')
     return
   }
@@ -1890,7 +1963,9 @@ async function handlePaypalProcess() {
     const nextStatus = paypalModalMode.value === 'receipt' && currentProcessRequests.value.length === 1
       ? currentProcessRequests.value[0]?.status || '待处理'
       : '已处理'
-    const handledAt = nextStatus === '已处理' ? new Date().toISOString() : currentProcessRequests.value[0]?.handled_at || null
+    const handledAt = paypalModalMode.value === 'receipt'
+      ? (currentProcessRequests.value[0]?.handled_at || null)
+      : new Date().toISOString()
     const mockIds = currentProcessRequests.value.filter(item => String(item.id).startsWith('mock-paypal-')).map(item => item.id)
     const extraMockIds = currentProcessRequests.value.filter(item => String(item.id).startsWith('mock-paypal-resub-')).map(item => item.id)
     const realIds = currentProcessRequests.value.filter(item => !String(item.id).startsWith('mock-paypal-')).map(item => item.id)
@@ -1901,8 +1976,8 @@ async function handlePaypalProcess() {
           ? {
               ...item,
               status: nextStatus,
-              assigned_paypal_account_id: selectedPaypalAccountId.value,
-              assigned_paypal_email: account?.email || '',
+              assigned_paypal_account_id: paypalModalMode.value === 'receipt' ? (item.assigned_paypal_account_id || null) : selectedPaypalAccountId.value,
+              assigned_paypal_email: paypalModalMode.value === 'receipt' ? (item.assigned_paypal_email || '') : (account?.email || ''),
               paypal_receipt_screenshot: paypalProcessForm.receipt || '',
               finance_notes: paypalProcessForm.notes,
               handled_at: handledAt,
@@ -1917,8 +1992,8 @@ async function handlePaypalProcess() {
           ? {
               ...item,
               status: nextStatus,
-              assigned_paypal_account_id: selectedPaypalAccountId.value,
-              assigned_paypal_email: account?.email || '',
+              assigned_paypal_account_id: paypalModalMode.value === 'receipt' ? (item.assigned_paypal_account_id || null) : selectedPaypalAccountId.value,
+              assigned_paypal_email: paypalModalMode.value === 'receipt' ? (item.assigned_paypal_email || '') : (account?.email || ''),
               paypal_receipt_screenshot: paypalProcessForm.receipt || '',
               finance_notes: paypalProcessForm.notes,
               handled_at: handledAt,
@@ -1933,8 +2008,8 @@ async function handlePaypalProcess() {
         .from('refund_requests')
         .update({
           status: nextStatus,
-          assigned_paypal_account_id: selectedPaypalAccountId.value,
-          assigned_paypal_email: account?.email || '',
+          assigned_paypal_account_id: paypalModalMode.value === 'receipt' ? (currentProcessRequests.value[0]?.assigned_paypal_account_id || null) : selectedPaypalAccountId.value,
+          assigned_paypal_email: paypalModalMode.value === 'receipt' ? (currentProcessRequests.value[0]?.assigned_paypal_email || '') : (account?.email || ''),
           paypal_receipt_screenshot: paypalProcessForm.receipt || '',
           finance_notes: paypalProcessForm.notes,
           handled_at: handledAt,
@@ -2051,11 +2126,11 @@ async function handleGiftProcess() {
 
 async function handleOtherProcess() {
   if (!currentProcessRequests.value.length) return
-  if (!otherProcessForm.paymentMethod.trim()) {
+  if (otherProcessMode.value !== 'receipt' && !otherProcessForm.paymentMethod.trim()) {
     message.warning('请填写付款方式')
     return
   }
-  if (!otherProcessForm.paymentAccount.trim()) {
+  if (otherProcessMode.value !== 'receipt' && !otherProcessForm.paymentAccount.trim()) {
     message.warning('请填写付款账号')
     return
   }
@@ -2075,13 +2150,13 @@ async function handleOtherProcess() {
         mockIds.includes(item.id)
           ? {
               ...item,
-              status: '已处理',
+              status: otherProcessMode.value === 'receipt' ? item.status : '已处理',
               refund_method: '其他付款',
               refund_category: storedCategory,
-              refund_operator: currentUser.value?.name || '财务',
+              refund_operator: otherProcessMode.value === 'receipt' ? (item.refund_operator || '') : (currentUser.value?.name || '财务'),
               paypal_receipt_screenshot: otherProcessForm.receipt || '',
               finance_notes: financeNote,
-              handled_at: now,
+              handled_at: otherProcessMode.value === 'receipt' ? (item.handled_at || null) : now,
             }
           : item,
       )
@@ -2091,27 +2166,31 @@ async function handleOtherProcess() {
       const { error } = await supabase
         .from('refund_requests')
         .update({
-          status: '已处理',
+          status: otherProcessMode.value === 'receipt' ? (currentProcessRequests.value[0]?.status || '待处理') : '已处理',
           refund_method: '其他付款',
           refund_category: storedCategory,
-          refund_operator: currentUser.value?.name || '财务',
+          refund_operator: otherProcessMode.value === 'receipt'
+            ? (currentProcessRequests.value[0]?.refund_operator || '')
+            : (currentUser.value?.name || '财务'),
           paypal_receipt_screenshot: otherProcessForm.receipt || '',
           finance_notes: financeNote,
-          handled_at: now,
+          handled_at: otherProcessMode.value === 'receipt' ? (currentProcessRequests.value[0]?.handled_at || null) : now,
         })
         .in('id', realIds)
       if (error) throw error
-      await insertOtherPaymentTransactions(realRecords.map(item => ({
-        ...item,
-        refund_category: storedCategory,
-        finance_notes: financeNote,
-        paypal_receipt_screenshot: otherProcessForm.receipt || '',
-      })), now)
+      if (otherProcessMode.value !== 'receipt') {
+        await insertOtherPaymentTransactions(realRecords.map(item => ({
+          ...item,
+          refund_category: storedCategory,
+          finance_notes: financeNote,
+          paypal_receipt_screenshot: otherProcessForm.receipt || '',
+        })), now)
+      }
     }
 
     clearBatchSelection()
     currentProcessRequests.value = []
-    message.success(`其他付款已处理，合计 ${formatCurrency(total, 'cny')}`)
+    message.success(otherProcessMode.value === 'receipt' ? '水单已更新' : `其他付款已处理，合计 ${formatCurrency(total, 'cny')}`)
     otherProcessOpen.value = false
     await load()
   } catch (e: any) {
@@ -2203,6 +2282,7 @@ onMounted(async () => {
 .mono-cell { font-family: 'Courier New', monospace; font-size: 12px; color: #1a1a2e; }
 .note-preview {
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -2216,6 +2296,7 @@ onMounted(async () => {
 .result-code { font-family: 'Courier New', monospace; font-size: 11px; color: #059669; font-weight: 700; white-space: pre-line; }
 .clamp-2 {
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
