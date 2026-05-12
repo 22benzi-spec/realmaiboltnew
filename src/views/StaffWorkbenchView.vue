@@ -22,7 +22,7 @@
       <!-- 右侧主内容 -->
       <div class="workbench-main">
         <template v-if="selectedStaffId">
-          <div class="workbench-priority">
+          <div v-if="wbNav !== 'afterSale'" class="workbench-priority">
             <div class="today-focus-card">
               <div class="today-focus-head">
                 <div>
@@ -1133,7 +1133,7 @@
       v-model:open="taskOpsDetailOpen"
       :sub-order-id="taskOpsDetailTarget?.id || ''"
       :fallback-detail="taskOpsDetailTarget"
-      detail-mode="improving"
+      :detail-mode="taskOpsDetailMode"
     />
 
     <a-modal
@@ -1520,6 +1520,7 @@ const pendingBuyerMatchTasks = computed(() =>
   filteredTasks.value.filter(task => !isDone(task.status) && !task.buyer_id)
 )
 const actionableTasks = computed(() => filteredTasks.value.filter(task => !isDone(task.status)))
+const taskOpsDetailMode = computed<any>(() => (wbNav.value === 'reviewFollow' ? 'reviewFollow' : 'improving'))
 const improvingTasks = computed(() => actionableTasks.value.filter(task => !!task.buyer_id))
 const afterSaleTasks = computed(() =>
   filteredTasks.value.filter(task => !!task._after_sale_issue)
@@ -1609,6 +1610,36 @@ const workbenchSummary = computed(() => {
     todayReviewFollowDoneCount,
     todayReviewFollowProgressPct: todayReviewFollowCount ? Math.round((todayReviewFollowDoneCount / todayReviewFollowCount) * 100) : 0,
     resultCount: filteredTasks.value.length,
+  }
+})
+
+const afterSaleWorkbenchSummary = computed(() => {
+  const issues = afterSaleTasks.value.map(task => task._after_sale_issue || {})
+  const normalize = (status: string) => {
+    if (status === '已替换订单') return '已替换单号'
+    if (status === '已退款给客户') return '无需处理'
+    return status || '待处理'
+  }
+  const getPrincipalStatus = (issue: any) => {
+    if (issue.principal_status === '损失') return '已损失'
+    if (issue.principal_status) return issue.principal_status
+    if (issue.issue_type === '本金多返') return '待追回'
+    if (issue.principal_stolen || Number(issue.principal_amount || 0) > 0) return '已损失'
+    return '待确定'
+  }
+  const doneStatuses = ['已替换单号', '已补单', '已追回本金', '已关闭', '无需处理']
+  const total = issues.length
+  const done = issues.filter(issue => doneStatuses.includes(normalize(issue.issue_status))).length
+  const riskIssues = issues.filter(issue => ['待追回', '已损失'].includes(getPrincipalStatus(issue)))
+  return {
+    total,
+    pending: issues.filter(issue => normalize(issue.issue_status) === '待处理').length,
+    processing: issues.filter(issue => ['处理中', '需补单'].includes(normalize(issue.issue_status))).length,
+    needReorder: issues.filter(issue => normalize(issue.issue_status) === '需补单').length,
+    done,
+    donePct: total ? Math.round((done / total) * 100) : 0,
+    principalRisk: riskIssues.length,
+    principalAmount: riskIssues.reduce((sum, issue) => sum + Number(issue.principal_amount || issue.profit_diff || issue.loss_amount || 0), 0),
   }
 })
 
@@ -4670,6 +4701,44 @@ onUnmounted(() => {
   padding: 2px 8px;
 }
 .today-stat-sub { font-size: 12px; color: #059669; font-weight: 600; }
+.after-sale-dashboard {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.after-sale-metric {
+  min-height: 94px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.after-sale-metric-label {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+.after-sale-metric-value {
+  margin-top: 8px;
+  color: #1a1a2e;
+  font-size: 30px;
+  line-height: 1;
+}
+.after-sale-metric-meta {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+.after-sale-metric.is-success .after-sale-metric-value { color: #059669; }
+.after-sale-metric.is-danger {
+  border-color: rgba(220, 38, 38, 0.16);
+  background: rgba(220, 38, 38, 0.05);
+}
+.after-sale-metric.is-danger .after-sale-metric-value,
+.after-sale-metric.is-danger .after-sale-metric-meta { color: #dc2626; }
 .today-focus-foot {
   display: flex;
   align-items: center;
@@ -5983,12 +6052,14 @@ onUnmounted(() => {
 @media (max-width: 1280px) {
   .workbench-priority { grid-template-columns: 1fr; }
   .today-focus-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .after-sale-dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 900px) {
   .workbench-layout { flex-direction: column; }
   .staff-sidebar { width: 100%; }
   .today-focus-stats,
+  .after-sale-dashboard,
   .filter-right { width: 100%; margin-left: 0; flex-wrap: wrap; }
 }
 </style>

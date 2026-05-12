@@ -1,7 +1,7 @@
 <template>
   <a-drawer
     :open="open"
-    :title="detail?.sub_order_number ? `操作详情 - ${detail.sub_order_number}` : '操作详情'"
+    :title="getDrawerTitle()"
     width="940"
     placement="right"
     destroy-on-close
@@ -9,7 +9,88 @@
   >
     <a-spin :spinning="loading">
       <template v-if="detail">
-        <template v-if="isImprovingMode">
+        <template v-if="isReviewFollowMode">
+          <div class="review-detail">
+            <div class="review-hero">
+              <div class="review-hero-main">
+                <div class="review-title-line">
+                  <div class="review-product-name">{{ detail.product_name || detail.asin || '—' }}</div>
+                  <a-tag :color="getReviewFollowStatusColor(getReviewFollowStage(detail))">{{ getReviewFollowStage(detail) }}</a-tag>
+                </div>
+                <div class="review-meta-row">
+                  <span class="review-asin mono">{{ detail.asin || '—' }}</span>
+                  <span>距下单 {{ getDaysSinceOrder(detail) }} 天</span>
+                  <span>催评 {{ getReviewFollowCount(detail) }} 次</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="review-card">
+              <div class="review-card-title">评论跟进</div>
+              <div class="review-info-sections">
+                <div class="review-info-group">
+                  <div class="review-info-group-title">任务信息</div>
+                  <div class="review-info-grid">
+                    <div class="review-info-item"><span>类型</span><strong>{{ detail.order_type || detail.review_type || '—' }}</strong></div>
+                    <div class="review-info-item"><span>等级</span><strong>{{ detail.review_level || '—' }}</strong></div>
+                  </div>
+                </div>
+
+                <div class="review-info-group">
+                  <div class="review-info-group-title">反馈状态</div>
+                  <div class="review-feedback-combo">
+                    <div class="review-feedback-item">
+                      <span>订单反馈</span>
+                      <strong>{{ detail.order_feedback_status || '未反馈' }}</strong>
+                    </div>
+                    <div class="review-feedback-item">
+                      <span>评论反馈</span>
+                      <strong>{{ detail.review_feedback_status || '未反馈' }}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="review-info-group">
+                  <div class="review-info-group-title">执行信息</div>
+                  <div class="review-info-grid">
+                    <div class="review-info-item"><span>买手</span><strong>{{ detail.buyer_name || '—' }}</strong></div>
+                    <div class="review-info-item"><span>聊单号</span><strong>{{ detail.buyer_chat_id || '—' }}</strong></div>
+                    <div class="review-info-item"><span>返款状态</span><strong>{{ refundStatusLabel(detail.refund_status) || '未返款' }}</strong></div>
+                    <div class="review-info-item"><span>下单时间</span><strong>{{ fmtTime(detail.amazon_order_placed_at) }}</strong></div>
+                    <div class="review-info-item"><span>最近催评</span><strong>{{ fmtTime(detail.review_followed_at) }}</strong></div>
+                  </div>
+                </div>
+
+                <div class="review-info-group">
+                  <div class="review-info-group-title">备注</div>
+                  <div class="review-note-box">{{ detail.notes || '—' }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="review-card">
+              <div class="review-card-title">评论动态</div>
+              <div v-if="reviewFollowTimeline.length" class="review-timeline">
+                <div v-for="item in reviewFollowTimeline" :key="item.key" class="review-timeline-item">
+                  <div class="review-timeline-axis">
+                    <span :class="['review-timeline-dot', `is-${item.type}`]"></span>
+                    <span class="review-timeline-line"></span>
+                  </div>
+                  <div class="review-timeline-content">
+                    <div class="review-timeline-main">
+                      <span :class="['review-stage-chip', `is-${item.type}`]">{{ item.title }}</span>
+                      <strong>{{ fmtTime(item.changed_at) }}</strong>
+                    </div>
+                    <div v-if="item.desc" class="review-timeline-desc">{{ item.desc }}</div>
+                  </div>
+                </div>
+              </div>
+              <a-empty v-else description="暂无评论动态" />
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="isImprovingMode">
           <div class="improving-detail">
             <div class="improving-hero">
               <div class="improving-image-wrap">
@@ -293,7 +374,7 @@ const props = defineProps<{
   open: boolean
   subOrderId?: string | null
   fallbackDetail?: any | null
-  detailMode?: 'default' | 'improving'
+  detailMode?: string
 }>()
 
 const emit = defineEmits<{
@@ -308,7 +389,9 @@ const statusTimeline = ref<any[]>([])
 const editHistory = ref<any[]>([])
 
 const isImprovingMode = computed(() => props.detailMode === 'improving')
+const isReviewFollowMode = computed(() => props.detailMode === 'reviewFollow')
 const improvingTimeline = computed(() => buildImprovingTimeline())
+const reviewFollowTimeline = computed(() => buildReviewFollowTimeline())
 
 watch(() => props.open, async (val) => {
   if (val) await load()
@@ -341,7 +424,7 @@ async function load() {
     if (sub?.order_id) {
       const { data: order } = await supabase
         .from('erp_orders')
-        .select('order_number, sales_person, customer_name, notes')
+        .select('order_number, sales_person, customer_name, notes, order_feedback_status, review_feedback_status')
         .eq('id', sub.order_id)
         .maybeSingle()
       detail.value = {
@@ -351,6 +434,8 @@ async function load() {
         sales_person: sub.sales_person || order?.sales_person || '',
         customer_name: sub.customer_name || order?.customer_name || '',
         notes: sub.notes || props.fallbackDetail?.notes || order?.notes || '',
+        order_feedback_status: sub.order_feedback_status || props.fallbackDetail?.order_feedback_status || order?.order_feedback_status || '',
+        review_feedback_status: sub.review_feedback_status || props.fallbackDetail?.review_feedback_status || order?.review_feedback_status || '',
       }
     } else {
       detail.value = sub || props.fallbackDetail || null
@@ -373,6 +458,11 @@ function money(val: any) {
 
 function fmtTime(val: string) {
   return val ? dayjs(val).format('YYYY-MM-DD HH:mm') : '—'
+}
+
+function getDrawerTitle() {
+  if (isReviewFollowMode.value) return detail.value?.sub_order_number || '评论跟进详情'
+  return detail.value?.sub_order_number ? `操作详情 - ${detail.value.sub_order_number}` : '操作详情'
 }
 
 function actualPaid(req: any) {
@@ -489,6 +579,114 @@ function getReviewProgressLabel(record: any) {
   if (record?.review_followed_at) return `已催评${Number(record.review_follow_count || record._review_follow_count || 0) > 0 ? ` ${record.review_follow_count || record._review_follow_count} 次` : ''}`
   if (record?.amazon_order_id) return '待上传评论'
   return '未到评论节点'
+}
+
+function getReviewFollowStage(record: any) {
+  const status = String(record?.status || '')
+  if (status === '已掉评') return '掉评'
+  if (isUnableToComplete(record)) return '无法完成'
+  if (record?.review_uploaded_at || record?.review_link || record?.review_screenshot_url || record?.fb_link) return '传评'
+  if (record?.review_submitted_at) return '上评'
+  if (record?.review_followed_at) return '已催评'
+  return '待催评'
+}
+
+function getReviewFollowStatusColor(stage: string) {
+  const map: Record<string, string> = {
+    待催评: 'orange',
+    已催评: 'blue',
+    上评: 'cyan',
+    传评: 'green',
+    掉评: 'red',
+    无法完成: 'red',
+  }
+  return map[stage] || 'default'
+}
+
+function getDaysSinceOrder(record: any) {
+  const base = record?.amazon_order_placed_at || record?.created_at
+  return base ? Math.max(dayjs().diff(dayjs(base), 'day'), 0) : 0
+}
+
+function getReviewFollowCount(record: any) {
+  return Math.max(Number(record?.review_follow_count || record?._review_follow_count || (record?.review_followed_at ? 1 : 0)), 0)
+}
+
+function isUnableToComplete(record: any) {
+  const status = String(record?.status || record?.order_status || '')
+  const reason = String(record?.review_failure_reason || record?.cancel_reason || '')
+  return ['无法完成', '传前掉评', '评论被拒', '评论不显示', '买手失联', '买手拒绝上评', '链接无法上评', '卖家要求不上评'].includes(status)
+    || ['无法完成', '传前掉评', '评论被拒', '评论不显示', '买手失联', '买手拒绝上评', '链接无法上评', '卖家要求不上评'].includes(reason)
+}
+
+function buildReviewFollowTimeline() {
+  const record = detail.value
+  if (!record) return []
+  const rows: any[] = []
+  const base = dayjs(record.amazon_order_placed_at || record.created_at || new Date())
+
+  rows.push({
+    key: 'review-wait',
+    type: 'pending',
+    title: '待催评',
+    desc: '下单后进入评论跟进',
+    changed_at: record.amazon_order_placed_at || record.created_at,
+  })
+
+  if (record.review_followed_at || record._is_mock || record._is_preview_mock) {
+    const count = getReviewFollowCount(record) || 1
+    rows.push({
+      key: 'review-followed',
+      type: 'followed',
+      title: '已催评',
+      desc: count > 1 ? `已催评 ${count} 次` : '完成首次催评',
+      changed_at: record.review_followed_at || base.add(1, 'day').toISOString(),
+    })
+  }
+
+  if (record.review_submitted_at || record._is_mock || record._is_preview_mock) {
+    rows.push({
+      key: 'review-posted',
+      type: 'posted',
+      title: '上评',
+      desc: '',
+      changed_at: record.review_submitted_at || base.add(2, 'day').toISOString(),
+    })
+  }
+
+  if (record.review_uploaded_at || record.review_link || record.review_screenshot_url || record.fb_link || record._is_mock || record._is_preview_mock) {
+    rows.push({
+      key: 'review-uploaded',
+      type: 'uploaded',
+      title: '传评',
+      desc: '',
+      changed_at: record.review_uploaded_at || record.review_feedback_date || record.review_submitted_at || base.add(3, 'day').toISOString(),
+    })
+  }
+
+  if (record.status === '已掉评' || record.review_dropped_at || String(record.review_failure_reason || '').includes('掉评')) {
+    rows.push({
+      key: 'review-dropped',
+      type: 'dropped',
+      title: '掉评',
+      desc: '',
+      changed_at: record.review_dropped_at || record.updated_at || base.add(4, 'day').toISOString(),
+    })
+  }
+
+  if (isUnableToComplete(record)) {
+    rows.push({
+      key: 'review-unable',
+      type: 'blocked',
+      title: '无法完成',
+      desc: record.review_failure_reason || record.cancel_reason || '已改为无法完成',
+      changed_at: record.review_failed_at || record.updated_at || base.add(4, 'day').toISOString(),
+    })
+  }
+
+  return rows
+    .filter(item => !!item.changed_at)
+    .sort((a, b) => dayjs(a.changed_at).valueOf() - dayjs(b.changed_at).valueOf())
 }
 
 function getAfterSaleIssue(record: any) {
@@ -935,6 +1133,257 @@ function formatEdit(change: any) {
 .audit-meta { font-size: 11px; color: #6b7280; }
 .audit-list { margin: 4px 0 0 18px; padding: 0; color: #374151; }
 
+.review-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.review-hero {
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+.review-hero-main {
+  min-width: 0;
+}
+.review-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.review-title-line :deep(.ant-tag) {
+  margin-inline-end: 0;
+  flex-shrink: 0;
+}
+.review-sub-no {
+  color: #1a1a2e;
+  font-size: 17px;
+  font-weight: 800;
+  font-family: ui-monospace, monospace;
+}
+.review-product-name {
+  min-width: 0;
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-asin {
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 700;
+}
+.review-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 12px;
+}
+.review-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 10px 12px 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.review-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef2f7;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+}
+.review-card-title::before {
+  content: '';
+  width: 4px;
+  height: 14px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+.review-info-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.review-info-group {
+  padding: 10px;
+  border: 1px solid #eef2f7;
+  border-radius: 12px;
+  background: #fbfdff;
+}
+.review-info-group-title {
+  margin-bottom: 8px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+}
+.review-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.review-info-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid #eef2f7;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.review-info-item.wide {
+  grid-column: 1 / -1;
+}
+.review-info-item span {
+  min-width: 58px;
+  padding-right: 8px;
+  border-right: 1px solid #dbe3ee;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.review-info-item strong {
+  min-width: 0;
+  flex: 1;
+  color: #1f2937;
+  font-size: 13px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-info-item.wide strong {
+  text-align: left;
+  white-space: normal;
+  line-height: 1.5;
+}
+.review-feedback-combo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.review-feedback-item {
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+}
+.review-feedback-item span {
+  display: block;
+  margin-bottom: 4px;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 700;
+}
+.review-feedback-item strong {
+  display: block;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 800;
+}
+.review-note-box {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.review-timeline {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  padding: 12px 14px;
+}
+.review-timeline-item {
+  display: flex;
+  gap: 10px;
+}
+.review-timeline-item:last-child .review-timeline-line {
+  display: none;
+}
+.review-timeline-axis {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+.review-timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 6px;
+  background: #d97706;
+}
+.review-timeline-dot.is-followed { background: #2563eb; }
+.review-timeline-dot.is-posted { background: #0891b2; }
+.review-timeline-dot.is-uploaded { background: #059669; }
+.review-timeline-dot.is-dropped,
+.review-timeline-dot.is-blocked { background: #dc2626; }
+.review-timeline-line {
+  width: 2px;
+  flex: 1;
+  min-height: 26px;
+  margin-top: 4px;
+  background: #dbeafe;
+}
+.review-timeline-content {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 12px;
+}
+.review-timeline-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.review-timeline-main strong {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.review-timeline-desc {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
+}
+.review-stage-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 60px;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.12);
+  font-size: 12px;
+  font-weight: 700;
+}
+.review-stage-chip.is-followed { color: #2563eb; background: rgba(37, 99, 235, 0.12); }
+.review-stage-chip.is-posted { color: #0891b2; background: rgba(8, 145, 178, 0.12); }
+.review-stage-chip.is-uploaded { color: #059669; background: rgba(5, 150, 105, 0.12); }
+.review-stage-chip.is-dropped,
+.review-stage-chip.is-blocked { color: #dc2626; background: rgba(220, 38, 38, 0.12); }
+
 .improving-detail {
   display: flex;
   flex-direction: column;
@@ -1246,6 +1695,8 @@ function formatEdit(change: any) {
   .hero-main-grid,
   .hero-sub-grid,
   .detail-grid,
+  .review-info-grid,
+  .review-feedback-combo,
   .improving-card-grid,
   .improving-field-grid,
   .improving-refund-strip,
