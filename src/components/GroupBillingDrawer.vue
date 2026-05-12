@@ -186,6 +186,12 @@
                 录入补款
               </a-button>
               <a-button
+                :disabled="allocSupplementTotal <= 0"
+                @click="openBatchRecordModal('offset')"
+              >
+                账面抵消
+              </a-button>
+              <a-button
                 danger
                 :disabled="allocRefundTotal <= 0"
                 @click="openBatchRecordModal('refund')"
@@ -222,8 +228,8 @@
               <span>
                 <a-tag :color="getPaymentDirectionColor(getPaymentDirection(p))" size="small">{{ getPaymentDirection(p) }}</a-tag>
               </span>
-              <span :class="getPaymentDirection(p) === '支出' ? 'payment-line-refund' : 'payment-line-income'">
-                {{ getPaymentDirection(p) === '支出' ? '-' : '+' }}¥{{ Math.abs(Number(p.amount_cny || 0)).toFixed(2) }}
+              <span :class="getPaymentDirection(p) === '支出' ? 'payment-line-refund' : getPaymentDirection(p) === '账面抵消' ? 'payment-line-offset' : 'payment-line-income'">
+                {{ getPaymentDirection(p) === '支出' ? '-' : getPaymentDirection(p) === '账面抵消' ? '抵 ' : '+' }}¥{{ Math.abs(Number(p.amount_cny || 0)).toFixed(2) }}
               </span>
               <span class="payment-line-meta">
                 <template v-if="p.payment_method">{{ p.payment_method }}</template>
@@ -244,20 +250,20 @@
 
     <a-modal
       v-model:open="batchRecordModalOpen"
-      :title="batchRecordMode === 'refund' ? '提交退款' : '录入补款'"
+      :title="getBatchRecordTitle()"
       :confirm-loading="batchRecordSaving"
-      :ok-text="batchRecordMode === 'refund' ? '提交退款' : '录入补款'"
+      :ok-text="getBatchRecordOkText()"
       :ok-button-props="{ danger: batchRecordMode === 'refund' }"
       cancel-text="取消"
       width="520px"
       @ok="saveBatchRecord"
     >
       <div class="add-record-form">
-        <div v-if="batchRecordMode === 'refund'" class="add-record-alert">
-          退款将生成待审批流水，需财务审批后执行
+        <div v-if="batchRecordMode !== 'supplement'" class="add-record-alert" :class="{ 'add-record-alert-offset': batchRecordMode === 'offset' }">
+          {{ batchRecordMode === 'refund' ? '退款将生成待审批流水，需财务审批后执行' : '账面抵消不产生实际到账，但会进入交易流水用于对账' }}
         </div>
         <div class="batch-record-summary">
-          本次{{ batchRecordMode === 'refund' ? '退款' : '补款' }}
+          本次{{ batchRecordMode === 'refund' ? '退款' : batchRecordMode === 'offset' ? '账面抵消' : '补款' }}
           {{ selectedBatchRows.length }} 个订单，合计
           ¥{{ selectedBatchTotal.toFixed(2) }}
         </div>
@@ -274,12 +280,21 @@
           </a-select>
         </div>
         <div class="ar-field">
-          <label class="ar-label">{{ batchRecordMode === 'refund' ? '退款日期' : '补款日期' }} <span class="required">*</span></label>
+          <label class="ar-label">{{ batchRecordMode === 'refund' ? '退款日期' : batchRecordMode === 'offset' ? '抵消日期' : '补款日期' }} <span class="required">*</span></label>
           <a-date-picker v-model:value="batchRecordForm.payment_date_picker" style="width:100%" placeholder="选择日期" value-format="YYYY-MM-DD" />
+        </div>
+        <div v-if="batchRecordMode === 'offset'" class="ar-field">
+          <label class="ar-label">抵消来源</label>
+          <a-select v-model:value="batchRecordForm.offset_source_type" style="width:100%">
+            <a-select-option value="客户余款抵消">客户余款抵消</a-select-option>
+            <a-select-option value="同事余款抵消">同事余款抵消</a-select-option>
+            <a-select-option value="其他抵消">其他抵消</a-select-option>
+          </a-select>
         </div>
         <div class="ar-field">
           <label class="ar-label">方式</label>
           <a-select v-model:value="batchRecordForm.payment_method" style="width:100%">
+            <a-select-option v-if="batchRecordMode === 'offset'" value="账面抵消">账面抵消</a-select-option>
             <a-select-option value="银行转账">银行转账</a-select-option>
             <a-select-option value="微信">微信</a-select-option>
             <a-select-option value="支付宝">支付宝</a-select-option>
@@ -288,7 +303,7 @@
           </a-select>
         </div>
         <div class="ar-field">
-          <label class="ar-label">{{ batchRecordMode === 'refund' ? '退款对象' : '付款人' }}</label>
+          <label class="ar-label">{{ batchRecordMode === 'refund' ? '退款对象' : batchRecordMode === 'offset' ? '抵消对象' : '付款人' }}</label>
           <a-input v-model:value="batchRecordForm.payer_name" placeholder="姓名" />
         </div>
         <div class="ar-field">
@@ -313,6 +328,10 @@
         <div class="ar-field">
           <label class="ar-label">备注</label>
           <a-textarea v-model:value="batchRecordForm.notes" :rows="2" placeholder="备注（可选）" />
+        </div>
+        <div v-if="batchRecordMode === 'offset'" class="ar-field">
+          <label class="ar-label">来源说明</label>
+          <a-input v-model:value="batchRecordForm.offset_source_note" placeholder="例如：上批任务余款抵消本次" />
         </div>
       </div>
     </a-modal>
@@ -576,7 +595,7 @@ watch(() => props.groupOrders, (val) => {
 // --- 合并款项录入 ---
 const batchRecordModalOpen = ref(false)
 const batchRecordSaving = ref(false)
-const batchRecordMode = ref<'supplement' | 'refund'>('supplement')
+const batchRecordMode = ref<'supplement' | 'refund' | 'offset'>('supplement')
 const batchRecordFiles = ref<any[]>([])
 
 interface AllocRow {
@@ -671,6 +690,13 @@ const billingTransactionCategoryOptions = [
     ],
   },
   {
+    value: '业务结算',
+    label: '业务结算',
+    children: [
+      { value: '账面抵消', label: '账面抵消' },
+    ],
+  },
+  {
     value: '运营支出',
     label: '运营支出',
     children: [
@@ -708,13 +734,15 @@ const batchRecordForm = ref({
   payment_method: '银行转账',
   payer_name: '',
   recorded_by: '',
+  offset_source_type: '客户余款抵消',
+  offset_source_note: '',
   notes: '',
 })
 
 const selectedBatchRows = computed(() =>
   allocRows.value.filter((row) => {
     const amount = Number(row.allocated || 0)
-    return batchRecordMode.value === 'supplement' ? amount > 0 : amount < 0
+    return batchRecordMode.value === 'refund' ? amount < 0 : amount > 0
   })
 )
 
@@ -725,6 +753,8 @@ const selectedBatchTotal = computed(() =>
 const batchRecordPrimaryOptions = computed(() => billingTransactionCategoryOptions.filter(item =>
   batchRecordMode.value === 'refund'
     ? ['业务支出', '运营支出', '行政办公', '其他支出'].includes(item.value)
+    : batchRecordMode.value === 'offset'
+      ? ['业务结算'].includes(item.value)
     : ['业务收入', '其他收入'].includes(item.value),
 ))
 
@@ -741,20 +771,81 @@ function onBatchRecordPrimaryChange() {
     : (batchRecordSecondaryOptions.value[0] ? [batchRecordSecondaryOptions.value[0].value] : [])
 }
 
-function openBatchRecordModal(mode: 'supplement' | 'refund') {
+function normalizeBusinessType(value: any) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw === '文字评' || raw === '文字') return '文字'
+  if (raw === '图片评' || raw === '图片') return '图片'
+  if (raw === '视频评' || raw === '视频') return '视频'
+  if (raw === 'FB' || raw === 'Feedback') return 'Feedback'
+  if (raw === '免评') return '免评'
+  return raw
+}
+
+function buildOrderBusinessBreakdown(order: any, amountCny: number) {
+  const country = String(order?.country || '').trim()
+  const orderNumber = String(order?.order_number || order?.id || '').trim()
+  const rawTypes = Array.isArray(order?.order_types) && order.order_types.length
+    ? order.order_types
+    : (order?.review_type || order?.order_type ? [order.review_type || order.order_type] : [])
+  const types = rawTypes.map(normalizeBusinessType).filter(Boolean)
+  const quantityMap = order?.type_quantities && typeof order.type_quantities === 'object' ? order.type_quantities : {}
+  const fallbackCount = Number(order?.order_quantity || 0) || (types.length ? types.length : 0)
+  const totalCount = types.reduce((sum: number, type: string) => sum + Number(quantityMap[type] || quantityMap[`${type}评`] || 0), 0) || fallbackCount
+  if (!types.length) {
+    return {
+      countries: country ? [country] : [],
+      types: [] as string[],
+      orderCount: totalCount,
+      breakdown: country || totalCount ? [{ order_id: order?.id || null, order_number: orderNumber, country, business_type: '', order_count: totalCount, amount_cny: amountCny }] : [],
+    }
+  }
+  const breakdown = types.map((type: string) => {
+    const count = Number(quantityMap[type] || quantityMap[`${type}评`] || 0) || Math.round(totalCount / types.length)
+    const ratio = totalCount > 0 ? count / totalCount : 1 / types.length
+    return {
+      country,
+      order_id: order?.id || null,
+      order_number: orderNumber,
+      business_type: type,
+      order_count: count,
+      amount_cny: Number((amountCny * ratio).toFixed(2)),
+    }
+  })
+  return {
+    countries: country ? [country] : [],
+    types: Array.from(new Set<string>(types)),
+    orderCount: totalCount,
+    breakdown,
+  }
+}
+
+function getBatchRecordTitle() {
+  const map: Record<string, string> = { supplement: '录入补款', refund: '提交退款', offset: '录入账面抵消' }
+  return map[batchRecordMode.value]
+}
+
+function getBatchRecordOkText() {
+  const map: Record<string, string> = { supplement: '录入补款', refund: '提交退款', offset: '保存抵消' }
+  return map[batchRecordMode.value]
+}
+
+function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset') {
   batchRecordMode.value = mode
-  if ((mode === 'supplement' && allocSupplementTotal.value <= 0) || (mode === 'refund' && allocRefundTotal.value <= 0)) {
-    message.warning(mode === 'supplement' ? '请至少填写一条补款金额' : '请至少填写一条退款金额')
+  if (((mode === 'supplement' || mode === 'offset') && allocSupplementTotal.value <= 0) || (mode === 'refund' && allocRefundTotal.value <= 0)) {
+    message.warning(mode === 'refund' ? '请至少填写一条退款金额' : '请至少填写一条正向金额')
     return
   }
   batchRecordFiles.value = []
   batchRecordForm.value = {
-    primary_category: mode === 'refund' ? '业务支出' : '业务收入',
-    secondary_categories: [mode === 'refund' ? '截单退款' : '补款收入'],
+    primary_category: mode === 'refund' ? '业务支出' : mode === 'offset' ? '业务结算' : '业务收入',
+    secondary_categories: [mode === 'refund' ? '截单退款' : mode === 'offset' ? '账面抵消' : '补款收入'],
     payment_date_picker: dayjs(),
-    payment_method: '银行转账',
+    payment_method: mode === 'offset' ? '账面抵消' : '银行转账',
     payer_name: props.groupData?.customer_name || orders.value[0]?.customer_name || '',
     recorded_by: currentUser.value?.name || '',
+    offset_source_type: '客户余款抵消',
+    offset_source_note: '',
     notes: '',
   }
   onBatchRecordPrimaryChange()
@@ -777,7 +868,7 @@ async function saveBatchRecord() {
   }
   const toProcess = selectedBatchRows.value
   if (toProcess.length === 0) {
-    message.warning(mode === 'supplement' ? '请至少填写一条补款金额' : '请至少填写一条退款金额')
+    message.warning(mode === 'refund' ? '请至少填写一条退款金额' : '请至少填写一条正向金额')
     return
   }
 
@@ -806,9 +897,11 @@ async function saveBatchRecord() {
     for (const row of toProcess) {
       const rawAmt = Number(row.allocated)
       const isRefund = mode === 'refund'
+      const isOffset = mode === 'offset'
       const absAmt = Math.abs(rawAmt)
       const order = orders.value.find(o => o.id === row.orderId)
       if (!order) continue
+      const businessDetail = buildOrderBusinessBreakdown(order, absAmt)
 
       const { data: txNo } = await supabase.rpc('generate_transaction_no')
       const transactionNo = txNo || `FT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -817,7 +910,7 @@ async function saveBatchRecord() {
         transaction_no: transactionNo,
         entry_scope: batchRecordForm.value.primary_category,
         transaction_type: secondaryCategories[0],
-        direction: isRefund ? '支出' : '收入',
+        direction: isOffset ? '账面抵消' : (isRefund ? '支出' : '收入'),
         amount_cny: absAmt,
         amount_usd: 0,
         exchange_rate: order.exchange_rate || 7.25,
@@ -827,6 +920,12 @@ async function saveBatchRecord() {
         order_number: order.order_number,
         staff_name: batchRecordForm.value.recorded_by,
         status: isRefund ? '待审批' : '已确认',
+        business_countries: businessDetail.countries,
+        business_types: businessDetail.types,
+        business_order_count: businessDetail.orderCount,
+        business_breakdown: businessDetail.breakdown,
+        offset_source_type: isOffset ? batchRecordForm.value.offset_source_type : null,
+        offset_source_note: isOffset ? batchRecordForm.value.offset_source_note : null,
         notes: `${categorySummary} - ${batchRecordForm.value.payment_method}${batchRecordForm.value.notes ? ' | ' + batchRecordForm.value.notes : ''}`,
         transaction_date: paymentDate,
         receipt_urls: receiptUrls,
@@ -843,7 +942,13 @@ async function saveBatchRecord() {
         payer_name: batchRecordForm.value.payer_name,
         recorded_by: batchRecordForm.value.recorded_by,
         notes: [`分类: ${categorySummary}`, batchRecordForm.value.notes].filter(Boolean).join(' | '),
-        payment_type: isRefund ? '退款' : '补款',
+        payment_type: isOffset ? '账面抵消' : (isRefund ? '退款' : '补款'),
+        business_countries: businessDetail.countries,
+        business_types: businessDetail.types,
+        business_order_count: businessDetail.orderCount,
+        business_breakdown: businessDetail.breakdown,
+        offset_source_type: isOffset ? batchRecordForm.value.offset_source_type : null,
+        offset_source_note: isOffset ? batchRecordForm.value.offset_source_note : null,
         receipt_urls: receiptUrls,
       })
       if (payErr) throw payErr
@@ -855,11 +960,11 @@ async function saveBatchRecord() {
     const parts = []
     if (supplementCount > 0) parts.push(`补款 ${supplementCount} 笔`)
     if (refundCount > 0) parts.push(`退款 ${refundCount} 笔（待审批）`)
-    message.success(mode === 'refund' ? `退款申请已提交：${parts.join('，')}` : `补款已记录：${parts.join('，')}`)
+    message.success(mode === 'refund' ? `退款申请已提交：${parts.join('，')}` : mode === 'offset' ? `账面抵消已记录：${toProcess.length} 笔` : `补款已记录：${parts.join('，')}`)
     batchRecordModalOpen.value = false
 
     const remainingDrafts = allocRows.value
-      .filter(row => mode === 'supplement' ? Number(row.allocated || 0) < 0 : Number(row.allocated || 0) > 0)
+      .filter(row => mode === 'refund' ? Number(row.allocated || 0) > 0 : Number(row.allocated || 0) < 0)
       .reduce((acc, row) => {
         acc[row.orderId] = row.allocated
         return acc
@@ -1124,6 +1229,12 @@ async function saveBatchRecord() {
   font-family: 'Courier New', monospace;
 }
 
+.payment-line-offset {
+  color: #2563eb;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+}
+
 .payment-line-meta,
 .payment-line-notes {
   color: #6b7280;
@@ -1296,6 +1407,12 @@ async function saveBatchRecord() {
   border-radius: 8px;
   color: #c2410c;
   font-size: 13px;
+}
+
+.add-record-alert-offset {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
 }
 
 .batch-record-summary {

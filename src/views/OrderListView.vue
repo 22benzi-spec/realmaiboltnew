@@ -537,8 +537,8 @@
             <span>
               <a-tag :color="getPaymentDirectionColor(getPaymentDirection(p))" size="small">{{ getPaymentDirection(p) }}</a-tag>
             </span>
-            <span :class="getPaymentDirection(p) === '支出' ? 'payment-line-refund' : 'payment-line-income'">
-              {{ getPaymentDirection(p) === '支出' ? '-' : '+' }}&yen;{{ Number(p.amount_cny || 0).toFixed(2) }}
+            <span :class="getPaymentDirection(p) === '支出' ? 'payment-line-refund' : getPaymentDirection(p) === '账面抵消' ? 'payment-line-offset' : 'payment-line-income'">
+              {{ getPaymentDirection(p) === '支出' ? '-' : getPaymentDirection(p) === '账面抵消' ? '抵 ' : '+' }}&yen;{{ Number(p.amount_cny || 0).toFixed(2) }}
             </span>
             <span class="payment-line-meta">
               <template v-if="p.payment_method">{{ p.payment_method }}</template>
@@ -1078,6 +1078,64 @@ function getTypeQty(record: any, type: string): number {
   return Math.round(Number(record.order_quantity || 0) / n)
 }
 
+function normalizeBusinessType(value: any) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw === '文字评' || raw === '文字') return '文字'
+  if (raw === '图片评' || raw === '图片') return '图片'
+  if (raw === '视频评' || raw === '视频') return '视频'
+  if (raw === 'FB' || raw === 'Feedback') return 'Feedback'
+  if (raw === '免评') return '免评'
+  return raw
+}
+
+function buildOrderBusinessBreakdown(order: any, amountCny: number) {
+  const country = String(order?.country || '').trim()
+  const orderNumber = String(order?.order_number || order?.id || '').trim()
+  const rawTypes = Array.isArray(order?.order_types) && order.order_types.length
+    ? order.order_types
+    : (order?.review_type || order?.order_type ? [order.review_type || order.order_type] : [])
+  const types = rawTypes.map(normalizeBusinessType).filter(Boolean)
+  const quantityMap = order?.type_quantities && typeof order.type_quantities === 'object' ? order.type_quantities : {}
+  const fallbackCount = Number(order?.order_quantity || 0) || (types.length ? types.length : 0)
+  const totalCount = types.reduce((sum: number, type: string) => sum + Number(quantityMap[type] || quantityMap[`${type}评`] || 0), 0) || fallbackCount
+  if (!types.length) {
+    return {
+      countries: country ? [country] : [],
+      types: [] as string[],
+      orderCount: totalCount,
+      breakdown: country || totalCount ? [{ order_id: order?.id || null, order_number: orderNumber, country, business_type: '', order_count: totalCount, amount_cny: amountCny }] : [],
+    }
+  }
+  const breakdown = types.map((type: string) => {
+    const count = Number(quantityMap[type] || quantityMap[`${type}评`] || 0) || Math.round(totalCount / types.length)
+    const ratio = totalCount > 0 ? count / totalCount : 1 / types.length
+    return {
+      country,
+      order_id: order?.id || null,
+      order_number: orderNumber,
+      business_type: type,
+      order_count: count,
+      amount_cny: Number((amountCny * ratio).toFixed(2)),
+    }
+  })
+  return {
+    countries: country ? [country] : [],
+    types: Array.from(new Set<string>(types)),
+    orderCount: totalCount,
+    breakdown,
+  }
+}
+
+function mergeBusinessDetails(details: Array<{ countries: string[]; types: string[]; orderCount: number; breakdown: any[] }>) {
+  return {
+    countries: [...new Set(details.flatMap(item => item.countries))],
+    types: [...new Set(details.flatMap(item => item.types))],
+    orderCount: details.reduce((sum, item) => sum + Number(item.orderCount || 0), 0),
+    breakdown: details.flatMap(item => item.breakdown),
+  }
+}
+
 function getTypeUnitPrice(record: any, type: string): number {
   const map: Record<string, string> = {
     '免评': 'price_no_review', '文字评': 'price_text', '图片评': 'price_image',
@@ -1455,6 +1513,19 @@ async function savePayment() {
     const txType = isRefund ? '退款' : '批次收款'
     const txDirection = isRefund ? '支出' : '收入'
     const txNotes = `${paymentForm.value.payment_type} - ${paymentForm.value.payment_method}${paymentForm.value.notes ? ' | ' + paymentForm.value.notes : ''}${isGroupPay ? ' | 合并收款' : ''}`
+    const orderIds = isGroupPay
+      ? [currentOrder.value.id, ...groupPaySelected.value]
+      : [currentOrder.value.id]
+    const paymentAllocations = orderIds.map((oid) => {
+      const order = oid === currentOrder.value.id ? currentOrder.value : sameCustomerOrders.value.find(o => o.id === oid)
+      const amount = isGroupPay
+        ? (groupAllocations[oid] != null
+          ? Number(groupAllocations[oid])
+          : Number(((Number(order?.total_amount || 0) / groupPayTotalAmount.value) * paymentForm.value.amount_cny).toFixed(2)))
+        : paymentForm.value.amount_cny
+      return { oid, order, amount }
+    })
+    const businessDetail = mergeBusinessDetails(paymentAllocations.map(item => buildOrderBusinessBreakdown(item.order || currentOrder.value, Math.abs(Number(item.amount || 0)))))
 
     const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
       transaction_no: transactionNo,
@@ -1468,26 +1539,22 @@ async function savePayment() {
       order_number: currentOrder.value.order_number,
       staff_name: paymentForm.value.recorded_by,
       status: '待审批',
+      business_countries: businessDetail.countries,
+      business_types: businessDetail.types,
+      business_order_count: businessDetail.orderCount,
+      business_breakdown: businessDetail.breakdown,
       notes: txNotes,
       transaction_date: paymentDate,
     }).select('id').maybeSingle()
     if (txErr) throw txErr
 
-    const orderIds = isGroupPay
-      ? [currentOrder.value.id, ...groupPaySelected.value]
-      : [currentOrder.value.id]
-
-    for (const oid of orderIds) {
-      const order = oid === currentOrder.value.id ? currentOrder.value : sameCustomerOrders.value.find(o => o.id === oid)
+    for (const { oid, order, amount } of paymentAllocations) {
+      const rowBusinessDetail = buildOrderBusinessBreakdown(order || currentOrder.value, Math.abs(Number(amount || 0)))
       await supabase.from('batch_payments').insert({
         batch_id: oid,
         batch_number: order?.order_number || currentOrder.value.order_number,
         transaction_id: txData?.id || null,
-        amount_cny: isGroupPay
-          ? (groupAllocations[oid] != null
-            ? groupAllocations[oid]
-            : Number(((Number(order?.total_amount || 0) / groupPayTotalAmount.value) * paymentForm.value.amount_cny).toFixed(2)))
-          : paymentForm.value.amount_cny,
+        amount_cny: amount,
         payment_date: paymentDate,
         payment_method: paymentForm.value.payment_method,
         payer_name: paymentForm.value.payer_name,
@@ -1495,6 +1562,10 @@ async function savePayment() {
         notes: paymentForm.value.notes,
         payment_type: paymentForm.value.payment_type,
         payment_group_id: groupId,
+        business_countries: rowBusinessDetail.countries,
+        business_types: rowBusinessDetail.types,
+        business_order_count: rowBusinessDetail.orderCount,
+        business_breakdown: rowBusinessDetail.breakdown,
       })
     }
 
@@ -2131,6 +2202,11 @@ onMounted(() => {
 }
 .payment-line-refund {
   color: #dc2626;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+}
+.payment-line-offset {
+  color: #2563eb;
   font-weight: 700;
   font-family: 'Courier New', monospace;
 }

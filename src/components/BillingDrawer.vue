@@ -156,6 +156,11 @@
             >
               提交退款
             </a-button>
+            <a-button
+              @click="openAddRecord('账面抵消')"
+            >
+              账面抵消
+            </a-button>
           </div>
           <div class="refund-hint">退款提交后将生成待审批的退款流水，需财务审批后执行。</div>
         </div>
@@ -165,17 +170,17 @@
     <!-- 新增补款/退款 Modal -->
     <a-modal
       v-model:open="addRecordOpen"
-      :title="addRecordType === '退款' ? '提交退款' : '录入补款'"
+      :title="getAddRecordTitle()"
       :confirm-loading="addRecordSaving"
       @ok="saveRecord"
-      :ok-text="addRecordType === '退款' ? '提交退款' : '录入补款'"
+      :ok-text="getAddRecordOkText()"
       :ok-button-props="{ danger: addRecordType === '退款' }"
       cancel-text="取消"
       width="480px"
     >
       <div class="add-record-form">
-        <div v-if="addRecordType === '退款'" class="add-record-alert">
-          退款将生成待审批流水，需财务审批后执行
+        <div v-if="addRecordType !== '补款'" class="add-record-alert" :class="{ 'add-record-alert-offset': addRecordType === '账面抵消' }">
+          {{ addRecordType === '退款' ? '退款将生成待审批流水，需财务审批后执行' : '账面抵消不产生实际到账，但会进入交易流水用于对账' }}
         </div>
         <div class="ar-field">
           <label class="ar-label">一级分类</label>
@@ -191,18 +196,18 @@
         </div>
         <div class="ar-field">
           <label class="ar-label">
-            {{ addRecordType === '退款' ? '退款金额（元）' : '补款金额（人民币）' }}
-            <span v-if="addRecordType === '退款'" class="required">*</span>
+            {{ addRecordType === '退款' ? '退款金额（元）' : addRecordType === '账面抵消' ? '抵消金额（元）' : '补款金额（人民币）' }}
+            <span v-if="addRecordType !== '补款'" class="required">*</span>
           </label>
           <a-input-number
             v-model:value="addRecordForm.amount_cny"
             style="width:100%"
             :min="0"
             :precision="2"
-            :placeholder="addRecordType === '退款' ? '退款金额' : '人民币金额，可选'"
+            :placeholder="addRecordType === '退款' ? '退款金额' : addRecordType === '账面抵消' ? '抵消金额' : '人民币金额，可选'"
           />
         </div>
-        <div v-if="addRecordType !== '退款'" class="ar-field">
+        <div v-if="addRecordType === '补款'" class="ar-field">
           <label class="ar-label">补款金额（USD）</label>
           <a-input-number
             v-model:value="addRecordForm.amount_usd"
@@ -212,11 +217,26 @@
             placeholder="美金金额，可选"
           />
         </div>
-        <div v-if="addRecordType !== '退款'" class="add-record-tip">
+        <div v-if="addRecordType === '补款'" class="add-record-tip">
           人民币和美元至少填写一项；如同时填写，会一并记录到补款流水。
         </div>
+        <div class="business-brief-card">
+          <div class="brief-title">业务摘要</div>
+          <div class="brief-grid">
+            <span>国家</span>
+            <a-select v-model:value="addRecordForm.business_countries" mode="tags" size="small" placeholder="国家">
+              <a-select-option v-for="item in countryOptions" :key="item" :value="item">{{ item }}</a-select-option>
+            </a-select>
+            <span>类型</span>
+            <a-select v-model:value="addRecordForm.business_types" mode="tags" size="small" placeholder="文字 / 免评">
+              <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
+            </a-select>
+            <span>单量</span>
+            <a-input-number v-model:value="addRecordForm.business_order_count" size="small" :min="0" :precision="0" style="width:100%" />
+          </div>
+        </div>
         <div class="ar-field">
-          <label class="ar-label">{{ addRecordType === '退款' ? '退款日期' : '补款日期' }} <span class="required">*</span></label>
+          <label class="ar-label">{{ addRecordType === '退款' ? '退款日期' : addRecordType === '账面抵消' ? '抵消日期' : '补款日期' }} <span class="required">*</span></label>
           <a-date-picker
             v-model:value="addRecordForm.payment_date_picker"
             style="width:100%"
@@ -224,9 +244,18 @@
             value-format="YYYY-MM-DD"
           />
         </div>
+        <div v-if="addRecordType === '账面抵消'" class="ar-field">
+          <label class="ar-label">抵消来源</label>
+          <a-select v-model:value="addRecordForm.offset_source_type" style="width:100%">
+            <a-select-option value="客户余款抵消">客户余款抵消</a-select-option>
+            <a-select-option value="同事余款抵消">同事余款抵消</a-select-option>
+            <a-select-option value="其他抵消">其他抵消</a-select-option>
+          </a-select>
+        </div>
         <div class="ar-field">
           <label class="ar-label">方式</label>
           <a-select v-model:value="addRecordForm.payment_method" style="width:100%">
+            <a-select-option v-if="addRecordType === '账面抵消'" value="账面抵消">账面抵消</a-select-option>
             <a-select-option value="银行转账">银行转账</a-select-option>
             <a-select-option value="微信">微信</a-select-option>
             <a-select-option value="支付宝">支付宝</a-select-option>
@@ -234,8 +263,12 @@
             <a-select-option value="其他">其他</a-select-option>
           </a-select>
         </div>
+        <div v-if="addRecordType === '账面抵消'" class="ar-field">
+          <label class="ar-label">来源说明</label>
+          <a-input v-model:value="addRecordForm.offset_source_note" placeholder="例如：上批任务余款抵消本次" />
+        </div>
         <div class="ar-field">
-          <label class="ar-label">{{ addRecordType === '退款' ? '退款对象' : '付款人' }}</label>
+          <label class="ar-label">{{ addRecordType === '退款' ? '退款对象' : addRecordType === '账面抵消' ? '抵消对象' : '付款人' }}</label>
           <a-input v-model:value="addRecordForm.payer_name" placeholder="姓名" />
         </div>
         <div class="ar-field">
@@ -436,8 +469,10 @@ async function saveDebt() {
 // --- 新增记录 ---
 const addRecordOpen = ref(false)
 const addRecordSaving = ref(false)
-const addRecordType = ref<'补款' | '退款'>('补款')
+const addRecordType = ref<'补款' | '退款' | '账面抵消'>('补款')
 const addRecordFiles = ref<any[]>([])
+const countryOptions = ['美国', '德国', '英国', '加拿大', '日本', '法国', '意大利', '西班牙']
+const businessTypeOptions = ['文字', '免评', '图片', '视频', 'Feedback']
 const billingTransactionCategoryOptions = [
   {
     value: '业务收入',
@@ -454,6 +489,13 @@ const billingTransactionCategoryOptions = [
       { value: '截单退款', label: '截单退款' },
       { value: '赔付佣金', label: '赔付佣金' },
       { value: '退差价', label: '退差价' },
+    ],
+  },
+  {
+    value: '业务结算',
+    label: '业务结算',
+    children: [
+      { value: '账面抵消', label: '账面抵消' },
     ],
   },
   {
@@ -489,6 +531,8 @@ const billingTransactionCategoryOptions = [
 const addRecordPrimaryOptions = computed(() => billingTransactionCategoryOptions.filter(item =>
   addRecordType.value === '退款'
     ? ['业务支出', '运营支出', '行政办公', '其他支出'].includes(item.value)
+    : addRecordType.value === '账面抵消'
+      ? ['业务结算'].includes(item.value)
     : ['业务收入', '其他收入'].includes(item.value),
 ))
 const addRecordSecondaryOptions = computed(() =>
@@ -499,6 +543,12 @@ const addRecordForm = ref({
   secondary_categories: ['补款收入'] as string[],
   amount_cny: undefined as number | undefined,
   amount_usd: undefined as number | undefined,
+  business_countries: [] as string[],
+  business_types: [] as string[],
+  business_order_count: 0,
+  business_breakdown: [] as any[],
+  offset_source_type: '客户余款抵消',
+  offset_source_note: '',
   payment_date_picker: null as any,
   payment_method: '银行转账',
   payer_name: '',
@@ -506,6 +556,65 @@ const addRecordForm = ref({
   notes: '',
   update_debt_status: 'none',
 })
+
+function normalizeBusinessType(value: any) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw === '文字评' || raw === '文字') return '文字'
+  if (raw === '图片评' || raw === '图片') return '图片'
+  if (raw === '视频评' || raw === '视频') return '视频'
+  if (raw === 'FB' || raw === 'Feedback') return 'Feedback'
+  if (raw === '免评') return '免评'
+  return raw
+}
+
+function buildOrderBusinessBreakdown(order: any, amountCny: number) {
+  const country = String(order?.country || '').trim()
+  const orderNumber = String(order?.order_number || order?.id || '').trim()
+  const rawTypes = Array.isArray(order?.order_types) && order.order_types.length
+    ? order.order_types
+    : (order?.review_type || order?.order_type ? [order.review_type || order.order_type] : [])
+  const types = rawTypes.map(normalizeBusinessType).filter(Boolean)
+  const quantityMap = order?.type_quantities && typeof order.type_quantities === 'object' ? order.type_quantities : {}
+  const fallbackCount = Number(order?.order_quantity || 0) || (types.length ? types.length : 0)
+  const totalCount = types.reduce((sum: number, type: string) => sum + Number(quantityMap[type] || quantityMap[`${type}评`] || 0), 0) || fallbackCount
+  if (!types.length) {
+    return {
+      countries: country ? [country] : [],
+      types: [] as string[],
+      orderCount: totalCount,
+      breakdown: country || totalCount ? [{ order_id: order?.id || null, order_number: orderNumber, country, business_type: '', order_count: totalCount, amount_cny: amountCny }] : [],
+    }
+  }
+  const breakdown = types.map((type: string) => {
+    const count = Number(quantityMap[type] || quantityMap[`${type}评`] || 0) || Math.round(totalCount / types.length)
+    const ratio = totalCount > 0 ? count / totalCount : 1 / types.length
+    return {
+      country,
+      order_id: order?.id || null,
+      order_number: orderNumber,
+      business_type: type,
+      order_count: count,
+      amount_cny: Number((amountCny * ratio).toFixed(2)),
+    }
+  })
+  return {
+    countries: country ? [country] : [],
+    types: Array.from(new Set<string>(types)),
+    orderCount: totalCount,
+    breakdown,
+  }
+}
+
+function getAddRecordTitle() {
+  const map: Record<string, string> = { 补款: '录入补款', 退款: '提交退款', 账面抵消: '录入账面抵消' }
+  return map[addRecordType.value]
+}
+
+function getAddRecordOkText() {
+  const map: Record<string, string> = { 补款: '录入补款', 退款: '提交退款', 账面抵消: '保存抵消' }
+  return map[addRecordType.value]
+}
 
 function onAddRecordPrimaryChange() {
   const nextValues = addRecordForm.value.secondary_categories.filter(value =>
@@ -516,16 +625,23 @@ function onAddRecordPrimaryChange() {
     : (addRecordSecondaryOptions.value[0] ? [addRecordSecondaryOptions.value[0].value] : [])
 }
 
-function openAddRecord(type: '补款' | '退款') {
+function openAddRecord(type: '补款' | '退款' | '账面抵消') {
   addRecordType.value = type
   addRecordFiles.value = []
+  const businessDetail = buildOrderBusinessBreakdown(props.order, 0)
   addRecordForm.value = {
-    primary_category: type === '退款' ? '业务支出' : '业务收入',
-    secondary_categories: [type === '退款' ? '截单退款' : '补款收入'],
+    primary_category: type === '退款' ? '业务支出' : type === '账面抵消' ? '业务结算' : '业务收入',
+    secondary_categories: [type === '退款' ? '截单退款' : type === '账面抵消' ? '账面抵消' : '补款收入'],
     amount_cny: undefined,
     amount_usd: undefined,
+    business_countries: businessDetail.countries,
+    business_types: businessDetail.types,
+    business_order_count: businessDetail.orderCount,
+    business_breakdown: businessDetail.breakdown,
+    offset_source_type: '客户余款抵消',
+    offset_source_note: '',
     payment_date_picker: dayjs(),
-    payment_method: '银行转账',
+    payment_method: type === '账面抵消' ? '账面抵消' : '银行转账',
     payer_name: props.order?.customer_name || '',
     recorded_by: props.order?.sales_person || currentUser.value?.name || '',
     notes: '',
@@ -571,14 +687,22 @@ async function saveRecord() {
     }
 
     const isRefund = addRecordType.value === '退款'
+    const isOffset = addRecordType.value === '账面抵消'
     const amountCny = Number(addRecordForm.value.amount_cny || 0)
-    const amountUsd = Number(addRecordForm.value.amount_usd || 0)
+    const amountUsd = isOffset ? 0 : Number(addRecordForm.value.amount_usd || 0)
     const secondaryCategories = addRecordForm.value.secondary_categories
     const categorySummary = secondaryCategories.join(' / ')
+    const businessDetail = buildOrderBusinessBreakdown(props.order, amountCny)
+    const businessCountries = addRecordForm.value.business_countries.length ? addRecordForm.value.business_countries : businessDetail.countries
+    const businessTypes = addRecordForm.value.business_types.length ? addRecordForm.value.business_types.map(normalizeBusinessType).filter(Boolean) : businessDetail.types
+    const businessOrderCount = Number(addRecordForm.value.business_order_count || 0) || businessDetail.orderCount
+    const businessBreakdown = businessDetail.breakdown.length
+      ? businessDetail.breakdown.map((item: any) => ({ ...item, amount_cny: amountCny && businessDetail.breakdown.length === 1 ? amountCny : item.amount_cny }))
+      : addRecordForm.value.business_breakdown
 
-    if (isRefund) {
+    if (isRefund || isOffset) {
       if (amountCny <= 0) {
-        message.warning('请输入退款金额')
+        message.warning(isRefund ? '请输入退款金额' : '请输入抵消金额')
         addRecordSaving.value = false
         return
       }
@@ -595,9 +719,9 @@ async function saveRecord() {
       transaction_no: transactionNo,
       entry_scope: addRecordForm.value.primary_category,
       transaction_type: secondaryCategories[0],
-      direction: isRefund ? '支出' : '收入',
+      direction: isOffset ? '账面抵消' : (isRefund ? '支出' : '收入'),
       amount_cny: amountCny,
-      amount_usd: isRefund ? 0 : amountUsd,
+      amount_usd: isRefund || isOffset ? 0 : amountUsd,
       exchange_rate: props.order.exchange_rate || 7.25,
       customer_name: props.order.customer_name || '',
       customer_id_str: props.order.customer_id_str || '',
@@ -605,6 +729,12 @@ async function saveRecord() {
       order_number: props.order.order_number,
       staff_name: addRecordForm.value.recorded_by,
       status: isRefund ? '待审批' : '已确认',
+      business_countries: businessCountries,
+      business_types: businessTypes,
+      business_order_count: businessOrderCount,
+      business_breakdown: businessBreakdown,
+      offset_source_type: isOffset ? addRecordForm.value.offset_source_type : null,
+      offset_source_note: isOffset ? addRecordForm.value.offset_source_note : null,
       notes: `${categorySummary} - ${addRecordForm.value.payment_method}${addRecordForm.value.notes ? ' | ' + addRecordForm.value.notes : ''}`,
       transaction_date: paymentDate,
       receipt_urls: receiptUrls,
@@ -616,13 +746,19 @@ async function saveRecord() {
       batch_number: props.order.order_number,
       transaction_id: txData?.id || null,
       amount_cny: amountCny,
-      amount_usd: isRefund ? 0 : amountUsd,
+      amount_usd: isRefund || isOffset ? 0 : amountUsd,
       payment_date: paymentDate,
       payment_method: addRecordForm.value.payment_method,
       payer_name: addRecordForm.value.payer_name,
       recorded_by: addRecordForm.value.recorded_by,
       notes: [`分类: ${categorySummary}`, addRecordForm.value.notes].filter(Boolean).join(' | '),
       payment_type: addRecordType.value,
+      business_countries: businessCountries,
+      business_types: businessTypes,
+      business_order_count: businessOrderCount,
+      business_breakdown: businessBreakdown,
+      offset_source_type: isOffset ? addRecordForm.value.offset_source_type : null,
+      offset_source_note: isOffset ? addRecordForm.value.offset_source_note : null,
       receipt_urls: receiptUrls,
     })
     if (payErr) throw payErr
@@ -641,7 +777,7 @@ async function saveRecord() {
       }
     }
 
-    const label = isRefund ? '退款已提交，流水待审批' : '补款已记录'
+    const label = isOffset ? '账面抵消已记录' : isRefund ? '退款已提交，流水待审批' : '补款已记录'
     message.success(label)
     addRecordOpen.value = false
     await loadPayments()
@@ -971,6 +1107,38 @@ async function deleteRecord(payment: any) {
   border-radius: 6px;
   font-size: 13px;
   color: #92400e;
+}
+
+.add-record-alert-offset {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.business-brief-card {
+  padding: 10px 12px;
+  background: #f8f9fb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.brief-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 8px;
+}
+
+.brief-grid {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.brief-grid > span {
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .ar-field {
