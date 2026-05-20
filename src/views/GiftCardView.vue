@@ -3,7 +3,7 @@
     <div class="page-header">
       <h1 class="page-title">礼品卡管理</h1>
       <a-space>
-        <a-button @click="singleImportOpen = true"><PlusOutlined /> 单张导入</a-button>
+        <a-button @click="openSingleImport"><PlusOutlined /> 单张导入</a-button>
         <a-button type="primary" @click="importOpen = true"><ImportOutlined /> 批量导入</a-button>
       </a-space>
     </div>
@@ -79,7 +79,7 @@
 
       <!-- 规格列表模式 -->
       <template v-else>
-        <a-tabs v-model:activeKey="mainTab">
+        <a-tabs v-model:activeKey="mainTab" @change="handleMainTabChange">
           <a-tab-pane key="available">
             <template #tab><span>可用库存 <a-badge :count="totalRemaining" :overflow-count="9999" color="#52c41a" /></span></template>
             <a-table :columns="specColumns" :data-source="filteredSpecs('available')" :loading="specsLoading" row-key="spec_key" size="middle" :pagination="false">
@@ -120,6 +120,14 @@
           <a-tab-pane key="batches">
             <template #tab>导入记录</template>
             <div class="batch-toolbar">
+              <a-input-search
+                v-model:value="batchSearch"
+                placeholder="搜索批次号 / 卡号 / 卡密"
+                style="width:240px"
+                allow-clear
+                @search="reloadBatchesFromFirstPage"
+                @change="onBatchSearchChange"
+              />
               <a-range-picker v-model:value="batchDateRange" style="width:260px" @change="loadBatches" />
               <a-select v-model:value="batchFilterCountry" style="width:120px" allow-clear placeholder="国家" @change="loadBatches">
                 <a-select-option value="US">美国 US</a-select-option>
@@ -131,12 +139,11 @@
             <a-table :columns="batchColumns" :data-source="batches" :loading="batchLoading" row-key="id" size="small" :pagination="batchPagination" @change="handleBatchTableChange">
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'batch_no'"><span class="batch-tag">{{ record.batch_no }}</span></template>
-                <template v-if="column.key === 'country'"><a-tag :color="countryColor[record.country]">{{ countryLabel[record.country] }}</a-tag></template>
-                <template v-if="column.key === 'face_value_usd'">{{ record.face_value_usd }} {{ currencySymbol(record.country) }}</template>
-                <template v-if="column.key === 'total_cost'">¥{{ (record.actual_cost * record.card_count).toFixed(2) }}</template>
+                <template v-if="column.key === 'country'"><a-tag :color="countryColor[record.country] || 'default'">{{ countryLabel[record.country] || record.country || '混合' }}</a-tag></template>
+                <template v-if="column.key === 'total_cost'">¥{{ batchTotalCost(record) }}</template>
                 <template v-if="column.key === 'created_at'">{{ dayjs(record.created_at).format('YYYY-MM-DD HH:mm') }}</template>
                 <template v-if="column.key === 'action'">
-                  <a-button type="link" size="small" @click="openBatchDetailDrawer(record)">查看卡片</a-button>
+                  <a-button type="link" size="small" @click="openBatchDetailDrawer(record)">查看明细</a-button>
                 </template>
               </template>
             </a-table>
@@ -155,9 +162,13 @@
       <template v-if="drawerMode === 'available'">
         <a-table :columns="detailAvailableColumns" :data-source="drawerCards" :loading="drawerLoading" row-key="id" size="small" :pagination="drawerPagination" @change="handleDrawerTableChange">
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'card_number'"><SensitiveField :value="record.card_number" :card-id="record.id" field="card_number" /></template>
+            <template v-if="column.key === 'card_number'">
+              <div>
+                <SensitiveField :value="record.card_number" :card-id="record.id" field="card_number" />
+                <div v-if="record.batch_no" class="id-text batch-sub">批次 {{ record.batch_no }}</div>
+              </div>
+            </template>
             <template v-if="column.key === 'card_code'"><SensitiveField :value="record.card_code" :card-id="record.id" field="card_code" /></template>
-            <template v-if="column.key === 'batch_no'"><span v-if="record.batch_no" class="batch-tag">{{ record.batch_no }}</span><span v-else class="text-muted">-</span></template>
             <template v-if="column.key === 'created_at'">{{ record.created_at ? dayjs(record.created_at).format('YYYY-MM-DD') : '-' }}</template>
             <template v-if="column.key === 'actual_cost'">{{ record.actual_cost ? `¥${Number(record.actual_cost).toFixed(2)}` : '-' }}</template>
             <template v-if="column.key === 'action'">
@@ -170,9 +181,13 @@
       <template v-if="drawerMode === 'used'">
         <a-table :columns="detailUsedColumns" :data-source="drawerCards" :loading="drawerLoading" row-key="id" size="small" :pagination="drawerPagination" @change="handleDrawerTableChange">
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'card_number'"><SensitiveField :value="record.card_number" :card-id="record.id" field="card_number" /></template>
+            <template v-if="column.key === 'card_number'">
+              <div>
+                <SensitiveField :value="record.card_number" :card-id="record.id" field="card_number" />
+                <div v-if="record.batch_no" class="id-text batch-sub">批次 {{ record.batch_no }}</div>
+              </div>
+            </template>
             <template v-if="column.key === 'card_code'"><SensitiveField :value="record.card_code" :card-id="record.id" field="card_code" /></template>
-            <template v-if="column.key === 'batch_no'"><span v-if="record.batch_no" class="batch-tag">{{ record.batch_no }}</span><span v-else class="text-muted">-</span></template>
             <template v-if="column.key === 'used_at'">{{ record.used_at ? dayjs(record.used_at).format('YYYY-MM-DD HH:mm') : '-' }}</template>
             <template v-if="column.key === 'sub_order'">
               <div v-if="record.used_for_sub_order_no || record.used_for_sub_order_id">
@@ -203,9 +218,13 @@
       <template v-if="drawerMode === 'voided'">
         <a-table :columns="detailVoidedColumns" :data-source="drawerCards" :loading="drawerLoading" row-key="id" size="small" :pagination="drawerPagination" @change="handleDrawerTableChange">
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'card_number'"><SensitiveField :value="record.card_number" :card-id="record.id" field="card_number" /></template>
+            <template v-if="column.key === 'card_number'">
+              <div>
+                <SensitiveField :value="record.card_number" :card-id="record.id" field="card_number" />
+                <div v-if="record.batch_no" class="id-text batch-sub">批次 {{ record.batch_no }}</div>
+              </div>
+            </template>
             <template v-if="column.key === 'card_code'"><SensitiveField :value="record.card_code" :card-id="record.id" field="card_code" /></template>
-            <template v-if="column.key === 'batch_no'"><span v-if="record.batch_no" class="batch-tag">{{ record.batch_no }}</span><span v-else class="text-muted">-</span></template>
             <template v-if="column.key === 'created_at'">{{ record.created_at ? dayjs(record.created_at).format('YYYY-MM-DD') : '-' }}</template>
             <template v-if="column.key === 'replacement'">
               <a-tag v-if="record.has_replacement" color="green">已补换</a-tag>
@@ -219,8 +238,8 @@
     <!-- 批次详情抽屉 -->
     <a-drawer v-model:open="batchDrawerOpen" :title="`批次 ${activeBatch?.batch_no} 的卡片明细`" width="860" placement="right">
       <div class="batch-info-bar" v-if="activeBatch">
-        <span>国家：<a-tag :color="countryColor[activeBatch.country]">{{ countryLabel[activeBatch.country] }}</a-tag></span>
-        <span>面值：{{ activeBatch.face_value_usd }} {{ currencySymbol(activeBatch.country) }}</span>
+        <span>国家：<a-tag :color="countryColor[activeBatch.country] || 'default'">{{ countryLabel[activeBatch.country] || activeBatch.country || '混合' }}</a-tag></span>
+        <span>面值：{{ batchFaceValueText(activeBatch) }}</span>
         <span>数量：{{ activeBatch.card_count }} 张</span>
         <span>供应商：{{ activeBatch.supplier || '-' }}</span>
         <span>汇率：{{ activeBatch.exchange_rate }}</span>
@@ -250,7 +269,7 @@
     <a-modal v-model:open="replaceModalOpen" title="录入供应商补换卡" @ok="handleReplaceCard" :confirm-loading="replacingCard" ok-text="保存补换卡" width="500px">
       <a-alert type="info" message="新卡将自动关联原卡的子订单信息，状态为「未使用」。" style="margin-bottom:14px" show-icon />
       <a-form layout="vertical">
-        <a-form-item label="新卡号" required><a-input v-model:value="replaceForm.card_number" placeholder="供应商提供的新卡号" /></a-form-item>
+        <a-form-item label="新卡号" required><a-input :value="replaceForm.card_number" disabled placeholder="系统自动生成" /></a-form-item>
         <a-form-item label="新卡密"><a-input v-model:value="replaceForm.card_code" placeholder="供应商提供的新卡密" /></a-form-item>
         <a-row :gutter="12">
           <a-col :span="12"><a-form-item label="购买汇率"><a-input-number v-model:value="replaceForm.exchange_rate" :min="1" :precision="4" style="width:100%" /></a-form-item></a-col>
@@ -262,40 +281,24 @@
     <!-- 批量导入 Modal -->
     <a-modal v-model:open="importOpen" title="批量导入礼品卡" @ok="handleImport" :confirm-loading="importing" width="640px">
       <a-form layout="vertical">
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="国家">
-              <a-select v-model:value="importForm.country" style="width:100%">
-                <a-select-option value="US">美国 US</a-select-option>
-                <a-select-option value="DE">德国 DE</a-select-option>
-                <a-select-option value="UK">英国 UK</a-select-option>
-                <a-select-option value="CA">加拿大 CA</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="面值">
-              <a-select v-model:value="importForm.face_value_usd" style="width:100%">
-                <a-select-option v-for="v in faceValueOptions" :key="v" :value="v">{{ v }}</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="12">
-          <a-col :span="12"><a-form-item label="供应商"><a-input v-model:value="importForm.supplier" placeholder="供应商名称" /></a-form-item></a-col>
-          <a-col :span="12"><a-form-item label="购买汇率"><a-input-number v-model:value="importForm.exchange_rate" :min="1" :precision="4" style="width:100%" /></a-form-item></a-col>
-        </a-row>
-        <a-row :gutter="12">
-          <a-col :span="12"><a-form-item label="实际成本（每张，CNY）"><a-input-number v-model:value="importForm.actual_cost" :min="0" :precision="2" style="width:100%" placeholder="选填" /></a-form-item></a-col>
-          <a-col :span="12">
-            <a-form-item label="批次备注（选填）"><a-input v-model:value="importForm.notes" placeholder="如：第一批 / 测试批次" /></a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="卡号列表（每行一张，格式: 卡号,卡密）">
-          <a-textarea v-model:value="importForm.text" :rows="8" placeholder="B001234567890,ABCD1234EF&#10;B009876543210,WXYZ5678GH" />
+        <a-alert
+          type="info"
+          show-icon
+          message="请上传 CSV/TSV 表格，表头支持：国家/country、面值/face_value_usd、卡号/card_number、卡密/card_code、供应商/supplier、购买汇率/exchange_rate、实际成本/actual_cost、备注/notes。"
+          style="margin-bottom:14px"
+        />
+        <a-form-item label="上传表格">
+          <a-upload
+            accept=".csv,.tsv,.txt"
+            :max-count="1"
+            :before-upload="handleImportFile"
+            @remove="clearImportFile"
+          >
+            <a-button><UploadOutlined /> 选择表格文件</a-button>
+          </a-upload>
         </a-form-item>
-        <div class="import-preview" v-if="importForm.text.trim()">
-          预计导入 <strong>{{ importForm.text.split('\n').filter(l => l.trim()).length }}</strong> 张
+        <div class="import-preview" v-if="importForm.rows.length">
+          已解析 <strong>{{ importForm.rows.length }}</strong> 张
           — 生成批次号 <span class="batch-tag">{{ previewBatchNo }}</span>
         </div>
       </a-form>
@@ -307,7 +310,7 @@
         <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="国家">
-              <a-select v-model:value="singleForm.country" style="width:100%">
+              <a-select v-model:value="singleForm.country" style="width:100%" @change="refreshSingleCardNumber">
                 <a-select-option value="US">美国 US</a-select-option>
                 <a-select-option value="DE">德国 DE</a-select-option>
                 <a-select-option value="UK">英国 UK</a-select-option>
@@ -317,13 +320,11 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="面值">
-              <a-select v-model:value="singleForm.face_value_usd" style="width:100%">
-                <a-select-option v-for="v in faceValueOptions" :key="v" :value="v">{{ v }}</a-select-option>
-              </a-select>
+              <a-input-number v-model:value="singleForm.face_value_usd" :min="0" :precision="2" style="width:100%" placeholder="填写面值" />
             </a-form-item>
           </a-col>
         </a-row>
-        <a-form-item label="卡号"><a-input v-model:value="singleForm.card_number" placeholder="礼品卡号" /></a-form-item>
+        <a-form-item label="卡号"><a-input :value="singlePreviewCardNumber" disabled placeholder="系统自动生成" /></a-form-item>
         <a-form-item label="卡密"><a-input v-model:value="singleForm.card_code" placeholder="礼品卡密" /></a-form-item>
         <a-row :gutter="12">
           <a-col :span="12"><a-form-item label="供应商"><a-input v-model:value="singleForm.supplier" placeholder="供应商" /></a-form-item></a-col>
@@ -338,7 +339,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, defineComponent, h } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, ImportOutlined, EyeOutlined, EyeInvisibleOutlined, CopyOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ImportOutlined, EyeOutlined, EyeInvisibleOutlined, CopyOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 
@@ -383,6 +384,45 @@ const countryColor: Record<string, string> = { US: 'blue', DE: 'orange', UK: 'cy
 const countryLabel: Record<string, string> = { US: '美国 US', DE: '德国 DE', UK: '英国 UK', CA: '加拿大 CA' }
 const statusColor: Record<string, string> = { '未使用': 'green', '已使用': 'default', '已作废': 'red' }
 const faceValueOptions = [1, 2, 3, 5, 10, 11, 15, 20, 25, 30, 50, 100]
+const mockImportBatches = [
+  {
+    id: 'mock-batch-mixed-1',
+    batch_no: 'GC-20260520-US-101',
+    country: 'US',
+    face_value_summary: '$5 x 20 / $10 x 30 / $25 x 12',
+    card_count: 62,
+    supplier: 'Demo Gift Supplier',
+    exchange_rate: 7.25,
+    actual_cost: 0,
+    total_cost: 4582.5,
+    notes: 'mock：批量导入，多面值混合',
+    created_at: dayjs().subtract(2, 'hour').toISOString(),
+    _isMock: true,
+    _mockCards: [
+      { id: 'mock-card-1', card_number: 'GC-US-MOCK-0001', card_code: 'MOCK-CODE-0001', status: '未使用', used_at: '', used_by_buyer_name: '' },
+      { id: 'mock-card-2', card_number: 'GC-US-MOCK-0002', card_code: 'MOCK-CODE-0002', status: '未使用', used_at: '', used_by_buyer_name: '' },
+      { id: 'mock-card-3', card_number: 'GC-US-MOCK-0003', card_code: 'MOCK-CODE-0003', status: '已使用', used_at: dayjs().subtract(1, 'hour').toISOString(), used_by_buyer_name: '买手-Amy' },
+    ],
+  },
+  {
+    id: 'mock-batch-mixed-2',
+    batch_no: 'GC-20260519-DE-038',
+    country: 'DE',
+    face_value_summary: '€10 x 16 / €15 x 10 / €20 x 8',
+    card_count: 34,
+    supplier: 'EU Card Hub',
+    exchange_rate: 7.82,
+    actual_cost: 0,
+    total_cost: 5014.2,
+    notes: 'mock：批量导入，多面值混合',
+    created_at: dayjs().subtract(1, 'day').toISOString(),
+    _isMock: true,
+    _mockCards: [
+      { id: 'mock-card-4', card_number: 'GC-DE-MOCK-0001', card_code: 'DEMO-DE-0001', status: '未使用', used_at: '', used_by_buyer_name: '' },
+      { id: 'mock-card-5', card_number: 'GC-DE-MOCK-0002', card_code: 'DEMO-DE-0002', status: '未使用', used_at: '', used_by_buyer_name: '' },
+    ],
+  },
+]
 
 // ── Reactive state ────────────────────────────────────────────────────────
 const specsLoading = ref(false)
@@ -419,6 +459,7 @@ const drawerPagination = ref({ current: 1, pageSize: 20, total: 0, showSizeChang
 const batches = ref<any[]>([])
 const batchPagination = ref({ current: 1, pageSize: 20, total: 0 })
 const batchFilterCountry = ref('')
+const batchSearch = ref('')
 const batchDateRange = ref<any>(null)
 const activeBatch = ref<any>(null)
 const batchDetailCards = ref<any[]>([])
@@ -436,7 +477,7 @@ const activeReplaceCard = ref<any>(null)
 
 const voidForm = reactive({ reason: '' })
 const replaceForm = reactive({ card_number: '', card_code: '', exchange_rate: 7.25, actual_cost: null as number | null })
-const importForm = reactive({ country: 'US', face_value_usd: 10, supplier: '', exchange_rate: 7.25, actual_cost: null as number | null, notes: '', text: '' })
+const importForm = reactive({ fileName: '', rows: [] as any[] })
 const singleForm = reactive({ country: 'US', face_value_usd: 10, card_number: '', card_code: '', supplier: '', exchange_rate: 7.25, actual_cost: null as number | null })
 
 // ── Computed ──────────────────────────────────────────────────────────────
@@ -448,6 +489,16 @@ const previewBatchNo = computed(() => {
   const d = dayjs().format('YYYYMMDD')
   return `GC-${d}-XXX`
 })
+const singlePreviewCardNumber = computed(() => singleForm.card_number || generateGiftCardNumber(singleForm.country))
+
+function openSingleImport() {
+  singleForm.card_number = generateGiftCardNumber(singleForm.country)
+  singleImportOpen.value = true
+}
+
+function refreshSingleCardNumber() {
+  singleForm.card_number = generateGiftCardNumber(singleForm.country)
+}
 
 function filteredSpecs(mode: 'available' | 'used' | 'voided') {
   return specs.value.filter(s => {
@@ -463,6 +514,52 @@ function filteredSpecs(mode: 'available' | 'used' | 'voided') {
 function currencySymbol(country: string) {
   const map: Record<string, string> = { US: 'USD', DE: 'EUR', UK: 'GBP', CA: 'CAD' }
   return map[country] || ''
+}
+
+function batchFaceValueText(batch: any) {
+  if (!batch) return '-'
+  if (batch.face_value_summary) return batch.face_value_summary
+  if (batch.face_value_usd) return `${batch.face_value_usd} ${currencySymbol(batch.country)}`
+  return '多面值'
+}
+
+function batchTotalCost(batch: any) {
+  const total = Number(batch?._total_cost ?? batch?.total_cost ?? (Number(batch?.actual_cost || 0) * Number(batch?.card_count || 0)))
+  return total.toFixed(2)
+}
+
+async function enrichImportBatches(rows: any[]) {
+  const batchNos = rows.map(row => row.batch_no).filter(Boolean)
+  if (!batchNos.length) return rows
+  const { data } = await supabase
+    .from('gift_cards')
+    .select('batch_no, face_value_usd, actual_cost')
+    .in('batch_no', batchNos)
+  const group = new Map<string, any[]>()
+  ;(data || []).forEach(card => {
+    if (!group.has(card.batch_no)) group.set(card.batch_no, [])
+    group.get(card.batch_no)!.push(card)
+  })
+  return rows.map(row => {
+    const cards = group.get(row.batch_no) || []
+    if (!cards.length) return row
+    const faceCounts = new Map<number, number>()
+    let totalCost = 0
+    cards.forEach(card => {
+      const face = Number(card.face_value_usd || 0)
+      if (face) faceCounts.set(face, (faceCounts.get(face) || 0) + 1)
+      totalCost += Number(card.actual_cost || 0)
+    })
+    const face_value_summary = Array.from(faceCounts.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([face, count]) => `${face} ${currencySymbol(row.country)} x ${count}`)
+      .join(' / ')
+    return {
+      ...row,
+      face_value_summary: face_value_summary || row.face_value_summary,
+      _total_cost: totalCost,
+    }
+  })
 }
 
 // ── Batch number generator ────────────────────────────────────────────────
@@ -483,6 +580,12 @@ async function generateBatchNo(country: string): Promise<string> {
     if (!isNaN(n)) seq = n + 1
   }
   return `${prefix}${String(seq).padStart(3, '0')}`
+}
+
+function generateGiftCardNumber(country = 'US', index = 0) {
+  const stamp = dayjs().format('YYYYMMDDHHmmss')
+  const suffix = `${Date.now().toString(36)}${index ? String(index).padStart(3, '0') : ''}`.toUpperCase()
+  return `GC-${country}-${stamp}-${suffix}`
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────
@@ -564,21 +667,97 @@ async function handleSearch() {
 function clearSearch() { searchCode.value = ''; isSearchMode.value = false; searchResults.value = [] }
 
 // ── Batches ───────────────────────────────────────────────────────────────
+function handleMainTabChange(key: string) {
+  if (key === 'batches') loadBatches()
+}
+
+function batchMatchesSearch(batch: any, keyword: string) {
+  if (!keyword) return true
+  const haystack = [
+    batch.batch_no,
+    ...(batch._mockCards || []).flatMap((card: any) => [card.card_number, card.card_code]),
+  ].join(' ').toLowerCase()
+  return haystack.includes(keyword)
+}
+
+function reloadBatchesFromFirstPage() {
+  batchPagination.value.current = 1
+  loadBatches()
+}
+
+function onBatchSearchChange() {
+  if (!batchSearch.value) reloadBatchesFromFirstPage()
+}
+
+async function loadMatchedBatchNos(keyword: string) {
+  const kw = keyword.trim()
+  if (!kw) return null
+  const like = `%${kw}%`
+  const matched = new Set<string>()
+  const { data: cardRows, error: cardError } = await supabase
+    .from('gift_cards')
+    .select('batch_no')
+    .or(`batch_no.ilike.${like},card_number.ilike.${like},card_code.ilike.${like}`)
+    .not('batch_no', 'is', null)
+    .limit(500)
+  if (cardError) throw cardError
+  ;(cardRows || []).forEach(row => {
+    if (row.batch_no) matched.add(row.batch_no)
+  })
+  const { data: batchRows, error: batchError } = await supabase
+    .from('gift_card_import_batches')
+    .select('batch_no')
+    .ilike('batch_no', like)
+    .limit(500)
+  if (batchError) throw batchError
+  ;(batchRows || []).forEach(row => {
+    if (row.batch_no) matched.add(row.batch_no)
+  })
+  return Array.from(matched)
+}
+
 async function loadBatches() {
   batchLoading.value = true
   try {
+    const keyword = batchSearch.value.trim().toLowerCase()
+    const filteredMock = mockImportBatches.filter(item => {
+      if (batchFilterCountry.value && item.country !== batchFilterCountry.value) return false
+      if (batchDateRange.value?.[0]) {
+        const current = dayjs(item.created_at)
+        if (current.isBefore(batchDateRange.value[0], 'day')) return false
+      }
+      if (batchDateRange.value?.[1]) {
+        const current = dayjs(item.created_at)
+        if (current.isAfter(batchDateRange.value[1], 'day')) return false
+      }
+      return batchMatchesSearch(item, keyword)
+    })
+    const pageStart = (batchPagination.value.current - 1) * batchPagination.value.pageSize
+    const pageEnd = pageStart + batchPagination.value.pageSize
+    const mockPageRows = filteredMock.slice(pageStart, pageEnd)
+    const realStart = Math.max(pageStart - filteredMock.length, 0)
+    const realPageSize = batchPagination.value.pageSize - mockPageRows.length
     let query = supabase.from('gift_card_import_batches')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
     if (batchFilterCountry.value) query = query.eq('country', batchFilterCountry.value)
     if (batchDateRange.value?.[0]) query = query.gte('created_at', batchDateRange.value[0].startOf('day').toISOString())
     if (batchDateRange.value?.[1]) query = query.lte('created_at', batchDateRange.value[1].endOf('day').toISOString())
-    const from = (batchPagination.value.current - 1) * batchPagination.value.pageSize
-    query = query.range(from, from + batchPagination.value.pageSize - 1)
+    const matchedBatchNos = await loadMatchedBatchNos(batchSearch.value)
+    if (matchedBatchNos) {
+      if (!matchedBatchNos.length) {
+        batches.value = mockPageRows
+        batchPagination.value.total = filteredMock.length
+        return
+      }
+      query = query.in('batch_no', matchedBatchNos)
+    }
+    if (realPageSize > 0) query = query.range(realStart, realStart + realPageSize - 1)
+    else query = query.range(0, -1)
     const { data, count, error } = await query
     if (error) throw error
-    batches.value = data || []
-    batchPagination.value.total = count || 0
+    batches.value = [...mockPageRows, ...(await enrichImportBatches(data || []))]
+    batchPagination.value.total = filteredMock.length + (count || 0)
   } finally { batchLoading.value = false }
 }
 
@@ -592,8 +771,12 @@ async function openBatchDetailDrawer(batch: any) {
   batchDrawerOpen.value = true
   batchDetailLoading.value = true
   try {
+    if (batch._isMock) {
+      batchDetailCards.value = (batch._mockCards || []).map((card: any) => ({ ...card, batch_no: batch.batch_no }))
+      return
+    }
     const { data, error } = await supabase.from('gift_cards')
-      .select('id, card_number, card_code, status, used_at, used_by_buyer_name')
+      .select('id, card_number, card_code, status, used_at, used_by_buyer_name, batch_no, face_value_usd')
       .eq('batch_no', batch.batch_no)
       .order('created_at', { ascending: true })
     if (error) throw error
@@ -662,13 +845,13 @@ async function handleVoid() {
 // ── Replace card ──────────────────────────────────────────────────────────
 function openReplaceModal(record: any) {
   activeReplaceCard.value = record
-  replaceForm.card_number = ''; replaceForm.card_code = ''
+  replaceForm.card_number = generateGiftCardNumber(record.country || drawerSpec.value?.country || 'US'); replaceForm.card_code = ''
   replaceForm.exchange_rate = record.exchange_rate || 7.25; replaceForm.actual_cost = null
   replaceModalOpen.value = true
 }
 
 async function handleReplaceCard() {
-  if (!replaceForm.card_number) { message.warning('请输入新卡号'); return }
+  if (!replaceForm.card_number) replaceForm.card_number = generateGiftCardNumber(activeReplaceCard.value?.country || 'US')
   const orig = activeReplaceCard.value
   replacingCard.value = true
   try {
@@ -689,33 +872,160 @@ async function handleReplaceCard() {
 }
 
 // ── Import ────────────────────────────────────────────────────────────────
+function splitTableLine(line: string) {
+  const cells: string[] = []
+  let current = ''
+  let quoted = false
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i]
+    const next = line[i + 1]
+    if (char === '"' && quoted && next === '"') {
+      current += '"'
+      i += 1
+    } else if (char === '"') {
+      quoted = !quoted
+    } else if ((char === ',' || char === '\t') && !quoted) {
+      cells.push(current.trim())
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  cells.push(current.trim())
+  return cells
+}
+
+const importHeaderMap: Record<string, string> = {
+  country: 'country',
+  '国家': 'country',
+  face_value_usd: 'face_value_usd',
+  face_value: 'face_value_usd',
+  amount: 'face_value_usd',
+  '面值': 'face_value_usd',
+  card_number: 'card_number',
+  number: 'card_number',
+  '卡号': 'card_number',
+  card_code: 'card_code',
+  code: 'card_code',
+  '卡密': 'card_code',
+  supplier: 'supplier',
+  '供应商': 'supplier',
+  exchange_rate: 'exchange_rate',
+  rate: 'exchange_rate',
+  '购买汇率': 'exchange_rate',
+  '汇率': 'exchange_rate',
+  actual_cost: 'actual_cost',
+  cost: 'actual_cost',
+  '实际成本': 'actual_cost',
+  notes: 'notes',
+  note: 'notes',
+  '备注': 'notes',
+}
+
+function normalizeImportCountry(value: any) {
+  const text = String(value || 'US').trim().toUpperCase()
+  if (['US', '美国'].includes(text)) return 'US'
+  if (['DE', '德国'].includes(text)) return 'DE'
+  if (['UK', 'GB', '英国'].includes(text)) return 'UK'
+  if (['CA', '加拿大'].includes(text)) return 'CA'
+  return 'US'
+}
+
+function parseImportTable(text: string) {
+  const lines = text.replace(/^\ufeff/, '').split(/\r?\n/).filter(line => line.trim())
+  if (!lines.length) return []
+  const firstCells = splitTableLine(lines[0])
+  const headers = firstCells.map(cell => importHeaderMap[cell.trim().toLowerCase()] || importHeaderMap[cell.trim()] || '')
+  const hasHeader = headers.some(Boolean)
+  const dataLines = hasHeader ? lines.slice(1) : lines
+  return dataLines.map((line, index) => {
+    const cells = splitTableLine(line)
+    const row: any = {}
+    if (hasHeader) {
+      cells.forEach((cell, cellIndex) => {
+        const key = headers[cellIndex]
+        if (key) row[key] = cell
+      })
+    } else {
+      row.card_number = cells[0]
+      row.card_code = cells[1]
+      row.country = cells[2]
+      row.face_value_usd = cells[3]
+    }
+    return {
+      country: normalizeImportCountry(row.country),
+      face_value_usd: Number(row.face_value_usd || 10),
+      card_number: String(row.card_number || generateGiftCardNumber(normalizeImportCountry(row.country), index + 1)).trim(),
+      card_code: String(row.card_code || '').trim(),
+      supplier: String(row.supplier || '').trim(),
+      exchange_rate: Number(row.exchange_rate || 7.25),
+      actual_cost: Number(row.actual_cost || 0),
+      notes: String(row.notes || '').trim(),
+    }
+  }).filter(row => row.card_number || row.card_code)
+}
+
+function handleImportFile(file: File) {
+  const reader = new FileReader()
+  reader.onload = () => {
+    try {
+      importForm.rows = parseImportTable(String(reader.result || ''))
+      importForm.fileName = file.name
+      if (!importForm.rows.length) {
+        message.warning('表格中没有可导入的礼品卡数据')
+      }
+    } catch (e: any) {
+      message.error(`解析表格失败：${e.message || e}`)
+    }
+  }
+  reader.readAsText(file)
+  return false
+}
+
+function clearImportFile() {
+  importForm.fileName = ''
+  importForm.rows = []
+}
+
 async function handleImport() {
-  const lines = importForm.text.split('\n').filter(l => l.trim())
-  if (!lines.length) { message.warning('请输入卡号数据'); return }
+  const rowsToImport = importForm.rows
+  if (!rowsToImport.length) { message.warning('请先上传表格'); return }
   importing.value = true
   try {
-    const batchNo = await generateBatchNo(importForm.country)
-    const { error: batchErr } = await supabase.from('gift_card_import_batches').insert([{
-      batch_no: batchNo, country: importForm.country, face_value_usd: importForm.face_value_usd,
-      supplier: importForm.supplier, exchange_rate: importForm.exchange_rate,
-      actual_cost: importForm.actual_cost ?? 0, card_count: lines.length, notes: importForm.notes,
-    }])
-    if (batchErr) throw batchErr
-    const rows = lines.map(line => {
-      const [card_number, card_code] = line.split(',').map(s => s.trim())
-      return { card_number, card_code: card_code || '', country: importForm.country, face_value_usd: importForm.face_value_usd, supplier: importForm.supplier, exchange_rate: importForm.exchange_rate, actual_cost: importForm.actual_cost ?? 0, status: '未使用', batch_no: batchNo }
+    const batchGroups = new Map<string, any[]>()
+    rowsToImport.forEach(row => {
+      const key = [row.country, row.supplier, row.exchange_rate, row.notes].join('|')
+      if (!batchGroups.has(key)) batchGroups.set(key, [])
+      batchGroups.get(key)!.push(row)
     })
-    const { error } = await supabase.from('gift_cards').insert(rows)
+    const insertedRows: any[] = []
+    for (const groupRows of batchGroups.values()) {
+      const first = groupRows[0]
+      const batchNo = await generateBatchNo(first.country)
+      const { error: batchErr } = await supabase.from('gift_card_import_batches').insert([{
+        batch_no: batchNo, country: first.country, face_value_usd: first.face_value_usd,
+        supplier: first.supplier, exchange_rate: first.exchange_rate,
+        actual_cost: first.actual_cost, card_count: groupRows.length, notes: first.notes,
+      }])
+      if (batchErr) throw batchErr
+      insertedRows.push(...groupRows.map(row => ({
+        card_number: row.card_number, card_code: row.card_code,
+        country: row.country, face_value_usd: row.face_value_usd,
+        supplier: row.supplier, exchange_rate: row.exchange_rate,
+        actual_cost: row.actual_cost, status: '未使用', batch_no: batchNo,
+      })))
+    }
+    const { error } = await supabase.from('gift_cards').insert(insertedRows)
     if (error) throw error
-    message.success(`成功导入 ${rows.length} 张，批次号：${batchNo}`)
-    importOpen.value = false; importForm.text = ''; importForm.notes = ''
+    message.success(`成功导入 ${insertedRows.length} 张`)
+    importOpen.value = false; clearImportFile()
     loadSpecs(); loadStats(); if (mainTab.value === 'batches') loadBatches()
   } catch (e: any) { message.error('导入失败：' + e.message) }
   finally { importing.value = false }
 }
 
 async function handleSingleImport() {
-  if (!singleForm.card_number) { message.warning('请输入卡号'); return }
+  const generatedCardNumber = singleForm.card_number || generateGiftCardNumber(singleForm.country)
   singleImporting.value = true
   try {
     const batchNo = await generateBatchNo(singleForm.country)
@@ -726,7 +1036,7 @@ async function handleSingleImport() {
     }])
     if (batchErr) throw batchErr
     const { error } = await supabase.from('gift_cards').insert([{
-      card_number: singleForm.card_number, card_code: singleForm.card_code,
+      card_number: generatedCardNumber, card_code: singleForm.card_code,
       country: singleForm.country, face_value_usd: singleForm.face_value_usd,
       supplier: singleForm.supplier, exchange_rate: singleForm.exchange_rate,
       actual_cost: singleForm.actual_cost ?? 0, status: '未使用', batch_no: batchNo,
@@ -764,7 +1074,6 @@ const specColumnsVoided = [
 const batchColumns = [
   { title: '批次号', key: 'batch_no', width: 200 },
   { title: '国家', key: 'country', width: 100 },
-  { title: '面值', key: 'face_value_usd', width: 100 },
   { title: '数量', dataIndex: 'card_count', key: 'card_count', width: 70 },
   { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 100 },
   { title: '汇率', dataIndex: 'exchange_rate', key: 'exchange_rate', width: 80 },
@@ -781,9 +1090,8 @@ const batchDetailColumns = [
   { title: '买手', dataIndex: 'used_by_buyer_name', key: 'buyer', width: 100 },
 ]
 const detailAvailableColumns = [
-  { title: '卡号', key: 'card_number', width: 200 },
+  { title: '卡号 / 批次', key: 'card_number', width: 240 },
   { title: '卡密', key: 'card_code', width: 200 },
-  { title: '批次号', key: 'batch_no', width: 160 },
   { title: '入库时间', key: 'created_at', width: 100 },
   { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 100 },
   { title: '汇率', dataIndex: 'exchange_rate', key: 'exchange_rate', width: 80 },
@@ -791,20 +1099,18 @@ const detailAvailableColumns = [
   { title: '操作', key: 'action', width: 70, fixed: 'right' as const },
 ]
 const detailUsedColumns = [
-  { title: '卡号', key: 'card_number', width: 180 },
+  { title: '卡号 / 批次', key: 'card_number', width: 230 },
   { title: '卡密', key: 'card_code', width: 180 },
-  { title: '批次号', key: 'batch_no', width: 150 },
   { title: '使用日期', key: 'used_at', width: 120 },
   { title: '关联子订单', key: 'sub_order', width: 120 },
   { title: '买手', key: 'buyer', width: 100 },
-  { title: '领用操作人', key: 'used_by_operator', width: 100 },
-  { title: '退款操作人', key: 'refund_operator', width: 110 },
+  { title: '业务员', key: 'used_by_operator', width: 100 },
+  { title: '操作人', key: 'refund_operator', width: 110 },
   { title: '操作', key: 'action', width: 80, fixed: 'right' as const },
 ]
 const detailVoidedColumns = [
-  { title: '卡号', key: 'card_number', width: 210 },
+  { title: '卡号 / 批次', key: 'card_number', width: 250 },
   { title: '卡密', key: 'card_code', width: 210 },
-  { title: '批次号', key: 'batch_no', width: 160 },
   { title: '入库时间', key: 'created_at', width: 100 },
   { title: '供应商', dataIndex: 'supplier', key: 'supplier', width: 100 },
   { title: '作废原因', dataIndex: 'void_reason', key: 'void_reason', width: 140 },
@@ -853,6 +1159,7 @@ onMounted(() => { loadStats(); loadSpecs() })
 .count-used { color: #595959; font-weight: 600; }
 
 .batch-tag { background: #e6f4ff; color: #1677ff; border: 1px solid #91caff; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: monospace; white-space: nowrap; }
+.batch-sub { margin-top: 2px; }
 
 .import-preview { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: #389e0d; margin-top: 4px; }
 

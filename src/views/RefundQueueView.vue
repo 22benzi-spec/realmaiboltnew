@@ -3,7 +3,7 @@
     <h1 class="page-title">付款审批</h1>
 
     <a-tabs v-model:activeKey="activeTab" @change="handleTabChange">
-      <a-tab-pane key="paypal" tab="贝宝返款" />
+      <a-tab-pane key="paypal" tab="PayPal 返款" />
       <a-tab-pane key="gift" tab="礼品卡返款" />
       <a-tab-pane key="other" tab="其他付款" />
     </a-tabs>
@@ -57,7 +57,7 @@
       </div>
 
       <div v-if="activeTab === 'paypal'" class="queue-hint">
-        <span>先在顶部选择我方转款贝宝邮箱，再针对子订单点击「返款」即可处理。</span>
+        <span>先在顶部选择我方转款 PayPal 邮箱，再针对子订单点击「返款」即可处理。</span>
       </div>
       <div v-if="activeTab === 'gift'" class="queue-hint">
         <span>点击「礼品卡返款」会弹出抽屉，展示礼品卡剩余库存和推荐返款面值组合。</span>
@@ -122,7 +122,7 @@
             <div v-if="activeTab === 'other' && getOtherUsdAmount(record) > 0" class="cell-product-price">
               USD ${{ money(getOtherUsdAmount(record)) }} / 汇率 {{ formatExchangeRate(getOtherExchangeRate(record)) }}
             </div>
-            <div v-else-if="record.product_price" class="cell-product-price">产品售价 ${{ money(record.product_price) }}</div>
+            <div v-else-if="getActualPaidAmount(record)" class="cell-product-price">实付金额 ${{ money(getActualPaidAmount(record)) }}</div>
           </template>
           <template v-if="column.key === 'refund_category'">
             <div class="type-stack">
@@ -268,7 +268,7 @@
               <span class="detail-val">{{ fmtTime(currentRequest.handled_at) }}</span>
             </div>
             <div v-if="currentRequest.assigned_paypal_email" class="detail-item">
-              <span class="detail-label">付款贝宝</span>
+              <span class="detail-label">付款 PayPal</span>
               <span class="detail-val mono">{{ currentRequest.assigned_paypal_email }}</span>
             </div>
             <div v-if="currentRequest.assigned_gift_card_number" class="detail-item full">
@@ -300,7 +300,7 @@
 
     <a-modal
       v-model:open="paypalProcessOpen"
-      :title="paypalModalMode === 'receipt' ? '上传水单' : '贝宝返款'"
+      :title="paypalModalMode === 'receipt' ? '上传水单' : 'PayPal 返款'"
       width="560px"
       :confirm-loading="processing"
       @ok="handlePaypalProcess"
@@ -314,7 +314,7 @@
         <div>买手邮箱：<strong>{{ currentProcessBuyerLabel }}</strong></div>
       </div>
       <a-form layout="vertical">
-        <a-form-item v-if="paypalModalMode !== 'receipt'" label="我方转款贝宝邮箱">
+        <a-form-item v-if="paypalModalMode !== 'receipt'" label="我方转款 PayPal 邮箱">
           <a-select v-model:value="selectedPaypalAccountId" style="width:100%" placeholder="选择公司 PayPal 账号" show-search option-filter-prop="label">
             <a-select-option v-for="acc in paypalAccounts" :key="acc.id" :value="acc.id" :label="acc.email">
               <div>{{ acc.email }}</div>
@@ -674,7 +674,7 @@ const mockPaypalRequests = ref<any[]>([
     product_price: 35,
     status: '已处理',
     notes: '单笔返款示例',
-    finance_notes: '已完成贝宝返款',
+    finance_notes: '已完成 PayPal 返款',
     paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=PayPal+Receipt',
     created_at: dayjs().subtract(1, 'day').hour(11).minute(10).toISOString(),
     handled_at: dayjs().subtract(1, 'day').hour(12).minute(20).toISOString(),
@@ -1179,6 +1179,10 @@ function getAmountValue(record: any) {
   return Number(record.refund_amount_usd || record.refund_amount || 0)
 }
 
+function getActualPaidAmount(record: any) {
+  return Number(record?.actual_paid_usd || record?.actual_paid || record?.product_price || 0)
+}
+
 function formatCurrency(value: any, currency: 'usd' | 'cny' = 'usd') {
   return `${currency === 'cny' ? '￥' : '$'}${money(value)}`
 }
@@ -1503,7 +1507,7 @@ function methodColor(method: string) {
 }
 
 function refundMethodLabel(record: any) {
-  if (record.refund_method === 'PayPal') return '贝宝返款'
+  if (record.refund_method === 'PayPal') return 'PayPal 返款'
   if (record.refund_method === '礼品卡') return '礼品卡返款'
   return '其他付款'
 }
@@ -1702,7 +1706,7 @@ async function exportQueue() {
   try {
     const rows = await fetchQueueExportRecords()
     const filenameMap: Record<string, string> = {
-      paypal: '付款审批_贝宝返款',
+      paypal: '付款审批_PayPal返款',
       gift: '付款审批_礼品卡返款',
       other: '付款审批_其他付款',
     }
@@ -1839,7 +1843,7 @@ function openDetail(record: any) {
 
 function openPaypalProcess(record?: any, useSelection = false) {
   if (!selectedPaypalAccountId.value) {
-    message.warning('请先在顶部选择我方转款贝宝邮箱')
+    message.warning('请先在顶部选择我方转款 PayPal 邮箱')
     return
   }
   const targets = useSelection ? selectedBatchRows.value : (record ? [record] : [])
@@ -1952,7 +1956,7 @@ async function handleOtherSubmit() {
 async function handlePaypalProcess() {
   if (!currentProcessRequests.value.length) return
   if (paypalModalMode.value !== 'receipt' && !selectedPaypalAccountId.value) {
-    message.warning('请选择我方转款贝宝邮箱')
+    message.warning('请选择我方转款 PayPal 邮箱')
     return
   }
 
@@ -2020,7 +2024,7 @@ async function handlePaypalProcess() {
 
     clearBatchSelection()
     currentProcessRequests.value = []
-    message.success(paypalModalMode.value === 'receipt' ? '水单已更新' : `贝宝返款已处理，合计 $${money(total)}`)
+    message.success(paypalModalMode.value === 'receipt' ? '水单已更新' : `PayPal 返款已处理，合计 $${money(total)}`)
     paypalProcessOpen.value = false
     await load()
   } catch (e: any) {

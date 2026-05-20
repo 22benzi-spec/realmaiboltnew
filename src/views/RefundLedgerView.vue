@@ -25,6 +25,10 @@
           </div>
           <div class="toolbar">
             <a-range-picker v-model:value="gcDateRange" style="width:240px" @change="reloadGiftCardFromFirstPage" allow-clear />
+            <a-select v-model:value="gcReturnFilter" style="width:130px" allow-clear placeholder="回流状态" @change="reloadGiftCardFromFirstPage">
+              <a-select-option value="yes">是</a-select-option>
+              <a-select-option value="no">否</a-select-option>
+            </a-select>
             <a-input-search v-model:value="gcSearch" placeholder="搜索买手/子订单/产品" style="width:220px" allow-clear @search="reloadGiftCardFromFirstPage" />
             <a-button @click="reloadGiftCardFromFirstPage"><ReloadOutlined /></a-button>
             <a-button @click="exportLedger('giftcard')">导出</a-button>
@@ -154,7 +158,7 @@
           </div>
           <div class="stat-card highlight-green">
             <div class="stat-num green">{{ ppStats.resubmitted }}</div>
-            <div class="stat-label">已追加水单 / 重新申请</div>
+            <div class="stat-label">重新申请</div>
           </div>
         </div>
 
@@ -268,7 +272,7 @@
               <template v-if="column.key === 'action'">
                 <a-space size="small" wrap>
                   <a-button
-                    v-if="record._isMock && record.refund_status === '返款失败' && !record.buyer_paypal_resubmitted"
+                    v-if="record._isMock && isPaypalRefundFailed(record.refund_status) && !record.buyer_paypal_resubmitted"
                     type="primary"
                     size="small"
                     @click="openBuyerPaypalChange(record)"
@@ -305,16 +309,12 @@
           <a-input v-model:value="actionForm.buyerPaypalEmail" placeholder="buyer@example.com" />
         </a-form-item>
 
-        <a-form-item v-if="actionType === 'ppReceipt'" label="追加说明">
-          <a-input v-model:value="actionForm.reason" placeholder="例如：业务员补充水单，请财务补传" />
+        <a-form-item v-if="actionType === 'ppBuyer'" label="重新申请的返款金额 (USD)">
+          <a-input-number v-model:value="actionForm.correctedAmountUsd" :min="0" :precision="2" style="width:100%" />
         </a-form-item>
 
         <a-form-item v-if="actionType === 'giftReturn'" label="重新提交的返款金额 (USD)">
           <a-input-number v-model:value="actionForm.correctedAmountUsd" :min="0" :precision="2" style="width:100%" />
-        </a-form-item>
-
-        <a-form-item v-if="actionType === 'giftReturn'" label="重新提交说明">
-          <a-input v-model:value="actionForm.reason" placeholder="例如：礼品卡金额填错，回流卡库后重提" />
         </a-form-item>
 
         <a-form-item label="账单备注">
@@ -359,6 +359,7 @@ const activeTab = ref('giftcard')
 const gcLoading = ref(false)
 const gcRecords = ref<any[]>([])
 const gcSearch = ref('')
+const gcReturnFilter = ref('')
 const gcDateRange = ref<any>(null)
 const gcPagination = ref({ current: 1, pageSize: 20, total: 0, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` })
 
@@ -468,7 +469,7 @@ const mockPaypalSeed = [
     assigned_paypal_email: 'finance-us-01@company.com',
     paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=PayPal+Batch',
     handled_at: dayjs().subtract(5, 'hour').toISOString(),
-    finance_notes: '演示：与同买手另一笔一起贝宝返款',
+    finance_notes: '演示：与同买手另一笔一起 PayPal 返款',
     refund_status: '已返款',
     _isMock: true,
   },
@@ -485,7 +486,7 @@ const mockPaypalSeed = [
     assigned_paypal_email: 'finance-us-01@company.com',
     paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=PayPal+Batch',
     handled_at: dayjs().subtract(5, 'hour').toISOString(),
-    finance_notes: '演示：与同买手另一笔一起贝宝返款',
+    finance_notes: '演示：与同买手另一笔一起 PayPal 返款',
     refund_status: '已返款',
     _demo_new: true,
     _isMock: true,
@@ -611,7 +612,7 @@ const actionForm = ref({
   reason: '礼品卡金额填错，已退回礼品卡库后重新提交返款审批',
   notes: '',
 })
-const paypalRefundStatusOptions = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '失误多返']
+const paypalRefundStatusOptions = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '返款失败-本金流失', '失误多返']
 const giftRefundStatusOptions = ['未返款', '返款中', '已返款']
 
 const gcStats = computed(() => {
@@ -628,7 +629,7 @@ const ppStats = computed(() => {
   return {
     count: data.length,
     totalUsd: data.reduce((sum, row) => sum + Number(row.refund_amount_usd || 0), 0),
-    resubmitted: data.filter(row => row.buyer_paypal_resubmitted || row.water_slip_request_pending).length,
+    resubmitted: data.filter(row => row.buyer_paypal_resubmitted).length,
   }
 })
 
@@ -713,9 +714,13 @@ function writeStorageText(key: string, value: string) {
 function refundStatusColor(status: string) {
   if (status === '已返款') return 'green'
   if (status === '返款中') return 'blue'
-  if (status === '返款失败' || status === '失误多返') return 'red'
+  if (isPaypalRefundFailed(status) || status === '失误多返') return 'red'
   if (status === 'On Hold') return 'gold'
   return 'default'
+}
+
+function isPaypalRefundFailed(status: string) {
+  return status === '返款失败' || status === '返款失败-本金流失'
 }
 
 function fmtTime(t: string | null) {
@@ -912,8 +917,9 @@ async function fetchGiftLedgerExportRecords() {
   }
   const { data, error } = await query
   if (error) throw error
+  const realRows = gcReturnFilter.value === 'yes' ? [] : (data || [])
   return annotateBatchDisplay(
-    await enrichBuyerMeta([...filteredMock, ...((data || []).map(item => ({ ...item, _isMock: false })))]),
+    await enrichBuyerMeta([...filteredMock, ...(realRows.map(item => ({ ...item, _isMock: false })))]),
     'giftcard',
   )
 }
@@ -1013,8 +1019,8 @@ function changeRefundStatus(type: 'paypal' | 'giftcard', record: any, status: st
       ? {
           ...item,
           refund_status: status,
-          finance_notes: status === '返款失败'
-            ? [item.finance_notes, '返款状态已改为返款失败，业务员可重新申请'].filter(Boolean).join('；')
+          finance_notes: isPaypalRefundFailed(status)
+            ? [item.finance_notes, `返款状态已改为${status}，业务员可重新申请`].filter(Boolean).join('；')
             : item.finance_notes,
         }
       : item
@@ -1102,6 +1108,8 @@ function filterGiftMockRecords() {
       const haystack = [item.buyer_name, item.chat_account, item.sub_order_number, item.product_name].join(' ').toLowerCase()
       if (!haystack.includes(kw)) return false
     }
+    if (gcReturnFilter.value === 'yes' && !hasGiftReturnTrail(item)) return false
+    if (gcReturnFilter.value === 'no' && hasGiftReturnTrail(item)) return false
     return true
   })
 }
@@ -1144,14 +1152,15 @@ async function loadGiftCardRefunds() {
     else query = query.range(0, -1)
     const { data, count, error } = await query
     if (error) throw error
+    const realRows = gcReturnFilter.value === 'yes' ? [] : (data || [])
     gcRecords.value = annotateNewFlags(
       annotateBatchDisplay(
-        await enrichBuyerMeta([...mockPageRows, ...((data || []).map(item => ({ ...item, _isMock: false })) )]),
+        await enrichBuyerMeta([...mockPageRows, ...(realRows.map(item => ({ ...item, _isMock: false })) )]),
         'giftcard',
       ),
       'giftcard',
     )
-    gcPagination.value.total = (count || 0) + mockCount
+    gcPagination.value.total = (gcReturnFilter.value === 'yes' ? 0 : (count || 0)) + mockCount
   } finally {
     gcLoading.value = false
   }
@@ -1166,7 +1175,7 @@ async function loadGiftCardStats() {
     .eq('refund_method', '礼品卡')
   query = buildDateFilter(query, 'handled_at', gcDateRange.value)
   const { data } = await query
-  gcAllStats.value = [...filteredMock, ...(data || [])]
+  gcAllStats.value = [...filteredMock, ...(gcReturnFilter.value === 'yes' ? [] : (data || []))]
 }
 
 async function loadPaypalRefunds() {
@@ -1266,7 +1275,7 @@ function openGiftReturn(record: any) {
     companyPaypalEmail: '',
     buyerPaypalEmail: '',
     correctedAmountUsd: Number(record.refund_amount_usd || 0),
-    reason: '礼品卡金额填错，已退回礼品卡库后重新提交返款审批',
+    reason: '',
     notes: '',
   }
   actionOpen.value = true
@@ -1285,15 +1294,21 @@ async function submitLedgerAction() {
         message.warning('请填写新的买手 PayPal')
         return
       }
+      if (!actionForm.value.correctedAmountUsd || Number(actionForm.value.correctedAmountUsd) <= 0) {
+        message.warning('请填写重新申请的返款金额')
+        return
+      }
       const newEmail = actionForm.value.buyerPaypalEmail.trim()
+      const correctedAmountUsd = Number(actionForm.value.correctedAmountUsd || 0)
       const resubmitId = `mock-paypal-resub-${Date.now()}`
       mockPaypalLedgerRecords.value = mockPaypalLedgerRecords.value.map(item =>
         item.id === actionRecord.value.id
           ? {
               ...item,
               buyer_paypal_email: newEmail,
+              refund_amount_usd: correctedAmountUsd,
               buyer_paypal_resubmitted: true,
-              finance_notes: [item.finance_notes, `已重新申请，新买手贝宝：${newEmail}`, actionForm.value.notes].filter(Boolean).join('；'),
+              finance_notes: [item.finance_notes, `已重新申请，新买手贝宝：${newEmail}，返款金额：$${money(correctedAmountUsd)}`, actionForm.value.notes].filter(Boolean).join('；'),
               updated_at: now,
             }
           : item,
@@ -1310,17 +1325,17 @@ async function submitLedgerAction() {
         store_name: '账单重提',
         staff_name: '财务重提',
         refund_method: 'PayPal',
-        refund_amount_usd: Number(actionRecord.value.refund_amount_usd || 0),
-        product_price: Number(actionRecord.value.refund_amount_usd || 0),
+        refund_amount_usd: correctedAmountUsd,
+        product_price: correctedAmountUsd,
         status: '待处理',
-        notes: `返款账单重新申请：买手 PayPal 已修改。${actionForm.value.notes || ''}`.trim(),
+        notes: `返款账单重新申请：买手 PayPal 已修改，返款金额 $${money(correctedAmountUsd)}。${actionForm.value.notes || ''}`.trim(),
         finance_notes: '',
         paypal_receipt_screenshot: '',
         request_type: 'correction',
         created_at: now,
         handled_at: null,
       })
-      message.success('已重新提交到返款审批中的贝宝返款')
+      message.success('已重新提交到返款审批中的 PayPal 返款')
     } else if (actionType.value === 'ppReceipt') {
       const resubmitId = `mock-paypal-receipt-${Date.now()}`
       mockPaypalLedgerRecords.value = mockPaypalLedgerRecords.value.map(item =>
@@ -1328,7 +1343,7 @@ async function submitLedgerAction() {
           ? {
               ...item,
               water_slip_request_pending: true,
-              water_slip_request_note: actionForm.value.reason || '业务员已发起追加水单申请',
+              water_slip_request_note: '业务员已发起追加水单申请',
               finance_notes: [item.finance_notes, '已申请追加水单', actionForm.value.notes].filter(Boolean).join('；'),
               updated_at: now,
             }
@@ -1349,7 +1364,7 @@ async function submitLedgerAction() {
         refund_amount_usd: Number(actionRecord.value.refund_amount_usd || 0),
         product_price: Number(actionRecord.value.refund_amount_usd || 0),
         status: '待处理',
-        notes: `${actionForm.value.reason || '补水单'} [需财务水单] [仅补水单无需重新打款] ${actionForm.value.notes || ''}`.trim(),
+        notes: `补水单 [需财务水单] [仅补水单无需重新打款] ${actionForm.value.notes || ''}`.trim(),
         finance_notes: '',
         paypal_receipt_screenshot: '',
         request_type: 'screenshot',
@@ -1375,7 +1390,7 @@ async function submitLedgerAction() {
               gift_returned_at: item.gift_returned_at || now,
               assigned_gift_card_number: '',
               assigned_gift_card_code: '已重新提交，待财务重新选卡',
-              finance_notes: [item.finance_notes, `已重新提交 $${money(actionForm.value.correctedAmountUsd)}`, actionForm.value.reason, actionForm.value.notes].filter(Boolean).join('；'),
+              finance_notes: [item.finance_notes, `已重新提交 $${money(actionForm.value.correctedAmountUsd)}`, actionForm.value.notes].filter(Boolean).join('；'),
               updated_at: now,
             }
           : item,
@@ -1394,7 +1409,7 @@ async function submitLedgerAction() {
         refund_amount_usd: Number(actionForm.value.correctedAmountUsd || 0),
         product_price: Number(actionForm.value.correctedAmountUsd || 0),
         status: '待处理',
-        notes: `返款账单重新提交：原礼品卡 ${returnedCardNumber} 已回流卡库。${actionForm.value.reason || ''}`.trim(),
+        notes: `返款账单重新提交：原礼品卡 ${returnedCardNumber} 已回流卡库。${actionForm.value.notes || ''}`.trim(),
         finance_notes: '',
         request_type: 'correction',
         created_at: now,
