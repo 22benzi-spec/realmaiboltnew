@@ -324,7 +324,7 @@
           <div v-if="detailRecord.offset_source_note" class="detail-source-note">
             {{ detailRecord.offset_source_note }}
           </div>
-          <div v-if="getDetailBreakdownRows(detailRecord).length" class="breakdown-table" :class="{ 'breakdown-table-offset': hasOffsetPart(detailRecord), 'breakdown-table-settlement': hasSettlementPart(detailRecord) }">
+          <div v-if="getDetailBreakdownRows(detailRecord).length && !hasOffsetPart(detailRecord)" class="breakdown-table" :class="{ 'breakdown-table-settlement': hasSettlementPart(detailRecord) }">
             <div class="breakdown-table-head">
               <span>新任务ID</span>
               <span v-if="hasSettlementPart(detailRecord)">结算方向</span>
@@ -344,20 +344,27 @@
           </div>
           <div v-if="hasOffsetPart(detailRecord)" class="offset-source-table">
             <div class="offset-source-title">抵消来源明细</div>
-            <div class="offset-source-head">
+            <div class="offset-source-head offset-source-head-simple">
               <span>抵消任务ID</span>
-              <span>对应类型</span>
-              <span>对应单量</span>
               <span>抵消金额</span>
             </div>
-            <div v-for="(row, index) in getOffsetSourceRows(detailRecord)" :key="index" class="offset-source-row">
+            <div v-for="(row, index) in getOffsetSourceRows(detailRecord)" :key="index" class="offset-source-row offset-source-row-simple">
               <span class="mono">{{ row.sourceOrderId || '-' }}</span>
-              <span>{{ row.businessType || '-' }}</span>
-              <span>{{ row.orderCount }} 单</span>
               <strong>¥{{ formatNum(row.amountCny) }}</strong>
             </div>
           </div>
-          <div v-if="!getDetailBreakdownRows(detailRecord).length" class="detail-empty">暂无拆分明细</div>
+          <div v-if="hasOffsetPart(detailRecord)" class="offset-source-table">
+            <div class="offset-source-title">抵消业务明细</div>
+            <div class="offset-source-head offset-source-head-simple">
+              <span>类型</span>
+              <span>单量</span>
+            </div>
+            <div v-for="(row, index) in getOffsetBusinessPairRows(detailRecord)" :key="index" class="offset-source-row offset-source-row-simple">
+              <span>{{ row.businessType || '-' }}</span>
+              <strong>{{ row.orderCount }} 单</strong>
+            </div>
+          </div>
+          <div v-if="!getDetailBreakdownRows(detailRecord).length && !hasOffsetPart(detailRecord)" class="detail-empty">暂无拆分明细</div>
         </div>
 
         <div v-if="detailRecord.notes" class="detail-card">
@@ -627,18 +634,66 @@ function getOffsetRows(record: any) {
 }
 
 function getOffsetSourceRows(record: any) {
-  const map = getOffsetRows(record).reduce((acc: Record<string, { sourceOrderId: string; businessType: string; orderCount: number; amountCny: number }>, item: any) => {
+  const fromNotes = parseOffsetSourceRows(record?.notes)
+  if (fromNotes.length) return fromNotes
+  const map = getOffsetRows(record).reduce((acc: Record<string, { sourceOrderId: string; amountCny: number }>, item: any) => {
     const sourceOrderId = getBreakdownSourceOrderId(item)
-    const type = normalizeBusinessType(item.source_business_type || item.offset_business_type || item.business_type) || '未分类'
-    const key = `${sourceOrderId}__${type}`
+    const key = sourceOrderId || '未填写'
     if (!acc[key]) {
-      acc[key] = { sourceOrderId, businessType: type, orderCount: 0, amountCny: 0 }
+      acc[key] = { sourceOrderId, amountCny: 0 }
     }
-    acc[key].orderCount += Number(item.source_order_count || item.offset_order_count || item.order_count || 0)
     acc[key].amountCny += Number(item.amount_cny || 0)
     return acc
   }, {})
   return Object.values(map)
+}
+
+function getOffsetBusinessPairRows(record: any) {
+  const fromNotes = parseOffsetBusinessPairRows(record?.notes)
+  if (fromNotes.length) return fromNotes
+  const map = getOffsetRows(record).reduce((acc: Record<string, { businessType: string; orderCount: number }>, item: any) => {
+    const type = normalizeBusinessType(item.source_business_type || item.offset_business_type || item.business_type) || '未分类'
+    if (!acc[type]) {
+      acc[type] = { businessType: type, orderCount: 0 }
+    }
+    acc[type].orderCount += Number(item.source_order_count || item.offset_order_count || item.order_count || 0)
+    return acc
+  }, {})
+  return Object.values(map)
+}
+
+function parseOffsetSourceRows(notes: any) {
+  const section = extractNoteSection(notes, '抵消来源')
+  if (!section) return []
+  return section.split(/[、,，]/)
+    .map(item => item.trim())
+    .map((item) => {
+      const match = item.match(/^(.+?)\s*[¥￥]\s*([0-9]+(?:\.[0-9]+)?)/)
+      return match
+        ? { sourceOrderId: match[1].trim(), amountCny: Number(match[2] || 0) }
+        : null
+    })
+    .filter(Boolean) as Array<{ sourceOrderId: string; amountCny: number }>
+}
+
+function parseOffsetBusinessPairRows(notes: any) {
+  const section = extractNoteSection(notes, '抵消明细')
+  if (!section) return []
+  return section.split(/[、,，]/)
+    .map(item => item.trim())
+    .map((item) => {
+      const match = item.match(/^(.+?)([0-9]+(?:\.[0-9]+)?)\s*单$/)
+      return match
+        ? { businessType: normalizeBusinessType(match[1]), orderCount: Number(match[2] || 0) }
+        : null
+    })
+    .filter(Boolean) as Array<{ businessType: string; orderCount: number }>
+}
+
+function extractNoteSection(notes: any, label: string) {
+  const raw = String(notes || '')
+  const match = raw.match(new RegExp(`${label}\\s*:\\s*([^|]+)`))
+  return match ? match[1].trim() : ''
 }
 
 function getOrderIds(record: any) {
@@ -1456,13 +1511,8 @@ onMounted(() => {
 .breakdown-table { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
 .breakdown-table-head,
 .breakdown-table-row { display: grid; grid-template-columns: 1.5fr .85fr .85fr 58px; gap: 8px; align-items: center; padding: 9px 10px; }
-.breakdown-table-offset .breakdown-table-head,
-.breakdown-table-offset .breakdown-table-row,
-.breakdown-table-offset .breakdown-table-head { grid-template-columns: 1.5fr .85fr .85fr 58px; }
 .breakdown-table-settlement .breakdown-table-head,
 .breakdown-table-settlement .breakdown-table-row { grid-template-columns: 1.25fr 88px .75fr .75fr 58px; }
-.breakdown-table-offset.breakdown-table-settlement .breakdown-table-head,
-.breakdown-table-offset.breakdown-table-settlement .breakdown-table-row { grid-template-columns: 1.25fr 88px .75fr .75fr 58px; }
 .breakdown-table-head { background: #f8f9fb; color: #6b7280; font-size: 12px; font-weight: 600; }
 .breakdown-table-row { color: #374151; font-size: 12px; border-top: 1px solid #f0f0f0; }
 .breakdown-table-row strong { color: #1a1a2e; text-align: right; }
@@ -1470,6 +1520,8 @@ onMounted(() => {
 .offset-source-title { padding: 10px 12px; background: #eff6ff; color: #1d4ed8; font-size: 13px; font-weight: 700; border-bottom: 1px solid #bfdbfe; }
 .offset-source-head,
 .offset-source-row { display: grid; grid-template-columns: 1.4fr 1fr 76px 96px; gap: 8px; align-items: center; padding: 9px 10px; }
+.offset-source-head-simple,
+.offset-source-row-simple { grid-template-columns: minmax(0, 1fr) 120px; }
 .offset-source-head { background: #f8f9fb; color: #6b7280; font-size: 12px; font-weight: 600; }
 .offset-source-row { color: #374151; font-size: 12px; border-top: 1px solid #f0f0f0; }
 .offset-source-row strong { color: #1a1a2e; text-align: right; }

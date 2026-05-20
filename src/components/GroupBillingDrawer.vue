@@ -263,55 +263,103 @@
           {{ batchRecordMode === 'refund' ? '退款将生成待审批流水，需财务审批后执行' : '账面抵消不产生实际到账，但会进入交易流水用于对账' }}
         </div>
         <div class="batch-record-summary">
-          本次{{ batchRecordMode === 'refund' ? '退款' : batchRecordMode === 'offset' ? '账面抵消' : '补款' }}
+          本次{{ batchRecordMode === 'refund' ? '退款' : batchRecordMode === 'offset' ? '账面抵消目标' : '补款' }}
           {{ selectedBatchRows.length }} 个订单，合计
           ¥{{ selectedBatchTotal.toFixed(2) }}
         </div>
-        <div class="ar-field">
+        <div v-if="batchRecordMode !== 'offset'" class="offset-inline-action">
+          <span>{{ batchRecordMode === 'refund' ? '如果部分金额已用账面抵消，先录抵消后再提交退款。' : '如果部分金额已用账面抵消，先录抵消后再补款。' }}</span>
+          <a-button size="small" @click="openBatchRecordModal('offset', true)">账面抵消</a-button>
+        </div>
+        <div v-if="batchRecordMode === 'offset'" class="offset-brief-card">
+          <div class="offset-brief-head">
+            <span>抵消来源任务</span>
+            <a-button size="small" @click="addBatchOffsetTaskRow">添加任务</a-button>
+          </div>
+          <div class="offset-business-list">
+            <div v-for="(row, index) in batchRecordForm.offset_task_rows" :key="index" class="offset-business-row">
+              <a-input v-model:value="row.task_id" size="small" placeholder="任务ID / 订单号" style="flex:1" />
+              <a-input-number v-model:value="row.amount_cny" size="small" :min="0" :precision="2" style="width:120px" placeholder="抵消金额" />
+              <a-button
+                size="small"
+                danger
+                :disabled="batchRecordForm.offset_task_rows.length <= 1"
+                @click="removeBatchOffsetTaskRow(index)"
+              >
+                删除
+              </a-button>
+            </div>
+          </div>
+          <div class="offset-brief-total">抵消来源合计：¥{{ batchOffsetTaskTotal.toFixed(2) }}</div>
+        </div>
+        <div v-if="batchRecordMode !== 'offset'" class="ar-field">
           <label class="ar-label">一级分类</label>
           <a-select v-model:value="batchRecordForm.primary_category" style="width:100%" @change="onBatchRecordPrimaryChange">
             <a-select-option v-for="item in batchRecordPrimaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
           </a-select>
         </div>
-        <div class="ar-field">
+        <div v-if="batchRecordMode !== 'offset'" class="ar-field">
           <label class="ar-label">二级分类</label>
           <a-select v-model:value="batchRecordForm.secondary_categories" mode="multiple" style="width:100%" placeholder="可多选">
             <a-select-option v-for="item in batchRecordSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
           </a-select>
         </div>
-        <div class="ar-field">
-          <label class="ar-label">{{ batchRecordMode === 'refund' ? '退款日期' : batchRecordMode === 'offset' ? '抵消日期' : '补款日期' }} <span class="required">*</span></label>
+        <div v-if="batchRecordMode === 'offset'" class="offset-brief-card">
+          <div class="offset-brief-head">
+            <span>抵消明细</span>
+            <a-button size="small" @click="addBatchOffsetBusinessRow">添加类型</a-button>
+          </div>
+          <div class="offset-business-list">
+            <div v-for="(row, index) in batchRecordForm.offset_business_rows" :key="index" class="offset-business-row">
+              <a-select v-model:value="row.business_type" size="small" placeholder="类型" style="flex:1" show-search>
+                <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
+              </a-select>
+              <a-input-number v-model:value="row.order_count" size="small" :min="1" :precision="0" style="width:110px" placeholder="对应单量" />
+              <a-button
+                size="small"
+                danger
+                :disabled="batchRecordForm.offset_business_rows.length <= 1"
+                @click="removeBatchOffsetBusinessRow(index)"
+              >
+                删除
+              </a-button>
+            </div>
+          </div>
+          <div class="offset-brief-tip">例如：文字对应 3 单，免评对应 1 单。</div>
+        </div>
+        <div v-if="batchRecordMode !== 'offset'" class="ar-field">
+          <label class="ar-label">{{ batchRecordMode === 'refund' ? '退款日期' : '补款日期' }} <span class="required">*</span></label>
           <a-date-picker v-model:value="batchRecordForm.payment_date_picker" style="width:100%" placeholder="选择日期" value-format="YYYY-MM-DD" />
         </div>
-        <div v-if="batchRecordMode === 'offset'" class="ar-field">
-          <label class="ar-label">抵消来源</label>
-          <a-select v-model:value="batchRecordForm.offset_source_type" style="width:100%">
-            <a-select-option value="客户余款抵消">客户余款抵消</a-select-option>
-            <a-select-option value="同事余款抵消">同事余款抵消</a-select-option>
-            <a-select-option value="其他抵消">其他抵消</a-select-option>
-          </a-select>
-        </div>
-        <div class="ar-field">
+        <div v-if="batchRecordMode !== 'offset'" class="ar-field">
           <label class="ar-label">方式</label>
           <a-select v-model:value="batchRecordForm.payment_method" style="width:100%">
-            <a-select-option v-if="batchRecordMode === 'offset'" value="账面抵消">账面抵消</a-select-option>
             <a-select-option value="银行转账">银行转账</a-select-option>
             <a-select-option value="微信">微信</a-select-option>
             <a-select-option value="支付宝">支付宝</a-select-option>
-            <a-select-option value="现金">现金</a-select-option>
             <a-select-option value="其他">其他</a-select-option>
           </a-select>
         </div>
-        <div class="ar-field">
-          <label class="ar-label">{{ batchRecordMode === 'refund' ? '退款对象' : batchRecordMode === 'offset' ? '抵消对象' : '付款人' }}</label>
+        <div v-if="isBatchRefundAccountTransfer" class="refund-account-grid">
+          <div class="ar-field">
+            <label class="ar-label">退款账号</label>
+            <a-input v-model:value="batchRecordForm.refund_account" placeholder="银行账号 / 支付宝账号" />
+          </div>
+          <div class="ar-field">
+            <label class="ar-label">姓氏</label>
+            <a-input v-model:value="batchRecordForm.refund_account_surname" placeholder="收款人姓氏" />
+          </div>
+        </div>
+        <div v-if="batchRecordMode !== 'offset'" class="ar-field">
+          <label class="ar-label">{{ batchRecordMode === 'refund' ? '退款对象' : '付款人' }}</label>
           <a-input v-model:value="batchRecordForm.payer_name" placeholder="姓名" />
         </div>
         <div class="ar-field">
           <label class="ar-label">操作人</label>
           <a-input v-model:value="batchRecordForm.recorded_by" placeholder="录入人" />
         </div>
-        <div class="ar-field">
-          <label class="ar-label">上传凭证</label>
+        <div v-if="batchRecordMode !== 'offset'" class="ar-field">
+          <label class="ar-label">{{ batchRecordMode === 'refund' ? '上传退款二维码' : '上传凭证' }}</label>
           <a-upload
             v-model:file-list="batchRecordFiles"
             list-type="picture-card"
@@ -325,13 +373,9 @@
             </div>
           </a-upload>
         </div>
-        <div class="ar-field">
+        <div v-if="batchRecordMode !== 'offset' || !offsetOpenedFromNestedBatchAction" class="ar-field">
           <label class="ar-label">备注</label>
           <a-textarea v-model:value="batchRecordForm.notes" :rows="2" placeholder="备注（可选）" />
-        </div>
-        <div v-if="batchRecordMode === 'offset'" class="ar-field">
-          <label class="ar-label">来源说明</label>
-          <a-input v-model:value="batchRecordForm.offset_source_note" placeholder="例如：上批任务余款抵消本次" />
         </div>
       </div>
     </a-modal>
@@ -596,7 +640,9 @@ watch(() => props.groupOrders, (val) => {
 const batchRecordModalOpen = ref(false)
 const batchRecordSaving = ref(false)
 const batchRecordMode = ref<'supplement' | 'refund' | 'offset'>('supplement')
+const offsetOpenedFromNestedBatchAction = ref(false)
 const batchRecordFiles = ref<any[]>([])
+const businessTypeOptions = ['文字', '免评', '图片', '视频', 'Feedback']
 
 interface AllocRow {
   orderId: string
@@ -732,12 +778,24 @@ const batchRecordForm = ref({
   secondary_categories: ['补款收入'] as string[],
   payment_date_picker: null as any,
   payment_method: '银行转账',
+  refund_account: '',
+  refund_account_surname: '',
   payer_name: '',
   recorded_by: '',
   offset_source_type: '客户余款抵消',
   offset_source_note: '',
+  offset_related_task_id: '',
+  offset_task_rows: [{ task_id: '', amount_cny: undefined as number | undefined }],
+  offset_business_rows: [{ business_type: '', order_count: undefined as number | undefined }],
   notes: '',
 })
+
+const isBatchRefundAccountTransfer = computed(() =>
+  batchRecordMode.value === 'refund' && ['银行转账', '支付宝'].includes(batchRecordForm.value.payment_method),
+)
+const batchOffsetTaskTotal = computed(() =>
+  batchRecordForm.value.offset_task_rows.reduce((sum: number, row: any) => sum + Number(row.amount_cny || 0), 0),
+)
 
 const selectedBatchRows = computed(() =>
   allocRows.value.filter((row) => {
@@ -769,6 +827,36 @@ function onBatchRecordPrimaryChange() {
   batchRecordForm.value.secondary_categories = nextValues.length
     ? nextValues
     : (batchRecordSecondaryOptions.value[0] ? [batchRecordSecondaryOptions.value[0].value] : [])
+}
+
+function createBatchOffsetBusinessRows() {
+  const firstOrder = selectedBatchRows.value
+    .map(row => orders.value.find(o => o.id === row.orderId))
+    .find(Boolean)
+  const businessDetail = buildOrderBusinessBreakdown(firstOrder, 0)
+  const rows = businessDetail.types.map((type: string) => ({
+    business_type: type,
+    order_count: undefined as number | undefined,
+  }))
+  return rows.length ? rows : [{ business_type: '', order_count: undefined as number | undefined }]
+}
+
+function addBatchOffsetBusinessRow() {
+  batchRecordForm.value.offset_business_rows.push({ business_type: '', order_count: undefined })
+}
+
+function removeBatchOffsetBusinessRow(index: number) {
+  if (batchRecordForm.value.offset_business_rows.length <= 1) return
+  batchRecordForm.value.offset_business_rows.splice(index, 1)
+}
+
+function addBatchOffsetTaskRow() {
+  batchRecordForm.value.offset_task_rows.push({ task_id: '', amount_cny: undefined })
+}
+
+function removeBatchOffsetTaskRow(index: number) {
+  if (batchRecordForm.value.offset_task_rows.length <= 1) return
+  batchRecordForm.value.offset_task_rows.splice(index, 1)
 }
 
 function normalizeBusinessType(value: any) {
@@ -830,8 +918,9 @@ function getBatchRecordOkText() {
   return map[batchRecordMode.value]
 }
 
-function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset') {
+function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset', fromNestedAction = false) {
   batchRecordMode.value = mode
+  offsetOpenedFromNestedBatchAction.value = mode === 'offset' && fromNestedAction
   if (((mode === 'supplement' || mode === 'offset') && allocSupplementTotal.value <= 0) || (mode === 'refund' && allocRefundTotal.value <= 0)) {
     message.warning(mode === 'refund' ? '请至少填写一条退款金额' : '请至少填写一条正向金额')
     return
@@ -842,10 +931,15 @@ function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset') {
     secondary_categories: [mode === 'refund' ? '截单退款' : mode === 'offset' ? '账面抵消' : '补款收入'],
     payment_date_picker: dayjs(),
     payment_method: mode === 'offset' ? '账面抵消' : '银行转账',
+    refund_account: '',
+    refund_account_surname: '',
     payer_name: props.groupData?.customer_name || orders.value[0]?.customer_name || '',
     recorded_by: currentUser.value?.name || '',
     offset_source_type: '客户余款抵消',
     offset_source_note: '',
+    offset_related_task_id: '',
+    offset_task_rows: [{ task_id: '', amount_cny: undefined }],
+    offset_business_rows: createBatchOffsetBusinessRows(),
     notes: '',
   }
   onBatchRecordPrimaryChange()
@@ -854,7 +948,7 @@ function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset') {
 
 async function saveBatchRecord() {
   const mode = batchRecordMode.value
-  if (!batchRecordForm.value.payment_date_picker) {
+  if (mode !== 'offset' && !batchRecordForm.value.payment_date_picker) {
     message.warning('请选择日期')
     return
   }
@@ -870,6 +964,34 @@ async function saveBatchRecord() {
   if (toProcess.length === 0) {
     message.warning(mode === 'refund' ? '请至少填写一条退款金额' : '请至少填写一条正向金额')
     return
+  }
+  const offsetBusinessRows = batchRecordForm.value.offset_business_rows
+    .map((row: any) => ({
+      business_type: normalizeBusinessType(row.business_type),
+      order_count: Number(row.order_count || 0),
+    }))
+    .filter((row: any) => row.business_type || row.order_count > 0)
+  const offsetBusinessCount = offsetBusinessRows.reduce((sum: number, row: any) => sum + row.order_count, 0)
+  const offsetTaskRows = batchRecordForm.value.offset_task_rows
+    .map((row: any) => ({
+      task_id: String(row.task_id || '').trim(),
+      amount_cny: Number(row.amount_cny || 0),
+    }))
+    .filter((row: any) => row.task_id || row.amount_cny > 0)
+  const offsetTaskAmount = offsetTaskRows.reduce((sum: number, row: any) => sum + row.amount_cny, 0)
+  if (mode === 'offset') {
+    if (offsetTaskRows.length === 0 || offsetTaskRows.some((row: any) => !row.task_id || row.amount_cny <= 0)) {
+      message.warning('请完整填写每行抵消任务ID和抵消金额')
+      return
+    }
+    if (Math.abs(offsetTaskAmount - selectedBatchTotal.value) > 0.005) {
+      message.warning('抵消来源金额需等于本次账面抵消目标合计')
+      return
+    }
+    if (offsetBusinessRows.length === 0 || offsetBusinessRows.some((row: any) => !row.business_type || row.order_count <= 0)) {
+      message.warning('请完整填写每行抵消类型和对应单量')
+      return
+    }
   }
 
   batchRecordSaving.value = true
@@ -902,6 +1024,33 @@ async function saveBatchRecord() {
       const order = orders.value.find(o => o.id === row.orderId)
       if (!order) continue
       const businessDetail = buildOrderBusinessBreakdown(order, absAmt)
+      const businessTypes = isOffset
+        ? Array.from(new Set<string>(offsetBusinessRows.map((item: any) => item.business_type).filter(Boolean)))
+        : businessDetail.types
+      const businessOrderCount = isOffset ? offsetBusinessCount : businessDetail.orderCount
+      const businessBreakdown = isOffset
+        ? offsetBusinessRows.map((item: any) => ({
+          order_id: order.id,
+          order_number: offsetTaskRows.map((task: any) => task.task_id).join('、'),
+          country: '',
+          business_type: item.business_type,
+          order_count: item.order_count,
+          amount_cny: offsetBusinessCount > 0 ? Number((absAmt * item.order_count / offsetBusinessCount).toFixed(2)) : 0,
+        }))
+        : businessDetail.breakdown
+      const noteParts: string[] = []
+      if (isOffset) {
+        noteParts.push(`抵消来源: ${offsetTaskRows.map((task: any) => `${task.task_id} ¥${task.amount_cny.toFixed(2)}`).join('、')}`)
+        noteParts.push(`抵消明细: ${offsetBusinessRows.map((item: any) => `${item.business_type}${item.order_count}单`).join('、')}`)
+      }
+      if (isRefund && batchRecordForm.value.refund_account) {
+        noteParts.push(`退款账号: ${batchRecordForm.value.refund_account}`)
+      }
+      if (isRefund && batchRecordForm.value.refund_account_surname) {
+        noteParts.push(`姓氏: ${batchRecordForm.value.refund_account_surname}`)
+      }
+      if (batchRecordForm.value.notes) noteParts.push(batchRecordForm.value.notes)
+      const recordNotes = noteParts.join(' | ')
 
       const { data: txNo } = await supabase.rpc('generate_transaction_no')
       const transactionNo = txNo || `FT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -920,13 +1069,13 @@ async function saveBatchRecord() {
         order_number: order.order_number,
         staff_name: batchRecordForm.value.recorded_by,
         status: isRefund ? '待审批' : '已确认',
-        business_countries: businessDetail.countries,
-        business_types: businessDetail.types,
-        business_order_count: businessDetail.orderCount,
-        business_breakdown: businessDetail.breakdown,
-        offset_source_type: isOffset ? batchRecordForm.value.offset_source_type : null,
-        offset_source_note: isOffset ? batchRecordForm.value.offset_source_note : null,
-        notes: `${categorySummary} - ${batchRecordForm.value.payment_method}${batchRecordForm.value.notes ? ' | ' + batchRecordForm.value.notes : ''}`,
+        business_countries: isOffset ? [] : businessDetail.countries,
+        business_types: businessTypes,
+        business_order_count: businessOrderCount,
+        business_breakdown: businessBreakdown,
+        offset_source_type: null,
+        offset_source_note: null,
+        notes: `${categorySummary} - ${batchRecordForm.value.payment_method}${recordNotes ? ' | ' + recordNotes : ''}`,
         transaction_date: paymentDate,
         receipt_urls: receiptUrls,
       }).select('id').maybeSingle()
@@ -941,14 +1090,14 @@ async function saveBatchRecord() {
         payment_method: batchRecordForm.value.payment_method,
         payer_name: batchRecordForm.value.payer_name,
         recorded_by: batchRecordForm.value.recorded_by,
-        notes: [`分类: ${categorySummary}`, batchRecordForm.value.notes].filter(Boolean).join(' | '),
+        notes: [`分类: ${categorySummary}`, recordNotes].filter(Boolean).join(' | '),
         payment_type: isOffset ? '账面抵消' : (isRefund ? '退款' : '补款'),
-        business_countries: businessDetail.countries,
-        business_types: businessDetail.types,
-        business_order_count: businessDetail.orderCount,
-        business_breakdown: businessDetail.breakdown,
-        offset_source_type: isOffset ? batchRecordForm.value.offset_source_type : null,
-        offset_source_note: isOffset ? batchRecordForm.value.offset_source_note : null,
+        business_countries: isOffset ? [] : businessDetail.countries,
+        business_types: businessTypes,
+        business_order_count: businessOrderCount,
+        business_breakdown: businessBreakdown,
+        offset_source_type: null,
+        offset_source_note: null,
         receipt_urls: receiptUrls,
       })
       if (payErr) throw payErr
@@ -1425,6 +1574,74 @@ async function saveBatchRecord() {
   font-weight: 600;
 }
 
+.offset-inline-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.offset-inline-action span {
+  min-width: 0;
+  line-height: 1.5;
+}
+
+.offset-brief-card {
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.offset-brief-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.offset-business-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.offset-business-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.offset-brief-tip {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.offset-brief-total {
+  margin-top: 8px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.refund-account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .ar-field {
   display: flex;
   flex-direction: column;
@@ -1440,6 +1657,16 @@ async function saveBatchRecord() {
 .upload-btn {
   color: #6b7280;
   font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .offset-inline-action,
+  .refund-account-grid,
+  .offset-business-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 </style>
