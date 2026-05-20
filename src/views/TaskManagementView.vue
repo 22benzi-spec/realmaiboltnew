@@ -1168,18 +1168,17 @@
       @ok="doConfirmCopy"
     >
       <div class="copy-modal-body">
-        <div class="copy-fields-label">选择要复制的字段（默认 ASIN 和订单号）：</div>
+        <div class="copy-fields-label">选择要复制的字段：</div>
         <a-checkbox-group v-model:value="copyCheckedFields" class="copy-checkbox-group">
-          <a-row :gutter="[8,8]">
-            <a-col :span="12" v-for="f in copyFieldOptions" :key="f.key">
-              <a-checkbox :value="f.key">{{ f.label }}</a-checkbox>
-            </a-col>
-          </a-row>
+          <div v-for="group in copyFieldGroups" :key="group.title" class="copy-field-group">
+            <div class="copy-field-group-title">{{ group.title }}</div>
+            <a-row :gutter="[8,8]">
+              <a-col :span="12" v-for="f in group.fields" :key="f.key">
+                <a-checkbox :value="f.key">{{ f.label }}</a-checkbox>
+              </a-col>
+            </a-row>
+          </div>
         </a-checkbox-group>
-        <div v-if="copyPreviewText" class="copy-preview">
-          <div class="copy-preview-label">预览：</div>
-          <div class="copy-preview-text">{{ copyPreviewText }}</div>
-        </div>
       </div>
     </a-modal>
 
@@ -2792,52 +2791,95 @@ async function saveBatchEdit() {
 const copyModalOpen = ref(false)
 const copyOrderRecord = ref<any>(null)
 const copyCheckedFields = ref<string[]>(['asin', 'order_number'])
-const copyPreviewText = ref('')
 
-const copyFieldOptions = [
-  { key: 'asin', label: 'ASIN' },
-  { key: 'order_number', label: '订单号' },
-  { key: 'product_name', label: '产品名称' },
-  { key: 'store_name', label: '店铺名称' },
-  { key: 'brand_name', label: '品牌名称' },
-  { key: 'country', label: '国家/站点' },
-  { key: 'review_type', label: '测评类型' },
-  { key: 'review_level', label: '测评等级' },
-  { key: 'product_price', label: '产品售价' },
-  { key: 'order_quantity', label: '订单数量' },
-  { key: 'category', label: '类目' },
-  { key: 'customer_name', label: '客户名称' },
-  { key: 'variant_info', label: '变参信息' },
-  { key: 'status', label: '任务状态' },
+const copyFieldGroups = [
+  {
+    title: '任务信息',
+    fields: [
+      { key: 'asin', label: 'ASIN' },
+      { key: 'product_price', label: '产品售价' },
+      { key: 'store_name', label: '店铺名称' },
+      { key: 'brand_name', label: '品牌名称' },
+      { key: 'review_type', label: '类型' },
+      { key: 'review_level', label: '等级' },
+      { key: 'category', label: '类目' },
+      { key: 'country', label: '国家' },
+      { key: 'customer_name', label: '客户名称' },
+      { key: 'created_at', label: '创建时间' },
+      { key: 'status', label: '任务状态' },
+    ],
+  },
+  {
+    title: '执行信息',
+    fields: [
+      { key: 'product_name', label: '产品名称' },
+      { key: 'order_number', label: '订单号' },
+      { key: 'actual_paid', label: '实付金额' },
+      { key: 'price_diff', label: '差价' },
+      { key: 'placed_at', label: '下单时间' },
+      { key: 'review_link', label: '评论链接' },
+    ],
+  },
 ]
 
 function openCopyModal(record: any) {
   copyOrderRecord.value = record
   copyCheckedFields.value = ['asin', 'order_number']
-  updateCopyPreview()
   copyModalOpen.value = true
 }
 
-function updateCopyPreview() {
+function buildCopyText() {
   const rec = copyOrderRecord.value
-  if (!rec) { copyPreviewText.value = ''; return }
-  const parts: string[] = []
-  for (const f of copyFieldOptions) {
-    if (!copyCheckedFields.value.includes(f.key)) continue
-    let val = rec[f.key]
-    if (f.key === 'product_price' && val != null) val = '$' + Number(val).toFixed(2)
-    if (f.key === 'review_type') val = formatReviewType(rec.review_type || rec.order_type)
-    if (val != null && val !== '') parts.push(`${f.label}：${val}`)
+  if (!rec) return ''
+  const subRows = subOrdersMap.value[rec.id] || []
+  const firstPaidSub = subRows.find((row: any) => row.actual_paid != null)
+  const actualPaid = firstPaidSub?.actual_paid
+  const priceDiff = actualPaid != null ? Number(actualPaid || 0) - Number(rec.product_price || 0) : null
+  const firstPlacedAt = subRows
+    .map((row: any) => row.amazon_order_placed_at || row.created_at)
+    .filter(Boolean)
+    .sort()[0]
+  const reviewLinks = subRows
+    .map((row: any) => row.review_link || row.fb_link)
+    .filter(Boolean)
+
+  const valueMap: Record<string, any> = {
+    asin: rec.asin,
+    order_number: rec.order_number,
+    product_name: rec.product_name,
+    store_name: rec.store_name,
+    brand_name: rec.brand_name,
+    country: rec.country,
+    review_type: formatReviewType(rec.review_type || rec.order_type),
+    review_level: rec.review_level,
+    product_price: rec.product_price != null ? '$' + Number(rec.product_price).toFixed(2) : '',
+    created_at: rec.created_at ? dayjs(rec.created_at).format('YYYY-MM-DD HH:mm') : '',
+    actual_paid: actualPaid != null ? '$' + Number(actualPaid).toFixed(2) : '',
+    price_diff: priceDiff != null ? '$' + priceDiff.toFixed(2) : '',
+    placed_at: firstPlacedAt ? dayjs(firstPlacedAt).format('YYYY-MM-DD HH:mm') : '',
+    review_link: reviewLinks.join(' / '),
+    category: rec.category,
+    customer_name: rec.customer_name || rec.group_name,
+    status: rec.status,
   }
-  copyPreviewText.value = parts.join('\n')
+
+  return copyFieldGroups
+    .map(group => {
+      const lines = group.fields
+        .filter(field => copyCheckedFields.value.includes(field.key))
+        .map(field => [field.label, valueMap[field.key]])
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .map(([label, value]) => `${label}：${value}`)
+      return lines.length ? `${group.title}\n${lines.join('\n')}` : ''
+    })
+    .filter(Boolean)
+    .join('\n\n')
 }
 
-watch(copyCheckedFields, updateCopyPreview, { deep: true })
-
 function doConfirmCopy() {
-  updateCopyPreview()
-  if (!copyPreviewText.value) { message.warning('没有可复制的内容'); return }
-  navigator.clipboard.writeText(copyPreviewText.value).then(() => {
+  const copyText = buildCopyText()
+  if (!copyText) { message.warning('没有可复制的内容'); return }
+  navigator.clipboard.writeText(copyText).then(() => {
     message.success('已复制到剪贴板')
     copyModalOpen.value = false
   }).catch(() => {
@@ -3933,12 +3975,11 @@ onMounted(() => {
 .copy-field-label { font-size: 13px; color: #374151; font-weight: 500; }
 .copy-fields-label { font-size: 13px; color: #374151; font-weight: 500; }
 .copy-checkbox-group { width: 100%; }
-.copy-preview {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px 14px;
+.copy-field-group + .copy-field-group { margin-top: 14px; }
+.copy-field-group-title {
+  margin-bottom: 8px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
 }
-.copy-preview-label { font-size: 11px; color: #9ca3af; margin-bottom: 6px; }
-.copy-preview-text { font-size: 13px; color: #374151; white-space: pre-line; line-height: 1.7; }
 </style>

@@ -5,6 +5,7 @@
       <div class="header-actions">
         <a-button :disabled="!selectedRowKeys.length" @click="approveSelectedRows">批量审批</a-button>
         <a-button type="primary" @click="openAdd">手动记账</a-button>
+        <a-button @click="exportLedger">导出</a-button>
       </div>
     </div>
 
@@ -341,14 +342,19 @@
               <span>{{ Number(item.order_count || 0) }} 单</span>
             </div>
           </div>
-          <div v-if="hasOffsetPart(detailRecord)" class="offset-summary-line">
-            <div>
+          <div v-if="hasOffsetPart(detailRecord)" class="offset-source-table">
+            <div class="offset-source-title">抵消来源明细</div>
+            <div class="offset-source-head">
               <span>抵消任务ID</span>
-              <strong>{{ getOffsetSourceSummary(detailRecord) || '-' }}</strong>
-            </div>
-            <div>
+              <span>对应类型</span>
+              <span>对应单量</span>
               <span>抵消金额</span>
-              <strong>¥{{ formatNum(getAmountByDirection(detailRecord, '账面抵消', 'amount_cny')) }}</strong>
+            </div>
+            <div v-for="(row, index) in getOffsetSourceRows(detailRecord)" :key="index" class="offset-source-row">
+              <span class="mono">{{ row.sourceOrderId || '-' }}</span>
+              <span>{{ row.businessType || '-' }}</span>
+              <span>{{ row.orderCount }} 单</span>
+              <strong>¥{{ formatNum(row.amountCny) }}</strong>
             </div>
           </div>
           <div v-if="!getDetailBreakdownRows(detailRecord).length" class="detail-empty">暂无拆分明细</div>
@@ -374,6 +380,7 @@ import { useCurrentUser } from '../composables/useCurrentUser'
 const loading = ref(false)
 const saving = ref(false)
 const list = ref<any[]>([])
+const ledgerRows = ref<any[]>([])
 const selectedRowKeys = ref<string[]>([])
 const mockRows = ref<any[]>([])
 const total = ref(0)
@@ -615,6 +622,25 @@ function getOffsetSourceSummary(record: any) {
   return [...new Set(ids)].join('、')
 }
 
+function getOffsetRows(record: any) {
+  return getBusinessBreakdown(record).filter((item: any) => getBreakdownDirection(item, record) === '账面抵消' || getBreakdownSourceOrderId(item))
+}
+
+function getOffsetSourceRows(record: any) {
+  const map = getOffsetRows(record).reduce((acc: Record<string, { sourceOrderId: string; businessType: string; orderCount: number; amountCny: number }>, item: any) => {
+    const sourceOrderId = getBreakdownSourceOrderId(item)
+    const type = normalizeBusinessType(item.source_business_type || item.offset_business_type || item.business_type) || '未分类'
+    const key = `${sourceOrderId}__${type}`
+    if (!acc[key]) {
+      acc[key] = { sourceOrderId, businessType: type, orderCount: 0, amountCny: 0 }
+    }
+    acc[key].orderCount += Number(item.source_order_count || item.offset_order_count || item.order_count || 0)
+    acc[key].amountCny += Number(item.amount_cny || 0)
+    return acc
+  }, {})
+  return Object.values(map)
+}
+
 function getOrderIds(record: any) {
   const fromBreakdown = getBusinessBreakdown(record).map(getBreakdownOrderId).filter(Boolean)
   const ownOrder = String(record?.order_number || record?.order_id || '').trim()
@@ -783,8 +809,8 @@ function buildLedgerPreviewRows() {
       business_types: ['文字', '免评'],
       business_order_count: 5,
       business_breakdown: [
-        { target_order_number: 'TASK-20260507-021', source_order_number: 'TASK-20260428-008', country: '美国', business_type: '文字', order_count: 3, amount_cny: 360 },
-        { target_order_number: 'TASK-20260507-022', source_order_number: 'TASK-20260428-008', country: '英国', business_type: '免评', order_count: 2, amount_cny: 200 },
+        { target_order_number: 'TASK-20260507-021', source_order_number: 'TASK-20260428-008', source_business_type: '文字', source_order_count: 3, country: '美国', business_type: '文字', order_count: 3, amount_cny: 360 },
+        { target_order_number: 'TASK-20260507-022', source_order_number: 'TASK-20260428-008', source_business_type: '免评', source_order_count: 2, country: '英国', business_type: '免评', order_count: 2, amount_cny: 200 },
       ],
       offset_source_type: '客户余款抵消',
       offset_source_note: '客户上一批任务余款抵消本次 2 个新任务ID。',
@@ -812,8 +838,8 @@ function buildLedgerPreviewRows() {
       business_types: ['图片', '文字'],
       business_order_count: 3,
       business_breakdown: [
-        { target_order_number: 'TASK-20260506-118', source_order_number: 'TASK-20260418-031', country: '德国', business_type: '图片', order_count: 1, amount_cny: 120 },
-        { target_order_number: 'TASK-20260506-119', source_order_number: 'TASK-20260418-031', country: '加拿大', business_type: '文字', order_count: 2, amount_cny: 190 },
+        { target_order_number: 'TASK-20260506-118', source_order_number: 'TASK-20260418-031', source_business_type: '图片', source_order_count: 1, country: '德国', business_type: '图片', order_count: 1, amount_cny: 120 },
+        { target_order_number: 'TASK-20260506-119', source_order_number: 'TASK-20260418-031', source_business_type: '文字', source_order_count: 2, country: '加拿大', business_type: '文字', order_count: 2, amount_cny: 190 },
       ],
       offset_source_type: '同事余款抵消',
       offset_source_note: '同客户同事历史任务余款抵消本次部分款项。',
@@ -843,7 +869,7 @@ function buildLedgerPreviewRows() {
       business_order_count: 6,
       business_breakdown: [
         { direction: '收入', target_order_number: 'TASK-20260507-060', country: '美国', business_type: '文字', order_count: 4, amount_cny: 520 },
-        { direction: '账面抵消', target_order_number: 'TASK-20260507-061', source_order_number: 'TASK-20260430-016', country: '德国', business_type: '免评', order_count: 2, amount_cny: 360 },
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-061', source_order_number: 'TASK-20260430-016', source_business_type: '免评', source_order_count: 2, country: '德国', business_type: '免评', order_count: 2, amount_cny: 360 },
       ],
       offset_source_type: '客户余款抵消',
       offset_source_note: '本次新任务部分现金收款，部分使用历史任务余款抵消。',
@@ -1087,6 +1113,7 @@ async function loadData() {
       .filter((row: any) => !filterDirection.value || getDirectionParts(row).includes(filterDirection.value))
       .filter((row: any) => !filterCountry.value || getCountries(row).includes(filterCountry.value))
       .filter((row: any) => !filterStatus.value || row.status === filterStatus.value)
+    ledgerRows.value = rows
     total.value = rows.length
     if ((page.value - 1) * pageSize.value >= rows.length && page.value > 1) {
       page.value = 1
@@ -1095,6 +1122,48 @@ async function loadData() {
     list.value = rows.slice(start, start + pageSize.value)
     selectedRowKeys.value = selectedRowKeys.value.filter(id => list.value.some(row => row.id === id && canApprove(row)))
   } finally { loading.value = false }
+}
+
+function csvCell(value: any) {
+  const text = value == null ? '' : String(value)
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function downloadCsv(filename: string, headers: string[], rows: Array<Array<any>>) {
+  const csv = ['\ufeff' + headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+function exportLedger() {
+  const rows = ledgerRows.value.length ? ledgerRows.value : list.value
+  if (!rows.length) {
+    message.warning('暂无可导出的流水')
+    return
+  }
+  const headers = ['流水号', '日期', '国家', '交易类型', '收支方向', '金额CNY', '金额USD', '客户', '业务摘要', '订单ID', '申请人', '操作人', '状态', '备注']
+  const dataRows = rows.map((row: any) => [
+    row.transaction_no || '',
+    row.transaction_date || '',
+    getCountries(row).join('、'),
+    `${getPrimaryCategoryLabel(row)} / ${getTransactionTypeLabel(row)}`,
+    getDirectionParts(row).join('+'),
+    Number(row.amount_cny || 0).toFixed(2),
+    row.amount_usd ? Number(row.amount_usd || 0).toFixed(2) : '',
+    row.customer_name || '',
+    getBusinessSummary(row),
+    getOrderIdSummary(row) || row.order_number || '',
+    row.staff_name || '',
+    row.handler_name || '',
+    row.status || '',
+    row.notes || '',
+  ])
+  downloadCsv(`交易流水_${dayjs().format('YYYYMMDD_HHmm')}.csv`, headers, dataRows)
+  message.success(`已导出 ${rows.length} 条流水`)
 }
 
 async function loadStats() {
@@ -1397,10 +1466,13 @@ onMounted(() => {
 .breakdown-table-head { background: #f8f9fb; color: #6b7280; font-size: 12px; font-weight: 600; }
 .breakdown-table-row { color: #374151; font-size: 12px; border-top: 1px solid #f0f0f0; }
 .breakdown-table-row strong { color: #1a1a2e; text-align: right; }
-.offset-summary-line { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.offset-summary-line > div { background: #f8f9fb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; }
-.offset-summary-line span { display: block; color: #6b7280; font-size: 12px; margin-bottom: 4px; }
-.offset-summary-line strong { color: #1a1a2e; font-weight: 700; word-break: break-all; }
+.offset-source-table { margin-top: 10px; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+.offset-source-title { padding: 10px 12px; background: #eff6ff; color: #1d4ed8; font-size: 13px; font-weight: 700; border-bottom: 1px solid #bfdbfe; }
+.offset-source-head,
+.offset-source-row { display: grid; grid-template-columns: 1.4fr 1fr 76px 96px; gap: 8px; align-items: center; padding: 9px 10px; }
+.offset-source-head { background: #f8f9fb; color: #6b7280; font-size: 12px; font-weight: 600; }
+.offset-source-row { color: #374151; font-size: 12px; border-top: 1px solid #f0f0f0; }
+.offset-source-row strong { color: #1a1a2e; text-align: right; }
 .mono { font-family: 'Courier New', monospace; color: #1a1a2e; }
 .detail-empty { padding: 16px; text-align: center; color: #9ca3af; background: #f8f9fb; border-radius: 10px; }
 .detail-notes { color: #374151; line-height: 1.6; white-space: pre-wrap; }

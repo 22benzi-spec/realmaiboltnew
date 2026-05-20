@@ -33,6 +33,7 @@ const router = createRouter({
     { path: '/buyer-check', name: 'buyer-check', component: () => import('../views/BuyerCheckView.vue') },
     { path: '/buyer-restrictions', name: 'buyer-restrictions', component: () => import('../views/BuyerRestrictionView.vue') },
     { path: '/sub-order-detail', name: 'sub-order-detail', component: () => import('../views/SubOrderDetailView.vue') },
+    { path: '/business-notifications', name: 'business-notifications', component: () => import('../views/BusinessNotificationView.vue') },
   ],
 })
 
