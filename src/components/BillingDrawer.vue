@@ -213,7 +213,7 @@
             <a-select-option v-for="item in addRecordPrimaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
           </a-select>
         </div>
-        <div v-if="addRecordType !== '账面抵消'" class="ar-field">
+        <div v-if="addRecordType !== '账面抵消' && addRecordForm.primary_category !== '行政办公'" class="ar-field">
           <label class="ar-label">二级分类</label>
           <a-select v-model:value="addRecordForm.secondary_categories" mode="multiple" style="width:100%" placeholder="可多选">
             <a-select-option v-for="item in addRecordSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
@@ -539,13 +539,6 @@ const billingTransactionCategoryOptions = [
     ],
   },
   {
-    value: '业务结算',
-    label: '业务结算',
-    children: [
-      { value: '账面抵消', label: '账面抵消' },
-    ],
-  },
-  {
     value: '运营支出',
     label: '运营支出',
     children: [
@@ -559,27 +552,32 @@ const billingTransactionCategoryOptions = [
   {
     value: '行政办公',
     label: '行政办公',
-    children: [
-      { value: '行政支出', label: '行政支出' },
-      { value: '行政冲销', label: '行政冲销' },
-    ],
+    children: [],
   },
   {
     value: '其他收入',
     label: '其他收入',
-    children: [{ value: '其他收入', label: '其他收入' }],
+    children: [
+      { value: '开箱视频', label: '开箱视频' },
+      { value: '删差评', label: '删差评' },
+      { value: '其他', label: '其他' },
+    ],
   },
   {
     value: '其他支出',
     label: '其他支出',
-    children: [{ value: '其他支出', label: '其他支出' }],
+    children: [
+      { value: '开箱视频', label: '开箱视频' },
+      { value: '删差评', label: '删差评' },
+      { value: '其他', label: '其他' },
+    ],
   },
 ]
 const addRecordPrimaryOptions = computed(() => billingTransactionCategoryOptions.filter(item =>
   addRecordType.value === '退款'
-    ? ['业务支出', '运营支出', '行政办公', '其他支出'].includes(item.value)
+    ? ['业务支出', '其他支出'].includes(item.value)
     : addRecordType.value === '账面抵消'
-      ? ['业务结算'].includes(item.value)
+      ? false
     : ['业务收入', '其他收入'].includes(item.value),
 ))
 const addRecordSecondaryOptions = computed(() =>
@@ -683,6 +681,10 @@ function getAddRecordOkText() {
 }
 
 function onAddRecordPrimaryChange() {
+  if (addRecordForm.value.primary_category === '行政办公') {
+    addRecordForm.value.secondary_categories = []
+    return
+  }
   const nextValues = addRecordForm.value.secondary_categories.filter(value =>
     addRecordSecondaryOptions.value.some(item => item.value === value),
   )
@@ -724,7 +726,7 @@ function openAddRecord(type: '补款' | '退款' | '账面抵消', fromNestedAct
   addRecordFiles.value = []
   const businessDetail = buildOrderBusinessBreakdown(props.order, 0)
   addRecordForm.value = {
-    primary_category: type === '退款' ? '业务支出' : type === '账面抵消' ? '业务结算' : '业务收入',
+    primary_category: type === '退款' ? '业务支出' : type === '账面抵消' ? '业务收入' : '业务收入',
     secondary_categories: [type === '退款' ? '截单退款' : type === '账面抵消' ? '账面抵消' : '补款收入'],
     currency_mode: 'cny',
     amount_cny: undefined,
@@ -761,7 +763,7 @@ async function saveRecord() {
     message.warning('请选择一级分类')
     return
   }
-  if (!addRecordForm.value.secondary_categories.length) {
+  if (addRecordForm.value.primary_category !== '行政办公' && !addRecordForm.value.secondary_categories.length) {
     message.warning('请选择二级分类')
     return
   }
@@ -803,7 +805,7 @@ async function saveRecord() {
     const amountUsd = isOffset || isRefund || addRecordForm.value.currency_mode === 'cny'
       ? 0
       : Number(addRecordForm.value.amount_usd || 0)
-    const secondaryCategories = addRecordForm.value.secondary_categories
+    const secondaryCategories = addRecordForm.value.primary_category === '行政办公' ? [] : addRecordForm.value.secondary_categories
     const categorySummary = secondaryCategories.join(' / ')
     const businessDetail = buildOrderBusinessBreakdown(props.order, amountCny)
     const offsetBusinessRows = addRecordForm.value.offset_business_rows
@@ -887,7 +889,7 @@ async function saveRecord() {
     const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
       transaction_no: transactionNo,
       entry_scope: addRecordForm.value.primary_category,
-      transaction_type: secondaryCategories[0],
+      transaction_type: secondaryCategories[0] || null,
       direction: isOffset ? '账面抵消' : (isRefund ? '支出' : '收入'),
       amount_cny: amountCny,
       amount_usd: isRefund || isOffset ? 0 : amountUsd,

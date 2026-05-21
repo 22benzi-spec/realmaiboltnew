@@ -298,7 +298,7 @@
             <a-select-option v-for="item in batchRecordPrimaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
           </a-select>
         </div>
-        <div v-if="batchRecordMode !== 'offset'" class="ar-field">
+        <div v-if="batchRecordMode !== 'offset' && batchRecordForm.primary_category !== '行政办公'" class="ar-field">
           <label class="ar-label">二级分类</label>
           <a-select v-model:value="batchRecordForm.secondary_categories" mode="multiple" style="width:100%" placeholder="可多选">
             <a-select-option v-for="item in batchRecordSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
@@ -736,13 +736,6 @@ const billingTransactionCategoryOptions = [
     ],
   },
   {
-    value: '业务结算',
-    label: '业务结算',
-    children: [
-      { value: '账面抵消', label: '账面抵消' },
-    ],
-  },
-  {
     value: '运营支出',
     label: '运营支出',
     children: [
@@ -756,20 +749,25 @@ const billingTransactionCategoryOptions = [
   {
     value: '行政办公',
     label: '行政办公',
-    children: [
-      { value: '行政支出', label: '行政支出' },
-      { value: '行政冲销', label: '行政冲销' },
-    ],
+    children: [],
   },
   {
     value: '其他收入',
     label: '其他收入',
-    children: [{ value: '其他收入', label: '其他收入' }],
+    children: [
+      { value: '开箱视频', label: '开箱视频' },
+      { value: '删差评', label: '删差评' },
+      { value: '其他', label: '其他' },
+    ],
   },
   {
     value: '其他支出',
     label: '其他支出',
-    children: [{ value: '其他支出', label: '其他支出' }],
+    children: [
+      { value: '开箱视频', label: '开箱视频' },
+      { value: '删差评', label: '删差评' },
+      { value: '其他', label: '其他' },
+    ],
   },
 ]
 
@@ -810,9 +808,9 @@ const selectedBatchTotal = computed(() =>
 
 const batchRecordPrimaryOptions = computed(() => billingTransactionCategoryOptions.filter(item =>
   batchRecordMode.value === 'refund'
-    ? ['业务支出', '运营支出', '行政办公', '其他支出'].includes(item.value)
+    ? ['业务支出', '其他支出'].includes(item.value)
     : batchRecordMode.value === 'offset'
-      ? ['业务结算'].includes(item.value)
+      ? false
     : ['业务收入', '其他收入'].includes(item.value),
 ))
 
@@ -821,6 +819,10 @@ const batchRecordSecondaryOptions = computed(() =>
 )
 
 function onBatchRecordPrimaryChange() {
+  if (batchRecordForm.value.primary_category === '行政办公') {
+    batchRecordForm.value.secondary_categories = []
+    return
+  }
   const nextValues = batchRecordForm.value.secondary_categories.filter(value =>
     batchRecordSecondaryOptions.value.some(item => item.value === value),
   )
@@ -927,7 +929,7 @@ function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset', fromNest
   }
   batchRecordFiles.value = []
   batchRecordForm.value = {
-    primary_category: mode === 'refund' ? '业务支出' : mode === 'offset' ? '业务结算' : '业务收入',
+    primary_category: mode === 'refund' ? '业务支出' : mode === 'offset' ? '业务收入' : '业务收入',
     secondary_categories: [mode === 'refund' ? '截单退款' : mode === 'offset' ? '账面抵消' : '补款收入'],
     payment_date_picker: dayjs(),
     payment_method: mode === 'offset' ? '账面抵消' : '银行转账',
@@ -956,7 +958,7 @@ async function saveBatchRecord() {
     message.warning('请选择一级分类')
     return
   }
-  if (!batchRecordForm.value.secondary_categories.length) {
+  if (batchRecordForm.value.primary_category !== '行政办公' && !batchRecordForm.value.secondary_categories.length) {
     message.warning('请选择二级分类')
     return
   }
@@ -999,7 +1001,7 @@ async function saveBatchRecord() {
     const paymentDate = typeof batchRecordForm.value.payment_date_picker === 'string'
       ? batchRecordForm.value.payment_date_picker
       : batchRecordForm.value.payment_date_picker?.format('YYYY-MM-DD')
-    const secondaryCategories = batchRecordForm.value.secondary_categories
+    const secondaryCategories = batchRecordForm.value.primary_category === '行政办公' ? [] : batchRecordForm.value.secondary_categories
     const categorySummary = secondaryCategories.join(' / ')
     let receiptUrls: string[] = []
     for (const f of batchRecordFiles.value) {
@@ -1058,7 +1060,7 @@ async function saveBatchRecord() {
       const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
         transaction_no: transactionNo,
         entry_scope: batchRecordForm.value.primary_category,
-        transaction_type: secondaryCategories[0],
+        transaction_type: secondaryCategories[0] || null,
         direction: isOffset ? '账面抵消' : (isRefund ? '支出' : '收入'),
         amount_cny: absAmt,
         amount_usd: 0,
@@ -1140,8 +1142,6 @@ async function saveBatchRecord() {
   gap: 16px;
 }
 
-.gbh-left {}
-
 .gbh-title {
   font-size: 15px;
   font-weight: 700;
@@ -1158,8 +1158,6 @@ async function saveBatchRecord() {
 }
 
 .gbh-sep { color: #d1d5db; }
-
-.gbh-right {}
 
 .gbh-trio {
   display: flex;
@@ -1259,8 +1257,6 @@ async function saveBatchRecord() {
   align-items: center;
   gap: 8px;
 }
-
-.orders-table {}
 
 .orders-table-head {
   display: grid;

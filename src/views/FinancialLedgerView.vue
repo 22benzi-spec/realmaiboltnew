@@ -72,7 +72,7 @@
       :row-selection="rowSelection"
       row-key="id"
       size="middle"
-      :scroll="{ x: 1500 }"
+      :scroll="{ x: 1600 }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -84,7 +84,7 @@
         <template v-if="column.key === 'transaction_type'">
           <div class="type-stack">
             <span class="type-primary">{{ getPrimaryCategoryLabel(record) }}</span>
-            <a-tag :color="getTransactionTypeColor(record)">{{ getTransactionTypeLabel(record) }}</a-tag>
+            <a-tag v-if="record.transaction_type" :color="getTransactionTypeColor(record)">{{ getTransactionTypeLabel(record) }}</a-tag>
           </div>
         </template>
         <template v-if="column.key === 'amount'">
@@ -116,6 +116,20 @@
         <template v-if="column.key === 'status'">
           <a-badge :status="statusBadge[record.status] || 'default'" :text="record.status" />
         </template>
+        <template v-if="column.key === 'receipt'">
+          <a-space v-if="getReceiptUrls(record).length" size="small" wrap>
+            <a
+              v-for="(url, index) in getReceiptUrls(record)"
+              :key="`${url}-${index}`"
+              :href="url"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {{ getReceiptUrls(record).length > 1 ? `查看${index + 1}` : '查看' }}
+            </a>
+          </a-space>
+          <span v-else class="text-muted">-</span>
+        </template>
         <template v-if="column.key === 'action'">
           <a-space v-if="canModify(record)">
             <a-button type="link" size="small" @click="openDetail(record)">详情</a-button>
@@ -136,7 +150,7 @@
     <a-modal
       v-model:open="modalOpen"
       :title="editId ? '编辑流水' : '手动记账'"
-      width="680px"
+      width="760px"
       @ok="handleSave"
       :confirm-loading="saving"
     >
@@ -149,7 +163,7 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col v-if="!isAdministrativeEntry" :span="12">
             <a-form-item label="二级分类" required>
               <a-select v-model:value="form.transaction_type" @change="onTypeChange">
                 <a-select-option v-for="item in manualTypeOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
@@ -158,7 +172,7 @@
           </a-col>
           <a-col :span="24">
             <div class="form-tip">
-              {{ isAdministrativeEntry ? '行政记账默认按人民币直接入账，不关联任务订单。' : '业务记账可按类型补充往来对象、客户或订单信息。' }}
+              {{ isAdministrativeEntry ? '行政办公不设二级分类，请在用途或备注里写清楚具体事项。' : '业务记账可按类型补充往来对象、客户或订单信息。' }}
             </div>
           </a-col>
           <a-col :span="12">
@@ -196,8 +210,8 @@
             </a-form-item>
           </a-col>
           <a-col v-if="showOrderNumberField" :span="12">
-            <a-form-item label="关联订单号">
-              <a-input v-model:value="form.order_number" placeholder="关联订单号(可选)" />
+            <a-form-item label="任务ID">
+              <a-input v-model:value="form.order_number" placeholder="任务ID（可选）" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -205,23 +219,34 @@
               <a-input v-model:value="form.staff_name" />
             </a-form-item>
           </a-col>
-          <a-col v-if="isBusinessEntry" :span="12">
-            <a-form-item label="国家">
-              <a-select v-model:value="form.business_countries" mode="tags" placeholder="可录入多个国家">
-                <a-select-option v-for="item in ledgerCountryOptions" :key="item" :value="item">{{ item }}</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col v-if="isBusinessEntry" :span="12">
-            <a-form-item label="业务类型">
-              <a-select v-model:value="form.business_types" mode="tags" placeholder="文字 / 免评等">
-                <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col v-if="isBusinessEntry" :span="12">
-            <a-form-item label="业务单量">
-              <a-input-number v-model:value="form.business_order_count" :min="0" :precision="0" style="width:100%" />
+          <a-col v-if="isBusinessEntry" :span="24">
+            <a-form-item label="业务明细">
+              <div class="business-edit-card">
+                <div class="business-edit-head">
+                  <span>国家、类型和单量逐行对应</span>
+                  <a-button size="small" @click="addBusinessBreakdownRow">添加明细</a-button>
+                </div>
+                <div class="business-edit-list">
+                  <div v-for="(row, index) in form.business_breakdown" :key="index" class="business-edit-row">
+                    <a-select v-model:value="row.country" size="small" placeholder="国家" show-search>
+                      <a-select-option v-for="item in ledgerCountryOptions" :key="item" :value="item">{{ item }}</a-select-option>
+                    </a-select>
+                    <a-select v-model:value="row.business_type" size="small" placeholder="类型" show-search>
+                      <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
+                    </a-select>
+                    <a-input-number v-model:value="row.order_count" size="small" :min="0" :precision="0" placeholder="单量" style="width:90px" />
+                    <a-button
+                      size="small"
+                      danger
+                      :disabled="form.business_breakdown.length <= 1"
+                      @click="removeBusinessBreakdownRow(index)"
+                    >
+                      删除
+                    </a-button>
+                  </div>
+                </div>
+                <div class="business-edit-tip">例如：美国 文字 3单；英国 免评 1单。</div>
+              </div>
             </a-form-item>
           </a-col>
           <a-col v-if="form.direction === '账面抵消'" :span="12">
@@ -429,13 +454,6 @@ const transactionCategoryOptions = [
     ],
   },
   {
-    value: '业务结算',
-    label: '业务结算',
-    children: [
-      { value: '账面抵消', label: '账面抵消' },
-    ],
-  },
-  {
     value: '运营支出',
     label: '运营支出',
     children: [
@@ -449,20 +467,25 @@ const transactionCategoryOptions = [
   {
     value: '行政办公',
     label: '行政办公',
-    children: [
-      { value: '行政支出', label: '行政支出' },
-      { value: '行政冲销', label: '行政冲销' },
-    ],
+    children: [],
   },
   {
     value: '其他收入',
     label: '其他收入',
-    children: [{ value: '其他收入', label: '其他收入' }],
+    children: [
+      { value: '开箱视频', label: '开箱视频' },
+      { value: '删差评', label: '删差评' },
+      { value: '其他', label: '其他' },
+    ],
   },
   {
     value: '其他支出',
     label: '其他支出',
-    children: [{ value: '其他支出', label: '其他支出' }],
+    children: [
+      { value: '开箱视频', label: '开箱视频' },
+      { value: '删差评', label: '删差评' },
+      { value: '其他', label: '其他' },
+    ],
   },
 ]
 
@@ -473,7 +496,7 @@ const secondaryToPrimaryMap = Object.fromEntries(
 ) as Record<string, string>
 const incomeTypeValues = new Set(['任务收入', '补款收入', '其他收入'])
 const offsetTypeValues = new Set(['账面抵消'])
-const usdCapableTypeValues = new Set(['任务收入', '补款收入', 'IP采购', '服务器', '账号购买', '礼品卡', '信用卡', '其他收入'])
+const usdCapableTypeValues = new Set(['任务收入', '补款收入', 'IP采购', '服务器', '账号购买', '礼品卡', '信用卡', '其他收入', '开箱视频', '删差评', '其他'])
 const ledgerCountryOptions = ['美国', '英国', '德国', '加拿大']
 const businessTypeOptions = ['文字', '免评', '图片', '视频', 'Feedback']
 const transactionTypeMeta: Record<string, { label: string; color: string }> = {
@@ -492,6 +515,9 @@ const transactionTypeMeta: Record<string, { label: string; color: string }> = {
   行政冲销: { label: '行政冲销', color: 'processing' },
   其他收入: { label: '其他收入', color: 'lime' },
   其他支出: { label: '其他支出', color: 'default' },
+  开箱视频: { label: '开箱视频', color: 'cyan' },
+  删差评: { label: '删差评', color: 'volcano' },
+  其他: { label: '其他', color: 'default' },
 }
 const statusOptions = ['待确认', '已确认', '已修改', '已作废']
 const statusBadge: Record<string, string> = { 待确认: 'warning', 已确认: 'success', 已修改: 'processing', 已作废: 'default' }
@@ -533,6 +559,7 @@ const columns = [
   { title: '操作人', dataIndex: 'handler_name', key: 'handler_name', width: 100 },
   { title: '状态', key: 'status', width: 90 },
   { title: '备注', dataIndex: 'notes', key: 'notes', width: 140, ellipsis: true },
+  { title: '水单', key: 'receipt', width: 110 },
   { title: '操作', key: 'action', width: 180, fixed: 'right' as const },
 ]
 
@@ -548,6 +575,15 @@ const rowSelection = computed(() => ({
 
 function formatNum(n: number) {
   return (n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function getReceiptUrls(record: any) {
+  const raw = record?.receipt_urls ?? record?.receipt_url ?? record?.paypal_receipt_screenshot
+  if (Array.isArray(raw)) return raw.map(item => String(item || '').trim()).filter(Boolean)
+  return String(raw || '')
+    .split(/[|,，\n]/)
+    .map(item => item.trim())
+    .filter(Boolean)
 }
 
 function normalizeBusinessType(value: any) {
@@ -949,10 +985,14 @@ const filterSecondaryOptions = computed(() => {
   if (filterPrimaryCategory.value) {
     return transactionCategoryOptions.find(item => item.value === filterPrimaryCategory.value)?.children || []
   }
-  return transactionCategoryOptions.flatMap(item => item.children)
+  const map = new Map<string, { value: string; label: string }>()
+  transactionCategoryOptions.flatMap(item => item.children).forEach((item) => {
+    if (!map.has(item.value)) map.set(item.value, item)
+  })
+  return Array.from(map.values())
 })
 const showUsdFields = computed(() => usdCapableTypeValues.has(form.transaction_type))
-const showOrderNumberField = computed(() => ['业务收入', '业务支出', '业务结算'].includes(form.entry_scope))
+const showOrderNumberField = computed(() => ['业务收入', '业务支出'].includes(form.entry_scope))
 const counterpartyLabel = computed(() => {
   if (isAdministrativeEntry.value) return '收款方 / 商户'
   if (showOrderNumberField.value) return '关联客户'
@@ -964,6 +1004,48 @@ const counterpartyPlaceholder = computed(() => {
   return '往来对象(可选)'
 })
 const ownerLabel = computed(() => '申请人')
+
+function isSecondaryInScope(scope: string, type: string) {
+  return (transactionCategoryOptions.find(item => item.value === scope)?.children || [])
+    .some(item => item.value === type)
+}
+
+function createEmptyBusinessBreakdownRow() {
+  return {
+    country: '',
+    business_type: '',
+    order_count: undefined as number | undefined,
+  }
+}
+
+function ensureBusinessBreakdownRows() {
+  if (!isBusinessEntry.value) return
+  if (!Array.isArray(form.business_breakdown) || form.business_breakdown.length === 0) {
+    form.business_breakdown = [createEmptyBusinessBreakdownRow()]
+  }
+}
+
+function addBusinessBreakdownRow() {
+  form.business_breakdown.push(createEmptyBusinessBreakdownRow())
+}
+
+function removeBusinessBreakdownRow(index: number) {
+  if (form.business_breakdown.length <= 1) return
+  form.business_breakdown.splice(index, 1)
+}
+
+function getNormalizedFormBusinessBreakdown() {
+  if (!isBusinessEntry.value) return []
+  return (Array.isArray(form.business_breakdown) ? form.business_breakdown : [])
+    .map((item: any) => ({
+      ...item,
+      order_number: String(item.order_number || getBreakdownOrderId(item) || form.order_number || '').trim(),
+      country: String(item.country || '').trim(),
+      business_type: normalizeBusinessType(item.business_type),
+      order_count: Number(item.order_count || 0),
+    }))
+    .filter((item: any) => item.order_number || item.country || item.business_type || item.order_count > 0)
+}
 
 function normalizeTransactionStatus(status: any) {
   const raw = String(status || '').trim()
@@ -977,7 +1059,10 @@ function normalizeTransactionCategories(record: any) {
   const rawScope = String(record?.entry_scope || '').trim()
   const text = `${rawScope} ${rawType} ${record?.notes || ''}`
 
-  if (primaryCategorySet.has(rawScope) && secondaryToPrimaryMap[rawType] === rawScope) {
+  if (rawScope === '行政办公') {
+    return { primary: '行政办公', secondary: '' }
+  }
+  if (primaryCategorySet.has(rawScope) && isSecondaryInScope(rawScope, rawType)) {
     return { primary: rawScope, secondary: rawType }
   }
   if (secondaryToPrimaryMap[rawType]) {
@@ -990,13 +1075,13 @@ function normalizeTransactionCategories(record: any) {
   if (rawType === '任务支出' || rawType === '业务支出') return { primary: '业务支出', secondary: '退差价' }
   if (rawType === '礼品卡采购') return { primary: '运营支出', secondary: '礼品卡' }
   if (rawType === '美金购汇') return { primary: '运营支出', secondary: '信用卡' }
-  if (rawType === '行政支出') return { primary: '行政办公', secondary: '行政支出' }
-  if (rawType === '其他收入') return { primary: '其他收入', secondary: '其他收入' }
-  if (rawType === '其他支出') return { primary: '其他支出', secondary: '其他支出' }
-  if (rawType === '账面抵消' || record?.direction === '账面抵消') return { primary: '业务结算', secondary: '账面抵消' }
+  if (rawType === '行政支出') return { primary: '行政办公', secondary: '' }
+  if (rawType === '其他收入') return { primary: '其他收入', secondary: '其他' }
+  if (rawType === '其他支出') return { primary: '其他支出', secondary: '其他' }
+  if (rawType === '账面抵消' || record?.direction === '账面抵消') return { primary: '业务收入', secondary: '任务收入' }
 
-  if (/行政冲销/.test(text)) return { primary: '行政办公', secondary: '行政冲销' }
-  if (/行政|办公|人事|工资/.test(text)) return { primary: '行政办公', secondary: '行政支出' }
+  if (/行政冲销/.test(text)) return { primary: '行政办公', secondary: '' }
+  if (/行政|办公|人事|工资/.test(text)) return { primary: '行政办公', secondary: '' }
   if (/ip|代理|网络/i.test(text)) return { primary: '运营支出', secondary: 'IP采购' }
   if (/服务器|server/i.test(text)) return { primary: '运营支出', secondary: '服务器' }
   if (/账号|账号购买/.test(text)) return { primary: '运营支出', secondary: '账号购买' }
@@ -1006,10 +1091,10 @@ function normalizeTransactionCategories(record: any) {
   if (/佣金|返佣/.test(text)) return { primary: '业务支出', secondary: '赔付佣金' }
   if (/差价|补差/.test(text)) return { primary: '业务支出', secondary: '退差价' }
   if (/收入|补款|收款/.test(text) || record?.direction === '收入') return { primary: '业务收入', secondary: '补款收入' }
-  if (rawScope === '行政') return { primary: '行政办公', secondary: '行政支出' }
+  if (rawScope === '行政') return { primary: '行政办公', secondary: '' }
   return record?.direction === '收入'
-    ? { primary: '其他收入', secondary: '其他收入' }
-    : { primary: '其他支出', secondary: '其他支出' }
+    ? { primary: '其他收入', secondary: '其他' }
+    : { primary: '其他支出', secondary: '其他' }
 }
 
 function normalizeFinancialRow(row: any) {
@@ -1112,8 +1197,10 @@ function canModify(record: any) {
 
 function onScopeChange(scope: string) {
   const nextOptions = transactionCategoryOptions.find(item => item.value === scope)?.children || []
-  if (!nextOptions.some(item => item.value === form.transaction_type)) {
-    form.transaction_type = nextOptions[0].value
+  if (scope === '行政办公') {
+    form.transaction_type = ''
+  } else if (!nextOptions.some(item => item.value === form.transaction_type)) {
+    form.transaction_type = nextOptions[0]?.value || ''
   }
   if (!usdCapableTypeValues.has(form.transaction_type)) {
     form.amount_usd = 0
@@ -1121,15 +1208,22 @@ function onScopeChange(scope: string) {
   } else {
     form.exchange_rate = form.exchange_rate || 7.25
   }
-  if (!['业务收入', '业务支出', '业务结算'].includes(scope)) {
+  if (!['业务收入', '业务支出'].includes(scope)) {
     form.order_number = ''
   }
   if (!form.handler_name) form.handler_name = currentUser.value?.name || ''
+  ensureBusinessBreakdownRows()
   onTypeChange(form.transaction_type)
 }
 
 function onTypeChange(val: string) {
-  form.direction = offsetTypeValues.has(val) ? '账面抵消' : (incomeTypeValues.has(val) ? '收入' : '支出')
+  form.direction = offsetTypeValues.has(val)
+    ? '账面抵消'
+    : form.entry_scope.includes('收入')
+      ? '收入'
+      : incomeTypeValues.has(val)
+        ? '收入'
+        : '支出'
   if (!usdCapableTypeValues.has(val)) {
     form.amount_usd = 0
     form.exchange_rate = null
@@ -1139,6 +1233,7 @@ function onTypeChange(val: string) {
   if (!showOrderNumberField.value) {
     form.order_number = ''
   }
+  ensureBusinessBreakdownRows()
 }
 
 function onPrimaryFilterChange() {
@@ -1259,7 +1354,7 @@ function openEdit(row: any) {
   }
   editId.value = row.id
   Object.assign(form, {
-    entry_scope: inferEntryScope(normalized.transaction_type),
+    entry_scope: normalized.entry_scope || inferEntryScope(normalized.transaction_type),
     transaction_type: normalized.transaction_type,
     direction: normalized.direction,
     amount_cny: Number(row.amount_cny || 0),
@@ -1271,7 +1366,20 @@ function openEdit(row: any) {
     business_countries: getCountries(row),
     business_types: getBusinessTypes(row),
     business_order_count: getBusinessOrderCount(row),
-    business_breakdown: getBusinessBreakdown(row),
+    business_breakdown: getBusinessBreakdown(row).length
+      ? getBusinessBreakdown(row).map((item: any) => ({
+        ...item,
+        order_number: getBreakdownOrderId(item),
+        country: item.country || '',
+        business_type: normalizeBusinessType(item.business_type),
+        order_count: Number(item.order_count || 0) || undefined,
+      }))
+      : [{
+        order_number: row.order_number || '',
+        country: getCountries(row)[0] || '',
+        business_type: getBusinessTypes(row)[0] || '',
+        order_count: getBusinessOrderCount(row) || undefined,
+      }],
     offset_source_type: row.offset_source_type || '',
     offset_source_note: row.offset_source_note || '',
     handler_name: currentUser.value?.name || row.handler_name || '',
@@ -1280,22 +1388,33 @@ function openEdit(row: any) {
     transaction_date: row.transaction_date || dayjs().format('YYYY-MM-DD'),
   })
   onScopeChange(form.entry_scope)
+  ensureBusinessBreakdownRows()
   modalOpen.value = true
 }
 
 async function handleSave() {
   if (Number(form.amount_cny || 0) <= 0 && Number(form.amount_usd || 0) <= 0) { message.error('人民币或美元金额至少填写一项'); return }
+  if (!isAdministrativeEntry.value && !String(form.transaction_type || '').trim()) { message.error('请选择二级分类'); return }
   if (!form.transaction_date) { message.error('请填写交易日期'); return }
+  const normalizedBreakdown = getNormalizedFormBusinessBreakdown()
+  if (isBusinessEntry.value && normalizedBreakdown.some((item: any) => !item.country || !item.business_type || item.order_count <= 0)) {
+    message.error('请完整填写每行业务明细的国家、类型和单量')
+    return
+  }
+  const businessCountries = [...new Set(normalizedBreakdown.map((item: any) => item.country).filter(Boolean))]
+  const businessTypes = [...new Set(normalizedBreakdown.map((item: any) => item.business_type).filter(Boolean))]
+  const businessOrderCount = normalizedBreakdown.reduce((sum: number, item: any) => sum + Number(item.order_count || 0), 0)
   saving.value = true
   try {
     const payload: any = {
       ...form,
       entry_scope: form.entry_scope,
+      transaction_type: isAdministrativeEntry.value ? null : form.transaction_type,
       direction: getDirection(form),
-      business_countries: normalizeTextArray(form.business_countries),
-      business_types: normalizeTextArray(form.business_types).map(normalizeBusinessType).filter(Boolean),
-      business_order_count: Number(form.business_order_count || 0),
-      business_breakdown: form.business_breakdown || [],
+      business_countries: businessCountries,
+      business_types: businessTypes,
+      business_order_count: businessOrderCount,
+      business_breakdown: normalizedBreakdown,
       offset_source_type: form.direction === '账面抵消' ? (form.offset_source_type || null) : null,
       offset_source_note: form.direction === '账面抵消' ? (form.offset_source_note || null) : null,
       handler_name: currentUser.value?.name || form.handler_name || '',
@@ -1472,6 +1591,38 @@ onMounted(() => {
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 
 .form-tip { margin: -4px 0 8px; font-size: 12px; color: #6b7280; }
+.business-edit-card {
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.business-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 700;
+}
+.business-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.business-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 90px 54px;
+  gap: 8px;
+  align-items: center;
+}
+.business-edit-tip {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
 .amount-stack { display: flex; flex-direction: column; gap: 2px; }
 .amount-in { color: #059669; font-weight: 600; }
 .amount-out { color: #dc2626; font-weight: 600; }

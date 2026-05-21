@@ -63,7 +63,7 @@
         <span>点击「礼品卡返款」会弹出抽屉，展示礼品卡剩余库存和推荐返款面值组合。</span>
       </div>
       <div v-if="activeTab === 'other'" class="queue-hint">
-        <span>其他付款同时承接业务支出、运营支出、行政办公等付款申请；未关联订单的行政/运营付款会在关联订单列显示为 --。</span>
+        <span>其他付款主要承接运营支出、行政办公、其他支出等付款申请；未关联订单的行政/运营付款会在关联订单列显示为 --。</span>
       </div>
       <div v-if="selectedBatchRows.length" class="batch-bar">
         <span>已选择 <strong>{{ selectedBatchRows.length }}</strong> 条</span>
@@ -139,6 +139,7 @@
           </template>
           <template v-if="column.key === 'payout_account'">
             <div>{{ record.payout_account || '—' }}</div>
+            <a v-if="record.payout_qr_code" :href="record.payout_qr_code" target="_blank" class="cell-product-price">查看收款二维码</a>
             <div v-if="getProcessMetaText(record)" class="cell-product-price">
               {{ getProcessMetaText(record) }}
             </div>
@@ -236,6 +237,10 @@
             <div v-if="activeTab === 'other' && getProcessMethodText(currentRequest) !== '--'" class="detail-item">
               <span class="detail-label">付款方式</span>
               <span class="detail-val">{{ getProcessMethodText(currentRequest) }}</span>
+            </div>
+            <div v-if="activeTab === 'other' && currentRequest.payout_qr_code" class="detail-item full">
+              <span class="detail-label">收款二维码</span>
+              <span class="detail-val"><a :href="currentRequest.payout_qr_code" target="_blank">查看二维码</a></span>
             </div>
             <div v-if="activeTab === 'other' && getProcessAccountText(currentRequest) !== '--'" class="detail-item">
               <span class="detail-label">付款账号</span>
@@ -427,7 +432,7 @@
         <a-form-item v-if="otherProcessMode !== 'receipt'" label="一级分类">
           <a-input :value="otherProcessForm.primaryCategory" readonly />
         </a-form-item>
-        <a-form-item v-if="otherProcessMode !== 'receipt'" label="二级分类">
+        <a-form-item v-if="otherProcessMode !== 'receipt' && otherProcessForm.primaryCategory !== '行政办公'" label="二级分类">
           <a-select :value="otherProcessForm.category" mode="multiple" style="width:100%" disabled>
             <a-select-option v-for="item in otherProcessSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
           </a-select>
@@ -467,11 +472,11 @@
           <a-col :span="12">
             <a-form-item label="一级分类" required>
               <a-select v-model:value="otherSubmitForm.primaryCategory" @change="onOtherSubmitPrimaryChange">
-                <a-select-option v-for="item in otherPaymentPrimaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
+                <a-select-option v-for="item in otherSubmitPrimaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col v-if="otherSubmitForm.primaryCategory !== '行政办公'" :span="12">
             <a-form-item label="二级分类" required>
               <a-select v-model:value="otherSubmitForm.category" mode="multiple">
                 <a-select-option v-for="item in otherSubmitSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
@@ -494,6 +499,11 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
+            <a-form-item label="收款二维码">
+              <a-input v-model:value="otherSubmitForm.payoutQrCode" placeholder="粘贴收款二维码图片 URL（可选）" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
             <a-form-item label="申请金额(人民币)" required>
               <a-input-number v-model:value="otherSubmitForm.amountCny" :min="0" :precision="2" style="width:100%" />
             </a-form-item>
@@ -506,11 +516,6 @@
           <a-col v-if="showOtherSubmitUsdFields" :span="12">
             <a-form-item label="汇率" required>
               <a-input-number v-model:value="otherSubmitForm.exchangeRate" :min="0" :precision="4" style="width:100%" placeholder="例如 7.2500" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="用途" required>
-              <a-input v-model:value="otherSubmitForm.reason" placeholder="例如：办公室采购、服务器续费、截单退款" />
             </a-form-item>
           </a-col>
           <a-col :span="24">
@@ -595,23 +600,25 @@ const otherPaymentCategoryOptions = [
   {
     value: '行政办公',
     label: '行政办公',
-    children: [
-      { value: '行政支出', label: '行政支出' },
-      { value: '行政冲销', label: '行政冲销' },
-    ],
+    children: [],
   },
   {
     value: '其他支出',
     label: '其他支出',
-    children: [{ value: '其他支出', label: '其他支出' }],
+    children: [
+      { value: '开箱视频', label: '开箱视频' },
+      { value: '删差评', label: '删差评' },
+      { value: '其他', label: '其他' },
+    ],
   },
 ]
 const otherPaymentPrimaryOptions = otherPaymentCategoryOptions.map(({ value, label }) => ({ value, label }))
+const otherSubmitPrimaryOptions = otherPaymentPrimaryOptions.filter(item => item.value !== '业务支出')
 const otherPaymentSecondaryToPrimaryMap = Object.fromEntries(
   otherPaymentCategoryOptions.flatMap(group => group.children.map(item => [item.value, group.value])),
 ) as Record<string, string>
 const receiptNeedOptions = ['需要', '不需要']
-const payoutMethodOptions = ['银行卡', '支付宝', '微信', '对公转账', '现金', '其他']
+const payoutMethodOptions = ['银行卡', '支付宝', '微信', '对公转账', '其他']
 const extraMockPaypalRequests = ref<any[]>([])
 const extraMockGiftRequests = ref<any[]>([])
 
@@ -859,14 +866,14 @@ const otherProcessForm = reactive({
 })
 const otherSubmitForm = reactive({
   primaryCategory: '行政办公',
-  category: ['行政支出'] as string[],
+  category: [] as string[],
   applicantName: '',
   customerName: '',
   payoutAccount: '',
+  payoutQrCode: '',
   amountCny: 0,
   amountUsd: 0,
   exchangeRate: 7.25,
-  reason: '',
   notes: '',
 })
 
@@ -886,7 +893,11 @@ const otherPaymentFilterSecondaryOptions = computed(() => {
   if (filterOtherPrimaryCategory.value) {
     return otherPaymentCategoryOptions.find(item => item.value === filterOtherPrimaryCategory.value)?.children || []
   }
-  return otherPaymentCategoryOptions.flatMap(item => item.children)
+  const map = new Map<string, { value: string; label: string }>()
+  otherPaymentCategoryOptions.flatMap(item => item.children).forEach((item) => {
+    if (!map.has(item.value)) map.set(item.value, item)
+  })
+  return Array.from(map.values())
 })
 
 const otherProcessSecondaryOptions = computed(() =>
@@ -1116,7 +1127,7 @@ const tableColumns = computed(() => {
     { title: '任务信息', key: 'task_info', width: 170 },
     { title: '国家', key: 'country', width: 90, align: 'center' as const },
     { title: '收款对象', dataIndex: 'customer_name', key: 'customer_name', width: 140 },
-    { title: '付款账号', key: 'payout_account', width: 180 },
+    { title: '收款账号', key: 'payout_account', width: 180 },
     { title: '付款金额', key: 'refund_amount', width: 130 },
     { title: '交易类型', key: 'refund_category', width: 180 },
     { title: '退款信息', key: 'refund_info', width: 150 },
@@ -1225,6 +1236,10 @@ function resolveOtherPaymentCategories(record: any) {
   const reason = String(record?.refund_reason || '').trim()
   const text = `${rawCategory} ${reason} ${record?.notes || ''} ${record?.finance_notes || ''}`
 
+  if (rawCategory === '行政办公') return { primary: '行政办公', secondary: '' }
+  if (rawCategory === '运营支出') return { primary: '运营支出', secondary: '' }
+  if (rawCategory === '其他支出') return { primary: '其他支出', secondary: '其他' }
+  if (!rawCategoryValues.length && /行政|办公|人事|工资/.test(text)) return { primary: '行政办公', secondary: '' }
   if (rawCategoryValues.length && rawCategoryValues.every(item => otherPaymentSecondaryToPrimaryMap[item])) {
     return { primary: otherPaymentSecondaryToPrimaryMap[rawCategoryValues[0]], secondary: rawCategoryValues.join(' / ') }
   }
@@ -1242,8 +1257,8 @@ function resolveOtherPaymentCategories(record: any) {
   if (/账号/.test(text)) return { primary: '运营支出', secondary: '账号购买' }
   if (/礼品卡/.test(text)) return { primary: '运营支出', secondary: '礼品卡' }
   if (/信用卡|卡费/.test(text)) return { primary: '运营支出', secondary: '信用卡' }
-  if (/行政|办公|人事|工资/.test(text)) return { primary: '行政办公', secondary: '行政支出' }
-  return { primary: '其他支出', secondary: '其他支出' }
+  if (/行政|办公|人事|工资/.test(text)) return { primary: '行政办公', secondary: '' }
+  return { primary: '其他支出', secondary: '其他' }
 }
 
 function getOtherPaymentPrimaryLabel(record: any) {
@@ -1251,7 +1266,7 @@ function getOtherPaymentPrimaryLabel(record: any) {
 }
 
 function getOtherPaymentSecondaryLabel(record: any) {
-  return parseOtherPaymentSecondaryValues(record?.refund_category).join(' / ') || resolveOtherPaymentCategories(record).secondary
+  return parseOtherPaymentSecondaryValues(record?.refund_category).join(' / ') || resolveOtherPaymentCategories(record).secondary || record?.refund_reason || '—'
 }
 
 function getOtherPaymentTypeText(record: any) {
@@ -1548,18 +1563,27 @@ function onOtherFilterPrimaryChange() {
 }
 
 function onOtherProcessPrimaryChange() {
+  if (otherProcessForm.primaryCategory === '行政办公') {
+    otherProcessForm.category = []
+    return
+  }
   if (!otherProcessForm.category.every(value => otherProcessSecondaryOptions.value.some(item => item.value === value))) {
-    otherProcessForm.category = otherProcessSecondaryOptions.value.length ? [otherProcessSecondaryOptions.value[0].value] : ['其他支出']
+    otherProcessForm.category = otherProcessSecondaryOptions.value.length ? [otherProcessSecondaryOptions.value[0].value] : ['其他']
   }
 }
 
 function onOtherSubmitPrimaryChange() {
+  if (otherSubmitForm.primaryCategory === '行政办公') {
+    otherSubmitForm.category = []
+    return
+  }
   const nextValues = otherSubmitForm.category.filter(value => otherSubmitSecondaryOptions.value.some(item => item.value === value))
-  otherSubmitForm.category = nextValues.length ? nextValues : (otherSubmitSecondaryOptions.value.length ? [otherSubmitSecondaryOptions.value[0].value] : ['其他支出'])
+  otherSubmitForm.category = nextValues.length ? nextValues : (otherSubmitSecondaryOptions.value.length ? [otherSubmitSecondaryOptions.value[0].value] : ['其他'])
 }
 
-function buildStoredOtherCategory(values: string[]) {
-  return parseOtherPaymentSecondaryValues(values).join('|')
+function buildStoredOtherCategory(values: string[], primaryCategory = '') {
+  const secondary = parseOtherPaymentSecondaryValues(values).join('|')
+  return secondary || primaryCategory
 }
 
 function buildOtherProcessPaymentNote() {
@@ -1616,7 +1640,7 @@ function openOtherProcess(record?: any, useSelection = false) {
   otherProcessForm.amountUsd = getOtherUsdAmount(targets[0])
   otherProcessForm.exchangeRate = getOtherExchangeRate(targets[0]) || 7.25
   const meta = extractOtherProcessPaymentMeta(targets[0])
-  otherProcessForm.paymentMethod = meta.method
+  otherProcessForm.paymentMethod = payoutMethodOptions.includes(meta.method) ? meta.method : ''
   otherProcessForm.paymentAccount = meta.account
   otherProcessForm.receipt = targets[0]?.paypal_receipt_screenshot || ''
   otherProcessForm.notes = targets[0]?.finance_notes || ''
@@ -1632,7 +1656,7 @@ function openOtherReceipt(record: any) {
   otherProcessForm.amountUsd = getOtherUsdAmount(record)
   otherProcessForm.exchangeRate = getOtherExchangeRate(record) || 7.25
   const meta = extractOtherProcessPaymentMeta(record)
-  otherProcessForm.paymentMethod = meta.method
+  otherProcessForm.paymentMethod = payoutMethodOptions.includes(meta.method) ? meta.method : ''
   otherProcessForm.paymentAccount = meta.account
   otherProcessForm.receipt = record?.paypal_receipt_screenshot || ''
   otherProcessForm.notes = record?.finance_notes || ''
@@ -1641,14 +1665,14 @@ function openOtherReceipt(record: any) {
 
 function resetOtherSubmitForm() {
   otherSubmitForm.primaryCategory = '行政办公'
-  otherSubmitForm.category = ['行政支出']
+  otherSubmitForm.category = []
   otherSubmitForm.applicantName = currentUser.value?.name || ''
   otherSubmitForm.customerName = ''
   otherSubmitForm.payoutAccount = ''
+  otherSubmitForm.payoutQrCode = ''
   otherSubmitForm.amountCny = 0
   otherSubmitForm.amountUsd = 0
   otherSubmitForm.exchangeRate = 7.25
-  otherSubmitForm.reason = ''
   otherSubmitForm.notes = ''
 }
 
@@ -1887,7 +1911,7 @@ function openOtherSubmitModal() {
 }
 
 async function handleOtherSubmit() {
-  if (!otherSubmitForm.category.length) {
+  if (otherSubmitForm.primaryCategory !== '行政办公' && !otherSubmitForm.category.length) {
     message.warning('请选择二级分类')
     return
   }
@@ -1915,11 +1939,6 @@ async function handleOtherSubmit() {
     message.warning('请填写汇率')
     return
   }
-  if (!otherSubmitForm.reason.trim()) {
-    message.warning('请填写用途')
-    return
-  }
-
   submittingOther.value = true
   try {
     const now = new Date().toISOString()
@@ -1929,11 +1948,11 @@ async function handleOtherSubmit() {
       refund_amount: Number(otherSubmitForm.amountCny || 0),
       refund_amount_usd: showOtherSubmitUsdFields.value ? Number(otherSubmitForm.amountUsd || 0) : 0,
       exchange_rate: showOtherSubmitUsdFields.value ? Number(otherSubmitForm.exchangeRate || 0) : null,
-      refund_category: buildStoredOtherCategory(otherSubmitForm.category),
-      refund_reason: otherSubmitForm.reason.trim(),
+      refund_category: buildStoredOtherCategory(otherSubmitForm.category, otherSubmitForm.primaryCategory),
       applicant_name: otherSubmitForm.applicantName.trim(),
       customer_name: otherSubmitForm.customerName.trim(),
       payout_account: otherSubmitForm.payoutAccount.trim(),
+      payout_qr_code: otherSubmitForm.payoutQrCode.trim(),
       notes: otherSubmitForm.notes.trim(),
       finance_notes: '',
       refund_operator: '',
@@ -2147,7 +2166,7 @@ async function handleOtherProcess() {
     const realRecords = currentProcessRequests.value.filter(item => !String(item.id).startsWith('mock-other-'))
     const realIds = realRecords.map(item => item.id)
     const financeNote = buildOtherProcessPaymentNote()
-    const storedCategory = buildStoredOtherCategory(otherProcessForm.category)
+    const storedCategory = buildStoredOtherCategory(otherProcessForm.category, otherProcessForm.primaryCategory)
 
     if (mockIds.length) {
       mockOtherRequests.value = mockOtherRequests.value.map(item =>
