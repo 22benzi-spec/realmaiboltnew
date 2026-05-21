@@ -3485,7 +3485,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: calc(90vh - 120px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
