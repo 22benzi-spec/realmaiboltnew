@@ -456,31 +456,42 @@
           <div class="billing-summary-row">
             <div class="billing-summary-item">
               <span class="billing-summary-label">实际应收</span>
-              <span class="billing-summary-val">&yen;{{ Number(currentOrder.total_amount || 0).toFixed(2) }}</span>
-              <span class="billing-summary-hint">本次任务约定总价</span>
+              <span class="billing-summary-val">&yen;{{ actualReceivable.toFixed(2) }}</span>
+              <span class="billing-summary-hint">已含商务手动差价</span>
             </div>
             <div class="billing-summary-divider"></div>
             <div class="billing-summary-item">
-              <span class="billing-summary-label">净到账</span>
-              <span class="billing-summary-val" :style="{ color: paymentTotal > 0 ? '#16a34a' : '#9ca3af' }">&yen;{{ paymentTotal.toFixed(2) }}</span>
+              <span class="billing-summary-label">累计收款</span>
+              <span class="billing-summary-val" :style="{ color: collectedTotal > 0 ? '#16a34a' : '#9ca3af' }">&yen;{{ collectedTotal.toFixed(2) }}</span>
               <span class="billing-summary-hint">
                 <template v-if="paymentsByType.base > 0">首款¥{{ paymentsByType.base.toFixed(0) }}</template>
                 <template v-if="paymentsByType.supplement > 0"> + 补¥{{ paymentsByType.supplement.toFixed(0) }}</template>
-                <template v-if="paymentsByType.refund > 0"> - 退¥{{ paymentsByType.refund.toFixed(0) }}</template>
-                <template v-if="paymentTotal === 0">暂无到账</template>
+                <template v-if="collectedTotal === 0">暂无收款</template>
               </span>
             </div>
             <div class="billing-summary-divider"></div>
             <div class="billing-summary-item">
-              <span class="billing-summary-label">差价金额</span>
-              <span class="billing-summary-val" :style="{ color: paymentDiff < 0 ? '#dc2626' : paymentDiff > 0 ? '#2563eb' : '#16a34a' }">
-                <template v-if="paymentDiff < 0">&yen;{{ Math.abs(paymentDiff).toFixed(2) }}</template>
-                <template v-else-if="paymentDiff > 0">-&yen;{{ paymentDiff.toFixed(2) }}</template>
-                <template v-else>&yen;0</template>
+              <span class="billing-summary-label">账面抵消</span>
+              <span class="billing-summary-val" style="color:#2563eb">&yen;{{ paymentsByType.offset.toFixed(2) }}</span>
+              <span class="billing-summary-hint">用于核销应收</span>
+            </div>
+            <div class="billing-summary-divider"></div>
+            <div class="billing-summary-item">
+              <span class="billing-summary-label">累计退款</span>
+              <span class="billing-summary-val" style="color:#dc2626">&yen;{{ paymentsByType.refund.toFixed(2) }}</span>
+              <span class="billing-summary-hint">退款流水合计</span>
+            </div>
+            <div class="billing-summary-divider"></div>
+            <div class="billing-summary-item">
+              <span class="billing-summary-label">待结算差额</span>
+              <span class="billing-summary-val" :style="{ color: settlementDiff < 0 ? '#dc2626' : settlementDiff > 0 ? '#059669' : '#16a34a' }">
+                <template v-if="settlementDiff > 0.005">+&yen;{{ settlementDiff.toFixed(2) }}</template>
+                <template v-else-if="settlementDiff < -0.005">-&yen;{{ Math.abs(settlementDiff).toFixed(2) }}</template>
+                <template v-else>&yen;0.00</template>
               </span>
               <span class="billing-summary-hint">
-                <template v-if="paymentDiff < 0">待客户补款</template>
-                <template v-else-if="paymentDiff > 0">待退客户</template>
+                <template v-if="settlementDiff > 0.005">需退客户 / 溢收</template>
+                <template v-else-if="settlementDiff < -0.005">客户还需补款</template>
                 <template v-else>已结清</template>
               </span>
             </div>
@@ -498,14 +509,6 @@
               <a-tag v-else color="green">无异常</a-tag>
             </div>
             <template v-if="hasRealDebt(currentOrder) || hasRealSurplus(currentOrder)">
-              <div class="billing-info-row">
-                <span class="billing-key">差价金额：</span>
-                <span :class="hasRealSurplus(currentOrder) ? 'surplus-amount-text' : 'debt-amount-text'">&yen;{{ Number(currentOrder.debt_amount || 0).toFixed(2) }}</span>
-              </div>
-              <div class="billing-info-row billing-notes-row" v-if="currentOrder.debt_notes">
-                <span class="billing-key">差价说明：</span>
-                <span class="debt-notes-text">{{ currentOrder.debt_notes }}</span>
-              </div>
               <div class="billing-info-row" v-if="currentOrder.debt_marked_by">
                 <span class="billing-key">标记商务：</span>
                 <span class="billing-val">{{ currentOrder.debt_marked_by }}
@@ -941,13 +944,6 @@ const mockBatchPayments = computed(() => {
 
 const displayBatchPayments = computed(() => batchPayments.value.length ? batchPayments.value : mockBatchPayments.value)
 
-const paymentTotal = computed(() => {
-  return batchPayments.value.reduce((s, p) => {
-    const amt = Number(p.amount_cny || 0)
-    return p.payment_type === '退款' ? s - amt : s + amt
-  }, 0)
-})
-
 const paymentsByType = computed(() => {
   const base = batchPayments.value
     .filter(p => !p.payment_type || p.payment_type === '基础收款')
@@ -958,11 +954,29 @@ const paymentsByType = computed(() => {
   const refund = batchPayments.value
     .filter(p => p.payment_type === '退款')
     .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
-  return { base, supplement, refund }
+  const offset = batchPayments.value
+    .filter(p => p.payment_type === '账面抵消')
+    .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+  return { base, supplement, refund, offset }
 })
 
-const paymentDiff = computed(() => {
-  return paymentTotal.value - Number(currentOrder.value?.total_amount || 0)
+const collectedTotal = computed(() => paymentsByType.value.base + paymentsByType.value.supplement)
+
+const manualDebtAdjustment = computed(() => {
+  const amount = Number(currentOrder.value?.debt_amount || 0)
+  if (hasRealDebt(currentOrder.value)) return amount
+  if (hasRealSurplus(currentOrder.value)) return -amount
+  return 0
+})
+
+const actualReceivable = computed(() => Number(currentOrder.value?.total_amount || 0) + manualDebtAdjustment.value)
+
+const settledTotal = computed(() =>
+  collectedTotal.value + paymentsByType.value.offset - paymentsByType.value.refund
+)
+
+const settlementDiff = computed(() => {
+  return settledTotal.value - actualReceivable.value
 })
 
 const canMarkCleared = computed(() => batchPayments.value.length > 0)

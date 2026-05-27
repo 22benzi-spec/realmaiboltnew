@@ -21,21 +21,23 @@
         <div class="billing-header-right">
           <div class="billing-summary-trio">
             <div class="trio-item">
-              <div class="trio-label">实际应收</div>
-              <div class="trio-val trio-expect">¥{{ Number(order.total_amount || 0).toFixed(2) }}</div>
+              <div class="trio-label">基础应收</div>
+              <div class="trio-val trio-expect">¥{{ baseReceivable.toFixed(2) }}</div>
             </div>
             <div class="trio-divider"></div>
             <div class="trio-item">
-              <div class="trio-label">净到账</div>
-              <div class="trio-val trio-received" :style="{ color: paymentTotal > 0 ? '#16a34a' : '#9ca3af' }">
-                ¥{{ paymentTotal.toFixed(2) }}
+              <div class="trio-label">已结算金额</div>
+              <div class="trio-val trio-received" :style="{ color: settledTotal > 0 ? '#16a34a' : '#9ca3af' }">
+                ¥{{ settledTotal.toFixed(2) }}
               </div>
             </div>
             <div class="trio-divider"></div>
             <div class="trio-item">
-              <div class="trio-label">{{ diffLabel }}</div>
-              <div class="trio-val" :style="{ color: diffColor }">
-                ¥{{ Math.abs(paymentDiff).toFixed(2) }}
+              <div class="trio-label">待结算差额</div>
+              <div class="trio-val" :style="{ color: settlementDiff < 0 ? '#dc2626' : settlementDiff > 0 ? '#059669' : '#16a34a' }">
+                <template v-if="settlementDiff > 0.005">+¥{{ settlementDiff.toFixed(2) }}</template>
+                <template v-else-if="settlementDiff < -0.005">-¥{{ Math.abs(settlementDiff).toFixed(2) }}</template>
+                <template v-else>¥0.00</template>
               </div>
             </div>
           </div>
@@ -81,7 +83,7 @@
               <a-tag v-else color="default" size="small">无异常</a-tag>
             </div>
             <div v-if="order.debt_notes" class="debt-view-row">
-              <span class="dv-label">差价说明</span>
+              <span class="dv-label">商务备注</span>
               <span class="dv-val">{{ order.debt_notes }}</span>
             </div>
             <div v-if="order.debt_marked_by" class="debt-view-row">
@@ -122,16 +124,12 @@
                 />
               </div>
               <div class="edit-field">
-                <label class="edit-label">差价说明</label>
+                <label class="edit-label">商务备注</label>
                 <a-textarea
                   v-model:value="debtForm.debt_notes"
                   :rows="2"
-                  placeholder="如：税费差额 ¥120"
+                  placeholder="如：税费、汇率差等需要业务说明的原因"
                 />
-              </div>
-              <div class="edit-field">
-                <label class="edit-label">标记商务</label>
-                <a-input v-model:value="debtForm.debt_marked_by" placeholder="商务姓名" style="width:200px" />
               </div>
             </template>
           </div>
@@ -382,6 +380,8 @@ const payments = ref<any[]>([])
 
 const supplementRecords = computed(() => payments.value.filter(p => p.payment_type === '补款'))
 const refundRecords = computed(() => payments.value.filter(p => p.payment_type === '退款'))
+const offsetRecords = computed(() => payments.value.filter(p => p.payment_type === '账面抵消'))
+const baseCollectionRecords = computed(() => payments.value.filter(p => !p.payment_type || p.payment_type === '基础收款'))
 
 const supplementTotal = computed(() =>
   supplementRecords.value.reduce((s, p) => s + Number(p.amount_cny || 0), 0)
@@ -389,29 +389,29 @@ const supplementTotal = computed(() =>
 const refundTotal = computed(() =>
   refundRecords.value.reduce((s, p) => s + Number(p.amount_cny || 0), 0)
 )
+const offsetTotal = computed(() =>
+  offsetRecords.value.reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+)
+const baseCollectionTotal = computed(() =>
+  baseCollectionRecords.value.reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+)
 
-const paymentTotal = computed(() => {
-  return payments.value.reduce((s, p) => {
-    const amt = Number(p.amount_cny || 0)
-    return p.payment_type === '退款' ? s - amt : s + amt
-  }, 0)
+const baseReceivable = computed(() => Number(props.order?.total_amount || 0))
+
+const manualDebtAdjustment = computed(() => {
+  const amount = Number(props.order?.debt_amount || 0)
+  if (props.order?.debt_status === 'owed') return amount
+  if (props.order?.debt_status === 'surplus') return -amount
+  return 0
 })
 
-const paymentDiff = computed(() => {
-  return Number(props.order?.total_amount || 0) - paymentTotal.value
-})
+const actualReceivable = computed(() => baseReceivable.value + manualDebtAdjustment.value)
 
-const diffLabel = computed(() => {
-  if (paymentDiff.value > 0.005) return '差价金额'
-  if (paymentDiff.value < -0.005) return '差价金额'
-  return '已结清'
-})
+const settledTotal = computed(() =>
+  baseCollectionTotal.value + supplementTotal.value + offsetTotal.value - refundTotal.value
+)
 
-const diffColor = computed(() => {
-  if (paymentDiff.value > 0) return '#dc2626'
-  if (paymentDiff.value < 0) return '#2563eb'
-  return '#16a34a'
-})
+const settlementDiff = computed(() => settledTotal.value - actualReceivable.value)
 
 const needsAttention = computed(() => {
   if (!props.order) return false
@@ -432,7 +432,7 @@ const needsAttention = computed(() => {
 
 const alertText = computed(() => {
   if (!props.order) return ''
-  if (props.order.debt_status === 'owed') return '净到账已覆盖差价金额，建议将账款情况标记为已结清'
+  if (props.order.debt_status === 'owed') return '已结算金额已覆盖差价金额，建议将账款情况标记为已结清'
   if (props.order.debt_status === 'surplus') return '退款已处理，建议将账款情况标记为已结清'
   return ''
 })
@@ -468,7 +468,6 @@ const debtForm = ref({
   debt_status: 'none',
   debt_amount: 0,
   debt_notes: '',
-  debt_marked_by: '',
 })
 
 function startEditDebt() {
@@ -478,7 +477,6 @@ function startEditDebt() {
     debt_status: props.order.debt_status || 'none',
     debt_amount: props.order.debt_amount || 0,
     debt_notes: props.order.debt_notes || '',
-    debt_marked_by: props.order.debt_marked_by || currentUser.value?.name || '',
   }
   editingDebt.value = true
 }
@@ -497,7 +495,7 @@ async function saveDebt() {
       debt_status: debtForm.value.debt_status,
       debt_amount: hasIssue ? debtForm.value.debt_amount : 0,
       debt_notes: hasIssue ? debtForm.value.debt_notes : null,
-      debt_marked_by: hasIssue ? debtForm.value.debt_marked_by : null,
+      debt_marked_by: hasIssue ? (currentUser.value?.name || props.order.debt_marked_by || null) : null,
       debt_marked_at: hasIssue ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     }
@@ -518,6 +516,9 @@ const addRecordOpen = ref(false)
 const addRecordSaving = ref(false)
 const addRecordType = ref<'补款' | '退款' | '账面抵消'>('补款')
 const offsetOpenedFromNestedAction = ref(false)
+const nestedReturnRecordType = ref<'补款' | '退款' | null>(null)
+const nestedParentRecordFormSnapshot = ref<any | null>(null)
+const nestedParentRecordFilesSnapshot = ref<any[]>([])
 const addRecordFiles = ref<any[]>([])
 const businessTypeOptions = ['文字', '免评', '图片', '视频', 'Feedback']
 const billingTransactionCategoryOptions = [
@@ -721,6 +722,15 @@ function removeOffsetTaskRow(index: number) {
 }
 
 function openAddRecord(type: '补款' | '退款' | '账面抵消', fromNestedAction = false) {
+  if (type === '账面抵消' && fromNestedAction) {
+    nestedReturnRecordType.value = addRecordType.value === '退款' ? '退款' : '补款'
+    nestedParentRecordFormSnapshot.value = JSON.parse(JSON.stringify(addRecordForm.value))
+    nestedParentRecordFilesSnapshot.value = [...addRecordFiles.value]
+  } else if (!fromNestedAction) {
+    nestedReturnRecordType.value = null
+    nestedParentRecordFormSnapshot.value = null
+    nestedParentRecordFilesSnapshot.value = []
+  }
   addRecordType.value = type
   offsetOpenedFromNestedAction.value = type === '账面抵消' && fromNestedAction
   addRecordFiles.value = []
@@ -950,8 +960,33 @@ async function saveRecord() {
 
     const label = isOffset ? '账面抵消已记录' : isRefund ? '退款已提交，流水待审批' : '补款已记录'
     message.success(label)
-    addRecordOpen.value = false
     await loadPayments()
+    if (isOffset && offsetOpenedFromNestedAction.value && nestedReturnRecordType.value && nestedParentRecordFormSnapshot.value) {
+      const parentType = nestedReturnRecordType.value
+      const restoredForm = JSON.parse(JSON.stringify(nestedParentRecordFormSnapshot.value))
+      const originalCny = Number(restoredForm.amount_cny || 0)
+      restoredForm.amount_cny = originalCny > 0 ? Math.max(0, Number((originalCny - amountCny).toFixed(2))) : restoredForm.amount_cny
+      const hasRemainingCny = Number(restoredForm.amount_cny || 0) > 0.005
+      const hasRemainingUsd = parentType === '补款' && Number(restoredForm.amount_usd || 0) > 0.005
+      if (hasRemainingCny || hasRemainingUsd) {
+        addRecordType.value = parentType
+        addRecordForm.value = restoredForm
+        addRecordFiles.value = [...nestedParentRecordFilesSnapshot.value]
+        offsetOpenedFromNestedAction.value = false
+        nestedReturnRecordType.value = null
+        nestedParentRecordFormSnapshot.value = null
+        nestedParentRecordFilesSnapshot.value = []
+        addRecordOpen.value = true
+      } else {
+        addRecordOpen.value = false
+        offsetOpenedFromNestedAction.value = false
+        nestedReturnRecordType.value = null
+        nestedParentRecordFormSnapshot.value = null
+        nestedParentRecordFilesSnapshot.value = []
+      }
+    } else {
+      addRecordOpen.value = false
+    }
   } catch (e: any) {
     message.error('操作失败：' + e.message)
   } finally {

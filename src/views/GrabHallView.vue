@@ -5,49 +5,61 @@
     <a-tabs v-model:activeKey="activeTab">
       <a-tab-pane key="hall" tab="抢单大厅">
         <div class="hall-stats">
-          <div class="stat-card">
-            <span class="stat-label">主订单总待抢</span>
-            <strong class="stat-value">{{ hallSummary.orderPendingCount }}</strong>
-            <span class="stat-desc">当前主订单待抢总数</span>
+          <div class="stat-group">
+            <div class="stat-group-title">主订单</div>
+            <div class="stat-group-cards">
+              <div class="stat-card">
+                <span class="stat-label">总待抢</span>
+                <strong class="stat-value">{{ hallSummary.orderPendingCount }}</strong>
+                <span class="stat-desc">当前主订单待抢总数</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">今日更新</span>
+                <strong class="stat-value">{{ hallSummary.orderUpdatedTodayCount }}</strong>
+                <span class="stat-desc">今日新进入大厅的主订单</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">今日已抢</span>
+                <strong class="stat-value stat-success">{{ hallSummary.orderGrabbedTodayCount }}</strong>
+                <span class="stat-desc">今日已被抢走的主订单</span>
+              </div>
+            </div>
           </div>
-          <div class="stat-card">
-            <span class="stat-label">主订单今日更新</span>
-            <strong class="stat-value">{{ hallSummary.orderUpdatedTodayCount }}</strong>
-            <span class="stat-desc">今日新进入大厅的主订单</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">主订单今日已抢</span>
-            <strong class="stat-value stat-success">{{ hallSummary.orderGrabbedTodayCount }}</strong>
-            <span class="stat-desc">今日已被抢走的主订单</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">子订单总待抢</span>
-            <strong class="stat-value">{{ hallSummary.subOrderPendingCount }}</strong>
-            <span class="stat-desc">当前子订单待抢总数</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">子订单今日更新</span>
-            <strong class="stat-value">{{ hallSummary.subOrderUpdatedTodayCount }}</strong>
-            <span class="stat-desc">今日新进入大厅的子订单</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">子订单今日已抢</span>
-            <strong class="stat-value stat-success">{{ hallSummary.subOrderGrabbedTodayCount }}</strong>
-            <span class="stat-desc">今日已被抢走的子订单</span>
+          <div class="stat-group">
+            <div class="stat-group-title">子订单</div>
+            <div class="stat-group-cards">
+              <div class="stat-card">
+                <span class="stat-label">总待抢</span>
+                <strong class="stat-value">{{ hallSummary.subOrderPendingCount }}</strong>
+                <span class="stat-desc">当前子订单待抢总数</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">今日更新</span>
+                <strong class="stat-value">{{ hallSummary.subOrderUpdatedTodayCount }}</strong>
+                <span class="stat-desc">今日新进入大厅的子订单</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">今日已抢</span>
+                <strong class="stat-value stat-success">{{ hallSummary.subOrderGrabbedTodayCount }}</strong>
+                <span class="stat-desc">今日已被抢走的子订单</span>
+              </div>
+            </div>
           </div>
         </div>
 
         <div class="hall-toolbar">
           <div class="toolbar-left">
-            <a-select v-model:value="grabStaffId" style="width:180px" placeholder="选择抢单业务员" show-search option-filter-prop="label">
-              <a-select-option v-for="s in staffList" :key="s.id" :value="s.id" :label="s.name">{{ s.name }}</a-select-option>
-            </a-select>
             <a-select v-model:value="filterReviewType" style="width: 130px" allow-clear placeholder="测评类型">
               <a-select-option v-for="item in reviewTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
             </a-select>
             <a-select v-model:value="filterReviewLevel" style="width: 130px" allow-clear placeholder="等级">
               <a-select-option v-for="item in reviewLevelOptions" :key="item" :value="item">{{ item }}</a-select-option>
             </a-select>
+            <div class="price-filter">
+              <a-input-number v-model:value="filterMinPrice" :min="0" :precision="2" style="width: 96px" placeholder="最低售价" />
+              <span class="price-filter-sep">-</span>
+              <a-input-number v-model:value="filterMaxPrice" :min="0" :precision="2" style="width: 96px" placeholder="最高售价" />
+            </div>
             <a-button @click="loadHall" :loading="loading"><ReloadOutlined /> 刷新</a-button>
           </div>
           <div class="toolbar-right">
@@ -113,7 +125,7 @@
 
               <div class="task-stats hall-task-stats">
                 <div class="stat-item">
-                  <span class="stat-label">代抢单</span>
+                  <span class="stat-label">待抢单</span>
                   <span class="stat-val stat-total">{{ group.subCount }}</span>
                 </div>
                 <div class="stat-divider"></div>
@@ -414,7 +426,13 @@
       <a-tab-pane key="log" tab="抢单记录">
         <div class="card-panel">
           <div class="log-toolbar">
-            <a-select v-model:value="logFilterFlowType" style="width: 140px" allow-clear placeholder="流转类型">
+            <a-input-search
+              v-model:value="logSearchText"
+              style="width: 220px"
+              allow-clear
+              placeholder="搜索ASIN/品名"
+            />
+            <a-select v-model:value="logFilterFlowType" style="width: 140px" allow-clear placeholder="流入类型">
               <a-select-option v-for="item in logFlowTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
             </a-select>
             <a-select v-model:value="logFilterFromStaff" style="width: 140px" allow-clear placeholder="来源业务员" show-search option-filter-prop="label">
@@ -432,13 +450,31 @@
             row-key="id"
             size="small"
             :pagination="{ pageSize: 20 }"
+            :scroll="{ x: 1500 }"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'action_tag'">
-                <a-tag :color="getLogActionColor(record.direction)">{{ record.direction }}</a-tag>
+              <template v-if="column.key === 'log_product'">
+                <div class="log-product-cell">
+                  <div class="log-product-name" :title="record.product_name">{{ record.product_name || '—' }}</div>
+                  <div class="log-asin">{{ record.asin || '—' }}</div>
+                </div>
+              </template>
+              <template v-if="column.key === 'review_level'">
+                <a-tag v-if="record.review_level" color="gold" size="small">{{ record.review_level }}</a-tag>
+                <span v-else class="text-gray">—</span>
+              </template>
+              <template v-if="column.key === 'log_type'">
+                <a-tag v-if="record.review_type || record.order_type" color="blue" size="small">{{ record.review_type || record.order_type }}</a-tag>
+                <span v-else class="text-gray">—</span>
+              </template>
+              <template v-if="column.key === 'log_price'">
+                <span class="log-price">${{ Number(record.product_price || 0).toFixed(2) }}</span>
               </template>
               <template v-if="column.key === 'flow_type'">
                 <a-tag :color="getFlowTypeColor(record.flowType)">{{ record.flowType }}</a-tag>
+              </template>
+              <template v-if="column.key === 'entry_at'">
+                <span>{{ record.entry_at ? fmtTime(record.entry_at) : '—' }}</span>
               </template>
               <template v-if="column.key === 'duration'">
                 <span :class="['log-duration', record.durationMinutes >= 60 ? 'is-long' : '']">{{ record.durationText }}</span>
@@ -448,6 +484,14 @@
         </div>
       </a-tab-pane>
     </a-tabs>
+    <SubOrderDetailView
+      v-if="grabbedEditSubOrderId"
+      :key="grabbedEditSubOrderId"
+      :edit-sub-order-id="grabbedEditSubOrderId"
+      :edit-sub-order-record="grabbedEditRecord"
+      edit-only
+      @closed="closeGrabbedEdit"
+    />
   </div>
 </template>
 
@@ -455,13 +499,16 @@
 import { computed, ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
-  ReloadOutlined, ThunderboltOutlined, RightOutlined, PictureOutlined
+  ReloadOutlined, RightOutlined, PictureOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
+import SubOrderDetailView from './SubOrderDetailView.vue'
+import { useCurrentUser } from '../composables/useCurrentUser'
 
 const activeTab = ref('hall')
+const { currentUser, loadFromStorage } = useCurrentUser()
 const hallViewMode = ref<'order' | 'sub'>('order')
 const loading = ref(false)
 const logLoading = ref(false)
@@ -469,8 +516,9 @@ const hallOrders = ref<any[]>([])
 const logs = ref<any[]>([])
 const todayGrabbedOrders = ref<any[]>([])
 const staffList = ref<any[]>([])
-const grabStaffId = ref('')
 const grabbingId = ref('')
+const grabbedEditSubOrderId = ref('')
+const grabbedEditRecord = ref<any>(null)
 const expandedGroupKeys = ref<string[]>([])
 const groupDetailOpen = ref(false)
 const subDetailOpen = ref(false)
@@ -478,6 +526,9 @@ const currentGroupDetail = ref<any>(null)
 const currentSubDetail = ref<any>(null)
 const filterReviewType = ref<string | undefined>(undefined)
 const filterReviewLevel = ref<string | undefined>(undefined)
+const filterMinPrice = ref<number | null>(null)
+const filterMaxPrice = ref<number | null>(null)
+const logSearchText = ref('')
 const logFilterFlowType = ref<string | undefined>(undefined)
 const logFilterFromStaff = ref<string | undefined>(undefined)
 const logFilterToStaff = ref<string | undefined>(undefined)
@@ -485,32 +536,44 @@ const logDateRange = ref<any[]>([])
 
 const logColumns = [
   { title: '子单号', dataIndex: 'sub_order_number', key: 'sub_order_number', width: 160 },
-  { title: '操作', key: 'action_tag', width: 100 },
-  { title: '流转类型', key: 'flow_type', width: 130 },
+  { title: '品名 / ASIN', key: 'log_product', width: 230 },
+  { title: '等级', dataIndex: 'review_level', key: 'review_level', width: 80 },
+  { title: '类型', key: 'log_type', width: 90 },
+  { title: '售价', key: 'log_price', width: 90 },
+  { title: '流入类型', key: 'flow_type', width: 130 },
+  { title: '流入时间', key: 'entry_at', width: 140 },
   { title: '抢单耗时', key: 'duration', width: 120 },
   { title: '来源业务员', dataIndex: 'from_staff_name', key: 'from_staff_name', width: 110 },
   { title: '抢单业务员', dataIndex: 'to_staff_name', key: 'to_staff_name', width: 110 },
-  { title: '说明', dataIndex: 'reason', key: 'reason' },
-  { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 140, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
+  { title: '订单备注', dataIndex: 'reason', key: 'reason' },
+  { title: '抢单时间', dataIndex: 'created_at', key: 'created_at', width: 140, customRender: ({ text }: any) => text ? dayjs(text).format('MM-DD HH:mm') : '' },
 ]
 
 const today = computed(() => dayjs().format('YYYY-MM-DD'))
 const hallOrderGroups = computed(() => buildHallGroups(hallOrders.value))
 const reviewTypeOptions = computed(() => Array.from(new Set(hallOrders.value.map(order => order.review_type).filter(Boolean))).sort())
 const reviewLevelOptions = computed(() => Array.from(new Set(hallOrders.value.map(order => order.review_level).filter(Boolean))).sort())
-const logFlowTypeOptions = computed(() => ['手动流入', '超时自动流入', '抢单流出'])
+const logFlowTypeOptions = computed(() => ['手动流入', '超时流入'])
 const logFromStaffOptions = computed(() => Array.from(new Set(buildDisplayLogs(logs.value).map(log => log.from_staff_name).filter(Boolean))).sort())
 const logToStaffOptions = computed(() => Array.from(new Set(buildDisplayLogs(logs.value).map(log => log.to_staff_name).filter(Boolean))).sort())
 const filteredHallOrders = computed(() =>
   hallOrders.value.filter(order => {
     if (filterReviewType.value && order.review_type !== filterReviewType.value) return false
     if (filterReviewLevel.value && order.review_level !== filterReviewLevel.value) return false
+    const price = Number(order.product_price || 0)
+    if (filterMinPrice.value !== null && price < filterMinPrice.value) return false
+    if (filterMaxPrice.value !== null && price > filterMaxPrice.value) return false
     return true
   }),
 )
 const filteredHallOrderGroups = computed(() => buildHallGroups(filteredHallOrders.value))
 const displayLogs = computed(() =>
   buildDisplayLogs(logs.value).filter(log => {
+    const q = logSearchText.value.trim().toLowerCase()
+    if (q) {
+      const text = `${log.asin || ''} ${log.product_name || ''}`.toLowerCase()
+      if (!text.includes(q)) return false
+    }
     if (logFilterFlowType.value && log.flowType !== logFilterFlowType.value) return false
     if (logFilterFromStaff.value && log.from_staff_name !== logFilterFromStaff.value) return false
     if (logFilterToStaff.value && log.to_staff_name !== logFilterToStaff.value) return false
@@ -546,9 +609,8 @@ function getLogActionColor(action: string) {
 }
 
 function getFlowTypeColor(flowType: string) {
-  if (flowType === '超时自动流入') return 'red'
+  if (flowType === '超时流入') return 'red'
   if (flowType === '手动流入') return 'blue'
-  if (flowType === '抢单流出') return 'green'
   return 'default'
 }
 
@@ -652,9 +714,9 @@ function getLogDirection(log: any) {
 
 function getFlowType(log: any, direction: string) {
   if (direction === '流入') {
-    return String(log.reason || '').includes('自动') ? '超时自动流入' : '手动流入'
+    return String(log.reason || '').includes('自动') ? '超时流入' : '手动流入'
   }
-  if (direction === '流出') return '抢单流出'
+  if (direction === '流出') return log.entryFlowType || '手动流入'
   return '其他'
 }
 
@@ -671,18 +733,21 @@ function formatDurationMs(durationMs: number | null) {
 
 function buildDisplayLogs(sourceLogs: any[]) {
   const orderedLogs = [...sourceLogs].sort((a, b) => dayjs(a.created_at).valueOf() - dayjs(b.created_at).valueOf())
-  const activeEntryMap = new Map<string, string>()
+  const activeEntryMap = new Map<string, { entry_at: string; flowType: string }>()
   const decorated = orderedLogs.map(log => {
     const direction = getLogDirection(log)
-    const flowType = getFlowType(log, direction)
+    let flowType = getFlowType(log, direction)
     let durationMs: number | null = null
+    let entryAt: string | null = null
 
     if (direction === '流入' && log.sub_order_id) {
-      activeEntryMap.set(log.sub_order_id, log.created_at)
+      activeEntryMap.set(log.sub_order_id, { entry_at: log.created_at, flowType })
     }
 
     if (direction === '流出' && log.sub_order_id) {
-      const entryAt = activeEntryMap.get(log.sub_order_id)
+      const entry = activeEntryMap.get(log.sub_order_id)
+      entryAt = entry?.entry_at || log.released_at || null
+      flowType = entry?.flowType || getFlowType({ ...log, entryFlowType: flowType }, direction)
       if (entryAt) {
         durationMs = dayjs(log.created_at).diff(dayjs(entryAt))
         activeEntryMap.delete(log.sub_order_id)
@@ -694,13 +759,137 @@ function buildDisplayLogs(sourceLogs: any[]) {
       ...log,
       direction,
       flowType,
+      entry_at: entryAt,
       durationMs,
       durationMinutes,
       durationText: direction === '流出' ? formatDurationMs(durationMs) : '--',
     }
   })
 
-  return decorated.sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf())
+  return decorated
+    .filter(log => log.direction === '流出')
+    .sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf())
+}
+
+function buildLogPreviewRows() {
+  const now = dayjs()
+  const rows = [
+    {
+      sub_order_id: 'preview-log-sub-001',
+      sub_order_number: 'SUB-PREVIEW-101',
+      order_id: 'preview-log-order-001',
+      order_number: 'ORD-PREVIEW-101',
+      asin: 'B0C8PX21LM',
+      product_name: 'Portable Blender Personal Size',
+      review_level: '高等',
+      review_type: '图片',
+      order_type: '图片',
+      product_price: 39.99,
+      from_staff_name: 'Luna',
+      to_staff_name: '管理员',
+      released_at: now.subtract(3, 'hour').toISOString(),
+      entryReason: '人工放入抢单大厅',
+      grabReason: '预览数据：手动流入后被抢单',
+      entryOffsetHours: 3,
+      grabOffsetMinutes: 42,
+    },
+    {
+      sub_order_id: 'preview-log-sub-002',
+      sub_order_number: 'SUB-PREVIEW-102',
+      order_id: 'preview-log-order-002',
+      order_number: 'ORD-PREVIEW-102',
+      asin: 'B09W8Q7ZRM',
+      product_name: 'Memory Foam Seat Cushion',
+      review_level: '普通',
+      review_type: '文字',
+      order_type: '文字',
+      product_price: 26.8,
+      from_staff_name: 'Ivy',
+      to_staff_name: '管理员',
+      released_at: now.subtract(9, 'hour').toISOString(),
+      entryReason: '超时自动流入抢单大厅',
+      grabReason: '预览数据：超时流入后被抢单',
+      entryOffsetHours: 9,
+      grabOffsetMinutes: 185,
+    },
+    {
+      sub_order_id: 'preview-log-sub-003',
+      sub_order_number: 'SUB-PREVIEW-103',
+      order_id: 'preview-log-order-003',
+      order_number: 'ORD-PREVIEW-103',
+      asin: 'B0BVT92KQP',
+      product_name: 'LED Desk Lamp with USB Port',
+      review_level: '极高等',
+      review_type: '视频',
+      order_type: '视频',
+      product_price: 54.2,
+      from_staff_name: 'Aiden',
+      to_staff_name: '管理员',
+      released_at: now.subtract(1, 'day').toISOString(),
+      entryReason: '超时自动流入抢单大厅',
+      grabReason: '预览数据：高等级视频评抢单',
+      entryOffsetHours: 24,
+      grabOffsetMinutes: 360,
+    },
+    {
+      sub_order_id: 'preview-log-sub-004',
+      sub_order_number: 'SUB-PREVIEW-104',
+      order_id: 'preview-log-order-004',
+      order_number: 'ORD-PREVIEW-104',
+      asin: 'B0DROP9K11',
+      product_name: 'Travel Makeup Mirror',
+      review_level: '高等',
+      review_type: '图片',
+      order_type: '图片',
+      product_price: 31.5,
+      from_staff_name: 'Nora',
+      to_staff_name: '管理员',
+      released_at: now.subtract(5, 'hour').toISOString(),
+      entryReason: '主管手动回流到抢单大厅',
+      grabReason: '预览数据：手动流入后快速抢单',
+      entryOffsetHours: 5,
+      grabOffsetMinutes: 18,
+    },
+  ]
+
+  return rows.flatMap((row, index) => {
+    const entryAt = now.subtract(row.entryOffsetHours, 'hour')
+    const grabAt = entryAt.add(row.grabOffsetMinutes, 'minute')
+    const base = {
+      sub_order_id: row.sub_order_id,
+      sub_order_number: row.sub_order_number,
+      order_id: row.order_id,
+      order_number: row.order_number,
+      asin: row.asin,
+      product_name: row.product_name,
+      review_level: row.review_level,
+      review_type: row.review_type,
+      order_type: row.order_type,
+      product_price: row.product_price,
+      released_at: row.released_at,
+      _is_preview_mock: true,
+    }
+    return [
+      {
+        ...base,
+        id: `preview-log-entry-${index + 1}`,
+        action: row.entryReason.includes('回流') ? '回转' : '放入抢单大厅',
+        from_staff_name: row.from_staff_name,
+        to_staff_name: '',
+        reason: row.entryReason,
+        created_at: entryAt.toISOString(),
+      },
+      {
+        ...base,
+        id: `preview-log-grab-${index + 1}`,
+        action: 'grab',
+        from_staff_name: row.from_staff_name,
+        to_staff_name: row.to_staff_name,
+        reason: row.grabReason,
+        created_at: grabAt.toISOString(),
+      },
+    ]
+  })
 }
 
 function buildHallGroups(sourceOrders: any[]) {
@@ -741,6 +930,155 @@ function buildHallGroups(sourceOrders: any[]) {
     })
 }
 
+function buildHallPreviewRows() {
+  const now = dayjs()
+  const baseRows = [
+    {
+      id: 'preview-sub-order-001',
+      order_id: 'preview-order-001',
+      order_number: 'ORD-PREVIEW-001',
+      sub_order_number: 'SUB-PREVIEW-001',
+      asin: 'B0C8PX21LM',
+      product_name: 'Portable Blender Personal Size',
+      product_image: '',
+      store_name: 'US-Preview-Store',
+      brand_name: 'BlendNova',
+      category: 'Kitchen',
+      variant_info: '粉色便携款',
+      keyword: 'portable blender',
+      customer_name: '杭州云海贸易',
+      task_notes: '预览数据：优先匹配北美买手',
+      country: '美国',
+      order_type: '图片',
+      review_type: '图片',
+      review_level: '高等',
+      sales_person: 'Luna',
+      buyer_name: 'Emma',
+      buyer_id: 'preview-buyer-001',
+      buyer_chat_id: 'CHAT-90217',
+      buyer_paypal_email: 'emma-preview@example.com',
+      product_price: 39.99,
+      scheduled_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
+      refund_sequence: '预付',
+      refund_method: '',
+      refund_status: '未返款',
+      status: '待分配',
+      amazon_order_id: '',
+      notes: '预览交互：待下单场景',
+      created_at: now.subtract(1, 'day').toISOString(),
+      released_at: now.subtract(2, 'hour').toISOString(),
+    },
+    {
+      id: 'preview-sub-order-002',
+      order_id: 'preview-order-001',
+      order_number: 'ORD-PREVIEW-001',
+      sub_order_number: 'SUB-PREVIEW-002',
+      asin: 'B0C8PX21LM',
+      product_name: 'Portable Blender Personal Size',
+      product_image: '',
+      store_name: 'US-Preview-Store',
+      brand_name: 'BlendNova',
+      category: 'Kitchen',
+      variant_info: '蓝色便携款',
+      keyword: 'personal blender',
+      customer_name: '杭州云海贸易',
+      task_notes: '预览数据：同一个主订单的第二个子单',
+      country: '美国',
+      order_type: '文字',
+      review_type: '文字',
+      review_level: '普通',
+      sales_person: 'Luna',
+      buyer_name: 'Sophia',
+      buyer_id: 'preview-buyer-002',
+      buyer_chat_id: 'TG-11802',
+      product_price: 39.99,
+      scheduled_date: now.format('YYYY-MM-DD'),
+      refund_sequence: '出单后返',
+      refund_method: '礼品卡',
+      refund_status: '未返款',
+      status: '待分配',
+      amazon_order_id: '',
+      notes: '预览交互：同主订单分组测试',
+      created_at: now.subtract(1, 'day').toISOString(),
+      released_at: now.subtract(90, 'minute').toISOString(),
+    },
+    {
+      id: 'preview-sub-order-003',
+      order_id: 'preview-order-002',
+      order_number: 'ORD-PREVIEW-002',
+      sub_order_number: 'SUB-PREVIEW-003',
+      asin: 'B09W8Q7ZRM',
+      product_name: 'Memory Foam Seat Cushion',
+      product_image: '',
+      store_name: 'UK-Preview-Store',
+      brand_name: 'SoftEase',
+      category: 'Home',
+      variant_info: '灰色加厚款',
+      keyword: 'seat cushion',
+      customer_name: '深圳森语家居',
+      task_notes: '预览数据：英国文字评',
+      country: '英国',
+      order_type: '文字',
+      review_type: '文字',
+      review_level: '普通',
+      sales_person: 'Ivy',
+      buyer_name: 'Mia',
+      buyer_id: 'preview-buyer-003',
+      buyer_chat_id: 'WA-77129',
+      product_price: 26.8,
+      scheduled_date: now.add(1, 'day').format('YYYY-MM-DD'),
+      refund_sequence: '评后返',
+      refund_method: '礼品卡',
+      refund_status: '未返款',
+      status: '待分配',
+      amazon_order_id: '',
+      notes: '预览交互：子订单平铺测试',
+      created_at: now.subtract(2, 'day').toISOString(),
+      released_at: now.subtract(1, 'hour').toISOString(),
+    },
+    {
+      id: 'preview-sub-order-004',
+      order_id: 'preview-order-003',
+      order_number: 'ORD-PREVIEW-003',
+      sub_order_number: 'SUB-PREVIEW-004',
+      asin: 'B0BVT92KQP',
+      product_name: 'LED Desk Lamp with USB Port',
+      product_image: '',
+      store_name: 'DE-Preview-Store',
+      brand_name: 'Lumina',
+      category: 'Office',
+      variant_info: '黑色欧规版',
+      keyword: 'desk lamp',
+      customer_name: '宁波朗行科技',
+      task_notes: '预览数据：德国视频评',
+      country: '德国',
+      order_type: '视频',
+      review_type: '视频',
+      review_level: '极高等',
+      sales_person: 'Aiden',
+      buyer_name: 'Olivia',
+      buyer_id: 'preview-buyer-004',
+      buyer_chat_id: 'LINE-44902',
+      product_price: 54.2,
+      scheduled_date: now.add(2, 'day').format('YYYY-MM-DD'),
+      refund_sequence: '预付',
+      refund_method: 'PayPal',
+      refund_status: '未返款',
+      status: '待分配',
+      amazon_order_id: '',
+      notes: '预览交互：高等级视频评',
+      created_at: now.subtract(3, 'day').toISOString(),
+      released_at: now.subtract(30, 'minute').toISOString(),
+    },
+  ]
+
+  return baseRows.map(row => ({
+    ...row,
+    released_to_hall: true,
+    _is_preview_mock: true,
+  }))
+}
+
 function toggleGroupExpand(orderId: string) {
   if (expandedGroupKeys.value.includes(orderId)) {
     expandedGroupKeys.value = expandedGroupKeys.value.filter(id => id !== orderId)
@@ -769,8 +1107,13 @@ async function loadHall() {
       .eq('status', '待分配')
       .order('released_at', { ascending: false })
     if (error) throw error
-    hallOrders.value = data || []
-    expandedGroupKeys.value = Array.from(new Set((data || []).map((item: any) => item.order_id || item.order_number || item.id)))
+    const rows = data?.length ? data : buildHallPreviewRows()
+    hallOrders.value = rows
+    expandedGroupKeys.value = Array.from(new Set(rows.map((item: any) => item.order_id || item.order_number || item.id)))
+  } catch {
+    const rows = buildHallPreviewRows()
+    hallOrders.value = rows
+    expandedGroupKeys.value = Array.from(new Set(rows.map((item: any) => item.order_id || item.order_number || item.id)))
   } finally {
     loading.value = false
   }
@@ -784,7 +1127,27 @@ async function loadLogs() {
       .select('*')
       .order('created_at', { ascending: false })
       .limit(200)
-    logs.value = data || []
+    const rawLogs = data || []
+    const usingPreviewLogs = rawLogs.length === 0
+    if (usingPreviewLogs) {
+      logs.value = buildLogPreviewRows()
+      todayGrabbedOrders.value = buildDisplayLogs(logs.value).filter(log => isTodayActivity(log.created_at))
+      return
+    }
+    const logSubOrderIds = Array.from(new Set(rawLogs.map((log: any) => log.sub_order_id).filter(Boolean)))
+    let subOrderMap = new Map<string, any>()
+    if (logSubOrderIds.length > 0) {
+      const { data: subRows, error: subError } = await supabase
+        .from('sub_orders')
+        .select('id, order_id, order_number, asin, product_name, review_level, review_type, order_type, product_price, released_at')
+        .in('id', logSubOrderIds)
+      if (subError) throw subError
+      subOrderMap = new Map((subRows || []).map((row: any) => [row.id, row]))
+    }
+    logs.value = rawLogs.map((log: any) => ({
+      ...subOrderMap.get(log.sub_order_id),
+      ...log,
+    }))
 
     const todayGrabSubOrderIds = Array.from(new Set(
       logs.value
@@ -802,6 +1165,9 @@ async function loadLogs() {
       .in('id', todayGrabSubOrderIds)
     if (error) throw error
     todayGrabbedOrders.value = grabbedData || []
+  } catch {
+    logs.value = buildLogPreviewRows()
+    todayGrabbedOrders.value = buildDisplayLogs(logs.value).filter(log => isTodayActivity(log.created_at))
   } finally {
     logLoading.value = false
   }
@@ -813,11 +1179,22 @@ async function loadStaff() {
 }
 
 async function grabOne(record: any) {
-  if (!grabStaffId.value) { message.warning('请先选择抢单业务员'); return }
   if (grabbingId.value) return
   grabbingId.value = record.id
   try {
-    const staff = staffList.value.find(s => s.id === grabStaffId.value)
+    const staff = resolveGrabStaff()
+    if (!staff?.name) {
+      message.warning('当前账号信息异常，无法抢单')
+      return
+    }
+
+    if (record._is_preview_mock) {
+      const editRecord = buildGrabbedEditRecord(record, staff)
+      hallOrders.value = hallOrders.value.filter(o => o.id !== record.id)
+      todayGrabbedOrders.value = [...todayGrabbedOrders.value, editRecord]
+      openGrabbedEdit(editRecord)
+      return
+    }
 
     const { data: current, error: checkErr } = await supabase
       .from('sub_orders')
@@ -833,8 +1210,8 @@ async function grabOne(record: any) {
     }
 
     const { error } = await supabase.from('sub_orders').update({
-      staff_id: grabStaffId.value,
-      staff_name: staff?.name,
+      staff_id: staff.id || null,
+      staff_name: staff.name,
       released_to_hall: false,
       status: '已分配',
     }).eq('id', record.id).eq('status', '待分配').eq('released_to_hall', true)
@@ -846,13 +1223,13 @@ async function grabOne(record: any) {
       action: 'grab',
       from_staff_id: record.released_by_staff_id,
       from_staff_name: record.released_by_staff_name,
-      to_staff_id: grabStaffId.value,
-      to_staff_name: staff?.name,
+      to_staff_id: staff.id || null,
+      to_staff_name: staff.name,
       reason: '抢单大厅抢单',
     }])
 
     hallOrders.value = hallOrders.value.filter(o => o.id !== record.id)
-    message.success(`抢单成功，已分配给 ${staff?.name}`)
+    openGrabbedEdit(buildGrabbedEditRecord(record, staff))
   } catch (e: any) {
     message.error('抢单失败：' + e.message)
   } finally {
@@ -860,7 +1237,51 @@ async function grabOne(record: any) {
   }
 }
 
+function buildGrabbedEditRecord(record: any, staff: any) {
+  return {
+    ...record,
+    staff_id: staff.id || null,
+    staff_name: staff.name,
+    status: '已分配',
+    released_to_hall: false,
+    buyer_assigned_at: record.buyer_assigned_at || new Date().toISOString(),
+  }
+}
+
+function openGrabbedEdit(record: any) {
+  grabbedEditRecord.value = record
+  grabbedEditSubOrderId.value = record.id
+}
+
+function closeGrabbedEdit() {
+  grabbedEditSubOrderId.value = ''
+  grabbedEditRecord.value = null
+}
+
+function getCurrentStaff() {
+  const userId = String(currentUser.value?.id || '')
+  const userName = String(currentUser.value?.name || '')
+  return staffList.value.find(s => String(s.id) === userId)
+    || staffList.value.find(s => String(s.name) === userName)
+    || null
+}
+
+function resolveGrabStaff() {
+  const currentStaff = getCurrentStaff()
+  if (currentStaff) return currentStaff
+  const userId = String(currentUser.value?.id || '')
+  return {
+    id: isUuid(userId) ? userId : null,
+    name: currentUser.value?.name || '',
+  }
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 onMounted(() => {
+  loadFromStorage()
   loadStaff()
   loadHall()
   loadLogs()
@@ -873,24 +1294,45 @@ onMounted(() => {
 
 .hall-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 16px;
+}
+
+.stat-group {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.stat-group-title {
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.stat-group-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .stat-card {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 16px 18px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
 }
 
 .stat-label { font-size: 12px; color: #6b7280; }
 .stat-value { font-size: 26px; font-weight: 800; color: #2563eb; line-height: 1.1; }
+.stat-value.stat-success { color: #059669; }
 .stat-value.stat-warn { color: #d97706; }
 .stat-value.stat-danger { color: #dc2626; }
 .stat-desc { font-size: 12px; color: #9ca3af; }
@@ -908,6 +1350,8 @@ onMounted(() => {
 }
 .toolbar-left { display: flex; align-items: center; gap: 10px; }
 .toolbar-right { display: flex; align-items: center; gap: 16px; }
+.price-filter { display: inline-flex; align-items: center; gap: 6px; }
+.price-filter-sep { color: #9ca3af; font-size: 12px; }
 .view-switch {
   display: inline-flex;
   align-items: center;
@@ -1152,6 +1596,23 @@ onMounted(() => {
 
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 .log-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.log-product-cell { min-width: 0; }
+.log-asin {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+}
+.log-product-name {
+  max-width: 190px;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #6b7280;
+}
+.log-price { font-size: 12px; font-weight: 600; color: #059669; }
 .log-duration { font-size: 12px; color: #6b7280; font-weight: 600; }
 .log-duration.is-long { color: #d97706; }
 
@@ -1309,7 +1770,7 @@ onMounted(() => {
 .task-drawer-feedback-key { font-size: 13px; color: #6b7280; flex-shrink: 0; }
 
 @media (max-width: 1200px) {
-  .hall-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hall-stats { grid-template-columns: 1fr; }
   .hall-toolbar,
   .task-main-row { flex-direction: column; align-items: stretch; gap: 12px; padding-left: 12px; }
   .toolbar-right { justify-content: space-between; }
@@ -1320,6 +1781,7 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .hall-stats { grid-template-columns: 1fr; }
+  .stat-group-cards { grid-template-columns: 1fr; }
   .toolbar-left,
   .toolbar-right { flex-wrap: wrap; }
   .view-switch { width: 100%; justify-content: space-between; }

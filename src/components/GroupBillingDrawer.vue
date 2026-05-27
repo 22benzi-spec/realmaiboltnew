@@ -20,23 +20,31 @@
           </div>
         </div>
         <div class="gbh-right">
-          <div class="gbh-trio">
+          <div class="gbh-trio gbh-fund-grid">
             <div class="trio-item">
               <div class="trio-label">实际应收（合计）</div>
-              <div class="trio-val">¥{{ groupTotalExpected.toFixed(2) }}</div>
+              <div class="trio-val">¥{{ groupTotalActualReceivable.toFixed(2) }}</div>
             </div>
-            <div class="trio-div"></div>
             <div class="trio-item">
-              <div class="trio-label">净到账</div>
-              <div class="trio-val" :style="{ color: groupTotalPaid > 0 ? '#16a34a' : '#9ca3af' }">
-                ¥{{ groupTotalPaid.toFixed(2) }}
+              <div class="trio-label">累计收款</div>
+              <div class="trio-val" :style="{ color: groupCollectedTotal > 0 ? '#16a34a' : '#9ca3af' }">
+                ¥{{ groupCollectedTotal.toFixed(2) }}
               </div>
             </div>
-            <div class="trio-div"></div>
             <div class="trio-item">
-              <div class="trio-label">{{ groupDiffLabel }}</div>
-              <div class="trio-val" :style="{ color: groupDiffColor }">
-                ¥{{ Math.abs(groupDiff).toFixed(2) }}
+              <div class="trio-label">账面抵消</div>
+              <div class="trio-val" style="color:#2563eb">¥{{ groupOffsetTotal.toFixed(2) }}</div>
+            </div>
+            <div class="trio-item">
+              <div class="trio-label">累计退款</div>
+              <div class="trio-val" style="color:#dc2626">¥{{ groupRefundTotal.toFixed(2) }}</div>
+            </div>
+            <div class="trio-item">
+              <div class="trio-label">待结算差额</div>
+              <div class="trio-val" :style="{ color: groupSettlementDiff < 0 ? '#dc2626' : groupSettlementDiff > 0 ? '#059669' : '#16a34a' }">
+                <template v-if="groupSettlementDiff > 0.005">+¥{{ groupSettlementDiff.toFixed(2) }}</template>
+                <template v-else-if="groupSettlementDiff < -0.005">-¥{{ Math.abs(groupSettlementDiff).toFixed(2) }}</template>
+                <template v-else>¥0.00</template>
               </div>
             </div>
           </div>
@@ -78,8 +86,8 @@
               <span class="col-created">创建时间</span>
               <span class="col-num">订单号</span>
               <span class="col-asin">ASIN</span>
-              <span class="col-amt">实际应收</span>
-              <span class="col-paid">净到账</span>
+              <span class="col-amt">基础应收</span>
+              <span class="col-paid">实际应收</span>
               <span class="col-status">入账状态</span>
               <span class="col-debt">账款情况</span>
             </div>
@@ -94,9 +102,9 @@
                 <span class="order-num-text">{{ row.order.order_number }}</span>
               </span>
               <span class="col-asin">{{ row.order.asin || '-' }}</span>
-              <span class="col-amt">¥{{ Number(row.order.total_amount || 0).toFixed(2) }}</span>
-              <span class="col-paid" :style="{ color: row.paid > 0 ? '#16a34a' : '#9ca3af' }">
-                ¥{{ row.paid.toFixed(2) }}
+              <span class="col-amt">¥{{ row.baseReceivable.toFixed(2) }}</span>
+              <span class="col-paid">
+                ¥{{ row.actualReceivable.toFixed(2) }}
               </span>
               <span class="col-status">
                 <a-select
@@ -145,9 +153,8 @@
               <div v-for="row in allocRows" :key="row.orderId" class="bf-alloc-row">
                 <span class="alloc-order-num">{{ row.orderNumber }}</span>
                 <div class="alloc-debt-info">
-                  <span class="alloc-expected">实际应收¥{{ Number(row.expected).toFixed(2) }}</span>
-                  <span v-if="row.debtHint" class="alloc-debt-tag" :class="row.debtHintType">
-                    {{ row.debtHint }}
+                  <span class="alloc-debt-tag" :class="row.debtHintType || 'hint-none'">
+                    {{ row.debtHint || '欠款/溢款：无' }}
                   </span>
                 </div>
                 <div class="alloc-input-wrap">
@@ -304,6 +311,52 @@
             <a-select-option v-for="item in batchRecordSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
           </a-select>
         </div>
+        <div v-if="batchRecordMode === 'supplement'" class="ar-field">
+          <label class="ar-label">补款币种</label>
+          <a-radio-group v-model:value="batchRecordForm.currency_mode" size="small">
+            <a-radio-button value="cny">人民币</a-radio-button>
+            <a-radio-button value="usd">美元</a-radio-button>
+            <a-radio-button value="both">同时填写</a-radio-button>
+          </a-radio-group>
+        </div>
+        <div v-if="showBatchSupplementCny" class="ar-field">
+          <label class="ar-label">补款金额（人民币）</label>
+          <a-input-number
+            v-model:value="batchRecordForm.amount_cny"
+            style="width:100%"
+            :min="0"
+            :precision="2"
+            placeholder="人民币金额"
+            @change="syncBatchAmountToSelectedRows"
+          />
+        </div>
+        <div v-if="showBatchSupplementUsd" class="ar-field">
+          <label class="ar-label">补款金额（USD）</label>
+          <a-input-number
+            v-model:value="batchRecordForm.amount_usd"
+            style="width:100%"
+            :min="0"
+            :precision="2"
+            placeholder="美金金额"
+          />
+        </div>
+        <div v-if="batchRecordMode === 'refund'" class="ar-field">
+          <label class="ar-label">
+            退款金额（元）
+            <span class="required">*</span>
+          </label>
+          <a-input-number
+            v-model:value="batchRecordForm.amount_cny"
+            style="width:100%"
+            :min="0"
+            :precision="2"
+            placeholder="退款金额"
+            @change="syncBatchAmountToSelectedRows"
+          />
+        </div>
+        <div v-if="batchRecordMode === 'supplement'" class="add-record-tip">
+          默认只展示一种币种；确实需要双币种时选择“同时填写”。
+        </div>
         <div v-if="batchRecordMode === 'offset'" class="offset-brief-card">
           <div class="offset-brief-head">
             <span>抵消明细</span>
@@ -413,11 +466,29 @@ const batchDebtTarget = ref('cleared')
 
 const orderPaymentMap = ref<Record<string, number>>({})
 
+function getOrderBaseReceivable(order: any) {
+  return Number(order?.total_amount || 0)
+}
+
+function getOrderActualReceivable(order: any) {
+  const base = getOrderBaseReceivable(order)
+  const adjustment = Number(order?.debt_amount || 0)
+  if (order?.debt_status === 'owed') return base + adjustment
+  if (order?.debt_status === 'surplus') return base - adjustment
+  return base
+}
+
 const orderRows = computed(() => {
   return orders.value.map(o => {
     const paid = orderPaymentMap.value[o.id] || 0
     const hasIssue = o.debt_status === 'owed' || o.debt_status === 'surplus'
-    return { order: o, paid, hasIssue }
+    return {
+      order: o,
+      paid,
+      hasIssue,
+      baseReceivable: getOrderBaseReceivable(o),
+      actualReceivable: getOrderActualReceivable(o),
+    }
   })
 })
 
@@ -425,27 +496,31 @@ const pendingOrders = computed(() =>
   orders.value.filter(o => o.debt_status === 'owed' || o.debt_status === 'surplus')
 )
 
-const groupTotalExpected = computed(() =>
-  orders.value.reduce((s, o) => s + Number(o.total_amount || 0), 0)
+const groupTotalActualReceivable = computed(() =>
+  orders.value.reduce((s, o) => s + getOrderActualReceivable(o), 0)
 )
 
-const groupTotalPaid = computed(() =>
-  Object.values(orderPaymentMap.value).reduce((s, v) => s + v, 0)
+const groupCollectedTotal = computed(() =>
+  allPayments.value
+    .filter(p => !p.payment_type || p.payment_type === '基础收款' || p.payment_type === '补款')
+    .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
 )
 
-const groupDiff = computed(() => groupTotalExpected.value - groupTotalPaid.value)
+const groupOffsetTotal = computed(() =>
+  allPayments.value
+    .filter(p => p.payment_type === '账面抵消')
+    .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+)
 
-const groupDiffLabel = computed(() => {
-  if (groupDiff.value > 0.005) return '差价金额'
-  if (groupDiff.value < -0.005) return '差价金额'
-  return '已结清'
-})
+const groupRefundTotal = computed(() =>
+  allPayments.value
+    .filter(p => p.payment_type === '退款')
+    .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
+)
 
-const groupDiffColor = computed(() => {
-  if (groupDiff.value > 0.005) return '#dc2626'
-  if (groupDiff.value < -0.005) return '#2563eb'
-  return '#16a34a'
-})
+const groupSettledTotal = computed(() => groupCollectedTotal.value + groupOffsetTotal.value - groupRefundTotal.value)
+
+const groupSettlementDiff = computed(() => groupSettledTotal.value - groupTotalActualReceivable.value)
 
 async function updateOrdersStatus(orderIds: string[], payload: any, successText: string) {
   if (orderIds.length === 0) return
@@ -641,6 +716,10 @@ const batchRecordModalOpen = ref(false)
 const batchRecordSaving = ref(false)
 const batchRecordMode = ref<'supplement' | 'refund' | 'offset'>('supplement')
 const offsetOpenedFromNestedBatchAction = ref(false)
+const nestedBatchReturnMode = ref<'supplement' | 'refund' | null>(null)
+const nestedBatchParentFormSnapshot = ref<any | null>(null)
+const nestedBatchParentFilesSnapshot = ref<any[]>([])
+const nestedBatchParentAllocMap = ref<Record<string, number | undefined>>({})
 const batchRecordFiles = ref<any[]>([])
 const businessTypeOptions = ['文字', '免评', '图片', '视频', 'Feedback']
 
@@ -660,27 +739,32 @@ function buildAllocRows(orderList: any[]): AllocRow[] {
   return orderList.map(o => {
     const debtStatus = o.debt_status
     const debtAmt = Number(o.debt_amount || 0)
+    const expected = Number(o.total_amount || 0)
+    const paid = Number(orderPaymentMap.value[o.id] || 0)
+    const diff = expected - paid
     let debtHint = ''
     let debtHintType = ''
     let autoFill: number | undefined = undefined
     let allocPlaceholder = '金额（正=补款 负=退款）'
 
-    if (debtStatus === 'owed' && debtAmt > 0) {
-      debtHint = `欠款 +¥${debtAmt.toFixed(2)}`
+    if (debtStatus === 'owed' && (debtAmt > 0 || diff > 0.005)) {
+      const amount = debtAmt > 0 ? debtAmt : diff
+      debtHint = `欠款 +¥${amount.toFixed(2)}`
       debtHintType = 'hint-owed'
-      autoFill = debtAmt
-      allocPlaceholder = `+${debtAmt.toFixed(2)}（欠款）`
-    } else if (debtStatus === 'surplus' && debtAmt > 0) {
-      debtHint = `溢收 -¥${debtAmt.toFixed(2)}`
+      autoFill = amount
+      allocPlaceholder = `+${amount.toFixed(2)}（欠款）`
+    } else if (debtStatus === 'surplus' && (debtAmt > 0 || diff < -0.005)) {
+      const amount = debtAmt > 0 ? debtAmt : Math.abs(diff)
+      debtHint = `溢收 -¥${amount.toFixed(2)}`
       debtHintType = 'hint-surplus'
-      autoFill = -debtAmt
-      allocPlaceholder = `-${debtAmt.toFixed(2)}（溢收应退）`
+      autoFill = -amount
+      allocPlaceholder = `-${amount.toFixed(2)}（溢收应退）`
     }
 
     return {
       orderId: o.id,
       orderNumber: o.order_number,
-      expected: Number(o.total_amount || 0),
+      expected,
       allocated: autoFill,
       debtHint,
       debtHintType,
@@ -774,6 +858,9 @@ const billingTransactionCategoryOptions = [
 const batchRecordForm = ref({
   primary_category: '业务收入',
   secondary_categories: ['补款收入'] as string[],
+  currency_mode: 'cny' as 'cny' | 'usd' | 'both',
+  amount_cny: undefined as number | undefined,
+  amount_usd: undefined as number | undefined,
   payment_date_picker: null as any,
   payment_method: '银行转账',
   refund_account: '',
@@ -791,6 +878,12 @@ const batchRecordForm = ref({
 const isBatchRefundAccountTransfer = computed(() =>
   batchRecordMode.value === 'refund' && ['银行转账', '支付宝'].includes(batchRecordForm.value.payment_method),
 )
+const showBatchSupplementCny = computed(() =>
+  batchRecordMode.value === 'supplement' && ['cny', 'both'].includes(batchRecordForm.value.currency_mode),
+)
+const showBatchSupplementUsd = computed(() =>
+  batchRecordMode.value === 'supplement' && ['usd', 'both'].includes(batchRecordForm.value.currency_mode),
+)
 const batchOffsetTaskTotal = computed(() =>
   batchRecordForm.value.offset_task_rows.reduce((sum: number, row: any) => sum + Number(row.amount_cny || 0), 0),
 )
@@ -798,13 +891,33 @@ const batchOffsetTaskTotal = computed(() =>
 const selectedBatchRows = computed(() =>
   allocRows.value.filter((row) => {
     const amount = Number(row.allocated || 0)
-    return batchRecordMode.value === 'refund' ? amount < 0 : amount > 0
+    if (batchRecordMode.value === 'refund') return amount < 0
+    if (batchRecordMode.value === 'offset' && offsetOpenedFromNestedBatchAction.value && nestedBatchReturnMode.value === 'refund') return amount < 0
+    return amount > 0
   })
 )
 
 const selectedBatchTotal = computed(() =>
   selectedBatchRows.value.reduce((sum, row) => sum + Math.abs(Number(row.allocated || 0)), 0)
 )
+
+function syncBatchAmountToSelectedRows() {
+  if (batchRecordMode.value === 'offset') return
+  const currentRows = selectedBatchRows.value
+  if (!currentRows.length) return
+  const targetTotal = Number(batchRecordForm.value.amount_cny || 0)
+  const currentTotal = currentRows.reduce((sum, row) => sum + Math.abs(Number(row.allocated || 0)), 0)
+  if (targetTotal <= 0 || currentTotal <= 0) return
+  let assignedTotal = 0
+  currentRows.forEach((row, index) => {
+    const ratio = Math.abs(Number(row.allocated || 0)) / currentTotal
+    const nextAmount = index === currentRows.length - 1
+      ? targetTotal - assignedTotal
+      : Number((targetTotal * ratio).toFixed(2))
+    assignedTotal += nextAmount
+    row.allocated = batchRecordMode.value === 'refund' ? -Math.abs(nextAmount) : Math.abs(nextAmount)
+  })
+}
 
 const batchRecordPrimaryOptions = computed(() => billingTransactionCategoryOptions.filter(item =>
   batchRecordMode.value === 'refund'
@@ -921,9 +1034,25 @@ function getBatchRecordOkText() {
 }
 
 function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset', fromNestedAction = false) {
+  if (mode === 'offset' && fromNestedAction) {
+    nestedBatchReturnMode.value = batchRecordMode.value === 'refund' ? 'refund' : 'supplement'
+    nestedBatchParentFormSnapshot.value = JSON.parse(JSON.stringify(batchRecordForm.value))
+    nestedBatchParentFilesSnapshot.value = [...batchRecordFiles.value]
+    nestedBatchParentAllocMap.value = allocRows.value.reduce((acc, row) => {
+      acc[row.orderId] = row.allocated
+      return acc
+    }, {} as Record<string, number | undefined>)
+  } else if (!fromNestedAction) {
+    nestedBatchReturnMode.value = null
+    nestedBatchParentFormSnapshot.value = null
+    nestedBatchParentFilesSnapshot.value = []
+    nestedBatchParentAllocMap.value = {}
+  }
   batchRecordMode.value = mode
   offsetOpenedFromNestedBatchAction.value = mode === 'offset' && fromNestedAction
-  if (((mode === 'supplement' || mode === 'offset') && allocSupplementTotal.value <= 0) || (mode === 'refund' && allocRefundTotal.value <= 0)) {
+  const needsPositiveAmount = mode === 'supplement' || (mode === 'offset' && (!fromNestedAction || nestedBatchReturnMode.value !== 'refund'))
+  const needsRefundAmount = mode === 'refund' || (mode === 'offset' && fromNestedAction && nestedBatchReturnMode.value === 'refund')
+  if ((needsPositiveAmount && allocSupplementTotal.value <= 0) || (needsRefundAmount && allocRefundTotal.value <= 0)) {
     message.warning(mode === 'refund' ? '请至少填写一条退款金额' : '请至少填写一条正向金额')
     return
   }
@@ -931,6 +1060,9 @@ function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset', fromNest
   batchRecordForm.value = {
     primary_category: mode === 'refund' ? '业务支出' : mode === 'offset' ? '业务收入' : '业务收入',
     secondary_categories: [mode === 'refund' ? '截单退款' : mode === 'offset' ? '账面抵消' : '补款收入'],
+    currency_mode: 'cny',
+    amount_cny: mode === 'offset' ? undefined : selectedBatchTotal.value,
+    amount_usd: undefined,
     payment_date_picker: dayjs(),
     payment_method: mode === 'offset' ? '账面抵消' : '银行转账',
     refund_account: '',
@@ -966,6 +1098,18 @@ async function saveBatchRecord() {
   if (toProcess.length === 0) {
     message.warning(mode === 'refund' ? '请至少填写一条退款金额' : '请至少填写一条正向金额')
     return
+  }
+  if (mode === 'refund' && Number(batchRecordForm.value.amount_cny || 0) <= 0) {
+    message.warning('请输入退款金额')
+    return
+  }
+  if (mode === 'supplement') {
+    const hasCny = ['cny', 'both'].includes(batchRecordForm.value.currency_mode) && Number(batchRecordForm.value.amount_cny || 0) > 0
+    const hasUsd = ['usd', 'both'].includes(batchRecordForm.value.currency_mode) && Number(batchRecordForm.value.amount_usd || 0) > 0
+    if (!hasCny && !hasUsd) {
+      message.warning('请至少填写人民币或美元补款金额')
+      return
+    }
   }
   const offsetBusinessRows = batchRecordForm.value.offset_business_rows
     .map((row: any) => ({
@@ -1018,11 +1162,22 @@ async function saveBatchRecord() {
       }
     }
 
+    const selectedTotalBeforeSave = selectedBatchTotal.value
+    const formCnyTotal = mode === 'offset'
+      ? selectedBatchTotal.value
+      : mode === 'supplement' && batchRecordForm.value.currency_mode === 'usd'
+        ? 0
+        : Number(batchRecordForm.value.amount_cny || 0)
+    const formUsdTotal = mode === 'supplement' && batchRecordForm.value.currency_mode !== 'cny'
+      ? Number(batchRecordForm.value.amount_usd || 0)
+      : 0
     for (const row of toProcess) {
       const rawAmt = Number(row.allocated)
       const isRefund = mode === 'refund'
       const isOffset = mode === 'offset'
-      const absAmt = Math.abs(rawAmt)
+      const ratio = selectedTotalBeforeSave > 0 ? Math.abs(rawAmt) / selectedTotalBeforeSave : 1 / toProcess.length
+      const absAmt = isOffset ? Math.abs(rawAmt) : Number((formCnyTotal * ratio).toFixed(2))
+      const usdAmt = isRefund || isOffset ? 0 : Number((formUsdTotal * ratio).toFixed(2))
       const order = orders.value.find(o => o.id === row.orderId)
       if (!order) continue
       const businessDetail = buildOrderBusinessBreakdown(order, absAmt)
@@ -1063,7 +1218,7 @@ async function saveBatchRecord() {
         transaction_type: secondaryCategories[0] || null,
         direction: isOffset ? '账面抵消' : (isRefund ? '支出' : '收入'),
         amount_cny: absAmt,
-        amount_usd: 0,
+        amount_usd: usdAmt,
         exchange_rate: order.exchange_rate || 7.25,
         customer_name: order.customer_name || '',
         customer_id_str: order.customer_id_str || '',
@@ -1088,6 +1243,7 @@ async function saveBatchRecord() {
         batch_number: order.order_number,
         transaction_id: txData?.id || null,
         amount_cny: absAmt,
+        amount_usd: usdAmt,
         payment_date: paymentDate,
         payment_method: batchRecordForm.value.payment_method,
         payer_name: batchRecordForm.value.payer_name,
@@ -1112,16 +1268,54 @@ async function saveBatchRecord() {
     if (supplementCount > 0) parts.push(`补款 ${supplementCount} 笔`)
     if (refundCount > 0) parts.push(`退款 ${refundCount} 笔（待审批）`)
     message.success(mode === 'refund' ? `退款申请已提交：${parts.join('，')}` : mode === 'offset' ? `账面抵消已记录：${toProcess.length} 笔` : `补款已记录：${parts.join('，')}`)
-    batchRecordModalOpen.value = false
+    await loadAllPayments()
 
-    const remainingDrafts = allocRows.value
-      .filter(row => mode === 'refund' ? Number(row.allocated || 0) > 0 : Number(row.allocated || 0) < 0)
-      .reduce((acc, row) => {
-        acc[row.orderId] = row.allocated
+    const processedMap = toProcess.reduce((acc, row) => {
+      acc[row.orderId] = Math.abs(Number(row.allocated || 0))
+      return acc
+    }, {} as Record<string, number>)
+    const shouldReturnToParent = mode === 'offset' && offsetOpenedFromNestedBatchAction.value && nestedBatchReturnMode.value
+    if (shouldReturnToParent) {
+      const returnMode = nestedBatchReturnMode.value!
+      const remainingDrafts = Object.entries(nestedBatchParentAllocMap.value).reduce((acc, [orderId, original]) => {
+        const originalAmount = Math.abs(Number(original || 0))
+        const remaining = Math.max(0, originalAmount - Number(processedMap[orderId] || 0))
+        if (remaining > 0.005) {
+          acc[orderId] = returnMode === 'refund' ? -remaining : remaining
+        }
         return acc
       }, {} as Record<string, number | undefined>)
-    rebuildAllocRowsWithDrafts(remainingDrafts)
-    await loadAllPayments()
+      rebuildAllocRowsWithDrafts(remainingDrafts)
+      if (Object.keys(remainingDrafts).length) {
+        batchRecordMode.value = returnMode
+        const restoredForm = nestedBatchParentFormSnapshot.value || batchRecordForm.value
+        restoredForm.amount_cny = Object.values(remainingDrafts).reduce((sum: number, value) => sum + Math.abs(Number(value || 0)), 0)
+        batchRecordForm.value = restoredForm
+        batchRecordFiles.value = [...nestedBatchParentFilesSnapshot.value]
+        offsetOpenedFromNestedBatchAction.value = false
+        nestedBatchReturnMode.value = null
+        nestedBatchParentFormSnapshot.value = null
+        nestedBatchParentFilesSnapshot.value = []
+        nestedBatchParentAllocMap.value = {}
+        batchRecordModalOpen.value = true
+      } else {
+        batchRecordModalOpen.value = false
+        nestedBatchReturnMode.value = null
+        nestedBatchParentFormSnapshot.value = null
+        nestedBatchParentFilesSnapshot.value = []
+        nestedBatchParentAllocMap.value = {}
+        offsetOpenedFromNestedBatchAction.value = false
+      }
+    } else {
+      batchRecordModalOpen.value = false
+      const remainingDrafts = allocRows.value
+        .filter(row => mode === 'refund' ? Number(row.allocated || 0) > 0 : Number(row.allocated || 0) < 0)
+        .reduce((acc, row) => {
+          acc[row.orderId] = row.allocated
+          return acc
+        }, {} as Record<string, number | undefined>)
+      rebuildAllocRowsWithDrafts(remainingDrafts)
+    }
     emit('updated')
   } catch (e: any) {
     message.error('操作失败：' + e.message)
@@ -1167,6 +1361,12 @@ async function saveBatchRecord() {
   border-radius: 10px;
   padding: 8px 16px;
   gap: 12px;
+}
+
+.gbh-fund-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(82px, 1fr));
+  gap: 10px;
 }
 
 .trio-item {
@@ -1485,6 +1685,12 @@ async function saveBatchRecord() {
   border: 1px solid #bfdbfe;
 }
 
+.hint-none {
+  background: #f8f9fb;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+}
+
 .alloc-input-wrap {
   display: flex;
   align-items: center;
@@ -1568,6 +1774,44 @@ async function saveBatchRecord() {
   color: #374151;
   font-size: 13px;
   font-weight: 600;
+}
+
+.batch-amount-card {
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.batch-amount-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.batch-amount-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.batch-amount-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.batch-amount-order {
+  min-width: 0;
+  color: #1a1a2e;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .offset-inline-action {

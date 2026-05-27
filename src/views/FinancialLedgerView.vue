@@ -194,11 +194,6 @@
               <a-input-number v-model:value="form.amount_usd" :min="0" :precision="2" style="width:100%" placeholder="美金金额(可选)" />
             </a-form-item>
           </a-col>
-          <a-col v-if="showUsdFields" :span="12">
-            <a-form-item label="汇率">
-              <a-input-number v-model:value="form.exchange_rate" :min="0" :precision="4" style="width:100%" />
-            </a-form-item>
-          </a-col>
           <a-col :span="12">
             <a-form-item label="交易日期" required>
               <a-input v-model:value="form.transaction_date" placeholder="YYYY-MM-DD" />
@@ -217,36 +212,6 @@
           <a-col :span="12">
             <a-form-item :label="ownerLabel">
               <a-input v-model:value="form.staff_name" />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="isBusinessEntry" :span="24">
-            <a-form-item label="业务明细">
-              <div class="business-edit-card">
-                <div class="business-edit-head">
-                  <span>国家、类型和单量逐行对应</span>
-                  <a-button size="small" @click="addBusinessBreakdownRow">添加明细</a-button>
-                </div>
-                <div class="business-edit-list">
-                  <div v-for="(row, index) in form.business_breakdown" :key="index" class="business-edit-row">
-                    <a-select v-model:value="row.country" size="small" placeholder="国家" show-search>
-                      <a-select-option v-for="item in ledgerCountryOptions" :key="item" :value="item">{{ item }}</a-select-option>
-                    </a-select>
-                    <a-select v-model:value="row.business_type" size="small" placeholder="类型" show-search>
-                      <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
-                    </a-select>
-                    <a-input-number v-model:value="row.order_count" size="small" :min="0" :precision="0" placeholder="单量" style="width:90px" />
-                    <a-button
-                      size="small"
-                      danger
-                      :disabled="form.business_breakdown.length <= 1"
-                      @click="removeBusinessBreakdownRow(index)"
-                    >
-                      删除
-                    </a-button>
-                  </div>
-                </div>
-                <div class="business-edit-tip">例如：美国 文字 3单；英国 免评 1单。</div>
-              </div>
             </a-form-item>
           </a-col>
           <a-col v-if="form.direction === '账面抵消'" :span="12">
@@ -1397,10 +1362,6 @@ async function handleSave() {
   if (!isAdministrativeEntry.value && !String(form.transaction_type || '').trim()) { message.error('请选择二级分类'); return }
   if (!form.transaction_date) { message.error('请填写交易日期'); return }
   const normalizedBreakdown = getNormalizedFormBusinessBreakdown()
-  if (isBusinessEntry.value && normalizedBreakdown.some((item: any) => !item.country || !item.business_type || item.order_count <= 0)) {
-    message.error('请完整填写每行业务明细的国家、类型和单量')
-    return
-  }
   const businessCountries = [...new Set(normalizedBreakdown.map((item: any) => item.country).filter(Boolean))]
   const businessTypes = [...new Set(normalizedBreakdown.map((item: any) => item.business_type).filter(Boolean))]
   const businessOrderCount = normalizedBreakdown.reduce((sum: number, item: any) => sum + Number(item.order_count || 0), 0)

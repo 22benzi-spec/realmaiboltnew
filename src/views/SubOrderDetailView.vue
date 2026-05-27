@@ -1,5 +1,6 @@
 <template>
-  <div class="page-content">
+  <div class="page-content" :class="{ 'edit-only-host': editOnlyMode }">
+    <template v-if="!editOnlyMode">
     <div class="page-header">
       <div>
         <h1 class="page-title">订单列表</h1>
@@ -200,6 +201,7 @@
         </template>
       </a-table>
     </div>
+    </template>
 
     <!-- 编辑弹窗 -->
     <a-modal
@@ -208,6 +210,7 @@
       :footer="null"
       width="980px"
       :destroy-on-close="true"
+      @after-close="handleEditClosed"
     >
       <div v-if="editTask" class="workflow-edit-modal">
         <div class="workflow-edit-header">
@@ -563,6 +566,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabase'
 import dayjs from 'dayjs'
@@ -618,6 +622,21 @@ interface SubOrder {
 const PROGRESS_OPTIONS = ['待匹配', '待下单', '待留评', '已完成', '已掉评', '无法完成']
 const PROBLEM_STATUSES = ['已取消', '已退款', '无此订单', '本金多返', '不下单']
 const REVIEW_TYPE_OPTIONS = ['文字', '图片', '视频', '免评', 'Feedback']
+const props = withDefaults(defineProps<{
+  editSubOrderId?: string
+  editSubOrderRecord?: any
+  editOnly?: boolean
+}>(), {
+  editSubOrderId: '',
+  editSubOrderRecord: null,
+  editOnly: false,
+})
+const emit = defineEmits<{
+  (e: 'closed'): void
+}>()
+const route = useRoute()
+const router = useRouter()
+const editOnlyMode = computed(() => props.editOnly)
 const REFUND_STATUS_OPTIONS = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '无需返款', '失误多返']
 const REFUND_METHODS = ['PayPal', '礼品卡', '银行转账', '微信', '支付宝', 'Zelle']
 const LIST_PREVIEW_MOCKS = [
@@ -1517,6 +1536,10 @@ function initializeEditTask(raw: SubOrder) {
 async function openEdit(r: SubOrder) {
   editTask.value = initializeEditTask(r)
   editOpen.value = true
+  if ((r as any)._is_preview_mock || !isUuid(String(r.id || ''))) {
+    syncRefundComputed(editTask.value)
+    return
+  }
   try {
     const { data } = await supabase
       .from('refund_requests')
@@ -1534,6 +1557,64 @@ async function openEdit(r: SubOrder) {
   } catch {
     syncRefundComputed(editTask.value)
   }
+}
+
+async function openEditById(id: string) {
+  const localRow = allData.value.find(item => item.id === id)
+  if (localRow) {
+    await openEdit(localRow)
+    return
+  }
+
+  const { data, error } = await supabase
+    .from('sub_orders')
+    .select(`
+      id, order_id, sub_order_number, asin, product_name, product_image, store_name, brand_name, category, variant_info, keyword, customer_name, task_notes, country,
+      order_type, review_level, review_type, sales_person, staff_name,
+      buyer_name, buyer_id, amazon_order_id, amazon_order_placed_at, buyer_paypal_email, refund_sequence, paypal_fee_usd, buyer_assigned_at, review_submitted_at,
+      product_price, actual_paid, refund_amount, refund_method, refund_date,
+      fb_link, fb_image_url, review_link, review_screenshot_url,
+      status, refund_status, notes, created_at
+    `)
+    .eq('id', id)
+    .maybeSingle()
+  if (error) {
+    message.error('打开编辑失败：' + error.message)
+    return
+  }
+  if (!data) {
+    message.warning('未找到该子订单')
+    return
+  }
+
+  let buyerChatId = ''
+  if (data.buyer_id) {
+    const { data: buyer } = await supabase
+      .from('buyers')
+      .select('chat_order_id')
+      .eq('id', data.buyer_id)
+      .maybeSingle()
+    buyerChatId = buyer?.chat_order_id || ''
+  }
+
+  await openEdit({
+    ...data,
+    review_type: normalizeReviewType(data.review_type || data.order_type),
+    refund_status: normalizeRefundStatus(data.refund_status),
+    buyer_chat_id: buyerChatId,
+  } as any)
+}
+
+function handleEditClosed() {
+  if (editOnlyMode.value) emit('closed')
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function isPreviewTask(task: any) {
+  return !!task?._is_preview_mock || !isUuid(String(task?.id || ''))
 }
 
 async function onBuyerSelect(task: any, buyerId: string) {
@@ -1597,6 +1678,13 @@ async function assignBuyer(task: any) {
       buyer_assigned_at: new Date().toISOString(),
       status: task.status === '待分配' ? '已分配' : task.status,
     }
+    if (isPreviewTask(task)) {
+      Object.assign(task, payload)
+      task._editing_buyer = false
+      task._buyer_validation = null
+      message.success('预览数据：买手已分配')
+      return
+    }
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
     if (error) throw error
     Object.assign(task, payload)
@@ -1645,6 +1733,43 @@ async function submitRefundRequest(task: any) {
       : ''
   const wasSupplement = task._refund_supplement_mode
   const wasCorrection = task._refund_correction_mode
+  if (isPreviewTask(task)) {
+    const previewPayload = noRefund
+      ? {
+          refund_method: '',
+          refund_sequence: '无需返款',
+          refund_status: '无需退款',
+          refund_amount: 0,
+          actual_paid: 0,
+        }
+      : {
+          refund_method: selectedMethod,
+          refund_sequence: task._sel_refund_sequence || task.refund_sequence,
+          refund_status: '返款中',
+          refund_amount: finalAmount,
+          actual_paid: actualPaid,
+          paypal_fee_usd: feeUsd,
+          buyer_paypal_email: paypalEmail,
+        }
+    Object.assign(task, previewPayload)
+    task._refund_apply_notes = ''
+    task._need_finance_screenshot = false
+    task._refund_request_pending = noRefund
+      ? null
+      : {
+          id: `preview-refund-${task.id}`,
+          status: '待处理',
+          refund_amount_usd: finalAmount,
+          actual_paid_usd: actualPaid,
+          paypal_fee_usd: feeUsd,
+          refund_method: selectedMethod,
+          refund_sequence: task._sel_refund_sequence || task.refund_sequence,
+          buyer_paypal_email: paypalEmail,
+          notes,
+        }
+    message.success(noRefund ? '预览数据：已保存为无需返款' : '预览数据：返款申请已提交')
+    return
+  }
   task._submitting_refund = true
   try {
     if (noRefund) {
@@ -1752,6 +1877,11 @@ async function saveAmazonOrder(task: any) {
       amazon_order_id: task._input_amazon_order_id,
       status: '已下单',
     }
+    if (isPreviewTask(task)) {
+      Object.assign(task, payload)
+      message.success('预览数据：Amazon订单号已保存')
+      return
+    }
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
     if (error) throw error
     Object.assign(task, payload)
@@ -1781,6 +1911,11 @@ async function saveScreenshot(task: any) {
           review_submitted_at: new Date().toISOString(),
           status: '已留评',
         }
+    if (isPreviewTask(task)) {
+      Object.assign(task, payload)
+      message.success(isFeedback ? '预览数据：Feedback凭证已提交' : '预览数据：留评凭证已提交')
+      return
+    }
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
     if (error) throw error
     Object.assign(task, payload)
@@ -1797,6 +1932,11 @@ async function saveOrderNotes(task: any) {
   const nextValue = String(task._edit_order_notes || '')
   if (nextValue === String(task.notes || '')) return
   try {
+    if (isPreviewTask(task)) {
+      task.notes = nextValue
+      message.success('预览数据：备注已保存')
+      return
+    }
     const { error } = await supabase.from('sub_orders').update({ notes: nextValue }).eq('id', task.id)
     if (error) throw error
     task.notes = nextValue
@@ -1833,6 +1973,12 @@ async function saveReplaceProduct() {
       category: String(replaceProductForm.value.category || '').trim(),
       variant_info: String(replaceProductForm.value.variant_info || '').trim(),
       product_price: Number(replaceProductForm.value.product_price || 0),
+    }
+    if (isPreviewTask(editTask.value)) {
+      Object.assign(editTask.value, payload)
+      replaceProductOpen.value = false
+      message.success('预览数据：产品信息已更新')
+      return
     }
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', editTask.value.id)
     if (error) throw error
@@ -1969,7 +2115,21 @@ function exportCSV() {
 
 onMounted(async () => {
   loadFromStorage()
+  if (editOnlyMode.value) {
+    await loadBuyers()
+    if (props.editSubOrderRecord) await openEdit(props.editSubOrderRecord)
+    else if (props.editSubOrderId) await openEditById(props.editSubOrderId)
+    return
+  }
+
   await Promise.all([loadBuyers(), loadData()])
+  const editSubOrderId = props.editSubOrderId || route.query.editSubOrderId
+  if (typeof editSubOrderId === 'string' && editSubOrderId) {
+    await openEditById(editSubOrderId)
+    const restQuery = { ...route.query }
+    delete restQuery.editSubOrderId
+    router.replace({ query: restQuery })
+  }
 })
 </script>
 
@@ -1978,6 +2138,12 @@ onMounted(async () => {
   padding: 24px 28px;
   background: #f5f6fa;
   min-height: 100vh;
+}
+
+.page-content.edit-only-host {
+  padding: 0;
+  background: transparent;
+  min-height: 0;
 }
 
 .page-header {
