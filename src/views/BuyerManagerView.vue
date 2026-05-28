@@ -12,9 +12,17 @@
     <div class="card-panel">
       <div class="toolbar">
         <div class="toolbar-left">
-          <a-input-search v-model:value="searchText" placeholder="搜索买手姓名/编号/聊单号/Facebook" style="width:240px" allow-clear @search="load" @change="onSearchChange" />
+          <a-input-search v-model:value="searchText" placeholder="搜索买手姓名/编号/聊单号/个人页面" style="width:240px" allow-clear @search="load" @change="onSearchChange" />
           <a-select v-model:value="filterCountry" style="width:100px" @change="load" allow-clear placeholder="国家">
             <a-select-option v-for="c in countries" :key="c" :value="c">{{ c }}</a-select-option>
+          </a-select>
+          <a-select v-model:value="filterBuyerStatus" style="width:105px" @change="onBuyerStatusFilterChange" allow-clear placeholder="买手状态">
+            <a-select-option value="活跃">活跃</a-select-option>
+            <a-select-option value="暂停">暂停</a-select-option>
+            <a-select-option value="黑名单">黑名单</a-select-option>
+          </a-select>
+          <a-select v-model:value="filterCategory" style="width:105px" @change="load" allow-clear placeholder="类目">
+            <a-select-option v-for="item in reviewCategoryOptions" :key="item" :value="item">{{ item }}</a-select-option>
           </a-select>
           <a-select v-model:value="filterStaff" style="width:115px" @change="load" allow-clear placeholder="业务员">
             <a-select-option v-for="s in staffList" :key="s.id" :value="s.id">{{ s.name }}</a-select-option>
@@ -29,6 +37,9 @@
         <div class="toolbar-right">
           <span class="total-hint">共 {{ pagination.total }} 人</span>
           <a-button type="primary" @click="openAddModal"><PlusOutlined /> 添加买手</a-button>
+          <a-button @click="openReviewImport">
+            <ImportOutlined /> 批量导入留评轨迹
+          </a-button>
         </div>
       </div>
 
@@ -142,7 +153,7 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="Facebook 链接">
+            <a-form-item label="个人页面链接">
               <a-input v-model:value="addForm.facebook_link" placeholder="https://facebook.com/..." />
             </a-form-item>
           </a-col>
@@ -151,6 +162,68 @@
           </a-col>
         </a-row>
       </a-form>
+    </a-modal>
+
+    <!-- 批量导入留评轨迹 -->
+    <a-modal v-model:open="reviewImportOpen" title="批量导入留评轨迹" width="760px" :footer="null">
+      <div class="review-import-body">
+        <a-alert type="info" show-icon style="margin-bottom:14px">
+          <template #message>
+            <span>CSV 表头需包含：<b>买手编号/买手名/聊单号</b>、<b>ASIN</b>、<b>留评日期</b>、<b>评论类型</b>、<b>类目</b>、<b>星级</b>。</span>
+          </template>
+        </a-alert>
+        <div class="template-hint">
+          <span>表头格式参考：</span>
+          <code>买手编号,买手名,聊单号,ASIN,留评日期,评论类型,类目,星级,评论状态,来源,评论链接,备注</code>
+          <a-button type="link" size="small" @click="downloadReviewImportTemplate">下载模板</a-button>
+        </div>
+        <div class="file-upload-area" @click="triggerReviewImportInput" @dragover.prevent @drop.prevent="onReviewImportDrop">
+          <input ref="reviewImportInputRef" type="file" accept=".csv" style="display:none" @change="onReviewImportSelected" />
+          <div v-if="!reviewImportPreview.length" class="upload-placeholder">
+            <div style="font-size:32px; color:#d1d5db; margin-bottom:8px">&#8679;</div>
+            <div style="color:#6b7280; font-size:13px">点击或拖拽 CSV 文件到此处</div>
+          </div>
+          <div v-else class="preview-area">
+            <div class="preview-header">
+              <span class="preview-count">已解析 {{ reviewImportPreview.length }} 条记录</span>
+              <a-button type="link" size="small" @click.stop="clearReviewImport">重新上传</a-button>
+            </div>
+            <div class="preview-table-wrap">
+              <table class="preview-table">
+                <thead>
+                  <tr>
+                    <th>买手</th><th>ASIN</th><th>日期</th><th>类型</th><th>类目</th><th>星级</th><th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, i) in reviewImportPreview.slice(0, 10)" :key="i">
+                    <td>{{ row._buyer_name }}</td>
+                    <td>{{ row.asin }}</td>
+                    <td>{{ row.review_date }}</td>
+                    <td>{{ row.review_type }}</td>
+                    <td>{{ row.review_category }}</td>
+                    <td>{{ row.star_rating }}</td>
+                    <td>{{ row.review_status }}</td>
+                  </tr>
+                  <tr v-if="reviewImportPreview.length > 10">
+                    <td colspan="7" style="text-align:center; color:#9ca3af; font-size:11px">还有 {{ reviewImportPreview.length - 10 }} 条...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="batch-errors" v-if="reviewImportErrors.length">
+              <div class="batch-err-title">以下行有问题，已跳过：</div>
+              <div v-for="e in reviewImportErrors" :key="e" class="batch-err-row">{{ e }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="batch-footer">
+          <a-button @click="reviewImportOpen = false">取消</a-button>
+          <a-button type="primary" :disabled="!reviewImportPreview.length" :loading="reviewImportSaving" @click="saveReviewImport">
+            导入 {{ reviewImportPreview.length }} 条
+          </a-button>
+        </div>
+      </div>
     </a-modal>
 
     <!-- 编辑买手弹窗（全字段，分 Tab） -->
@@ -200,7 +273,10 @@
                 <a-form-item label="所属聊单号"><a-input v-model:value="editForm.chat_account" /></a-form-item>
               </a-col>
               <a-col :span="12">
-                <a-form-item label="Facebook 链接"><a-input v-model:value="editForm.facebook_link" /></a-form-item>
+                <a-form-item label="对接平台"><a-input v-model:value="editForm.contact_platform" placeholder="如 Amazon / FB" /></a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="个人页面链接"><a-input v-model:value="editForm.facebook_link" /></a-form-item>
               </a-col>
               <a-col :span="8">
                 <a-form-item label="状态">
@@ -216,11 +292,6 @@
                   <a-select v-model:value="editForm.staff_id" allow-clear placeholder="选择业务员" @change="onStaffChange">
                     <a-select-option v-for="s in staffList" :key="s.id" :value="s.id">{{ s.name }}</a-select-option>
                   </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="售后率 (%)">
-                  <a-input-number v-model:value="editForm.after_sale_rate" :min="0" :max="100" :precision="1" style="width:100%" />
                 </a-form-item>
               </a-col>
               <a-col :span="24">
@@ -261,9 +332,6 @@
                 <a-form-item label="所属地区"><a-input v-model:value="editForm.region" placeholder="如 德州 / 加州" /></a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="对接平台"><a-input v-model:value="editForm.contact_platform" placeholder="如 Amazon / FB" /></a-form-item>
-              </a-col>
-              <a-col :span="8">
                 <a-form-item label="邮箱"><a-input v-model:value="editForm.email" /></a-form-item>
               </a-col>
               <a-col :span="8">
@@ -292,28 +360,6 @@
               </a-col>
             </a-row>
           </a-form>
-        </a-tab-pane>
-
-        <!-- Tab 购买记录 -->
-        <a-tab-pane key="purchase" tab="购买记录">
-          <div style="padding: 12px 0; color: #6b7280; font-size: 13px;">
-            <a-alert type="info" show-icon message="已购 ASIN 和已购店铺由系统从订单记录自动汇总，无需手动填写。" style="margin-bottom: 14px;" />
-            <div v-if="editOrderStats.asins.length">
-              <div class="purchase-section-title">已购 ASIN（{{ editOrderStats.asins.length }} 个）</div>
-              <div class="asin-tags" style="margin-bottom:14px">
-                <span v-for="asin in editOrderStats.asins" :key="asin" class="asin-tag">{{ asin }}</span>
-              </div>
-            </div>
-            <div v-if="editOrderStats.stores.length">
-              <div class="purchase-section-title">已购店铺（{{ editOrderStats.stores.length }} 个）</div>
-              <div class="store-tags">
-                <span v-for="store in editOrderStats.stores" :key="store" class="store-tag">{{ store }}</span>
-              </div>
-            </div>
-            <div v-if="!editOrderStats.asins.length && !editOrderStats.stores.length" class="ds-empty" style="padding: 24px 0; text-align:center">
-              暂无订单记录
-            </div>
-          </div>
         </a-tab-pane>
       </a-tabs>
     </a-modal>
@@ -351,7 +397,7 @@
             <div class="kpi-row">
               <div class="kpi-card">
                 <div class="kpi-num">{{ drawerBuyer.total_completed || 0 }}</div>
-                <div class="kpi-label">已完成合计</div>
+                <div class="kpi-label">已下单合计</div>
               </div>
               <div class="kpi-card kpi-card-sm">
                 <div class="kpi-num blue">{{ drawerOrderBreakdown.review }}</div>
@@ -398,7 +444,7 @@
                   <span class="text-mono">{{ drawerBuyer.chat_account || '—' }}</span>
                 </div>
                 <div class="ds-item">
-                  <span class="ds-label">Facebook 链接</span>
+                  <span class="ds-label">个人页面链接</span>
                   <a v-if="drawerBuyer.facebook_link" :href="drawerBuyer.facebook_link" target="_blank" class="link-text">查看主页</a>
                   <span v-else>—</span>
                 </div>
@@ -430,20 +476,32 @@
 
             <!-- 购买记录 -->
             <div class="drawer-section">
-              <div class="ds-title">购买记录（来自订单）</div>
-              <div v-if="drawerOrderStats.asins.length" class="ds-block">
-                <div class="ds-label-full">已购 ASIN（{{ drawerOrderStats.asins.length }} 个）</div>
-                <div class="asin-tags">
-                  <span v-for="asin in drawerOrderStats.asins" :key="asin" class="asin-tag">{{ asin }}</span>
+              <div class="ds-title">
+                购买记录摘要
+                <span v-if="drawerOrderStats.isMock" class="mock-hint">mock预览</span>
+              </div>
+              <div v-if="drawerOrderStats.total" class="purchase-summary-grid">
+                <div class="purchase-summary-card">
+                  <span class="ds-label">已购店铺数</span>
+                  <strong>{{ drawerOrderStats.stores.length }}</strong>
+                </div>
+                <div class="purchase-summary-card">
+                  <span class="ds-label">已购类目数</span>
+                  <strong>{{ drawerOrderStats.categories.length }}</strong>
+                </div>
+                <div class="purchase-summary-card">
+                  <span class="ds-label">问题单数</span>
+                  <strong>{{ drawerOrderStats.issueCount }}</strong>
+                </div>
+                <div class="purchase-summary-card">
+                  <span class="ds-label">最近下单</span>
+                  <strong>{{ formatShortDate(drawerOrderStats.latestOrderAt) }}</strong>
                 </div>
               </div>
-              <div v-if="drawerOrderStats.stores.length" class="ds-block">
-                <div class="ds-label-full">已购店铺</div>
-                <div class="store-tags">
-                  <span v-for="store in drawerOrderStats.stores" :key="store" class="store-tag">{{ store }}</span>
-                </div>
+              <div v-if="drawerOrderStats.categories.length" class="purchase-summary-line">
+                已购类目：{{ drawerOrderStats.categories.slice(0, 5).join('、') }}
               </div>
-              <div v-if="!drawerOrderStats.asins.length && !drawerOrderStats.stores.length" class="ds-empty">暂无订单记录</div>
+              <div v-if="!drawerOrderStats.total" class="ds-empty">暂无订单记录</div>
             </div>
 
             <!-- 拉黑 / 备注 -->
@@ -477,7 +535,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { ImportOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import BuyerReviewTracker from '../components/BuyerReviewTracker.vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -487,6 +545,8 @@ const loading = ref(false)
 const buyers = ref<any[]>([])
 const searchText = ref('')
 const filterCountry = ref('')
+const filterBuyerStatus = ref('')
+const filterCategory = ref('')
 const filterStaff = ref('')
 const filterSource = ref('')
 const activeTab = ref('all')
@@ -504,9 +564,15 @@ const pagination = ref({ current: 1, pageSize: 20, total: 0, showSizeChanger: tr
 const staffList = ref<any[]>([])
 const allCounts = ref({ all: 0, active: 0, paused: 0, blacklist: 0, today: 0 })
 const backupContacts = ref<{ type: string; value: string }[]>([])
-const editOrderStats = ref<{ asins: string[]; stores: string[] }>({ asins: [], stores: [] })
-const drawerOrderStats = ref<{ asins: string[]; stores: string[] }>({ asins: [], stores: [] })
+const emptyDrawerOrderStats = () => ({ asins: [] as string[], stores: [] as string[], categories: [] as string[], latestOrderAt: '', issueCount: 0, total: 0, isMock: false })
+const drawerOrderStats = ref(emptyDrawerOrderStats())
 const drawerOrderBreakdown = ref({ review: 0, free: 0, feedback: 0 })
+const reviewImportOpen = ref(false)
+const reviewImportPreview = ref<any[]>([])
+const reviewImportErrors = ref<string[]>([])
+const reviewImportSaving = ref(false)
+const reviewImportInputRef = ref<HTMLInputElement | null>(null)
+const reviewImportBuyerLookup = ref<any[]>([])
 
 const countries = ['美国', '德国', '英国', '加拿大', '澳大利亚', '法国', '日本']
 const tagPresets = [...BUYER_TAG_PRESETS]
@@ -515,6 +581,7 @@ const statusColor: Record<string, string> = { '活跃': 'green', '暂停': 'oran
 const cooperationColor: Record<string, string> = { '高': 'green', '中': 'blue', '低': 'orange', '待评估': 'default' }
 const sourceChannelColor: Record<string, string> = { '老客推荐': 'green', '前端引流': 'blue', '中介介绍': 'orange', '渠道未知': 'default' }
 const avatarColors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#0891b2', '#65a30d']
+const reviewCategoryOptions = ['家居', '个护', '玩具', '厨房', '电子', '宠物', '服饰', '运动', '母婴', '美妆']
 
 function avatarColor(name: string) {
   if (!name) return '#9ca3af'
@@ -605,10 +672,25 @@ async function load() {
     }
     const st = tabToStatus(activeTab.value)
     if (st) query = query.eq('status', st)
+    if (filterBuyerStatus.value) query = query.eq('status', filterBuyerStatus.value)
     if (activeTab.value === 'today') query = query.gte('created_at', dayjs().startOf('day').toISOString())
     if (filterCountry.value) query = query.eq('country', filterCountry.value)
     if (filterStaff.value) query = query.eq('staff_id', filterStaff.value)
     if (filterSource.value) query = query.eq('source_channel', filterSource.value)
+    if (filterCategory.value) {
+      const { data: categoryRows, error: categoryError } = await supabase
+        .from('sub_orders')
+        .select('buyer_id')
+        .eq('category', filterCategory.value)
+      if (categoryError) throw categoryError
+      const buyerIds = Array.from(new Set((categoryRows || []).map((row: any) => row.buyer_id).filter(Boolean)))
+      if (!buyerIds.length) {
+        buyers.value = []
+        pagination.value.total = 0
+        return
+      }
+      query = query.in('id', buyerIds)
+    }
     const from = (pagination.value.current - 1) * pagination.value.pageSize
     query = query.range(from, from + pagination.value.pageSize - 1)
     const { data, count, error } = await query
@@ -627,6 +709,13 @@ async function loadStaff() {
 
 function setTab(tab: string) {
   activeTab.value = tab
+  filterBuyerStatus.value = ''
+  pagination.value.current = 1
+  load()
+}
+
+function onBuyerStatusFilterChange() {
+  activeTab.value = 'all'
   pagination.value.current = 1
   load()
 }
@@ -643,19 +732,6 @@ function onStaffChange(val: string) {
 function openAddModal() {
   Object.assign(addForm, defaultAddForm())
   addModalOpen.value = true
-}
-
-async function loadEditOrderStats(buyerId: string) {
-  editOrderStats.value = { asins: [], stores: [] }
-  const { data } = await supabase
-    .from('sub_orders')
-    .select('asin, store_name')
-    .eq('buyer_id', buyerId)
-  if (data) {
-    const asins = [...new Set(data.map((r: any) => r.asin).filter(Boolean))]
-    const stores = [...new Set(data.map((r: any) => r.store_name).filter(Boolean))]
-    editOrderStats.value = { asins, stores }
-  }
 }
 
 const originalBuyerName = ref('')
@@ -677,21 +753,32 @@ function openEditModal(record: any) {
   originalBuyerName.value = record.name || ''
   backupContacts.value = parsedBackupContacts(record.backup_contacts)
   editModalOpen.value = true
-  loadEditOrderStats(record.id)
 }
 
 async function loadDrawerOrderStats(buyerId: string) {
-  drawerOrderStats.value = { asins: [], stores: [] }
+  drawerOrderStats.value = emptyDrawerOrderStats()
   drawerOrderBreakdown.value = { review: 0, free: 0, feedback: 0 }
+  const { count: issueCount } = await supabase
+    .from('after_sale_issues')
+    .select('id', { count: 'exact', head: true })
+    .eq('buyer_id', buyerId)
   const { data } = await supabase
     .from('sub_orders')
-    .select('asin, store_name, order_type')
+    .select('asin, store_name, order_type, category, created_at, scheduled_date')
     .eq('buyer_id', buyerId)
     .in('status', ['已完成', '已留评'])
-  if (data) {
+  if (data?.length) {
     const asins = [...new Set(data.map((r: any) => r.asin).filter(Boolean))]
     const stores = [...new Set(data.map((r: any) => r.store_name).filter(Boolean))]
-    drawerOrderStats.value = { asins, stores }
+    const categories = [...new Set(data.map((r: any) => r.category).filter(Boolean))]
+    const sortedRows = [...data].sort((a: any, b: any) =>
+      String(a.scheduled_date || a.created_at || '').localeCompare(String(b.scheduled_date || b.created_at || ''))
+    )
+    const orderDates = sortedRows
+      .map((r: any) => r.scheduled_date || r.created_at)
+      .filter(Boolean)
+    const latestOrderAt = orderDates[orderDates.length - 1] || ''
+    drawerOrderStats.value = { asins, stores, categories, latestOrderAt, issueCount: issueCount || 0, total: data.length, isMock: false }
     let review = 0, free = 0, feedback = 0
     for (const r of data) {
       const t = (r.order_type || '').toLowerCase()
@@ -700,6 +787,21 @@ async function loadDrawerOrderStats(buyerId: string) {
       else review++
     }
     drawerOrderBreakdown.value = { review, free, feedback }
+  } else {
+    drawerOrderStats.value = buildMockDrawerOrderStats()
+    drawerOrderBreakdown.value = { review: 2, free: 1, feedback: 1 }
+  }
+}
+
+function buildMockDrawerOrderStats() {
+  return {
+    asins: ['B0C8PX21LM', 'B09W8Q7ZRM', 'B0BVT92KQP'],
+    stores: ['BlendNova Store', 'SoftEase Home'],
+    categories: ['家居', '厨房', '电子'],
+    latestOrderAt: dayjs().subtract(3, 'day').format('YYYY-MM-DD'),
+    issueCount: 2,
+    total: 4,
+    isMock: true,
   }
 }
 
@@ -796,6 +898,202 @@ function formatDate(d: string) {
   return d ? dayjs(d).format('MM-DD HH:mm') : '—'
 }
 
+function formatShortDate(d: string) {
+  return d ? dayjs(d).format('YYYY-MM-DD') : '—'
+}
+
+async function openReviewImport() {
+  reviewImportPreview.value = []
+  reviewImportErrors.value = []
+  reviewImportOpen.value = true
+  await loadReviewImportBuyers()
+}
+
+async function loadReviewImportBuyers() {
+  const { data, error } = await supabase
+    .from('erp_buyers')
+    .select('id, name, buyer_number, chat_account')
+  if (error) {
+    message.error('读取买手信息失败：' + error.message)
+    return
+  }
+  reviewImportBuyerLookup.value = data || []
+}
+
+function triggerReviewImportInput() {
+  if (reviewImportPreview.value.length) return
+  reviewImportInputRef.value?.click()
+}
+
+function onReviewImportDrop(e: DragEvent) {
+  const file = e.dataTransfer?.files?.[0]
+  if (file) parseReviewImportFile(file)
+}
+
+function onReviewImportSelected(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (file) parseReviewImportFile(file)
+  if (reviewImportInputRef.value) reviewImportInputRef.value.value = ''
+}
+
+function clearReviewImport() {
+  reviewImportPreview.value = []
+  reviewImportErrors.value = []
+}
+
+function parseReviewImportFile(file: File) {
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const text = e.target?.result as string
+    const lines = text.split(/\r?\n/).filter(line => line.trim())
+    if (lines.length < 2) {
+      message.error('文件内容为空或格式错误')
+      return
+    }
+
+    const headers = parseCSVLine(lines[0]).map(item => item.trim())
+    const colMap: Record<string, number> = {}
+    const aliases: Record<string, string[]> = {
+      buyer_number: ['买手编号', '买手ID', 'buyer_number', 'buyer_id'],
+      buyer_name: ['买手名', '买手姓名', 'buyer_name', 'name'],
+      chat_account: ['聊单号', 'chat_account', 'chat'],
+      asin: ['ASIN', 'asin'],
+      review_date: ['留评日期', '评论日期', '日期', 'review_date', 'date'],
+      review_type: ['评论类型', '类型', 'review_type', 'type'],
+      review_category: ['类目', '评论类目', '产品类目', 'category', 'review_category'],
+      star_rating: ['星级', '星数', 'star_rating', 'stars', 'rating'],
+      review_status: ['评论状态', '状态', 'review_status', 'status'],
+      source: ['来源', 'source'],
+      review_url: ['评论链接', 'review_url', 'url'],
+      notes: ['备注', 'notes'],
+    }
+    for (const [field, aliasList] of Object.entries(aliases)) {
+      for (const alias of aliasList) {
+        const idx = headers.findIndex(item => item === alias)
+        if (idx !== -1) { colMap[field] = idx; break }
+      }
+    }
+
+    const rows: any[] = []
+    const errors: string[] = []
+    for (let i = 1; i < lines.length; i++) {
+      const cells = parseCSVLine(lines[i])
+      const buyer = matchReviewImportBuyer({
+        buyer_number: getCSVCell(cells, colMap.buyer_number),
+        buyer_name: getCSVCell(cells, colMap.buyer_name),
+        chat_account: getCSVCell(cells, colMap.chat_account),
+      })
+      if (!buyer) { errors.push(`第 ${i + 1} 行：未匹配到买手`); continue }
+
+      const asin = getCSVCell(cells, colMap.asin).toUpperCase()
+      if (!asin) { errors.push(`第 ${i + 1} 行：ASIN 为空`); continue }
+
+      const reviewDate = getCSVCell(cells, colMap.review_date)
+      if (!reviewDate || !dayjs(reviewDate).isValid()) { errors.push(`第 ${i + 1} 行：留评日期格式错误`); continue }
+
+      const category = getCSVCell(cells, colMap.review_category)
+      if (!reviewCategoryOptions.includes(category)) {
+        errors.push(`第 ${i + 1} 行：类目需为 ${reviewCategoryOptions.join('/')}`)
+        continue
+      }
+
+      const star = Math.min(Math.max(parseInt(getCSVCell(cells, colMap.star_rating), 10) || 5, 1), 5)
+      const source = getCSVCell(cells, colMap.source)
+      rows.push({
+        buyer_id: buyer.id,
+        _buyer_name: buyer.name || buyer.buyer_number || '—',
+        asin,
+        review_date: dayjs(reviewDate).format('YYYY-MM-DD'),
+        review_type: normalizeReviewType(getCSVCell(cells, colMap.review_type)),
+        review_category: category,
+        star_rating: star,
+        review_status: normalizeReviewStatus(getCSVCell(cells, colMap.review_status)),
+        is_company_order: source === '内部订单',
+        review_url: getCSVCell(cells, colMap.review_url),
+        notes: getCSVCell(cells, colMap.notes),
+      })
+    }
+    reviewImportPreview.value = rows
+    reviewImportErrors.value = errors
+  }
+  reader.readAsText(file, 'UTF-8')
+}
+
+function getCSVCell(cells: string[], index: number | undefined) {
+  return index === undefined ? '' : (cells[index] || '').trim()
+}
+
+function matchReviewImportBuyer(row: { buyer_number: string; buyer_name: string; chat_account: string }) {
+  const norm = (value: string) => value.trim().toLowerCase()
+  return reviewImportBuyerLookup.value.find(item =>
+    (row.buyer_number && norm(item.buyer_number || '') === norm(row.buyer_number)) ||
+    (row.chat_account && norm(item.chat_account || '') === norm(row.chat_account)) ||
+    (row.buyer_name && norm(item.name || '') === norm(row.buyer_name))
+  )
+}
+
+function normalizeReviewStatus(status: string) {
+  if (status === '已掉评' || status === '掉评' || status === '删评') return '已掉评'
+  if (status === '待检测') return '待检测'
+  if (status === '检测异常') return '检测异常'
+  return '存活'
+}
+
+function normalizeReviewType(type: string) {
+  if (type.includes('视频')) return '视频'
+  if (type.includes('图片') || type.includes('图评')) return '图片'
+  return '文字'
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = []
+  let current = ''
+  let inQuote = false
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') {
+      if (inQuote && line[i + 1] === '"') { current += '"'; i++ }
+      else inQuote = !inQuote
+    } else if (char === ',' && !inQuote) {
+      result.push(current); current = ''
+    } else {
+      current += char
+    }
+  }
+  result.push(current)
+  return result
+}
+
+async function saveReviewImport() {
+  if (!reviewImportPreview.value.length) return
+  reviewImportSaving.value = true
+  try {
+    const payload = reviewImportPreview.value.map(({ _buyer_name, ...row }) => ({
+      ...row,
+      updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase.from('buyer_reviews').insert(payload)
+    if (error) throw error
+    message.success(`成功导入 ${payload.length} 条留评轨迹`)
+    reviewImportOpen.value = false
+  } catch (e: any) {
+    message.error('导入失败：' + (e.message || e))
+  } finally {
+    reviewImportSaving.value = false
+  }
+}
+
+function downloadReviewImportTemplate() {
+  const header = '买手编号,买手名,聊单号,ASIN,留评日期,评论类型,类目,星级,评论状态,来源,评论链接,备注'
+  const sample = 'B-0001,Emma,CHAT-90217,B0XXXXXXXX,2026-05-01,文字,家居,5,存活,个人评论,https://...,备注示例'
+  const blob = new Blob(['\uFEFF' + header + '\n' + sample], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = '批量导入留评轨迹模板.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 onMounted(async () => {
   await Promise.all([loadStaff(), loadCounts()])
@@ -822,6 +1120,25 @@ onMounted(async () => {
 .toolbar-left { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .toolbar-right { display: flex; gap: 10px; align-items: center; }
 .total-hint { font-size: 13px; color: #6b7280; }
+
+.review-import-body { padding: 4px 0; }
+.template-hint { font-size: 12px; color: #6b7280; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.template-hint code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #374151; }
+.file-upload-area { border: 2px dashed #d1d5db; border-radius: 8px; min-height: 140px; cursor: pointer; transition: border-color .2s; }
+.file-upload-area:hover { border-color: #2563eb; }
+.upload-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; }
+.preview-area { padding: 12px 14px; cursor: default; }
+.preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.preview-count { font-size: 13px; font-weight: 600; color: #059669; }
+.preview-table-wrap { max-height: 220px; overflow-y: auto; border-radius: 6px; border: 1px solid #e5e7eb; }
+.preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.preview-table th { background: #f9fafb; padding: 6px 8px; text-align: left; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+.preview-table td { padding: 5px 8px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+.preview-table tr:last-child td { border-bottom: none; }
+.batch-errors { margin-top: 10px; background: #fef2f2; border-radius: 6px; padding: 8px 12px; }
+.batch-err-title { font-size: 12px; font-weight: 600; color: #dc2626; margin-bottom: 4px; }
+.batch-err-row { font-size: 11px; color: #b91c1c; }
+.batch-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
 
 .buyer-id-badge { font-size: 11px; background: #f3f4f6; color: #374151; padding: 2px 7px; border-radius: 5px; font-family: monospace; font-weight: 600; }
 .buyer-name-cell { display: flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -873,12 +1190,17 @@ onMounted(async () => {
 
 .drawer-section { padding: 14px 20px; border-bottom: 1px solid #f0f0f0; }
 .ds-title { font-size: 11px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+.mock-hint { margin-left: 6px; color: #d97706; font-weight: 600; letter-spacing: 0; }
 .ds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ds-item { display: flex; flex-direction: column; gap: 2px; }
 .ds-label { font-size: 11px; color: #9ca3af; }
 .ds-label-full { font-size: 11px; color: #9ca3af; }
 .ds-block { margin-bottom: 10px; }
 .ds-empty { font-size: 13px; color: #d1d5db; text-align: center; padding: 10px 0; }
+.purchase-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.purchase-summary-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; background: #f9fafb; display: flex; flex-direction: column; gap: 2px; }
+.purchase-summary-card strong { color: #1a1a2e; font-size: 13px; font-weight: 700; }
+.purchase-summary-line { margin-top: 8px; color: #6b7280; font-size: 12px; line-height: 1.5; }
 
 .ref-name { font-size: 11px; color: #6b7280; margin-left: 4px; }
 .link-text { font-size: 12px; color: #2563eb; }
