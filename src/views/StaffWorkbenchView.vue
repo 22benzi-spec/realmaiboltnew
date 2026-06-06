@@ -531,11 +531,11 @@
             </div>
 
             <!-- 任务卡片列表 -->
-            <div v-if="wbNav === 'pending' && wbViewMode === 'sub' && displayedTaskCards.length > 0" class="task-card-list">
+            <div v-if="workflowPanelTasks.length > 0" :class="['task-card-list', { 'workflow-panel-list': wbNav === 'improving' }]">
             <div
-              v-for="task in displayedTaskCards"
+              v-for="task in workflowPanelTasks"
               :key="task.id"
-              :class="['task-card', task._expanded ? 'expanded' : '', getDangerClass(task)]"
+              :class="['task-card', task._expanded ? 'expanded' : '', getDangerClass(task), { 'workflow-only': wbNav === 'improving' }]"
             >
               <!-- 任务卡头 -->
               <div class="task-card-header" @click="toggleExpand(task)">
@@ -1566,6 +1566,11 @@ const displayedTaskCards = computed(() => {
   if (wbNav.value === 'improving') return []
   if (wbNav.value === 'reviewFollow') return getSortedReviewFollowTasks(reviewFollowupTasks.value)
   if (wbNav.value === 'afterSale') return []
+  return []
+})
+const workflowPanelTasks = computed(() => {
+  if (wbNav.value === 'pending' && wbViewMode.value === 'sub') return displayedTaskCards.value
+  if (wbNav.value === 'improving') return displayedImprovingListTasks.value.filter(task => task._expanded)
   return []
 })
 const wbNavItems = computed<Array<{ key: WorkbenchNavKey; label: string; count: number }>>(() => ([
@@ -4052,6 +4057,116 @@ async function assignBuyer(task: any) {
   }
 }
 
+function appendOrReplaceMockRefundRequest(task: any, request: any) {
+  const currentList = Array.isArray(task._refund_requests_list) ? task._refund_requests_list : []
+  const idx = currentList.findIndex((r: any) => r.id === request.id)
+  if (idx >= 0) {
+    currentList[idx] = request
+    task._refund_requests_list = [...currentList]
+    return
+  }
+  task._refund_requests_list = [request, ...currentList]
+}
+
+function submitMockRefundRequest(task: any, options: {
+  noRefund: boolean
+  configPayload: Record<string, any>
+  commonFields: Record<string, any>
+  isUpdatePending: boolean
+  pending: any
+  wasSupplement: boolean
+  wasCorrection: boolean
+  supplementReason: string
+}) {
+  const { noRefund, configPayload, commonFields, isUpdatePending, pending, wasSupplement, wasCorrection, supplementReason } = options
+
+  if (noRefund) {
+    Object.assign(task, configPayload)
+    if (pending?.id) {
+      const cancelNote = [pending.notes, '业务改为无需返款，原待审核返款申请已取消'].filter(Boolean).join('；')
+      const cancelled = {
+        ...pending,
+        status: '已取消',
+        notes: cancelNote,
+        updated_at: new Date().toISOString(),
+      }
+      appendOrReplaceMockRefundRequest(task, cancelled)
+    }
+    task._refund_request_pending = null
+    task._refund_request = task._refund_request_latest_processed || null
+    task._refund_apply_notes = ''
+    task._need_finance_screenshot = false
+    task._refund_supplement_mode = false
+    task._refund_correction_mode = false
+    task._refund_correction_target_id = null
+    message.success(pending?.id ? '已改为无需返款，并取消待审核返款申请' : '已保存为无需返款')
+    return
+  }
+
+  Object.assign(task, configPayload)
+
+  if (isUpdatePending && pending) {
+    const staffName = staffList.value.find(s => s.id === selectedStaffId.value)?.name || '业务员'
+    const existingLog = Array.isArray(pending.staff_change_log) ? pending.staff_change_log : []
+    const edits: { field: string; from: any; to: any }[] = []
+    if ((pending.buyer_paypal_email || '') !== (commonFields.buyer_paypal_email || '')) {
+      edits.push({ field: 'buyer_paypal_email', from: pending.buyer_paypal_email || '', to: commonFields.buyer_paypal_email || '' })
+    }
+    if (Number(pending.actual_paid_usd ?? 0) !== Number(commonFields.actual_paid_usd ?? 0)) {
+      edits.push({ field: 'actual_paid_usd', from: Number(pending.actual_paid_usd ?? 0), to: Number(commonFields.actual_paid_usd ?? 0) })
+    }
+    if (Number(pending.paypal_fee_usd ?? 0) !== Number(commonFields.paypal_fee_usd ?? 0)) {
+      edits.push({ field: 'paypal_fee_usd', from: Number(pending.paypal_fee_usd ?? 0), to: Number(commonFields.paypal_fee_usd ?? 0) })
+    }
+    if (Number(pending.refund_amount_usd ?? 0) !== Number(commonFields.refund_amount_usd ?? 0)) {
+      edits.push({ field: 'refund_amount_usd', from: Number(pending.refund_amount_usd ?? 0), to: Number(commonFields.refund_amount_usd ?? 0) })
+    }
+    if ((pending.refund_method || '') !== (commonFields.refund_method || '')) {
+      edits.push({ field: 'refund_method', from: pending.refund_method || '', to: commonFields.refund_method || '' })
+    }
+    if ((pending.refund_sequence || '') !== (commonFields.refund_sequence || '')) {
+      edits.push({ field: 'refund_sequence', from: pending.refund_sequence || '', to: commonFields.refund_sequence || '' })
+    }
+    const updatedPending = {
+      ...pending,
+      ...commonFields,
+      updated_at: new Date().toISOString(),
+      staff_change_log: edits.length ? [...existingLog, { at: new Date().toISOString(), staff_name: staffName, edits }] : existingLog,
+    }
+    task._refund_request_pending = updatedPending
+    task._refund_request = updatedPending
+    appendOrReplaceMockRefundRequest(task, updatedPending)
+    message.success('返款申请已更新')
+  } else {
+    const createdRequest = {
+      id: `mock_rr_${task.id}_${Date.now()}`,
+      sub_order_id: task.id,
+      order_id: task.order_id,
+      sub_order_number: task.sub_order_number,
+      buyer_name: task.buyer_name || '',
+      status: '待处理',
+      request_type: wasSupplement ? 'supplement' : wasCorrection ? 'correction' : 'initial',
+      supersedes_request_id: wasCorrection ? task._refund_correction_target_id : null,
+      supplement_reason: wasSupplement || wasCorrection ? supplementReason : '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...commonFields,
+    }
+    task._refund_request_pending = createdRequest
+    task._refund_request = createdRequest
+    appendOrReplaceMockRefundRequest(task, createdRequest)
+    task._refund_supplement_mode = false
+    task._refund_correction_mode = false
+    task._refund_correction_target_id = null
+    if (wasCorrection) message.success('更正返款申请已提交，等待财务处理')
+    else if (wasSupplement) message.success('追加返款申请已提交，等待财务处理')
+    else message.success('返款申请已提交，等待财务处理')
+  }
+
+  task._refund_apply_notes = ''
+  task._need_finance_screenshot = false
+}
+
 async function submitRefundRequest(task: any) {
   const noRefund = isNoRefundSelection(task)
   const finalAmount = getRefundFinalAmount(task)
@@ -4093,14 +4208,50 @@ async function submitRefundRequest(task: any) {
 
   task._submitting_refund = true
   try {
+    const configPayload = noRefund
+      ? {
+          refund_method: '',
+          refund_sequence: '无需返款',
+          refund_status: '无需退款',
+          refund_amount: 0,
+          refund_amount_usd: 0,
+        }
+      : {
+          refund_method: task._sel_refund_method || task.refund_method,
+          refund_sequence: task._sel_refund_sequence || task.refund_sequence,
+        }
+
+    const commonFields: Record<string, any> = {
+      buyer_paypal_email: paypalEmail,
+      refund_amount_usd: finalAmount,
+      refund_amount: finalAmount,
+      actual_paid_usd: actualPaid,
+      paypal_fee_usd: feeUsd,
+      refund_method: selectedMethod,
+      refund_sequence: task._sel_refund_sequence || task.refund_sequence,
+      product_name: task.product_name || '',
+      product_price: task.product_price || 0,
+      asin: task.asin || '',
+      store_name: task.store_name || '',
+      staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
+      notes,
+    }
+
+    if (task._is_mock) {
+      submitMockRefundRequest(task, {
+        noRefund,
+        configPayload,
+        commonFields,
+        isUpdatePending,
+        pending,
+        wasSupplement,
+        wasCorrection,
+        supplementReason,
+      })
+      return
+    }
+
     if (noRefund) {
-      const configPayload = {
-        refund_method: '',
-        refund_sequence: '无需返款',
-        refund_status: '无需退款',
-        refund_amount: 0,
-        refund_amount_usd: 0,
-      }
       const { error: e0 } = await supabase.from('sub_orders').update(configPayload).eq('id', task.id)
       if (e0) throw e0
       Object.assign(task, configPayload)
@@ -4126,29 +4277,9 @@ async function submitRefundRequest(task: any) {
       return
     }
 
-    const configPayload = {
-      refund_method: task._sel_refund_method || task.refund_method,
-      refund_sequence: task._sel_refund_sequence || task.refund_sequence,
-    }
     const { error: e1 } = await supabase.from('sub_orders').update(configPayload).eq('id', task.id)
     if (e1) throw e1
     Object.assign(task, configPayload)
-
-    const commonFields: Record<string, any> = {
-      buyer_paypal_email: paypalEmail,
-      refund_amount_usd: finalAmount,
-      refund_amount: finalAmount,
-      actual_paid_usd: actualPaid,
-      paypal_fee_usd: feeUsd,
-      refund_method: selectedMethod,
-      refund_sequence: task._sel_refund_sequence || task.refund_sequence,
-      product_name: task.product_name || '',
-      product_price: task.product_price || 0,
-      asin: task.asin || '',
-      store_name: task.store_name || '',
-      staff_name: staffList.value.find(s => s.id === selectedStaffId.value)?.name || '',
-      notes,
-    }
 
     if (isUpdatePending) {
       const staffName = staffList.value.find(s => s.id === selectedStaffId.value)?.name || ''
@@ -5373,6 +5504,9 @@ onUnmounted(() => {
 
 /* 任务卡片 */
 .task-card-list { display: flex; flex-direction: column; gap: 10px; }
+.workflow-panel-list {
+  margin-top: -4px;
+}
 .task-card {
   background: #fff;
   border-radius: 10px;
@@ -5382,6 +5516,16 @@ onUnmounted(() => {
 }
 .task-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 .task-card.card-overdue { border-left: 4px solid #ef4444; }
+.task-card.workflow-only {
+  border-radius: 12px;
+  overflow: hidden;
+}
+.task-card.workflow-only:hover {
+  box-shadow: none;
+}
+.task-card.workflow-only .task-card-header {
+  display: none;
+}
 .task-card.card-review-urgent {
   border-left: 4px solid #d97706;
   background: linear-gradient(90deg, rgba(217, 119, 6, 0.06), #fff 72px);

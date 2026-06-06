@@ -1,26 +1,51 @@
 <template>
   <div class="review-tracker">
-    <!-- 统计行 -->
-    <div class="review-stats">
-      <div class="rs-item">
-        <span class="rs-num">{{ reviews.length }}</span>
-        <span class="rs-label">总评论</span>
+    <!-- 统计仪表盘 -->
+    <div class="review-stat-dashboard">
+      <div class="review-overview-card">
+        <div class="review-stat-title">留评总览</div>
+        <div class="review-overview-main">
+          <span class="review-overview-num">{{ reviews.length }}</span>
+          <span class="review-overview-label">总评论</span>
+        </div>
+        <div class="review-overview-sub">
+          <span><b class="is-success">{{ aliveCount }}</b> 存活</span>
+          <span><b class="is-danger">{{ droppedCount }}</b> 已掉评</span>
+        </div>
       </div>
-      <div class="rs-item">
-        <span class="rs-num green">{{ aliveCount }}</span>
-        <span class="rs-label">存活</span>
+
+      <div class="review-source-card">
+        <div class="review-source-header">
+          <span class="review-stat-title">内部订单</span>
+          <span class="review-source-total">共 {{ companyReviewStats.total }} 条</span>
+        </div>
+        <div class="review-source-metrics">
+          <div class="review-source-metric">
+            <span class="metric-num is-success">{{ companyReviewStats.alive }}</span>
+            <span class="metric-label">存活</span>
+          </div>
+          <div class="review-source-metric">
+            <span class="metric-num is-danger">{{ companyReviewStats.dropped }}</span>
+            <span class="metric-label">已掉评</span>
+          </div>
+        </div>
       </div>
-      <div class="rs-item">
-        <span class="rs-num red">{{ droppedCount }}</span>
-        <span class="rs-label">已掉评</span>
-      </div>
-      <div class="rs-item">
-        <span class="rs-num blue">{{ companyCount }}</span>
-        <span class="rs-label">内部订单</span>
-      </div>
-      <div class="rs-item">
-        <span class="rs-num orange">{{ personalCount }}</span>
-        <span class="rs-label">个人评论</span>
+
+      <div class="review-source-card">
+        <div class="review-source-header">
+          <span class="review-stat-title">个人评论</span>
+          <span class="review-source-total">共 {{ personalReviewStats.total }} 条</span>
+        </div>
+        <div class="review-source-metrics">
+          <div class="review-source-metric">
+            <span class="metric-num is-success">{{ personalReviewStats.alive }}</span>
+            <span class="metric-label">存活</span>
+          </div>
+          <div class="review-source-metric">
+            <span class="metric-num is-danger">{{ personalReviewStats.dropped }}</span>
+            <span class="metric-label">已掉评</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -36,6 +61,14 @@
         <a-select-option :value="true">内部订单</a-select-option>
         <a-select-option :value="false">个人评论</a-select-option>
       </a-select>
+      <a-range-picker
+        v-model:value="filterDateRange"
+        value-format="YYYY-MM-DD"
+        size="small"
+        style="width:220px"
+        :placeholder="['开始日期', '结束日期']"
+        @change="filterReviews"
+      />
       <div style="flex:1"></div>
       <a-button size="small" type="primary" @click="openAdd">
         添加评论
@@ -219,6 +252,7 @@ const reviews = ref<any[]>([])
 const filteredReviews = ref<any[]>([])
 const filterStatus = ref<string | undefined>(undefined)
 const filterSource = ref<boolean | undefined>(undefined)
+const filterDateRange = ref<[string, string] | undefined>(undefined)
 const loading = ref(false)
 const saving = ref(false)
 const reviewModalOpen = ref(false)
@@ -252,8 +286,8 @@ const reviewForm = ref(emptyReviewForm())
 
 const aliveCount = computed(() => reviews.value.filter(r => r.review_status === '存活').length)
 const droppedCount = computed(() => reviews.value.filter(r => getReviewStatus(r) === '已掉评').length)
-const companyCount = computed(() => reviews.value.filter(r => r.is_company_order).length)
-const personalCount = computed(() => reviews.value.filter(r => !r.is_company_order).length)
+const companyReviewStats = computed(() => buildSourceStats(true))
+const personalReviewStats = computed(() => buildSourceStats(false))
 
 watch(() => props.buyerId, (id) => { if (id) loadReviews() }, { immediate: true })
 
@@ -276,7 +310,26 @@ function filterReviews() {
   if (filterSource.value !== undefined && filterSource.value !== null) {
     list = list.filter(r => r.is_company_order === filterSource.value)
   }
+  if (filterDateRange.value?.length === 2) {
+    const [start, end] = filterDateRange.value
+    list = list.filter(r => {
+      if (!r.review_date) return false
+      const date = dayjs(r.review_date)
+      return date.isValid() && !date.isBefore(dayjs(start), 'day') && !date.isAfter(dayjs(end), 'day')
+    })
+  }
   filteredReviews.value = list
+}
+
+function buildSourceStats(isCompanyOrder: boolean) {
+  const list = reviews.value.filter(r => Boolean(r.is_company_order) === isCompanyOrder)
+  const alive = list.filter(r => getReviewStatus(r) === '存活').length
+  const dropped = list.filter(r => getReviewStatus(r) === '已掉评').length
+  return {
+    total: list.length,
+    alive,
+    dropped,
+  }
 }
 
 function getReviewStatus(record: any) {
@@ -393,6 +446,22 @@ function buildMockReviews() {
       review_url: 'https://www.amazon.com/review/mock-review-003',
       _is_mock: true,
     },
+    {
+      id: 'mock-review-004',
+      asin: 'B0DROP9K11',
+      product_name: 'Travel Makeup Mirror',
+      store_name: 'GlowTrip Beauty',
+      review_date: now.subtract(24, 'day').format('YYYY-MM-DD'),
+      star_rating: 5,
+      review_type: '图片',
+      review_category: '美妆',
+      is_company_order: false,
+      review_status: '存活',
+      alive_days: 25,
+      last_checked_at: now.subtract(4, 'hour').toISOString(),
+      review_url: 'https://www.amazon.com/review/mock-review-004',
+      _is_mock: true,
+    },
   ]
 }
 
@@ -470,15 +539,77 @@ async function uploadReviewImage() {
 <style scoped>
 .review-tracker { padding: 0; }
 
-.review-stats { display: flex; gap: 0; border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
-.rs-item { flex: 1; text-align: center; padding: 10px 4px; border-right: 1px solid #f0f0f0; }
-.rs-item:last-child { border-right: none; }
-.rs-num { font-size: 18px; font-weight: 700; color: #1a1a2e; display: block; }
-.rs-num.green { color: #059669; }
-.rs-num.red { color: #dc2626; }
-.rs-num.blue { color: #2563eb; }
-.rs-num.orange { color: #d97706; }
-.rs-label { font-size: 11px; color: #6b7280; }
+.review-stat-dashboard {
+  display: grid;
+  grid-template-columns: 1.05fr 1.4fr 1.4fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.review-overview-card,
+.review-source-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px;
+}
+.review-overview-card { background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%); }
+.review-stat-title {
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+}
+.review-overview-main {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 8px;
+}
+.review-overview-num {
+  color: #1a1a2e;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+.review-overview-label,
+.review-source-total,
+.metric-label {
+  color: #6b7280;
+  font-size: 11px;
+}
+.review-overview-sub {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 11px;
+}
+.review-source-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.review-source-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.review-source-metric {
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 8px 6px;
+  text-align: center;
+}
+.metric-num {
+  display: block;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.is-success { color: #059669; }
+.is-danger { color: #dc2626; }
+.is-muted { color: #6b7280; }
 
 .review-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 

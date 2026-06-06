@@ -365,7 +365,7 @@
     </a-modal>
 
     <!-- 详情抽屉 -->
-    <a-drawer v-model:open="drawerOpen" title="买手详情" width="560" :body-style="{ padding: '0' }">
+    <a-drawer v-model:open="drawerOpen" title="买手详情" width="760" :body-style="{ padding: '0' }">
       <div v-if="drawerBuyer" class="drawer-body">
         <!-- 头部 -->
         <div class="drawer-header-card">
