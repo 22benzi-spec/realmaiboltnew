@@ -48,15 +48,14 @@
               <div class="task-top-row">
                 <span class="detail-item-text">主订单ID：</span>
                 <a class="order-num-link">{{ record.order_number }}</a>
-                <a-tag :color="getStatusColor(record.status)" class="status-tag">{{ record.status }}</a-tag>
                 <a-tag color="default" class="info-tag">{{ record.country }}</a-tag>
+                <a-tag v-if="shouldShowTaskReviewLevel(record)" :color="getReviewLevelColor(getTaskReviewLevel(record))" class="info-tag">{{ getTaskReviewLevel(record) }}</a-tag>
                 <template v-if="record.order_types && record.order_types.length">
                   <a-tag v-for="(ot, index) in record.order_types" :key="`${ot}-${index}`" :color="getOrderTypeColor(ot)" class="info-tag">{{ formatReviewType(ot) }}</a-tag>
                 </template>
                 <template v-else-if="record.order_type">
                   <a-tag :color="getOrderTypeColor(record.order_type)" class="info-tag">{{ formatReviewType(record.order_type) }}</a-tag>
                 </template>
-                <a-tag v-if="record.review_level" :color="getReviewLevelColor(record.review_level)" class="info-tag">{{ record.review_level }}</a-tag>
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">产品名称：{{ record.product_name || '—' }}</span>
@@ -113,38 +112,55 @@
               </div>
             </div>
 
-            <div class="task-actions">
-              <a-button size="small" @click.stop="openTaskDetail(record)">
-                详情
-              </a-button>
-              <a-select
-                :value="record.status"
-                size="small"
-                class="task-status-select"
-                :loading="taskStatusSavingId === record.id"
-                :options="getTaskStatusSelectOptions(record)"
-                @change="(value: string) => requestTaskStatusChange(record, value)"
-                @click.stop
-              />
-              <a-button
-                type="primary"
-                size="small"
-                :loading="genLoadingId === record.id"
-                :disabled="(record._sub_total || 0) >= (record.order_quantity || 0)"
-                @click.stop="generateSubOrders(record)"
-                class="gen-btn"
+            <div class="task-action-col">
+              <div class="task-actions">
+                <a-button
+                  type="primary"
+                  size="small"
+                  :loading="genLoadingId === record.id"
+                  :disabled="(record._sub_total || 0) >= (record.order_quantity || 0)"
+                  @click.stop="generateSubOrders(record)"
+                  class="gen-btn"
+                >
+                  <ThunderboltOutlined /> 生成
+                </a-button>
+                <a-button size="small" @click.stop="openTaskDetail(record)">
+                  详情
+                </a-button>
+                <a-select
+                  :value="normalizeTaskStatus(record.status)"
+                  size="small"
+                  class="task-status-select"
+                  :loading="taskStatusSavingId === record.id"
+                  :options="getTaskStatusSelectOptions(record)"
+                  @change="(value: string) => requestTaskStatusChange(record, value)"
+                  @click.stop
+                />
+                <a-button size="small" class="copy-sub-btn" @click.stop="openCopyModal(record)">
+                  <CopyOutlined /> 复制
+                </a-button>
+                <a-button size="small" @click.stop="() => openAppendModal(record)">
+                  追加订单
+                </a-button>
+                <a-popconfirm v-if="canDeleteTask(record)" title="确定删除此任务吗?" @confirm="deleteTask(record.id)">
+                  <a-button size="small" type="text" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
+                </a-popconfirm>
+              </div>
+              <div
+                v-if="getTaskStatusMetaItems(record).length"
+                :class="['task-status-panel', getTaskStatusPanelClass(record)]"
               >
-                <ThunderboltOutlined /> 生成
-              </a-button>
-              <a-button size="small" class="copy-sub-btn" @click.stop="openCopyModal(record)">
-                <CopyOutlined /> 复制
-              </a-button>
-              <a-button size="small" @click.stop="() => openAppendModal(record)">
-                追加订单
-              </a-button>
-              <a-popconfirm v-if="canDeleteTask(record)" title="确定删除此任务吗?" @confirm="deleteTask(record.id)">
-                <a-button size="small" type="text" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
-              </a-popconfirm>
+                <div class="task-status-panel-body">
+                  <div
+                    v-for="item in getTaskStatusMetaItems(record)"
+                    :key="item.label"
+                    class="task-status-panel-line"
+                  >
+                    <span class="task-status-panel-label">{{ item.label }}</span>
+                    <span class="task-status-panel-value" :title="item.value">{{ item.value }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -383,7 +399,7 @@
               <div v-if="currentTaskDetail.product_name" class="task-drawer-product-name">{{ currentTaskDetail.product_name }}</div>
               <div class="task-drawer-tag-row">
                 <a-tag color="default">{{ currentTaskDetail.country || '—' }}</a-tag>
-                <a-tag :color="getStatusColor(currentTaskDetail.status)">{{ currentTaskDetail.status || '待分配' }}</a-tag>
+                <a-tag :color="getStatusColor(currentTaskDetail.status)">{{ getTaskDisplayStatus(currentTaskDetail.status) || '待分配' }}</a-tag>
               </div>
             </div>
             <div class="task-drawer-header-side">
@@ -443,6 +459,14 @@
               <div class="task-drawer-row">
                 <span class="task-drawer-info-label">创建时间</span>
                 <span class="task-drawer-info-value">{{ fmtTime(currentTaskDetail.created_at) }}</span>
+              </div>
+              <div v-if="getTaskStatusTimeLabel(currentTaskDetail)" class="task-drawer-row">
+                <span class="task-drawer-info-label">{{ getTaskStatusTimeLabel(currentTaskDetail) }}</span>
+                <span class="task-drawer-info-value">{{ fmtTime(getTaskCurrentStatusTime(currentTaskDetail)) }}</span>
+              </div>
+              <div v-if="getTaskStatusReasonLabel(currentTaskDetail)" class="task-drawer-row task-drawer-row-wide">
+                <span class="task-drawer-info-label">{{ getTaskStatusReasonLabel(currentTaskDetail) }}</span>
+                <span class="task-drawer-info-value">{{ getTaskCurrentStatusReason(currentTaskDetail) || '—' }}</span>
               </div>
               <div class="task-drawer-row">
                 <span class="task-drawer-info-label">客户名称</span>
@@ -695,36 +719,83 @@
       <div v-if="appendSourceTask" class="append-modal-body">
         <div class="append-modal-summary">
           <div class="append-modal-order">任务：{{ appendSourceTask.order_number || '—' }}</div>
-          <div class="append-modal-count-row">
-            <span class="append-modal-label">增加几单</span>
-            <a-input-number
-              v-model:value="appendCount"
-              :min="1"
-              :precision="0"
-              :controls="true"
-              @change="handleAppendCountChange"
-            />
-          </div>
-        </div>
-        <div class="append-modal-hint">
-          默认沿用主任务信息，可逐条调整新增子订单明细后再提交。
         </div>
         <div class="append-batch-card">
           <div class="append-batch-header">
-            <div class="append-batch-title">批量填写</div>
-            <a-space>
-              <a-button size="small" @click="fillAppendBatchFromFirstRow">读取第 1 单内容</a-button>
-              <a-button type="primary" size="small" @click="applyAppendBatchToAll">应用到全部新增单</a-button>
-            </a-space>
+            <div class="append-mode-title-row">
+              <span class="append-batch-title">批量追加单量</span>
+              <a-input-number
+                v-if="!appendPerRowEdit"
+                v-model:value="appendCount"
+                :min="1"
+                :precision="0"
+                :controls="true"
+                size="small"
+                @change="handleAppendCountChange"
+              />
+            </div>
           </div>
           <div class="append-grid">
-            <div class="append-field">
+            <div class="append-field append-field-span-3">
               <label>排单日期</label>
-              <input v-model="appendBatchForm.scheduled_date" type="date" class="bme-date-input append-date-input" />
+              <a-popover v-model:open="appendCalendarOpen" trigger="click" placement="bottomLeft">
+                <template #content>
+                  <div class="append-calendar-panel">
+                    <div class="append-calendar-header">
+                      <a-button size="small" @click="shiftAppendCalendarMonth(-1)">上月</a-button>
+                      <span>{{ appendCalendarMonth.format('YYYY年 MM月') }}</span>
+                      <a-button size="small" @click="shiftAppendCalendarMonth(1)">下月</a-button>
+                    </div>
+                    <div class="append-calendar-week-row">
+                      <span v-for="day in appendCalendarWeekdays" :key="day">{{ day }}</span>
+                    </div>
+                    <div class="append-calendar-grid">
+                      <button
+                        v-for="day in getAppendCalendarDays()"
+                        :key="day.date"
+                        type="button"
+                        :class="[
+                          'append-calendar-day',
+                          { 'is-muted': !day.inMonth, 'is-selected': day.selected, 'is-today': day.today },
+                        ]"
+                        @click="toggleAppendBatchDate(day.date)"
+                      >
+                        {{ day.label }}
+                      </button>
+                    </div>
+                  </div>
+                </template>
+                <div class="append-date-trigger">
+                  <span v-if="!appendBatchDates.length" class="append-date-placeholder">选择排单日期</span>
+                  <span v-for="date in appendBatchDates" v-else :key="date" class="append-date-chip">
+                    {{ date }}
+                    <button type="button" @click.stop="removeAppendBatchDate(date)">x</button>
+                  </span>
+                </div>
+              </a-popover>
             </div>
             <div class="append-field">
               <label>ASIN</label>
               <a-input v-model:value="appendBatchForm.asin" placeholder="输入 ASIN" allow-clear />
+            </div>
+            <div class="append-field">
+              <label>产品售价</label>
+              <a-input-number
+                v-model:value="appendBatchForm.product_price"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                style="width: 100%"
+                placeholder="输入产品售价"
+              />
+            </div>
+            <div class="append-field">
+              <label>关键词/链接</label>
+              <a-input v-model:value="appendBatchForm.keyword_or_link" placeholder="输入关键词或粘贴链接" allow-clear />
+            </div>
+            <div class="append-field">
+              <label>店铺</label>
+              <a-input v-model:value="appendBatchForm.store_name" placeholder="输入店铺" allow-clear />
             </div>
             <div class="append-field">
               <label>测评类型</label>
@@ -738,28 +809,27 @@
                 <a-select-option v-for="opt in ['普通', '高等', '极高等']" :key="opt" :value="opt">{{ opt }}</a-select-option>
               </a-select>
             </div>
-            <div class="append-field">
-              <label>产品售价</label>
-              <a-input-number
-                v-model:value="appendBatchForm.product_price"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
-                placeholder="输入产品售价"
-              />
-            </div>
-            <div class="append-field append-field-span-2">
-              <label>关键词/链接</label>
-              <a-input v-model:value="appendBatchForm.keyword_or_link" placeholder="输入关键词或粘贴链接" allow-clear />
-            </div>
             <div class="append-field append-field-span-3">
               <label>任务备注</label>
               <a-input v-model:value="appendBatchForm.task_notes" placeholder="输入任务备注" allow-clear />
             </div>
           </div>
         </div>
-        <div class="append-card-list">
+        <div class="append-advanced-row">
+          <a-checkbox v-model:checked="appendPerRowEdit" @change="handleAppendPerRowToggle">
+            灵活追加单量
+          </a-checkbox>
+          <a-input-number
+            v-if="appendPerRowEdit"
+            v-model:value="appendCount"
+            :min="1"
+            :precision="0"
+            :controls="true"
+            size="small"
+            @change="handleAppendCountChange"
+          />
+        </div>
+        <div v-if="appendPerRowEdit" class="append-card-list">
           <div v-for="(row, index) in appendRows" :key="row.key" class="append-card">
             <div class="append-card-title">追加单 {{ index + 1 }}</div>
             <div class="append-grid">
@@ -772,18 +842,6 @@
                 <a-input v-model:value="row.asin" placeholder="输入 ASIN" allow-clear />
               </div>
               <div class="append-field">
-                <label>测评类型</label>
-                <a-select v-model:value="row.review_type" placeholder="选择测评类型" allow-clear>
-                  <a-select-option v-for="opt in reviewTypeOptions" :key="opt" :value="opt">{{ opt }}</a-select-option>
-                </a-select>
-              </div>
-              <div class="append-field">
-                <label>测评等级</label>
-                <a-select v-model:value="row.review_level" placeholder="选择测评等级" allow-clear>
-                  <a-select-option v-for="opt in ['普通', '高等', '极高等']" :key="opt" :value="opt">{{ opt }}</a-select-option>
-                </a-select>
-              </div>
-              <div class="append-field">
                 <label>产品售价</label>
                 <a-input-number
                   v-model:value="row.product_price"
@@ -794,9 +852,25 @@
                   placeholder="输入产品售价"
                 />
               </div>
-              <div class="append-field append-field-span-2">
+              <div class="append-field">
                 <label>关键词/链接</label>
                 <a-input v-model:value="row.keyword_or_link" placeholder="输入关键词或粘贴链接" allow-clear />
+              </div>
+              <div class="append-field">
+                <label>店铺</label>
+                <a-input v-model:value="row.store_name" placeholder="输入店铺" allow-clear />
+              </div>
+              <div class="append-field">
+                <label>测评类型</label>
+                <a-select v-model:value="row.review_type" placeholder="选择测评类型" allow-clear>
+                  <a-select-option v-for="opt in reviewTypeOptions" :key="opt" :value="opt">{{ opt }}</a-select-option>
+                </a-select>
+              </div>
+              <div class="append-field">
+                <label>测评等级</label>
+                <a-select v-model:value="row.review_level" placeholder="选择测评等级" allow-clear>
+                  <a-select-option v-for="opt in ['普通', '高等', '极高等']" :key="opt" :value="opt">{{ opt }}</a-select-option>
+                </a-select>
               </div>
               <div class="append-field append-field-span-3">
                 <label>任务备注</label>
@@ -1224,6 +1298,7 @@ import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 // ===== Tab =====
 const activeTab = ref('tasks')
 const ORDER_EDIT_HISTORY_STORAGE_KEY = 'task_management_order_edit_history_v2'
+const TASK_STATUS_REASON_STORAGE_KEY = 'task_management_status_reason_cache_v1'
 const ORDER_EDIT_HISTORY_SEED: Record<string, any[]> = {
   mock_order_pending_a: [
     {
@@ -1312,15 +1387,19 @@ const editMode = ref(false)
 const saveLoading = ref(false)
 const editForm = ref<any>({})
 const orderEditHistoryMap = ref<Record<string, any[]>>({})
+const taskStatusReasonCache = ref<Record<string, any>>({})
 
-const taskStatuses = ['待分配', '进行中', '已完成', '已截单', '暂停中']
+const TASK_PAUSED_STATUS = '已暂停'
+const LEGACY_TASK_PAUSED_STATUS = '暂停中'
+const TASK_RUNNING_STATUS = '进行中'
+const taskStatuses = ['待分配', TASK_RUNNING_STATUS, '已完成', '已截单', TASK_PAUSED_STATUS]
 const subStatuses = ['待分配', '已分配', '进行中', '已下单', '已留评', '已完成', '已取消']
 const refundStatuses = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '无需返款', '失误多返']
 const reviewTypeOptions = ['文字', '图片', '视频', '免评', 'Feedback']
 const countries = ['美国', '德国', '英国', '加拿大']
 const pauseStatusReasons = ['库存不足', '链接问题', '店铺问题', '计划调整', '风控预警', '不知原因']
 const cutoffStatusReasons = ['未按计划做单', '库存不足', '链接问题', '店铺问题', '计划调整', '目标达成', '风控预警', '不知原因']
-const manualTaskStatuses = ['已截单', '暂停中']
+const manualTaskStatuses = [TASK_RUNNING_STATUS, '已截单', TASK_PAUSED_STATUS]
 
 const subColumns = [
   { title: '子订单ID', key: 'sub_no', width: 165 },
@@ -1340,7 +1419,7 @@ const subColumns = [
 ]
 
 const schedulesMap = ref<Record<string, any[]>>({})
-const defaultVisibleTaskStatuses = ['待分配', '进行中', '已截单', '暂停中']
+const defaultVisibleTaskStatuses = ['待分配', '进行中', '已截单', TASK_PAUSED_STATUS, LEGACY_TASK_PAUSED_STATUS]
 const taskDetailOpen = ref(false)
 const currentTaskDetail = ref<any>(null)
 const taskStatusReasonModalOpen = ref(false)
@@ -1350,22 +1429,39 @@ const pendingTaskStatusReason = ref<string | undefined>(undefined)
 const currentTaskStatusReasonOptions = computed(() => getTaskStatusReasonOptions(pendingTaskStatus.value))
 
 function getStatusColor(status: string) {
-  const map: Record<string, string> = { '待分配': 'default', '进行中': 'blue', '已完成': 'green', '已截单': 'red', '暂停中': 'orange' }
-  return map[status] || 'default'
+  const map: Record<string, string> = { '待分配': 'default', '进行中': 'blue', '已完成': 'green', '已完结': 'green', '已截单': 'red', [TASK_PAUSED_STATUS]: 'orange' }
+  return map[normalizeTaskStatus(status)] || 'default'
+}
+
+function normalizeTaskStatus(status: string) {
+  const raw = String(status || '').trim()
+  return raw === LEGACY_TASK_PAUSED_STATUS ? TASK_PAUSED_STATUS : raw
+}
+
+function getTaskDisplayStatus(status: string) {
+  return normalizeTaskStatus(status)
+}
+
+function getTaskStatusQueryValues(status: string) {
+  const normalized = normalizeTaskStatus(status)
+  if (normalized === TASK_PAUSED_STATUS) return [TASK_PAUSED_STATUS, LEGACY_TASK_PAUSED_STATUS]
+  return normalized ? [normalized] : []
 }
 
 function isTaskStatusReasonRequired(status: string) {
-  return status === '暂停中' || status === '已截单'
+  const normalized = normalizeTaskStatus(status)
+  return normalized === TASK_PAUSED_STATUS || normalized === '已截单'
 }
 
 function getTaskStatusReasonOptions(status: string) {
-  if (status === '暂停中') return pauseStatusReasons
-  if (status === '已截单') return cutoffStatusReasons
+  const normalized = normalizeTaskStatus(status)
+  if (normalized === TASK_PAUSED_STATUS) return pauseStatusReasons
+  if (normalized === '已截单') return cutoffStatusReasons
   return []
 }
 
 function getTaskStatusSelectOptions(record: any) {
-  const current = String(record?.status || '').trim()
+  const current = normalizeTaskStatus(record?.status || '')
   return [...new Set([current, ...manualTaskStatuses])]
     .filter(Boolean)
     .map(status => ({ label: status, value: status }))
@@ -1525,6 +1621,14 @@ function getTaskRemark(record: any) {
   return String(record?.notes || record?.task_notes || '—')
 }
 
+function getTaskReviewLevel(record: any) {
+  return String(record?.review_level || '').trim()
+}
+
+function shouldShowTaskReviewLevel(record: any) {
+  return ['高等', '极高等'].includes(getTaskReviewLevel(record))
+}
+
 function getSubUploadTime(sub: any) {
   return sub?.amazon_order_placed_at || null
 }
@@ -1533,8 +1637,63 @@ function getSubRemark(sub: any) {
   return String(sub?.notes || sub?.task_notes || '').trim()
 }
 
+function getCachedTaskStatusChange(record: any) {
+  const cached = taskStatusReasonCache.value[String(record?.id || '')]
+  if (!cached) return null
+  return normalizeTaskStatus(cached.status || '') === normalizeTaskStatus(record?.status || '') ? cached : null
+}
+
+function getTaskLatestStatusChange(record: any) {
+  const currentStatus = normalizeTaskStatus(record?.status || '')
+  if (!currentStatus || !Array.isArray(record?.status_change_log)) return getCachedTaskStatusChange(record)
+  const latest = [...record.status_change_log]
+    .filter((item: any) => normalizeTaskStatus(item?.to_status || '') === currentStatus)
+    .sort((a: any, b: any) => dayjs(b?.changed_at).valueOf() - dayjs(a?.changed_at).valueOf())[0]
+  return latest || getCachedTaskStatusChange(record)
+}
+
 function getTaskCurrentStatusTime(record: any) {
-  return record?.status_changed_at || record?.updated_at || record?.created_at || null
+  return record?.status_changed_at || getTaskLatestStatusChange(record)?.changed_at || record?.updated_at || record?.created_at || null
+}
+
+function getTaskCurrentStatusReason(record: any) {
+  const directReason = String(record?.status_reason || '').trim()
+  if (directReason) return directReason
+  return String(getTaskLatestStatusChange(record)?.reason || '').trim()
+}
+
+function getTaskStatusTimeLabel(record: any) {
+  const status = normalizeTaskStatus(record?.status || '')
+  if ([TASK_PAUSED_STATUS, '已截单', '已完成', '已完结'].includes(status)) return '时间'
+  return ''
+}
+
+function getTaskStatusReasonLabel(record: any) {
+  const status = normalizeTaskStatus(record?.status || '')
+  if (status === TASK_PAUSED_STATUS) return '原因'
+  if (status === '已截单') return '原因'
+  return ''
+}
+
+function getTaskStatusMetaItems(record: any) {
+  const timeLabel = getTaskStatusTimeLabel(record)
+  const reasonLabel = getTaskStatusReasonLabel(record)
+  const items: { label: string; value: string }[] = []
+  if (timeLabel) {
+    items.push({ label: timeLabel, value: fmtTime(getTaskCurrentStatusTime(record)) })
+  }
+  if (reasonLabel) {
+    items.push({ label: reasonLabel, value: getTaskCurrentStatusReason(record) || '—' })
+  }
+  return items
+}
+
+function getTaskStatusPanelClass(record: any) {
+  const status = normalizeTaskStatus(record?.status || '')
+  if (status === TASK_PAUSED_STATUS) return 'is-paused'
+  if (status === '已截单') return 'is-cutoff'
+  if (['已完成', '已完结'].includes(status)) return 'is-completed'
+  return ''
 }
 
 function getTaskTypeRows(record: any) {
@@ -1585,14 +1744,14 @@ function getTaskStatusTimeline(record: any) {
     : []
 
   const mockEntries = shouldInjectTaskStatusMock(record)
-    && ['暂停中', '已截单'].includes(String(record?.status || ''))
-    && record?.status_reason
+    && [TASK_PAUSED_STATUS, '已截单'].includes(normalizeTaskStatus(record?.status || ''))
+    && getTaskCurrentStatusReason(record)
     ? [{
       key: `${record.id}-mock-status-change`,
       kind: 'status',
       from_status: '进行中',
-      to_status: String(record.status || ''),
-      reason: String(record.status_reason || ''),
+      to_status: getTaskDisplayStatus(record.status || ''),
+      reason: getTaskCurrentStatusReason(record),
       changed_at: dayjs(record.created_at || undefined).add(2, 'day').toISOString(),
     }]
     : []
@@ -1623,6 +1782,34 @@ function loadOrderEditHistoryMap() {
 function persistOrderEditHistoryMap() {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(ORDER_EDIT_HISTORY_STORAGE_KEY, JSON.stringify(orderEditHistoryMap.value))
+}
+
+function loadTaskStatusReasonCache() {
+  if (typeof window === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(TASK_STATUS_REASON_STORAGE_KEY) || '{}')
+    return typeof parsed === 'object' && parsed ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function persistTaskStatusReasonCache() {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(TASK_STATUS_REASON_STORAGE_KEY, JSON.stringify(taskStatusReasonCache.value))
+}
+
+function cacheTaskStatusReason(orderId: string, status: string, reason: string | null, changedAt: string) {
+  if (!orderId || !reason) return
+  taskStatusReasonCache.value = {
+    ...taskStatusReasonCache.value,
+    [orderId]: {
+      status,
+      reason,
+      changed_at: changedAt,
+    },
+  }
+  persistTaskStatusReasonCache()
 }
 
 function getTaskEditHistory(record: any) {
@@ -1678,7 +1865,7 @@ function getTaskChangeTypeLabel(item: any) {
 function getTaskChangeTitle(item: any) {
   if (item?.timeline_type === 'created') return '创建任务'
   if (item?.timeline_type === 'status') {
-    return `状态：${item.from_status || '初始'} -> ${item.to_status || '未知'}`
+    return `状态：${getTaskDisplayStatus(item.from_status) || '初始'} -> ${getTaskDisplayStatus(item.to_status) || '未知'}`
   }
   const summary = getTaskChangeSummary(item?.changes || [])
   return summary || '字段修改'
@@ -1786,9 +1973,9 @@ function openDetail(sub: any, orderId: string) {
   detailOpen.value = true
 }
 
-type AppendSubOrderFormRow = {
-  key: string
+type AppendBatchForm = {
   asin: string
+  store_name: string
   scheduled_date: string
   review_type: string | undefined
   review_level: string | undefined
@@ -1797,14 +1984,22 @@ type AppendSubOrderFormRow = {
   task_notes: string
 }
 
-type AppendBatchForm = Omit<AppendSubOrderFormRow, 'key'>
+type AppendSubOrderFormRow = AppendBatchForm & {
+  key: string
+}
 
 const appendModalOpen = ref(false)
 const appendSaving = ref(false)
 const appendCount = ref(1)
+const appendPerRowEdit = ref(false)
 const appendRows = ref<AppendSubOrderFormRow[]>([])
+const appendBatchDates = ref<string[]>([])
+const appendCalendarOpen = ref(false)
+const appendCalendarMonth = ref(dayjs().startOf('month'))
+const appendCalendarWeekdays = ['日', '一', '二', '三', '四', '五', '六']
 const appendBatchForm = ref<AppendBatchForm>({
   asin: '',
+  store_name: '',
   scheduled_date: '',
   review_type: undefined,
   review_level: undefined,
@@ -1825,11 +2020,12 @@ function getKeywordOrLinkValue(sub?: any) {
 function createAppendDraft(task: any, sub?: any): AppendBatchForm {
   return {
     asin: sub?.asin || task?.asin || '',
-    scheduled_date: sub?.scheduled_date || '',
-    review_type: formatReviewType(sub?.review_type || sub?.order_type || task?.review_type || task?.order_type) || undefined,
+    store_name: sub?.store_name || task?.store_name || '',
+    scheduled_date: '',
+    review_type: undefined,
     review_level: sub?.review_level || task?.review_level || undefined,
     product_price: sub?.product_price != null ? Number(sub.product_price) : (task?.product_price != null ? Number(task.product_price) : undefined),
-    keyword_or_link: getKeywordOrLinkValue(sub),
+    keyword_or_link: '',
     task_notes: sub?.task_notes || '',
   }
 }
@@ -1839,6 +2035,7 @@ function createAppendRowFromDraft(draft: AppendBatchForm): AppendSubOrderFormRow
   return {
     key: `append-row-${Date.now()}-${appendRowSeed}`,
     asin: draft.asin,
+    store_name: draft.store_name,
     scheduled_date: draft.scheduled_date,
     review_type: draft.review_type,
     review_level: draft.review_level,
@@ -1856,9 +2053,14 @@ function resetAppendModal() {
   appendModalOpen.value = false
   appendSaving.value = false
   appendCount.value = 1
+  appendPerRowEdit.value = false
   appendRows.value = []
+  appendBatchDates.value = []
+  appendCalendarOpen.value = false
+  appendCalendarMonth.value = dayjs().startOf('month')
   appendBatchForm.value = {
     asin: '',
+    store_name: '',
     scheduled_date: '',
     review_type: undefined,
     review_level: undefined,
@@ -1873,16 +2075,16 @@ function resetAppendModal() {
 function syncAppendRows(count: number) {
   const safeCount = Math.max(1, Math.trunc(Number(count) || 1))
   appendCount.value = safeCount
+  if (!appendPerRowEdit.value) return
   const current = [...appendRows.value]
   if (current.length > safeCount) {
     appendRows.value = current.slice(0, safeCount)
     return
   }
-  const task = appendSourceTask.value
-  if (!task) return
-  const draft = appendBatchForm.value
   while (current.length < safeCount) {
-    current.push(createAppendRowFromDraft(draft))
+    const row = createAppendRowFromDraft(appendBatchForm.value)
+    row.scheduled_date = getAppendBatchDateForIndex(current.length)
+    current.push(row)
   }
   appendRows.value = current
 }
@@ -1891,45 +2093,81 @@ function handleAppendCountChange(value: number | null) {
   syncAppendRows(value || 1)
 }
 
-function openAppendModal(task: any) {
-  const sourceSub = Array.isArray(subOrdersMap.value[task.id]) && subOrdersMap.value[task.id].length
-    ? { ...subOrdersMap.value[task.id][subOrdersMap.value[task.id].length - 1] }
-    : null
+async function getAppendInitialSub(task: any) {
+  if (Array.isArray(subOrdersMap.value[task.id]) && subOrdersMap.value[task.id].length) {
+    return { ...subOrdersMap.value[task.id][0] }
+  }
+  const { data } = await supabase
+    .from('sub_orders')
+    .select('*')
+    .eq('order_id', task.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  return data || null
+}
+
+async function openAppendModal(task: any) {
+  const sourceSub = await getAppendInitialSub(task)
   appendSourceTask.value = task
   appendSourceSub.value = sourceSub
   syncAppendBatchForm(task, sourceSub || undefined)
+  appendBatchDates.value = []
+  appendCalendarMonth.value = dayjs().startOf('month')
   appendCount.value = 1
-  appendRows.value = [createAppendRowFromDraft(appendBatchForm.value)]
+  appendPerRowEdit.value = false
+  appendRows.value = []
   appendModalOpen.value = true
 }
 
-function fillAppendBatchFromFirstRow() {
-  const first = appendRows.value[0]
-  if (!first) return
-  appendBatchForm.value = {
-    asin: first.asin,
-    scheduled_date: first.scheduled_date,
-    review_type: first.review_type,
-    review_level: first.review_level,
-    product_price: first.product_price,
-    keyword_or_link: first.keyword_or_link,
-    task_notes: first.task_notes,
+function handleAppendPerRowToggle(e: any) {
+  appendPerRowEdit.value = !!e?.target?.checked
+  if (appendPerRowEdit.value) {
+    appendRows.value = Array.from({ length: appendCount.value }, (_, index) => {
+      const row = createAppendRowFromDraft(appendBatchForm.value)
+      row.scheduled_date = getAppendBatchDateForIndex(index)
+      return row
+    })
+  } else {
+    appendRows.value = []
   }
 }
 
-function applyAppendBatchToAll() {
-  if (appendRows.value.length === 0) return
-  const draft = appendBatchForm.value
-  appendRows.value = appendRows.value.map((row) => ({
-    ...row,
-    asin: draft.asin,
-    scheduled_date: draft.scheduled_date,
-    review_type: draft.review_type,
-    review_level: draft.review_level,
-    product_price: draft.product_price,
-    keyword_or_link: draft.keyword_or_link,
-    task_notes: draft.task_notes,
-  }))
+function removeAppendBatchDate(date: string) {
+  appendBatchDates.value = appendBatchDates.value.filter(item => item !== date)
+  appendBatchForm.value.scheduled_date = appendBatchDates.value[0] || ''
+}
+
+function toggleAppendBatchDate(date: string) {
+  appendBatchDates.value = appendBatchDates.value.includes(date)
+    ? appendBatchDates.value.filter(item => item !== date)
+    : [...appendBatchDates.value, date].sort()
+  appendBatchForm.value.scheduled_date = appendBatchDates.value[0] || ''
+}
+
+function shiftAppendCalendarMonth(offset: number) {
+  appendCalendarMonth.value = appendCalendarMonth.value.add(offset, 'month')
+}
+
+function getAppendCalendarDays() {
+  const start = appendCalendarMonth.value.startOf('month').startOf('week')
+  const today = dayjs().format('YYYY-MM-DD')
+  return Array.from({ length: 42 }, (_, index) => {
+    const current = start.add(index, 'day')
+    const date = current.format('YYYY-MM-DD')
+    return {
+      date,
+      label: current.date(),
+      inMonth: current.isSame(appendCalendarMonth.value, 'month'),
+      selected: appendBatchDates.value.includes(date),
+      today: date === today,
+    }
+  })
+}
+
+function getAppendBatchDateForIndex(index: number) {
+  const dates = appendBatchDates.value.length ? appendBatchDates.value : (appendBatchForm.value.scheduled_date ? [appendBatchForm.value.scheduled_date] : [])
+  return dates.length ? dates[index % dates.length] : ''
 }
 
 function parseAppendKeywordInput(value: string) {
@@ -1944,7 +2182,7 @@ function parseAppendKeywordInput(value: string) {
 
 async function saveAppendOrders() {
   if (!appendSourceTask.value?.id) return
-  const count = appendRows.value.length
+  const count = Math.max(1, Math.trunc(Number(appendCount.value) || 1))
   if (count <= 0) {
     message.warning('请先填写追加单数量')
     return
@@ -1956,18 +2194,26 @@ async function saveAppendOrders() {
   const orderId = String(sourceTask.id)
 
   try {
-    const rows = appendRows.value.map((row) => {
-      const keywordPayload = parseAppendKeywordInput(row.keyword_or_link)
-      const reviewType = row.review_type
-        ? formatReviewType(row.review_type)
+    const draft = appendBatchForm.value
+    const formRows = appendPerRowEdit.value
+      ? appendRows.value.slice(0, count)
+      : Array.from({ length: count }, (_, index) => {
+        const row = createAppendRowFromDraft(draft)
+        row.scheduled_date = getAppendBatchDateForIndex(index)
+        return row
+      })
+    const rows = formRows.map((formRow) => {
+      const keywordPayload = parseAppendKeywordInput(formRow.keyword_or_link)
+      const reviewType = formRow.review_type
+        ? formatReviewType(formRow.review_type)
         : (formatReviewType(sourceSub?.review_type || sourceSub?.order_type || sourceTask.review_type || sourceTask.order_type) || null)
       return {
         order_id: orderId,
-        asin: row.asin?.trim() || sourceSub?.asin || sourceTask.asin || null,
-        store_name: sourceSub?.store_name || sourceTask.store_name || null,
+        asin: formRow.asin?.trim() || sourceSub?.asin || sourceTask.asin || null,
+        store_name: formRow.store_name?.trim() || sourceSub?.store_name || sourceTask.store_name || null,
         country: sourceSub?.country || sourceTask.country || null,
         order_type: sourceSub?.order_type || sourceTask.order_type || reviewType || null,
-        product_price: row.product_price ?? (sourceSub?.product_price != null ? Number(sourceSub.product_price) : sourceTask.product_price),
+        product_price: formRow.product_price ?? (sourceSub?.product_price != null ? Number(sourceSub.product_price) : sourceTask.product_price),
         unit_price: sourceSub?.unit_price != null ? Number(sourceSub.unit_price) : (sourceTask.unit_price != null ? Number(sourceTask.unit_price) : null),
         commission_fee: sourceSub?.commission_fee != null ? Number(sourceSub.commission_fee) : (sourceTask.commission_fee != null ? Number(sourceTask.commission_fee) : 0),
         exchange_rate: sourceSub?.exchange_rate ?? sourceTask.exchange_rate ?? null,
@@ -1975,17 +2221,17 @@ async function saveAppendOrders() {
         product_name: sourceSub?.product_name || sourceTask.product_name || null,
         brand_name: sourceSub?.brand_name || sourceTask.brand_name || null,
         category: sourceSub?.category || sourceTask.category || null,
-        review_level: row.review_level || sourceSub?.review_level || sourceTask.review_level || null,
+        review_level: formRow.review_level || sourceSub?.review_level || sourceTask.review_level || null,
         review_type: reviewType,
         variant_info: sourceSub?.variant_info || sourceTask.variant_info || null,
         customer_name: sourceSub?.customer_name || sourceTask.customer_name || null,
         customer_id_str: sourceSub?.customer_id_str || sourceTask.customer_id_str || null,
         sales_person: sourceSub?.sales_person || sourceTask.sales_person || null,
-        scheduled_date: row.scheduled_date || null,
+        scheduled_date: formRow.scheduled_date || null,
         keyword_type: keywordPayload.keyword_type,
         keyword: keywordPayload.keyword,
         search_link: keywordPayload.search_link,
-        task_notes: row.task_notes?.trim() || sourceSub?.task_notes || null,
+        task_notes: formRow.task_notes?.trim() || sourceSub?.task_notes || null,
         notes: sourceSub?.notes || '订单备注：同主任务下的追加子单',
         status: '待分配',
       }
@@ -2157,7 +2403,9 @@ function decorateTaskPreviewSamples(rows: any[]) {
   if (!Array.isArray(rows) || rows.length === 0) return rows
   const nextRows = rows.map((row, index) => {
     const shouldPreviewFeedback = row.id === 'mock_order_pending_a' || (!rows.some(item => item?.id === 'mock_order_pending_a') && index === 0)
-    if (!shouldPreviewFeedback) return row
+    const shouldPreviewReviewLevel = String(row.id || '').startsWith('mock_') || shouldPreviewFeedback
+    const previewReviewLevel = row.review_level || (shouldPreviewReviewLevel ? (index % 2 === 0 ? '高等' : '极高等') : row.review_level)
+    if (!shouldPreviewFeedback) return { ...row, review_level: previewReviewLevel }
     const mergedStatusLog = Array.isArray(row.status_change_log) && row.status_change_log.length
       ? row.status_change_log
       : [
@@ -2182,6 +2430,7 @@ function decorateTaskPreviewSamples(rows: any[]) {
         ]
     return {
       ...row,
+      review_level: previewReviewLevel,
       _use_preview_edit_history: !Array.isArray(row.edit_change_log) || row.edit_change_log.length === 0,
       edit_change_log: Array.isArray(row.edit_change_log) && row.edit_change_log.length ? row.edit_change_log : (ORDER_EDIT_HISTORY_SEED.mock_order_pending_a || []),
       order_feedback_status: '已反馈',
@@ -2203,7 +2452,8 @@ async function load() {
       query = query.or(`order_number.ilike.%${searchText.value}%,asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%`)
     }
     if (filterStatus.value) {
-      query = query.eq('status', filterStatus.value)
+      const statusValues = getTaskStatusQueryValues(filterStatus.value)
+      query = statusValues.length > 1 ? query.in('status', statusValues) : query.eq('status', statusValues[0])
     } else {
       query = query.in('status', defaultVisibleTaskStatuses)
     }
@@ -2289,22 +2539,23 @@ async function load() {
 }
 
 function requestTaskStatusChange(record: any, nextStatus: string) {
-  if (!record?.id || !nextStatus || nextStatus === record.status) return
+  const normalizedNextStatus = normalizeTaskStatus(nextStatus)
+  if (!record?.id || !normalizedNextStatus || normalizedNextStatus === normalizeTaskStatus(record.status)) return
 
-  if (!manualTaskStatuses.includes(nextStatus)) {
-    message.warning('任务状态仅支持人工变更为已截单或暂停中')
+  if (!manualTaskStatuses.includes(normalizedNextStatus)) {
+    message.warning('任务状态仅支持人工变更为进行中、已截单或已暂停')
     return
   }
 
-  if (isTaskStatusReasonRequired(nextStatus)) {
+  if (isTaskStatusReasonRequired(normalizedNextStatus)) {
     pendingTaskStatusRecord.value = record
-    pendingTaskStatus.value = nextStatus
+    pendingTaskStatus.value = normalizedNextStatus
     pendingTaskStatusReason.value = undefined
     taskStatusReasonModalOpen.value = true
     return
   }
 
-  void updateTaskStatus(record, nextStatus, null)
+  void updateTaskStatus(record, normalizedNextStatus, null)
 }
 
 async function confirmTaskStatusChange() {
@@ -2332,38 +2583,57 @@ function appendTaskStatusHistory(record: any, fromStatus: string, toStatus: stri
   record.status_change_log = history
 }
 
+function isMissingTaskStatusTrackingColumnError(error: any) {
+  const text = String(error?.message || error?.details || error?.hint || '')
+  return error?.code === 'PGRST204'
+    && text.includes('schema cache')
+    && ['status_reason', 'status_changed_at', 'status_change_log'].some(column => text.includes(column))
+}
+
 async function updateTaskStatus(record: any, nextStatus: string, reason: string | null) {
-  if (!record?.id || !nextStatus || nextStatus === record.status) return false
+  const normalizedNextStatus = normalizeTaskStatus(nextStatus)
+  if (!record?.id || !normalizedNextStatus || normalizedNextStatus === normalizeTaskStatus(record.status)) return false
   const previousStatus = record.status
   const previousReason = record.status_reason || null
   const previousChangedAt = record.status_changed_at || null
   taskStatusSavingId.value = record.id
   try {
     const nowIso = new Date().toISOString()
+    let savedStatusReason = true
+    const payload = {
+      status: normalizedNextStatus,
+      status_reason: isTaskStatusReasonRequired(normalizedNextStatus) ? reason : null,
+    }
     const { error } = await supabase
       .from('erp_orders')
-      .update({
-        status: nextStatus,
-        status_reason: isTaskStatusReasonRequired(nextStatus) ? reason : null,
-      })
+      .update(payload)
       .eq('id', record.id)
-    if (error) throw error
+    if (error) {
+      if (!isMissingTaskStatusTrackingColumnError(error)) throw error
+      const { error: fallbackError } = await supabase
+        .from('erp_orders')
+        .update({ status: normalizedNextStatus })
+        .eq('id', record.id)
+      if (fallbackError) throw fallbackError
+      savedStatusReason = false
+    }
 
-    record.status = nextStatus
-    record.status_reason = isTaskStatusReasonRequired(nextStatus) ? reason : null
+    record.status = normalizedNextStatus
+    record.status_reason = isTaskStatusReasonRequired(normalizedNextStatus) ? reason : null
     record.status_changed_at = nowIso
-    appendTaskStatusHistory(record, previousStatus, nextStatus, record.status_reason, nowIso)
+    appendTaskStatusHistory(record, normalizeTaskStatus(previousStatus), normalizedNextStatus, record.status_reason, nowIso)
+    cacheTaskStatusReason(record.id, normalizedNextStatus, record.status_reason, nowIso)
     const listRecord = tasks.value.find((item: any) => item.id === record.id)
     if (listRecord) {
-      listRecord.status = nextStatus
+      listRecord.status = normalizedNextStatus
       listRecord.status_reason = record.status_reason
       listRecord.status_changed_at = nowIso
       listRecord.status_change_log = record.status_change_log
     }
 
     const shouldKeepInList = filterStatus.value
-      ? filterStatus.value === nextStatus
-      : defaultVisibleTaskStatuses.includes(nextStatus)
+      ? getTaskStatusQueryValues(filterStatus.value).includes(normalizedNextStatus)
+      : defaultVisibleTaskStatuses.includes(normalizedNextStatus)
 
     if (!shouldKeepInList) {
       tasks.value = tasks.value.filter((item: any) => item.id !== record.id)
@@ -2371,7 +2641,11 @@ async function updateTaskStatus(record: any, nextStatus: string, reason: string 
       pagination.value.total = Math.max(0, pagination.value.total - 1)
     }
 
-    message.success(`任务状态已改为${nextStatus}`)
+    if (savedStatusReason) {
+      message.success(`任务状态已改为${normalizedNextStatus}`)
+    } else {
+      message.warning('任务状态已修改；请应用最新数据库迁移后，暂停/截单原因和时间才会持久保存')
+    }
     return true
   } catch (e: any) {
     record.status = previousStatus
@@ -2889,6 +3163,7 @@ function doConfirmCopy() {
 
 onMounted(() => {
   orderEditHistoryMap.value = loadOrderEditHistoryMap()
+  taskStatusReasonCache.value = loadTaskStatusReasonCache()
   load()
 })
 </script>
@@ -2977,7 +3252,6 @@ onMounted(() => {
   text-decoration: none;
 }
 .order-num-link:hover { text-decoration: underline; }
-.status-tag { font-size: 11px; }
 .info-tag { font-size: 11px; }
 .task-detail-row {
   display: flex;
@@ -3044,8 +3318,63 @@ onMounted(() => {
 .refund-label { background: #fef3c7; color: #d97706; }
 .review-label { background: #eff6ff; color: #3b82f6; }
 
-.task-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding-left: 8px; }
-.task-status-select { width: 110px; }
+.task-action-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-left: 4px;
+  max-width: 310px;
+}
+.task-status-panel {
+  max-width: 260px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.32);
+  background: #eff6ff;
+  box-shadow: none;
+}
+.task-status-panel.is-paused {
+  border-color: rgba(217, 119, 6, 0.5);
+  background: #fffbeb;
+}
+.task-status-panel.is-cutoff {
+  border-color: rgba(220, 38, 38, 0.45);
+  background: #fef2f2;
+}
+.task-status-panel.is-completed {
+  border-color: rgba(5, 150, 105, 0.42);
+  background: #ecfdf5;
+}
+.task-status-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.task-status-panel-line {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.task-status-panel-label {
+  color: #374151;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.task-status-panel-value {
+  color: #1a1a2e;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.task-status-select { width: 92px; }
 .gen-btn { font-size: 12px; }
 .icon-btn { color: #6b7280; font-size: 14px; }
 .danger-btn:hover { color: #dc2626 !important; }
@@ -3509,21 +3838,6 @@ onMounted(() => {
   color: #374151;
   font-weight: 500;
 }
-.append-modal-count-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-}
-.append-modal-label {
-  font-size: 13px;
-  color: #1a1a2e;
-  font-weight: 600;
-}
-.append-modal-hint {
-  font-size: 12px;
-  color: #6b7280;
-}
 .append-batch-card {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
@@ -3543,11 +3857,26 @@ onMounted(() => {
   font-weight: 700;
   color: #1a1a2e;
 }
+.append-mode-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.append-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+}
 .append-card-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 56vh;
+  max-height: 46vh;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -3587,11 +3916,104 @@ onMounted(() => {
 .append-date-input {
   width: 100%;
 }
+.append-date-trigger {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+}
+.append-date-trigger:hover {
+  border-color: #2563eb;
+}
+.append-date-placeholder {
+  font-size: 13px;
+  color: #9ca3af;
+}
+.append-calendar-panel {
+  width: 292px;
+  padding: 4px;
+}
+.append-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+.append-calendar-week-row,
+.append-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.append-calendar-week-row {
+  margin-bottom: 4px;
+}
+.append-calendar-week-row span {
+  text-align: center;
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 24px;
+}
+.append-calendar-day {
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #374151;
+  cursor: pointer;
+  font-size: 12px;
+}
+.append-calendar-day:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #2563eb;
+}
+.append-calendar-day.is-muted {
+  color: #c1c7d0;
+}
+.append-calendar-day.is-today {
+  border-color: #2563eb;
+}
+.append-calendar-day.is-selected {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+.append-date-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  line-height: 18px;
+}
+.append-date-chip button {
+  border: 0;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.append-date-chip button:hover {
+  color: #dc2626;
+}
 
 @media (max-width: 767px) {
-  .append-modal-count-row {
-    margin-left: 0;
-  }
   .append-batch-header {
     align-items: flex-start;
   }
