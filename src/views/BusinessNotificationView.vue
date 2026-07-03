@@ -26,7 +26,7 @@
           row-key="id"
           size="small"
           bordered
-          :scroll="{ x: 1680 }"
+          :scroll="{ x: 1800 }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'created_at'">
@@ -70,8 +70,28 @@
 
             <template v-else-if="column.key === 'message'">
               <div class="message-cell">
-                <a-tag :color="record.status === '已截单' ? 'red' : 'green'" size="small">{{ record.status }}</a-tag>
-                <span>{{ buildMessage(record) }}</span>
+                <div class="message-main-row">
+                  <a-tag :color="getTaskStatusTagColor(record)" size="small">{{ record.status }}</a-tag>
+                  <span v-if="getActualDiffText(record)" class="message-actual">{{ getActualDiffText(record) }}</span>
+                </div>
+                <div
+                  v-if="getPrincipalMessage(record)"
+                  :class="['message-principal', `is-${getPrincipalMessage(record)?.type}`]"
+                >
+                  {{ getPrincipalMessage(record)?.text }}
+                </div>
+                <div v-if="getBatchProgressInfo(record)" class="message-batch">
+                  <template v-if="hasBatchUnfinished(record)">
+                    同批还有
+                    <strong>{{ getBatchUnfinishedCount(record) }}</strong>
+                    个任务未完成（共
+                    <strong>{{ getBatchTotalCount(record) }}</strong>
+                    个）
+                  </template>
+                  <template v-else>
+                    此批任务都已完成
+                  </template>
+                </div>
               </div>
             </template>
 
@@ -881,6 +901,8 @@ type TaskCompletedRow = Record<string, any> & {
   _review_count?: number
   _sub_total?: number
   _today_ordered_count?: number
+  _batch_total?: number
+  _batch_unfinished?: number
   order_feedback_status?: string
   order_feedback_date?: string
   review_feedback_status?: string
@@ -1009,7 +1031,11 @@ const activeType = computed({
 })
 
 const taskCompletedRows = computed(() => {
-  return [...taskCompletedRowsRaw.value].sort((a, b) => {
+  const mockRows = appendBatchStats(mockTaskCompletedSourceRows).filter(row => isTerminalTaskStatus(row.status))
+  const rows = taskCompletedRowsRaw.value.length
+    ? [...taskCompletedRowsRaw.value, ...mockRows]
+    : mockRows
+  return [...rows].sort((a, b) => {
     const aTime = dayjs(a.status_changed_at || a.updated_at || a.created_at).valueOf()
     const bTime = dayjs(b.status_changed_at || b.updated_at || b.created_at).valueOf()
     return bTime - aTime
@@ -1082,7 +1108,7 @@ const taskCompletedColumns = [
   { title: '产品信息', key: 'product_info', width: 260 },
   { title: '类型 / 等级', key: 'type_level', width: 150 },
   { title: '总单量', key: 'total_orders', width: 90 },
-  { title: '消息内容', key: 'message', width: 300 },
+  { title: '消息内容', key: 'message', width: 420 },
   { title: '客户姓名', key: 'customer_name', width: 140 },
   { title: '商务备注', key: 'notes', width: 180 },
   { title: '商务', key: 'sales_person', width: 110 },
@@ -1167,6 +1193,194 @@ const dailyFeedbackColumns = [
   { title: '商务', key: 'sales_person', width: 110 },
   { title: '推送时间', key: 'push_time', width: 120 },
   { title: '操作', key: 'action', width: 160, fixed: 'right' as const },
+]
+
+const mockTaskCompletedSourceRows: TaskCompletedRow[] = [
+  {
+    id: 'mock-task-completed-001',
+    order_number: 'MOCK-TC-20260703-001',
+    batch_number: 'MOCK-BATCH-20260703-01',
+    product_image: 'https://picsum.photos/seed/task-completed-001/120/120',
+    product_name: 'Insulated Travel Mug',
+    store_name: 'NorthPeak Home',
+    asin: 'B0MOCKTC001',
+    country: '美国',
+    order_type: '文字评',
+    review_level: '普通',
+    order_quantity: 5,
+    status: '已完成',
+    sales_person: '陈婷',
+    customer_name: '深圳云帆科技',
+    notes: '完成后待反馈客户同批进度',
+    created_at: dayjs().subtract(5, 'day').hour(10).minute(12).toISOString(),
+    updated_at: dayjs().hour(11).minute(20).toISOString(),
+    _ordered_count: 5,
+  },
+  {
+    id: 'mock-task-completed-002',
+    order_number: 'MOCK-TC-20260703-002',
+    batch_number: 'MOCK-BATCH-20260703-01',
+    product_image: 'https://picsum.photos/seed/task-completed-002/120/120',
+    product_name: 'Cable Organizer Box',
+    store_name: 'DeskPro',
+    asin: 'B0MOCKTC002',
+    country: '美国',
+    order_type: '图片评',
+    review_level: '高等',
+    order_quantity: 5,
+    status: '已截单',
+    debt_status: 'owed',
+    debt_amount: 18.2,
+    sales_person: '陈婷',
+    customer_name: '深圳云帆科技',
+    notes: '截单后需要同步补本金',
+    created_at: dayjs().subtract(4, 'day').hour(15).minute(5).toISOString(),
+    updated_at: dayjs().hour(10).minute(45).toISOString(),
+    _ordered_count: 3,
+  },
+  {
+    id: 'mock-task-completed-007',
+    order_number: 'MOCK-TC-20260703-007',
+    batch_number: 'MOCK-BATCH-20260703-01',
+    product_image: 'https://picsum.photos/seed/task-completed-007/120/120',
+    product_name: 'Wireless Desk Charger',
+    store_name: 'DeskPro',
+    asin: 'B0MOCKTC007',
+    country: '美国',
+    order_type: '视频评',
+    review_level: '极高等',
+    order_quantity: 8,
+    status: '已完成',
+    debt_status: 'owed',
+    debt_amount: 12.75,
+    sales_person: '陈婷',
+    customer_name: '深圳云帆科技',
+    notes: '实做少于总单量，同时需要客户补本金',
+    created_at: dayjs().subtract(4, 'day').hour(16).minute(25).toISOString(),
+    updated_at: dayjs().hour(10).minute(18).toISOString(),
+    _ordered_count: 6,
+  },
+  {
+    id: 'mock-task-completed-003',
+    order_number: 'MOCK-TC-20260703-003',
+    batch_number: 'MOCK-BATCH-20260703-01',
+    product_image: 'https://picsum.photos/seed/task-completed-003/120/120',
+    product_name: 'Laptop Stand',
+    store_name: 'DeskPro',
+    asin: 'B0MOCKTC003',
+    country: '美国',
+    order_type: '免评',
+    review_level: '普通',
+    order_quantity: 2,
+    status: '进行中',
+    sales_person: '陈婷',
+    customer_name: '深圳云帆科技',
+    created_at: dayjs().subtract(3, 'day').hour(9).minute(20).toISOString(),
+    updated_at: dayjs().subtract(1, 'hour').toISOString(),
+    _ordered_count: 1,
+  },
+  {
+    id: 'mock-task-completed-004',
+    order_number: 'MOCK-TC-20260703-004',
+    batch_number: 'MOCK-BATCH-20260703-01',
+    product_image: 'https://picsum.photos/seed/task-completed-004/120/120',
+    product_name: 'Monitor Light Bar',
+    store_name: 'DeskPro',
+    asin: 'B0MOCKTC004',
+    country: '美国',
+    order_type: '文字评',
+    review_level: '普通',
+    order_quantity: 3,
+    status: '已下单',
+    sales_person: '陈婷',
+    customer_name: '深圳云帆科技',
+    created_at: dayjs().subtract(2, 'day').hour(14).minute(16).toISOString(),
+    updated_at: dayjs().subtract(2, 'hour').toISOString(),
+    _ordered_count: 2,
+  },
+  {
+    id: 'mock-task-completed-005',
+    order_number: 'MOCK-TC-20260703-005',
+    batch_number: 'MOCK-BATCH-20260703-02',
+    product_image: 'https://picsum.photos/seed/task-completed-005/120/120',
+    product_name: 'Kitchen Storage Rack',
+    store_name: 'EuroHome',
+    asin: 'B0MOCKTC005',
+    country: '德国',
+    order_type: '视频评',
+    review_level: '高等',
+    order_quantity: 4,
+    status: '已完成',
+    debt_status: 'surplus',
+    debt_amount: 6.5,
+    sales_person: '刘洋',
+    customer_name: '杭州欧品贸易',
+    notes: '同批最后一个任务完成',
+    created_at: dayjs().subtract(6, 'day').hour(13).minute(35).toISOString(),
+    updated_at: dayjs().hour(9).minute(30).toISOString(),
+    _ordered_count: 4,
+  },
+  {
+    id: 'mock-task-completed-006',
+    order_number: 'MOCK-TC-20260703-006',
+    batch_number: 'MOCK-BATCH-20260703-02',
+    product_image: 'https://picsum.photos/seed/task-completed-006/120/120',
+    product_name: 'Sink Organizer',
+    store_name: 'EuroHome',
+    asin: 'B0MOCKTC006',
+    country: '德国',
+    order_type: '文字评',
+    review_level: '普通',
+    order_quantity: 2,
+    status: '已完成',
+    sales_person: '刘洋',
+    customer_name: '杭州欧品贸易',
+    notes: '实做单量大于总单量，确认后同步客户',
+    created_at: dayjs().subtract(7, 'day').hour(11).minute(6).toISOString(),
+    updated_at: dayjs().subtract(1, 'day').hour(17).minute(8).toISOString(),
+    _ordered_count: 3,
+  },
+  {
+    id: 'mock-task-completed-008',
+    order_number: 'MOCK-TC-20260703-008',
+    batch_number: 'MOCK-BATCH-20260703-03',
+    product_image: 'https://picsum.photos/seed/task-completed-008/120/120',
+    product_name: 'Garden Solar Light',
+    store_name: 'Maple Outdoor',
+    asin: 'B0MOCKTC008',
+    country: '加拿大',
+    order_type: '图片评',
+    review_level: '普通',
+    order_quantity: 9,
+    status: '已截单',
+    debt_status: 'surplus',
+    debt_amount: 9.4,
+    sales_person: '王敏',
+    customer_name: '广州枫叶户外',
+    notes: '截单但实做较多，需退差价',
+    created_at: dayjs().subtract(8, 'day').hour(10).minute(15).toISOString(),
+    updated_at: dayjs().hour(8).minute(40).toISOString(),
+    _ordered_count: 7,
+  },
+  {
+    id: 'mock-task-completed-009',
+    order_number: 'MOCK-TC-20260703-009',
+    batch_number: 'MOCK-BATCH-20260703-03',
+    product_image: 'https://picsum.photos/seed/task-completed-009/120/120',
+    product_name: 'Patio Storage Bag',
+    store_name: 'Maple Outdoor',
+    asin: 'B0MOCKTC009',
+    country: '加拿大',
+    order_type: '免评',
+    review_level: '普通',
+    order_quantity: 4,
+    status: '进行中',
+    sales_person: '王敏',
+    customer_name: '广州枫叶户外',
+    created_at: dayjs().subtract(6, 'day').hour(12).minute(10).toISOString(),
+    updated_at: dayjs().subtract(30, 'minute').toISOString(),
+    _ordered_count: 2,
+  },
 ]
 
 const mockFirstReviewRows: TaskCompletedRow[] = [
@@ -1634,13 +1848,13 @@ async function loadTaskCompletedNotifications() {
 
     const orderIds = (orders || []).map((row: any) => row.id).filter(Boolean)
     const statsMap = await loadSubOrderStats(orderIds)
-    const mappedRows = (orders || []).map((row: any) => ({
+    const mappedRows = appendBatchStats((orders || []).map((row: any) => ({
       ...row,
       _ordered_count: statsMap[row.id]?.ordered || 0,
       _review_count: statsMap[row.id]?.reviewed || 0,
       _sub_total: statsMap[row.id]?.total || 0,
       _today_ordered_count: statsMap[row.id]?.todayOrdered || 0,
-    }))
+    })))
     taskCompletedRowsRaw.value = mappedRows.filter((row: any) => ['已完成', '已完结', '已截单'].includes(String(row.status || '').trim()))
     firstReviewRowsRaw.value = mappedRows
     afterSaleRowsRaw.value = await loadAfterSaleNotifications()
@@ -1747,17 +1961,102 @@ function getSellerName(record: TaskCompletedRow) {
   return record.seller_name || record.seller || record.customer_name || record.group_name || '-'
 }
 
+function isTerminalTaskStatus(status: any) {
+  return ['已完成', '已完结', '已截单'].includes(String(status || '').trim())
+}
+
+function appendBatchStats(rows: TaskCompletedRow[]) {
+  const batchMap = new Map<string, { total: number; unfinished: number }>()
+  rows.forEach(row => {
+    const batchNumber = String(row.batch_number || '').trim()
+    if (!batchNumber) return
+    const stat = batchMap.get(batchNumber) || { total: 0, unfinished: 0 }
+    stat.total += 1
+    if (!isTerminalTaskStatus(row.status)) stat.unfinished += 1
+    batchMap.set(batchNumber, stat)
+  })
+
+  return rows.map(row => {
+    const stat = batchMap.get(String(row.batch_number || '').trim())
+    return {
+      ...row,
+      _batch_total: stat?.total || 0,
+      _batch_unfinished: stat?.unfinished || 0,
+    }
+  })
+}
+
+function getTaskStatusTagColor(record: TaskCompletedRow) {
+  if (record.status === '已截单') return 'red'
+  if (record.status === '已完结') return 'cyan'
+  return 'green'
+}
+
+function getActualDiffText(record: TaskCompletedRow) {
+  const total = getTaskTotal(record)
+  const actual = Number(record._ordered_count || 0)
+  if (!total || actual === total) return ''
+  return `实做 ${actual} 单`
+}
+
+function getPrincipalMessage(record: TaskCompletedRow): { type: 'owed' | 'surplus'; text: string } | null {
+  const amount = Number(record.debt_amount || 0)
+  const symbol = getPrincipalCurrencySymbol(record)
+  if (record.debt_status === 'owed' && amount > 0) return { type: 'owed', text: `需补差价 ${symbol}${amount.toFixed(2)}` }
+  if (record.debt_status === 'surplus' && amount > 0) return { type: 'surplus', text: `需退差价 ${symbol}${amount.toFixed(2)}` }
+  return null
+}
+
+function getPrincipalCurrencySymbol(record: TaskCompletedRow) {
+  const map: Record<string, string> = {
+    美国: '$',
+    德国: '€',
+    英国: '£',
+    加拿大: 'C$',
+    US: '$',
+    DE: '€',
+    UK: '£',
+    CA: 'C$',
+  }
+  return map[String(record.country || '').trim()] || '$'
+}
+
+function getBatchProgressInfo(record: TaskCompletedRow): { type: 'unfinished'; unfinished: number; total: number } | { type: 'completed'; total: number } | null {
+  const total = Number(record._batch_total || 0)
+  if (total <= 1) return null
+  const unfinished = Number(record._batch_unfinished || 0)
+  if (unfinished > 0) return { type: 'unfinished', unfinished, total }
+  return { type: 'completed', total }
+}
+
+function hasBatchUnfinished(record: TaskCompletedRow) {
+  return Number(record._batch_total || 0) > 1 && Number(record._batch_unfinished || 0) > 0
+}
+
+function getBatchUnfinishedCount(record: TaskCompletedRow) {
+  return Number(record._batch_unfinished || 0)
+}
+
+function getBatchTotalCount(record: TaskCompletedRow) {
+  return Number(record._batch_total || 0)
+}
+
+function getBatchProgressText(record: TaskCompletedRow) {
+  const info = getBatchProgressInfo(record)
+  if (!info) return ''
+  if (info.type === 'unfinished') return `同批还有 ${info.unfinished} 个任务未完成（共 ${info.total} 个）`
+  return '此批任务都已完成'
+}
+
 function buildMessage(record: TaskCompletedRow) {
-  const statusText = record.status === '已截单' ? '任务已截单' : '任务已完成'
-  const actualText = `实做${Number(record._ordered_count || 0)}单`
-  const principalText = getPrincipalText(record)
-  return `${statusText}，${actualText}${principalText ? `，${principalText}` : ''}`
+  const lines = [String(record.status || '').trim(), getActualDiffText(record), getPrincipalMessage(record)?.text, getBatchProgressText(record)]
+    .filter(Boolean)
+  return lines.join('，')
 }
 
 function getPrincipalText(record: TaskCompletedRow) {
-  const amount = Number(record.debt_amount || 0)
-  if (record.debt_status === 'owed' && amount > 0) return `需补本金 ¥${amount.toFixed(2)}`
-  if (record.debt_status === 'surplus' && amount > 0) return `需退本金 ¥${amount.toFixed(2)}`
+  const principal = getPrincipalMessage(record)
+  if (principal) return principal.text
   return ''
 }
 
@@ -2523,9 +2822,45 @@ function fmtTime(value: string | null) {
 
 .message-cell {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  line-height: 1.5;
+}
+
+.message-main-row {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  line-height: 1.5;
+}
+
+.message-actual {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.message-principal {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.message-principal.is-owed {
+  color: #dc2626;
+}
+
+.message-principal.is-surplus {
+  color: #059669;
+}
+
+.message-batch {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.message-batch strong {
+  color: #1a1a2e;
+  font-weight: 700;
 }
 
 .review-progress-cell {
