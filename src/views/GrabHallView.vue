@@ -124,21 +124,21 @@
               </div>
 
               <div class="task-stats hall-task-stats">
-                <div class="stat-item">
-                  <span class="stat-label">待抢单</span>
+                <div class="stat-item stat-item-main">
+                  <span class="stat-label">总待抢单</span>
                   <span class="stat-val stat-total">{{ group.subCount }}</span>
+                  <span class="stat-sub-metrics">
+                    <span>今日待抢 <span class="stat-sub-danger">{{ group.updatedTodayCount }}</span></span>
+                    <span class="stat-sub-divider"></span>
+                    <span>今日已抢 {{ group.grabbedTodayCount }}</span>
+                  </span>
                 </div>
                 <div class="stat-divider"></div>
                 <div class="stat-item">
                   <span class="stat-label">最长逾期</span>
-                  <span :class="['stat-val', getGroupMaxExpiredDays(group) > 0 ? 'stat-overdue' : 'stat-schedule']">
+                  <span class="stat-val stat-total">
                     {{ getGroupMaxExpiredDays(group) }}<span class="stat-unit">天</span>
                   </span>
-                </div>
-                <div class="stat-right-col">
-                  <div class="stat-mini-row">
-                    <span class="stat-mini-label review-label">今日更新 {{ group.updatedTodayCount }}</span>
-                  </div>
                 </div>
               </div>
 
@@ -556,6 +556,17 @@ const reviewLevelOptions = computed(() => Array.from(new Set(hallOrders.value.ma
 const logFlowTypeOptions = computed(() => ['手动流入', '超时流入'])
 const logFromStaffOptions = computed(() => Array.from(new Set(buildDisplayLogs(logs.value).map(log => log.from_staff_name).filter(Boolean))).sort())
 const logToStaffOptions = computed(() => Array.from(new Set(buildDisplayLogs(logs.value).map(log => log.to_staff_name).filter(Boolean))).sort())
+const todayGrabbedCountByOrder = computed(() => {
+  const countMap = new Map<string, Set<string>>()
+  for (const order of todayGrabbedOrders.value) {
+    const orderKey = getRecordOrderKey(order)
+    const subKey = getRecordSubOrderKey(order)
+    if (!orderKey || !subKey) continue
+    if (!countMap.has(orderKey)) countMap.set(orderKey, new Set())
+    countMap.get(orderKey)?.add(subKey)
+  }
+  return countMap
+})
 const filteredHallOrders = computed(() =>
   hallOrders.value.filter(order => {
     if (filterReviewType.value && order.review_type !== filterReviewType.value) return false
@@ -688,6 +699,18 @@ function onImgError(e: Event) {
 function isTodayActivity(dateStr: string | null | undefined) {
   if (!dateStr) return false
   return dayjs(dateStr).isSame(dayjs(), 'day')
+}
+
+function getRecordSubOrderKey(record: any) {
+  return String(record?.sub_order_id || record?.id || '').trim()
+}
+
+function getRecordOrderKey(record: any) {
+  return String(record?.order_id || record?.order_number || '').trim()
+}
+
+function getTodayGrabbedCountForOrder(orderKey: string) {
+  return todayGrabbedCountByOrder.value.get(String(orderKey || '').trim())?.size || 0
 }
 
 function isExpired(dateStr: string) {
@@ -921,6 +944,7 @@ function buildHallGroups(sourceOrders: any[]) {
     .map(group => ({
       ...group,
       subCount: group.subs.length,
+      grabbedTodayCount: getTodayGrabbedCountForOrder(group.order_id),
       updatedTodayCount: group.subs.filter((sub: any) => isTodayActivity(sub.released_at || sub.updated_at || sub.created_at)).length,
     }))
     .sort((a, b) => {
@@ -1481,14 +1505,32 @@ onMounted(() => {
   padding: 8px 12px;
   border: 1px solid #e5e7eb;
 }
-.hall-task-stats { min-width: 230px; }
+.hall-task-stats { min-width: 220px; }
 .stat-item { display: flex; flex-direction: column; align-items: center; min-width: 52px; gap: 2px; }
+.stat-item-main { min-width: 86px; }
 .stat-label { font-size: 11px; color: #9ca3af; line-height: 1; }
 .stat-val { font-size: 20px; font-weight: 700; line-height: 1.2; }
 .stat-unit { font-size: 12px; font-weight: 400; color: #9ca3af; margin-left: 1px; }
 .stat-total { color: #1a1a2e; }
 .stat-schedule { color: #f59e0b; }
 .stat-overdue { color: #dc2626; }
+.stat-sub-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: #6b7280;
+  font-weight: 500;
+}
+.stat-sub-danger { color: #dc2626; font-weight: 700; }
+.stat-sub-divider {
+  width: 1px;
+  height: 10px;
+  background: #e5e7eb;
+}
 .stat-divider { width: 1px; height: 32px; background: #e5e7eb; margin: 0 10px; }
 .stat-right-col {
   display: flex;

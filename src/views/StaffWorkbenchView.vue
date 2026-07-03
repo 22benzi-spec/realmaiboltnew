@@ -603,6 +603,49 @@
 
               <!-- 展开：步骤化做单流程 -->
               <div v-if="task._expanded" class="workflow-body">
+                <SubOrderWorkflowEditor
+                  :task="task"
+                  :buyer-list="buyerList"
+                  :deadline-alert="getTaskDeadlineAlert(task)"
+                  :show-summary-header="false"
+                  :show-processed-refund-list="false"
+                  :show-correction-action="false"
+                  detail-hint-text="明细请点子订单后的「详情」查看"
+                  :progress-badge-class-fn="getTaskProgressBadgeClass"
+                  :progress-label-fn="getTaskProgressLabel"
+                  :format-time="fmtShortTime"
+                  :get-buyer-block-reason="getBuyerBlockReason"
+                  :on-buyer-select="onBuyerSelect"
+                  :assign-buyer="assignBuyer"
+                  :refund-panel-title="refundPanelTitle"
+                  :is-refund-step-readonly="isRefundStepReadonly"
+                  :processed-refunds-for-display="processedRefundsForDisplay"
+                  :aggregate-processed-refunds="aggregateProcessedRefunds"
+                  :refund-request-type-label="refundRequestTypeLabel"
+                  :infer-actual-paid-usd="inferActualPaidUsd"
+                  :refund-status-label="refundStatusLabel"
+                  :start-supplemental-refund="startSupplementalRefund"
+                  :start-correction-refund="startCorrectionRefund"
+                  :cancel-refund-special-modes="cancelRefundSpecialModes"
+                  :sync-refund-computed="syncRefundComputed"
+                  :is-no-refund-selection="isNoRefundSelection"
+                  :get-refund-final-amount="getRefundFinalAmount"
+                  :refund-submit-button-text="refundSubmitButtonText"
+                  :submit-refund-request="submitRefundRequest"
+                  :is-prepay-mode="isPrepayMode"
+                  :save-amazon-order="saveAmazonOrder"
+                  :save-screenshot="saveScreenshot"
+                  :save-order-notes="saveWorkbenchOrderNotes"
+                  :on-open-replace-product="openReplaceProductModal"
+                  :format-audit-edit="formatAuditEdit"
+                />
+                <div class="workflow-footer">
+                  <a-button size="small" ghost style="color:#f59e0b;border-color:#f59e0b" @click="releaseToHall(task)">↗️ 放到抢单大厅</a-button>
+                  <span class="wf-footer-divider">|</span>
+                  <a-button size="small" type="primary" ghost style="color:#0284c7;border-color:#0284c7" @click="openTransferModal(task)">👤 转给他人</a-button>
+                </div>
+              </div>
+              <div v-if="false && task._expanded" class="workflow-body">
                 <div
                   v-if="getTaskDeadlineAlert(task)"
                   :class="['task-deadline-alert', getTaskDeadlineAlert(task)?.type === 'danger' ? 'is-danger' : 'is-warning']"
@@ -1375,6 +1418,7 @@ import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import { useCurrentUser } from '../composables/useCurrentUser'
 import AfterSaleIssueList from '../components/AfterSaleIssueList.vue'
+import SubOrderWorkflowEditor from '../components/SubOrderWorkflowEditor.vue'
 import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 const ALL_STAFF_KEY = '__all_staff__'
@@ -3969,6 +4013,10 @@ async function handleAfterSaleChanged() {
 async function quickSave(task: any, field: string, value: any) {
   const { error } = await supabase.from('sub_orders').update({ [field]: value }).eq('id', task.id)
   if (!error) task[field] = value
+}
+
+function saveWorkbenchOrderNotes(task: any) {
+  return quickSave(task, 'notes', task._edit_order_notes)
 }
 
 async function onBuyerSelect(task: any, buyerId: string) {

@@ -118,7 +118,8 @@
             <div v-if="record.refund_sequence" class="cell-seq">{{ record.refund_sequence }}</div>
           </template>
           <template v-if="column.key === 'refund_amount'">
-            <span class="amount-usd">{{ formatRecordAmount(record) }}</span>
+            <span :class="['amount-usd', isReceiptOnlyRequest(record) ? 'amount-disabled' : '']">{{ formatRecordAmount(record) }}</span>
+            <div v-if="isReceiptOnlyRequest(record)" class="receipt-only-hint">仅补水单，不可重复返款</div>
             <div v-if="activeTab === 'other' && getOtherUsdAmount(record) > 0" class="cell-product-price">
               USD ${{ money(getOtherUsdAmount(record)) }} / 汇率 {{ formatExchangeRate(getOtherExchangeRate(record)) }}
             </div>
@@ -153,15 +154,20 @@
           <template v-if="column.key === 'action'">
             <a-space size="small" wrap>
               <template v-if="activeTab === 'paypal' && record.status === '待处理'">
-                <a-button type="primary" size="small" @click="openPaypalProcess(record)">返款</a-button>
-                <a-button size="small" @click="openPaypalReceipt(record)">{{ record.paypal_receipt_screenshot ? '补传水单' : '上传水单' }}</a-button>
+                <template v-if="isReceiptOnlyRequest(record)">
+                  <a-button type="primary" size="small" @click="openPaypalReceipt(record)">{{ record.paypal_receipt_screenshot ? '补传水单' : '上传水单' }}</a-button>
+                  <a-button size="small" danger @click="cancelRequest(record)">撤销</a-button>
+                </template>
+                <template v-else>
+                  <a-button type="primary" size="small" @click="openPaypalProcess(record)">返款</a-button>
+                  <a-button size="small" @click="openPaypalReceipt(record)">{{ record.paypal_receipt_screenshot ? '补传水单' : '上传水单' }}</a-button>
+                  <a-button size="small" danger @click="cancelRequest(record)">撤销</a-button>
+                </template>
               </template>
-              <a-button
-                v-else-if="activeTab === 'gift' && record.status === '待处理'"
-                type="primary"
-                size="small"
-                @click="openGiftProcess(record)"
-              >礼品卡返款</a-button>
+              <template v-else-if="activeTab === 'gift' && record.status === '待处理'">
+                <a-button type="primary" size="small" @click="openGiftProcess(record)">礼品卡返款</a-button>
+                <a-button size="small" danger @click="cancelRequest(record)">撤销</a-button>
+              </template>
               <template v-else-if="activeTab === 'other' && record.status === '待处理'">
                 <a-button type="primary" size="small" @click="openOtherProcess(record)">处理付款</a-button>
                 <a-button size="small" @click="openOtherReceipt(record)">{{ record.paypal_receipt_screenshot ? '补传水单' : '上传水单' }}</a-button>
@@ -686,6 +692,30 @@ const mockPaypalRequests = ref<any[]>([
     created_at: dayjs().subtract(1, 'day').hour(11).minute(10).toISOString(),
     handled_at: dayjs().subtract(1, 'day').hour(12).minute(20).toISOString(),
   },
+  {
+    id: 'mock-paypal-receipt-batch-demo',
+    sub_order_id: 'SUB-MOCK-PP-BATCH-001,SUB-MOCK-PP-BATCH-002',
+    sub_order_number: 'MOCK-PP-批量-001 / MOCK-PP-批量-002',
+    country: '英国',
+    buyer_name: '买手-批量PP',
+    buyer_paypal_email: 'mock.batch.pp@gmail.com',
+    product_name: '批次追加水单（2 笔）',
+    asin: '',
+    store_name: '账单补水单',
+    staff_name: '业务员补传',
+    refund_method: 'PayPal',
+    refund_amount_usd: 18,
+    product_price: 18,
+    status: '待处理',
+    notes: '批次补水单 [需财务水单] [仅补水单无需重新打款] 子订单：MOCK-PP-批量-001 / MOCK-PP-批量-002',
+    finance_notes: '演示：批次追加水单合并展示为一条，只能上传水单，不能返款',
+    paypal_receipt_screenshot: '',
+    request_type: 'screenshot',
+    receipt_only: true,
+    payment_blocked: true,
+    created_at: dayjs().subtract(8, 'minute').toISOString(),
+    handled_at: null,
+  },
 ])
 
 const mockGiftRequests = ref<any[]>([
@@ -1202,6 +1232,13 @@ function formatRecordAmount(record: any) {
   return formatCurrency(getAmountValue(record), ['其他退款', '其他付款'].includes(record?.refund_method) || activeTab.value === 'other' ? 'cny' : 'usd')
 }
 
+function isReceiptOnlyRequest(record: any) {
+  const text = `${record?.request_type || ''} ${record?.notes || ''} ${record?.finance_notes || ''}`
+  return record?.request_type === 'screenshot' ||
+    record?.receipt_only === true ||
+    /\[仅补水单无需重新打款\]|仅补水单|补水单/.test(text)
+}
+
 const UUID_LIKE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function formatLinkedId(value: any) {
@@ -1535,6 +1572,7 @@ function handlerName(record: any) {
 function requestTypeLabel(t: string) {
   if (t === 'supplement') return '追加'
   if (t === 'correction') return '更正'
+  if (t === 'screenshot') return '仅补水单'
   if (t === 'initial') return '首笔'
   return t || '—'
 }
@@ -1683,6 +1721,7 @@ function reloadFromFirstPage() {
 }
 
 function isSelectableRecord(record: any) {
+  if (activeTab.value === 'paypal' && isReceiptOnlyRequest(record)) return false
   return record?.status === '待处理'
 }
 
@@ -1875,6 +1914,10 @@ function openPaypalProcess(record?: any, useSelection = false) {
     message.warning('请先选择要返款的记录')
     return
   }
+  if (targets.some(isReceiptOnlyRequest)) {
+    message.warning('仅补水单申请不能再次返款，请上传水单')
+    return
+  }
   setProcessRequests(targets)
   paypalModalMode.value = 'process'
   paypalProcessForm.receipt = targets[0]?.paypal_receipt_screenshot || ''
@@ -1983,7 +2026,8 @@ async function handlePaypalProcess() {
   try {
     const account = paypalAccounts.value.find(item => item.id === selectedPaypalAccountId.value)
     const total = currentProcessTotal.value
-    const nextStatus = paypalModalMode.value === 'receipt' && currentProcessRequests.value.length === 1
+    const isReceiptOnly = paypalModalMode.value === 'receipt' && currentProcessRequests.value.some(isReceiptOnlyRequest)
+    const nextStatus = paypalModalMode.value === 'receipt' && currentProcessRequests.value.length === 1 && !isReceiptOnly
       ? currentProcessRequests.value[0]?.status || '待处理'
       : '已处理'
     const handledAt = paypalModalMode.value === 'receipt'
@@ -2223,13 +2267,50 @@ async function handleOtherProcess() {
   }
 }
 
-async function cancelRequest(id: string) {
+async function cancelRequest(recordOrId: any) {
+  const id = typeof recordOrId === 'string' ? recordOrId : recordOrId?.id
+  if (!id) return
+  if (String(id).startsWith('mock-paypal-resub-') || String(id).startsWith('mock-paypal-receipt-')) {
+    const extraExists = extraMockPaypalRequests.value.some(item => item.id === id)
+    if (extraExists) {
+      extraMockPaypalRequests.value = extraMockPaypalRequests.value.filter(item => item.id !== id)
+      persistQueueExtra('paypal')
+      message.success('已撤销')
+      await load()
+      return
+    }
+  }
+  if (String(id).startsWith('mock-gift-resub-')) {
+    extraMockGiftRequests.value = extraMockGiftRequests.value.filter(item => item.id !== id)
+    persistQueueExtra('gift')
+    message.success('已撤销')
+    await load()
+    return
+  }
+  if (String(id).startsWith('mock-paypal-')) {
+    const idx = mockPaypalRequests.value.findIndex(item => item.id === id)
+    if (idx >= 0) {
+      mockPaypalRequests.value[idx] = { ...mockPaypalRequests.value[idx], status: '已取消' }
+    }
+    message.success('已撤销')
+    await load()
+    return
+  }
+  if (String(id).startsWith('mock-gift-')) {
+    const idx = mockGiftRequests.value.findIndex(item => item.id === id)
+    if (idx >= 0) {
+      mockGiftRequests.value[idx] = { ...mockGiftRequests.value[idx], status: '已取消' }
+    }
+    message.success('已撤销')
+    await load()
+    return
+  }
   if (String(id).startsWith('mock-other-')) {
     const idx = mockOtherRequests.value.findIndex(item => item.id === id)
     if (idx >= 0) {
       mockOtherRequests.value[idx] = { ...mockOtherRequests.value[idx], status: '已取消' }
     }
-    message.success('已取消')
+    message.success('已撤销')
     await load()
     return
   }
@@ -2238,7 +2319,7 @@ async function cancelRequest(id: string) {
     message.error('操作失败')
     return
   }
-  message.success('已取消')
+  message.success('已撤销')
   await load()
 }
 
@@ -2298,6 +2379,15 @@ onMounted(async () => {
 .type-secondary { font-size: 13px; color: #1a1a2e; font-weight: 600; line-height: 1.25; }
 .type-reason { font-size: 11px; color: #9ca3af; line-height: 1.3; }
 .amount-usd { font-weight: 700; color: #dc2626; font-size: 14px; }
+.amount-usd.amount-disabled {
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+.receipt-only-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #d97706;
+}
 .cell-product-price { font-size: 11px; color: #9ca3af; }
 .text-gray { color: #9ca3af; font-size: 12px; }
 .select-sub { font-size: 11px; color: #9ca3af; }

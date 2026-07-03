@@ -212,7 +212,43 @@
       :destroy-on-close="true"
       @after-close="handleEditClosed"
     >
-      <div v-if="editTask" class="workflow-edit-modal">
+      <SubOrderWorkflowEditor
+        v-if="editTask"
+        :task="editTask"
+        :buyer-list="buyerList"
+        :show-summary-header="true"
+        :show-processed-refund-list="true"
+        :show-correction-action="true"
+        detail-hint-text="明细请点右侧「详情」查看"
+        :progress-badge-class-fn="getWorkflowProgressBadgeClass"
+        :progress-label-fn="getWorkflowProgressLabel"
+        :format-time="fmtDate"
+        :get-buyer-block-reason="getBuyerBlockReason"
+        :on-buyer-select="onBuyerSelect"
+        :assign-buyer="assignBuyer"
+        :refund-panel-title="refundPanelTitle"
+        :is-refund-step-readonly="isRefundStepReadonly"
+        :processed-refunds-for-display="processedRefundsForDisplay"
+        :aggregate-processed-refunds="aggregateProcessedRefunds"
+        :refund-request-type-label="refundRequestTypeLabel"
+        :infer-actual-paid-usd="inferActualPaidUsd"
+        :refund-status-label="refundStatusLabel"
+        :start-supplemental-refund="startSupplementalRefund"
+        :start-correction-refund="startCorrectionRefund"
+        :cancel-refund-special-modes="cancelRefundSpecialModes"
+        :sync-refund-computed="syncRefundComputed"
+        :is-no-refund-selection="isNoRefundSelection"
+        :get-refund-final-amount="getRefundFinalAmount"
+        :refund-submit-button-text="refundSubmitButtonText"
+        :submit-refund-request="submitRefundRequest"
+        :is-prepay-mode="isPrepayMode"
+        :save-amazon-order="saveAmazonOrder"
+        :save-screenshot="saveScreenshot"
+        :save-order-notes="saveOrderNotes"
+        :on-open-replace-product="openReplaceProduct"
+        :format-audit-edit="formatAuditEdit"
+      />
+      <div v-if="false && editTask" class="workflow-edit-modal">
         <div class="workflow-edit-header">
           <div class="task-meta">
             <div class="meta-row1">
@@ -571,6 +607,7 @@ import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabase'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
+import SubOrderWorkflowEditor from '../components/SubOrderWorkflowEditor.vue'
 import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 import { useCurrentUser } from '../composables/useCurrentUser'
 
