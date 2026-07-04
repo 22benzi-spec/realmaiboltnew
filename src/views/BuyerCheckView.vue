@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-text">
         <h1 class="page-title">买手校验中心</h1>
-        <p class="page-desc">输入买手和 ASIN，系统按风险维度输出判定原因和历史证据</p>
+        <p class="page-desc">支持全面排查和单维度校验，系统按风险维度输出判定原因和历史证据</p>
       </div>
     </div>
 
@@ -17,18 +17,16 @@
           </div>
 
           <div class="field">
-            <label class="field-label">买手姓名 <span class="required">*</span></label>
+            <label class="field-label">买手姓名 / ID <span class="required">*</span></label>
             <div class="buyer-input-wrap">
-              <a-input
+              <a-textarea
                 v-model:value="buyerInput"
-                placeholder="输入买手姓名（支持模糊搜索）"
+                placeholder="输入买手姓名或买手ID；多买手请每行一个"
                 size="large"
                 allow-clear
+                :auto-size="{ minRows: 3, maxRows: 6 }"
                 @input="onBuyerInput"
-                @press-enter="runSingleCheck"
-              >
-                <template #prefix><UserOutlined style="color:#bbb" /></template>
-              </a-input>
+              />
               <div v-if="buyerSuggestions.length > 0" class="suggestions-panel">
                 <div
                   v-for="s in buyerSuggestions"
@@ -40,47 +38,102 @@
                     {{ s.name.charAt(0) }}
                   </div>
                   <div class="suggestion-info">
-                    <div class="suggestion-name">{{ s.name }}</div>
-                    <div class="suggestion-meta">{{ s.total_orders }} 单 / 评分 {{ s.rating }}</div>
+                    <div class="suggestion-name">{{ buyerDisplayName(s) }}</div>
+                    <div class="suggestion-meta">{{ s.total_orders }} 单 / 售后率 {{ formatAfterSaleRate(s) }}</div>
                   </div>
-                  <span :class="['suggestion-status', s.status === 'active' ? 'active' : 'inactive']">
-                    {{ s.status === 'active' ? '正常' : '停用' }}
+                  <span :class="['suggestion-status', buyerStatusClass(s.status)]">
+                    {{ buyerStatusText(s.status) }}
                   </span>
                 </div>
               </div>
             </div>
+            <div class="buyer-input-hint">
+              <UserOutlined />
+              <span>{{ buyerNames.length <= 1 ? '单个买手支持姓名模糊搜索或ID精确查询；批量校验请每行一个买手姓名或ID。' : `已输入 ${buyerNames.length} 个买手，将自动走批量校验。` }}</span>
+            </div>
           </div>
 
-          <div v-if="selectedBuyer" class="buyer-profile-card">
+          <div v-if="selectedBuyer && buyerNames.length === 1" class="buyer-profile-card">
             <div class="profile-avatar" :style="{ background: getAvatarColor(selectedBuyer.name) }">
               {{ selectedBuyer.name.charAt(0) }}
             </div>
             <div class="profile-info">
-              <div class="profile-name">{{ selectedBuyer.name }}</div>
-              <div class="profile-stats">
-                <span :class="['profile-status', selectedBuyer.status === 'active' ? 'active' : 'inactive']">
-                  {{ selectedBuyer.status === 'active' ? '正常' : '停用' }}
-                </span>
-                <span class="profile-stat-item">累计 {{ selectedBuyer.total_orders }} 单</span>
-                <span class="profile-stat-item">评分 {{ selectedBuyer.rating }}</span>
-              </div>
+              <div class="profile-name">{{ buyerDisplayName(selectedBuyer) }}</div>
             </div>
             <CloseOutlined class="profile-clear" @click="clearBuyer" />
           </div>
 
+          <div class="check-mode-panel">
+            <div class="field-label">校验方式 <span class="required">*</span></div>
+            <div class="check-mode-groups">
+              <div v-for="group in checkModeGroups" :key="group.key" class="check-mode-group">
+                <div class="check-mode-group-title">{{ group.title }}</div>
+                <div class="check-mode-grid" :class="'cols-' + group.modes.length">
+                  <button
+                    v-for="mode in group.modes"
+                    :key="mode.key"
+                    type="button"
+                    :class="['check-mode-card', { active: activeCheckMode === mode.key }]"
+                    @click="setCheckMode(mode.key)"
+                  >
+                    <component :is="mode.icon" />
+                    <span>{{ mode.shortLabel }}</span>
+                  </button>
+                </div>
+                <div v-if="group.key === 'final'" class="mode-demo-row">
+                  <a-button size="small" class="single-dim-demo-btn pass" @click="showTaskMockDemo('pass')">
+                    任务通过演示
+                  </a-button>
+                  <a-button size="small" class="single-dim-demo-btn fail" @click="showTaskMockDemo('fail')">
+                    任务综合拦截演示
+                  </a-button>
+                </div>
+                <div v-else-if="group.key === 'full'" class="mode-demo-row">
+                  <a-button size="small" class="single-dim-demo-btn pass" @click="showFullPassDemo">
+                    综合通过演示
+                  </a-button>
+                  <a-button size="small" class="demo-btn" @click="showMockBlockingDemo">
+                    多维拦截演示
+                  </a-button>
+                </div>
+                <div v-else class="mode-demo-row">
+                  <a-button
+                    size="small"
+                    :class="['single-dim-demo-btn', isHistoryOnlyMode ? 'neutral' : 'pass']"
+                    @click="showSingleDimensionGroupDemo('pass')"
+                  >
+                    {{ singleDimPassDemoText }}
+                  </a-button>
+                  <a-button
+                    size="small"
+                    :class="['single-dim-demo-btn', isHistoryOnlyMode ? 'neutral' : 'fail']"
+                    @click="showSingleDimensionGroupDemo('fail')"
+                  >
+                    {{ singleDimFailDemoText }}
+                  </a-button>
+                </div>
+              </div>
+              <div class="common-demo-row">
+                <a-button size="small" block class="batch-demo-btn" @click="showMockBatchDemo">
+                  当前方式批量演示
+                </a-button>
+              </div>
+            </div>
+          </div>
+
           <div class="field">
-            <label class="field-label">ASIN <span class="required">*</span></label>
+            <label class="field-label">{{ activeModeConfig.inputLabel }} <span class="required">*</span></label>
             <a-input
-              v-model:value="dimValues.asin"
-              placeholder="输入 ASIN 后自动关联店铺、品牌、客户信息"
+              v-model:value="dimValues[activeModeConfig.inputKey]"
+              :placeholder="activeModeConfig.placeholder"
               size="large"
               allow-clear
               @press-enter="runSingleCheck"
             >
-              <template #prefix><BarcodeOutlined style="color:#bbb" /></template>
+              <template #prefix><component :is="activeModeConfig.icon" style="color:#bbb" /></template>
             </a-input>
             <div class="asin-lookup-hint">
-              系统会自动识别店铺、品牌、客户信息，并输出可下单或拦截原因。
+              {{ activeModeConfig.hint }}
             </div>
           </div>
 
@@ -89,91 +142,58 @@
             size="large"
             block
             class="run-btn"
-            :loading="checking"
-            :disabled="!buyerInput.trim() || !dimValues.asin.trim()"
+            :loading="checking || batchChecking"
+            :disabled="!canRunCheck"
             @click="runSingleCheck"
           >
             <template #icon><ThunderboltOutlined /></template>
-            开始校验
+            {{ runButtonText }}
           </a-button>
-          <a-button
-            block
-            class="demo-btn"
-            @click="showMockBlockingDemo"
-          >
-            查看多维拦截演示
-          </a-button>
-
-          <div class="batch-mini-card">
-            <div class="batch-mini-head" @click="batchPanelOpen = !batchPanelOpen">
-              <span><UnorderedListOutlined /> 批量校验</span>
-              <DownOutlined :class="{ rotated: batchPanelOpen }" />
-            </div>
-            <div v-if="batchPanelOpen" class="batch-mini-body">
-              <a-textarea
-                v-model:value="batchInput"
-                placeholder="每行一个买手姓名，共用上方 ASIN"
-                :rows="4"
-              />
-              <a-button
-                block
-                size="small"
-                class="batch-mini-btn"
-                :loading="batchChecking"
-                :disabled="batchNames.length === 0 || !dimValues.asin.trim()"
-                @click="runBatchCheck"
-              >
-                批量校验 {{ batchNames.length }} 人
-              </a-button>
-              <a-button
-                block
-                size="small"
-                class="batch-demo-btn"
-                @click="showMockBatchDemo"
-              >
-                查看批量多买手演示
-              </a-button>
-            </div>
-          </div>
         </div>
       </div>
 
       <div class="result-section">
         <template v-if="singleResult">
-          <div class="result-hero" :class="singleResult.overallPass ? 'hero-pass' : 'hero-fail'">
+          <div class="result-hero" :class="resultHeroClass(singleResult)">
             <div class="hero-left">
               <div class="hero-avatar" :style="{ background: getAvatarColor(singleResult.buyerName) }">
                 {{ singleResult.buyerName.charAt(0) }}
               </div>
               <div>
-                <div class="hero-name">{{ singleResult.buyerName }}</div>
+                <div class="hero-name">{{ resultBuyerDisplayName(singleResult) }}</div>
                 <div class="hero-info">
                   <template v-if="singleResult.buyerInfo">
-                    <a-tag :color="singleResult.buyerInfo.status === 'active' ? 'green' : 'red'" size="small">
-                      {{ singleResult.buyerInfo.status === 'active' ? '账号正常' : '账号停用' }}
+                    <a-tag :color="buyerStatusColor(singleResult.buyerInfo.status)" size="small">
+                      {{ buyerStatusText(singleResult.buyerInfo.status) }}
+                    </a-tag>
+                    <a-tag :color="singleResult.buyerInfo.is_prime_member ? 'gold' : 'default'" size="small">
+                      {{ singleResult.buyerInfo.is_prime_member ? 'Prime' : '非Prime' }}
                     </a-tag>
                     <span class="hero-stat">{{ singleResult.buyerInfo.total_orders }} 单</span>
-                    <span class="hero-stat">评分 {{ singleResult.buyerInfo.rating }}</span>
+                    <span class="hero-stat">售后率 {{ formatAfterSaleRate(singleResult.buyerInfo) }}</span>
                   </template>
                   <span v-else class="hero-unknown">系统无此买手档案</span>
                 </div>
               </div>
             </div>
             <div class="hero-right">
-              <div :class="['hero-badge', singleResult.overallPass ? 'badge-pass' : 'badge-fail']">
-                <CheckCircleOutlined v-if="singleResult.overallPass" />
+              <div :class="['hero-badge', heroBadgeClass(singleResult)]">
+                <ExclamationCircleOutlined v-if="isHistoryOnlyResult(singleResult) && hasHistoryRecords(singleResult)" />
+                <CheckCircleOutlined v-else-if="singleResult.overallPass" />
                 <CloseCircleOutlined v-else />
-                {{ singleResult.overallPass ? '可以接单' : '存在风险' }}
+                {{ heroStatusText(singleResult) }}
               </div>
-              <div class="hero-counts">
+              <div v-if="!isSingleDimensionDemoResult(singleResult)" class="hero-counts">
                 <span class="hc-pass">{{ singleResult.passCount }} 通过</span>
                 <span class="hc-fail">{{ singleResult.failCount }} 拦截</span>
-                <span class="hc-warn">{{ singleResult.warnCount }} 警告</span>
+              </div>
+              <div v-if="primaryResultReason(singleResult)" class="hero-reason">
+                {{ primaryResultReason(singleResult) }}
               </div>
             </div>
           </div>
 
-          <div class="context-card">
+          <div v-if="showContextCard(singleResult)" class="context-card">
             <div class="section-title-row">
               <div>
                 <div class="section-title-text">任务上下文</div>
@@ -181,68 +201,40 @@
               </div>
               <span v-if="singleResult.usingMock" class="mock-tag">演示数据</span>
             </div>
-            <div v-if="singleResult.asinAssociations.length > 0" class="context-grid">
-              <div class="context-item">
-                <span class="context-label">ASIN</span>
-                <strong>{{ singleResult.asinAssociations[0].asin }}</strong>
-              </div>
-              <div class="context-item">
-                <span class="context-label">店铺</span>
-                <strong>{{ singleResult.asinAssociations[0].storeName || '未知' }}</strong>
-              </div>
-              <div class="context-item">
-                <span class="context-label">品牌</span>
-                <strong>{{ singleResult.asinAssociations[0].brandName || '未知' }}</strong>
-              </div>
-              <div class="context-item">
-                <span class="context-label">客户</span>
-                <strong>{{ singleResult.asinAssociations[0].companyName || singleResult.asinAssociations[0].customerIdStr || '未知' }}</strong>
+            <div v-if="contextItems(singleResult).length > 0" class="context-grid">
+              <div v-for="item in contextItems(singleResult)" :key="item.label" class="context-item">
+                <span class="context-label">{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
               </div>
             </div>
           </div>
 
-          <div v-if="blockingRisks(singleResult).length > 0" class="blocked-overview">
-            <div class="blocked-overview-main">
-              <CloseCircleOutlined />
-              <div>
-                <div class="blocked-title">禁止下单</div>
-                <div class="blocked-subtitle">命中 {{ blockingRisks(singleResult).length }} 个拦截维度，先看标签再看明细。</div>
-              </div>
-            </div>
-            <div class="blocked-dim-tags">
-              <span
-                v-for="risk in blockingRisks(singleResult)"
-                :key="risk.key"
-                :class="['blocked-dim-tag', riskDimensionClass(risk)]"
-              >
-                {{ riskDimensionLabel(risk) }}
-              </span>
-            </div>
-          </div>
-
-          <div v-if="singleResult.buyerHistory.risks.length > 0" class="history-section">
+          <div v-if="detailRisks(singleResult).length > 0" class="history-section">
             <div class="section-title-row">
               <div>
-                <div class="section-title-text">拦截明细</div>
-                <div class="section-subtitle">按维度展示具体证据和禁止原因</div>
+                <div class="section-title-text">{{ detailSectionTitle(singleResult) }}</div>
+                <div class="section-subtitle">{{ detailSectionSubtitle(singleResult) }}</div>
               </div>
-              <span :class="['history-summary', singleResult.buyerHistory.hasBlockingRisk ? 'fail' : 'pass']">
-                {{ singleResult.buyerHistory.hasBlockingRisk ? '存在拦截' : '未命中拦截' }}
+              <span
+                v-if="!isSingleDimensionDemoResult(singleResult)"
+                :class="['history-summary', blockingRisks(singleResult).length > 0 ? 'fail' : 'pass']"
+              >
+                {{ blockingRisks(singleResult).length > 0 ? '拦截' : '历史记录' }}
               </span>
             </div>
             <div class="risk-board">
               <div
-                v-for="risk in visibleRisks(singleResult)"
+                v-for="risk in detailRisks(singleResult)"
                 :key="risk.key"
                 :class="['risk-card-v2', risk.status, riskDimensionClass(risk)]"
               >
                 <div class="risk-card-top">
                   <span class="risk-dim-badge">{{ riskDimensionLabel(risk) }}</span>
-                  <span :class="['history-risk-badge', risk.status]">
-                    {{ risk.status === 'fail' ? '拦截' : risk.status === 'warn' ? '提示' : '通过' }}
+                  <span v-if="!isSingleDimensionDemoResult(singleResult)" :class="['history-risk-badge', riskVisualStatus(risk)]">
+                    {{ riskBadgeText(risk) }}
                   </span>
                 </div>
-                <div class="risk-reason-v2">{{ risk.reason }}</div>
+                <div v-if="!isSingleDimensionDemoResult(singleResult)" class="risk-reason-v2">{{ risk.reason }}</div>
                 <div v-if="risk.records.length > 0" class="risk-evidence-list">
                   <div class="risk-evidence-title">历史订单</div>
                   <div v-for="record in risk.records.slice(0, 4)" :key="record.id" class="risk-evidence-card">
@@ -299,13 +291,13 @@
           <div class="empty-visual">
             <SafetyCertificateOutlined class="empty-main-icon" />
           </div>
-          <div class="empty-title">输入买手信息开始校验</div>
-          <div class="empty-desc">输入买手姓名、选择校验维度并填写对应值，系统将自动匹配规则库进行准入校验</div>
+          <div class="empty-title">选择校验方式后开始排查</div>
+          <div class="empty-desc">输入买手姓名或买手ID，再填写 ASIN、任务ID、店铺、品牌、客户或公司主体，系统会按当前方式展示校验结论和历史证据。</div>
           <div class="empty-dims">
-            <span v-for="dim in allDimensions" :key="dim.key" class="empty-dim-tag">
-              <component :is="dim.icon" style="font-size:12px" />
-              {{ dim.label }}
-            </span>
+            <span class="empty-dim-tag"><SafetyCertificateOutlined style="font-size:12px" />任务校验</span>
+            <span class="empty-dim-tag"><BarcodeOutlined style="font-size:12px" />全面排查</span>
+            <span class="empty-dim-tag"><ShopOutlined style="font-size:12px" />店铺/品牌</span>
+            <span class="empty-dim-tag"><ContactsOutlined style="font-size:12px" />客户/公司主体</span>
           </div>
         </div>
       </div>
@@ -316,8 +308,14 @@
           <div class="batch-results-title">校验结果</div>
           <div class="batch-stats-row">
             <span class="bs-item bs-total">共 {{ batchResults.length }} 人</span>
-            <span class="bs-item bs-pass">{{ batchResults.filter(r => r.overallPass).length }} 通过</span>
-            <span class="bs-item bs-fail">{{ batchResults.filter(r => !r.overallPass).length }} 有风险</span>
+            <template v-if="batchHistoryOnly">
+              <span class="bs-item bs-pass">{{ batchResults.filter(r => !hasHistoryRecords(r)).length }} 无记录</span>
+              <span class="bs-item bs-fail">{{ batchResults.filter(r => hasHistoryRecords(r)).length }} 有记录</span>
+            </template>
+            <template v-else>
+              <span class="bs-item bs-pass">{{ batchResults.filter(r => r.overallPass).length }} 通过</span>
+              <span class="bs-item bs-fail">{{ batchResults.filter(r => !r.overallPass).length }} 拦截</span>
+            </template>
           </div>
           <div class="batch-filter-row">
             <span
@@ -327,18 +325,18 @@
             <span
               :class="['bf-tab', batchFilter === 'pass' ? 'active' : '']"
               @click="batchFilter = 'pass'"
-            >通过</span>
+            >{{ batchHistoryOnly ? '无记录' : '通过' }}</span>
             <span
               :class="['bf-tab', batchFilter === 'fail' ? 'active' : '']"
               @click="batchFilter = 'fail'"
-            >有风险</span>
+            >{{ batchHistoryOnly ? '有记录' : '拦截' }}</span>
           </div>
         </div>
 
         <div class="batch-results-list">
           <div
             v-for="br in filteredBatchResults"
-            :key="br.buyerName"
+            :key="batchResultKey(br)"
             :class="['batch-result-card', br.overallPass ? 'card-pass' : 'card-fail']"
           >
             <div class="brc-left">
@@ -346,10 +344,10 @@
                 {{ br.buyerName.charAt(0) }}
               </div>
               <div class="brc-info">
-                <div class="brc-name">{{ br.buyerName }}</div>
+                <div class="brc-name">{{ resultBuyerDisplayName(br) }}</div>
                 <div class="brc-meta">
                   <template v-if="br.buyerInfo">
-                    {{ br.buyerInfo.total_orders }} 单 / 评分 {{ br.buyerInfo.rating }}
+                    {{ br.buyerInfo.total_orders }} 单 / {{ br.buyerInfo.is_prime_member ? 'Prime' : '非Prime' }} / 售后率 {{ formatAfterSaleRate(br.buyerInfo) }}
                   </template>
                   <span v-else class="brc-no-record">无档案</span>
                 </div>
@@ -359,21 +357,22 @@
               <span
                 v-for="risk in visibleRisks(br).slice(0, 4)"
                 :key="risk.key"
-                :class="['brc-dim-tag', risk.status]"
+                :class="['brc-dim-tag', riskVisualStatus(risk)]"
               >
                 {{ riskDimensionLabel(risk) }}:
-                {{ risk.status === 'pass' ? '通过' : risk.status === 'fail' ? '拦截' : '警告' }}
+                {{ riskBadgeText(risk) }}
               </span>
             </div>
             <div :class="['brc-verdict', br.overallPass ? 'pass' : 'fail']">
-              <CheckCircleOutlined v-if="br.overallPass" />
+              <ExclamationCircleOutlined v-if="isHistoryOnlyResult(br) && hasHistoryRecords(br)" />
+              <CheckCircleOutlined v-else-if="br.overallPass" />
               <CloseCircleOutlined v-else />
-              {{ br.overallPass ? '可接单' : '有风险' }}
+              {{ isHistoryOnlyResult(br) ? heroStatusText(br) : br.overallPass ? '通过' : '拦截' }}
             </div>
-            <div v-if="!br.overallPass" class="brc-expand" @click="toggleExpand(br.buyerName)">
-              <DownOutlined :class="{ rotated: expandedBatch.includes(br.buyerName) }" />
+            <div v-if="canExpandBatchResult(br)" class="brc-expand" @click="toggleExpand(batchResultKey(br))">
+              <DownOutlined :class="{ rotated: expandedBatch.includes(batchResultKey(br)) }" />
             </div>
-            <div v-if="expandedBatch.includes(br.buyerName)" class="brc-detail">
+            <div v-if="expandedBatch.includes(batchResultKey(br))" class="brc-detail">
               <div class="risk-board batch-risk-board">
                 <div
                   v-for="risk in visibleRisks(br)"
@@ -382,8 +381,8 @@
                 >
                   <div class="risk-card-top">
                     <span class="risk-dim-badge">{{ riskDimensionLabel(risk) }}</span>
-                    <span :class="['history-risk-badge', risk.status]">
-                      {{ risk.status === 'fail' ? '拦截' : risk.status === 'warn' ? '提示' : '通过' }}
+                    <span :class="['history-risk-badge', riskVisualStatus(risk)]">
+                      {{ riskBadgeText(risk) }}
                     </span>
                   </div>
                   <div class="risk-reason-v2">{{ risk.reason }}</div>
@@ -416,7 +415,7 @@ import {
   SearchOutlined, UserOutlined, CloseOutlined,
   ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined,
   ExclamationCircleOutlined, SafetyCertificateOutlined,
-  UnorderedListOutlined, DownOutlined,
+  DownOutlined,
   BarcodeOutlined, ShopOutlined, TagOutlined,
   ContactsOutlined, BankOutlined,
 } from '@ant-design/icons-vue'
@@ -424,10 +423,13 @@ import { supabase } from '../lib/supabase'
 
 interface BuyerInfo {
   id: string
+  buyer_number?: string
   name: string
   status: string
   rating: number
   total_orders: number
+  is_prime_member?: boolean
+  after_sale_rate?: number
 }
 
 interface RestrictionRule {
@@ -497,6 +499,20 @@ interface ScopeOptions {
   partialStoreNames: string
 }
 
+type CheckMode = 'full' | 'task' | 'asin' | 'store' | 'brand' | 'customer' | 'company'
+type DimensionInputKey = 'asin' | 'task_id' | 'store' | 'brand' | 'client_contact' | 'client_company'
+
+interface CheckModeConfig {
+  key: CheckMode
+  label: string
+  shortLabel: string
+  inputKey: DimensionInputKey
+  inputLabel: string
+  placeholder: string
+  hint: string
+  icon: any
+}
+
 interface CheckResult {
   buyerName: string
   buyerInfo: BuyerInfo | null
@@ -523,8 +539,9 @@ const buyerSuggestions = ref<BuyerInfo[]>([])
 const selectedBuyer = ref<BuyerInfo | null>(null)
 const selectedDims = ref<string[]>(['asin', 'store', 'client_contact', 'client_company'])
 const dimValues = reactive<Record<string, string>>({
-  asin: '', store: '', brand: '', client_contact: '', client_company: '',
+  asin: '', task_id: '', store: '', brand: '', client_contact: '', client_company: '',
 })
+const activeCheckMode = ref<CheckMode>('full')
 const scopeOptions = reactive<ScopeOptions>({
   sameCustomerOtherStores: false,
   sameCompanyAllStores: false,
@@ -534,24 +551,170 @@ const scopeOptions = reactive<ScopeOptions>({
 const checking = ref(false)
 const singleResult = ref<CheckResult | null>(null)
 
-const batchInput = ref('')
 const batchChecking = ref(false)
 const batchResults = ref<CheckResult[]>([])
 const batchFilter = ref('all')
-const batchPanelOpen = ref(false)
 const expandedBatch = ref<string[]>([])
 
 let suggestTimer: ReturnType<typeof setTimeout> | null = null
 
-const batchNames = computed(() =>
-  batchInput.value.split('\n').map(n => n.trim()).filter(Boolean)
+const buyerNames = computed(() =>
+  buyerInput.value.split(/\n/).map(n => n.trim()).filter(Boolean)
+)
+
+const batchNames = computed(() => buyerNames.value)
+
+const batchHistoryOnly = computed(() =>
+  batchResults.value.length > 0 && batchResults.value.every(result => isHistoryOnlyResult(result))
 )
 
 const filteredBatchResults = computed(() => {
+  if (batchHistoryOnly.value) {
+    if (batchFilter.value === 'pass') return batchResults.value.filter(r => !hasHistoryRecords(r))
+    if (batchFilter.value === 'fail') return batchResults.value.filter(r => hasHistoryRecords(r))
+    return batchResults.value
+  }
   if (batchFilter.value === 'pass') return batchResults.value.filter(r => r.overallPass)
   if (batchFilter.value === 'fail') return batchResults.value.filter(r => !r.overallPass)
   return batchResults.value
 })
+
+const checkModeOptions: CheckModeConfig[] = [
+  {
+    key: 'full',
+    label: '全面排查',
+    shortLabel: '全面',
+    inputKey: 'asin',
+    inputLabel: 'ASIN',
+    placeholder: '输入 ASIN，自动关联店铺、品牌、客户信息',
+    hint: '适合下单前最终判断：ASIN、店铺、品牌等风险会一起校验。',
+    icon: SafetyCertificateOutlined,
+  },
+  {
+    key: 'task',
+    label: '任务校验',
+    shortLabel: '任务校验',
+    inputKey: 'task_id',
+    inputLabel: '任务ID',
+    placeholder: '输入任务ID，按本次任务规则判断排重',
+    hint: '读取当前任务规则，只有这里才判断全店排重/组织级排重是否开启。',
+    icon: SafetyCertificateOutlined,
+  },
+  {
+    key: 'asin',
+    label: 'ASIN 校验',
+    shortLabel: 'ASIN',
+    inputKey: 'asin',
+    inputLabel: 'ASIN',
+    placeholder: '输入要查询的 ASIN',
+    hint: '只查该买手是否购买过这个 ASIN。',
+    icon: BarcodeOutlined,
+  },
+  {
+    key: 'store',
+    label: '店铺校验',
+    shortLabel: '店铺',
+    inputKey: 'store',
+    inputLabel: '店铺',
+    placeholder: '输入店铺名称',
+    hint: '只查该买手是否买过这个店铺，以及店铺 3 个月/终身限制。',
+    icon: ShopOutlined,
+  },
+  {
+    key: 'brand',
+    label: '品牌校验',
+    shortLabel: '品牌',
+    inputKey: 'brand',
+    inputLabel: '品牌',
+    placeholder: '输入品牌名称，General 不进入品牌限制',
+    hint: '只查该买手 1 个月内是否购买过这个品牌。',
+    icon: TagOutlined,
+  },
+  {
+    key: 'customer',
+    label: '客户校验',
+    shortLabel: '客户',
+    inputKey: 'client_contact',
+    inputLabel: '客户',
+    placeholder: '输入客户名称或客户编号',
+    hint: '只查该买手是否有该客户历史订单；是否拦截需结合任务规则。',
+    icon: ContactsOutlined,
+  },
+  {
+    key: 'company',
+    label: '客户公司主体',
+    shortLabel: '公司',
+    inputKey: 'client_company',
+    inputLabel: '客户公司主体',
+    placeholder: '输入客户公司主体名称或编号',
+    hint: '只查该买手是否有同公司主体历史订单；是否拦截需结合任务规则。',
+    icon: BankOutlined,
+  },
+]
+
+const checkModeGroups = [
+  {
+    key: 'final',
+    title: '最终下单判断',
+    modes: checkModeOptions.filter(mode => mode.key === 'task'),
+  },
+  {
+    key: 'full',
+    title: '综合排查',
+    modes: checkModeOptions.filter(mode => mode.key === 'full'),
+  },
+  {
+    key: 'single',
+    title: '单维度查询',
+    modes: checkModeOptions.filter(mode => ['asin', 'store', 'brand', 'customer', 'company'].includes(mode.key)),
+  },
+]
+
+const activeModeConfig = computed(() => checkModeOptions.find(mode => mode.key === activeCheckMode.value) || checkModeOptions[0])
+
+const activeTargetValue = computed(() => dimValues[activeModeConfig.value.inputKey] || '')
+
+const canRunCheck = computed(() => buyerNames.value.length > 0 && Boolean(activeTargetValue.value.trim()))
+
+const canRunBatchCheck = computed(() => batchNames.value.length > 0 && Boolean(activeTargetValue.value.trim()))
+
+const runButtonText = computed(() => {
+  const count = buyerNames.value.length
+  const action = activeCheckMode.value === 'full'
+    ? '全面排查'
+    : activeCheckMode.value === 'task'
+      ? '任务校验'
+      : '开始校验'
+  if (count > 1) {
+    if (activeCheckMode.value === 'full') return `批量全面排查 ${count} 人`
+    if (activeCheckMode.value === 'task') return `批量任务校验 ${count} 人`
+    return `批量校验 ${count} 人`
+  }
+  return action
+})
+
+const singleDimPassDemoText = computed(() =>
+  selectedSingleDimensionMode.value === 'customer' || selectedSingleDimensionMode.value === 'company'
+    ? '无购买记录演示'
+    : '当前维度通过演示'
+)
+
+const singleDimFailDemoText = computed(() =>
+  selectedSingleDimensionMode.value === 'customer' || selectedSingleDimensionMode.value === 'company'
+    ? '有购买记录演示'
+    : '当前维度拦截演示'
+)
+
+const selectedSingleDimensionMode = computed<Exclude<CheckMode, 'full' | 'task'>>(() => {
+  if (['asin', 'store', 'brand', 'customer', 'company'].includes(activeCheckMode.value)) {
+    return activeCheckMode.value as Exclude<CheckMode, 'full' | 'task'>
+  }
+  return 'asin'
+})
+
+const isHistoryOnlyMode = computed(() =>
+  selectedSingleDimensionMode.value === 'customer' || selectedSingleDimensionMode.value === 'company'
+)
 
 const avatarColors = ['#2563eb', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#be185d']
 
@@ -559,6 +722,67 @@ function getAvatarColor(name: string) {
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
   return avatarColors[Math.abs(hash) % avatarColors.length]
+}
+
+function buyerDisplayName(buyer: BuyerInfo | null | undefined) {
+  if (!buyer) return ''
+  const displayId = buyer.buyer_number || buyer.id
+  return displayId ? `${buyer.name}（ID: ${displayId}）` : buyer.name
+}
+
+function resultBuyerDisplayName(result: CheckResult) {
+  return result.buyerInfo ? buyerDisplayName(result.buyerInfo) : result.buyerName
+}
+
+function batchResultKey(result: CheckResult) {
+  return result.buyerInfo?.id || result.buyerName
+}
+
+function isUuidLike(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
+}
+
+function normalizeBuyerInfo(row: any): BuyerInfo {
+  return {
+    id: row.id,
+    buyer_number: row.buyer_number || '',
+    name: row.name || '',
+    status: row.status || '活跃',
+    rating: Number(row.success_rate ?? row.rating ?? 0),
+    total_orders: Number(row.total_completed ?? row.total_orders ?? 0),
+    is_prime_member: Boolean(row.is_prime_member),
+    after_sale_rate: Number(row.after_sale_rate ?? 0),
+  }
+}
+
+function buyerStatusText(status: string) {
+  if (status === 'active') return '活跃'
+  if (status === 'inactive') return '暂停'
+  if (['活跃', '暂停', '黑名单'].includes(status)) return status
+  return status || '活跃'
+}
+
+function buyerStatusColor(status: string) {
+  const text = buyerStatusText(status)
+  if (text === '黑名单') return 'red'
+  if (text === '暂停') return 'orange'
+  return 'green'
+}
+
+function buyerStatusClass(status: string) {
+  const text = buyerStatusText(status)
+  if (text === '黑名单') return 'blacklist'
+  if (text === '暂停') return 'inactive'
+  return 'active'
+}
+
+function formatAfterSaleRate(buyer: BuyerInfo | null | undefined) {
+  const value = Number(buyer?.after_sale_rate ?? 0)
+  return `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`
+}
+
+function isBuyerActive(status: string) {
+  return buyerStatusText(status) === '活跃'
 }
 
 function toggleDim(key: string) {
@@ -570,7 +794,7 @@ function toggleDim(key: string) {
 function onBuyerInput() {
   selectedBuyer.value = null
   if (suggestTimer) clearTimeout(suggestTimer)
-  if (!buyerInput.value.trim()) {
+  if (!buyerInput.value.trim() || buyerNames.value.length !== 1) {
     buyerSuggestions.value = []
     return
   }
@@ -578,12 +802,39 @@ function onBuyerInput() {
 }
 
 async function fetchSuggestions() {
+  const keyword = buyerNames.value[0]
+  if (!keyword) return
+  const [nameResult, idResult] = await Promise.all([
+    supabase
+      .from('erp_buyers')
+      .select('id, buyer_number, name, status, total_completed, success_rate, after_sale_rate, is_prime_member')
+      .or(`name.ilike.%${keyword}%,buyer_number.ilike.%${keyword}%`)
+      .limit(8),
+    keyword
+      ? supabase
+        .from('erp_buyers')
+        .select('id, buyer_number, name, status, total_completed, success_rate, after_sale_rate, is_prime_member')
+        .eq(isUuidLike(keyword) ? 'id' : 'buyer_number', keyword.trim())
+        .limit(1)
+      : Promise.resolve({ data: [] }),
+  ])
+  const rows = [...((idResult.data || []) as any[]), ...((nameResult.data || []) as any[])].map(normalizeBuyerInfo)
+  const seen = new Set<string>()
+  buyerSuggestions.value = rows.filter(row => {
+    if (seen.has(row.id)) return false
+    seen.add(row.id)
+    return true
+  })
+}
+
+async function fetchBuyerById(id: string): Promise<BuyerInfo | null> {
+  if (!id.trim()) return null
   const { data } = await supabase
-    .from('buyers')
-    .select('id, name, status, rating, total_orders')
-    .ilike('name', `%${buyerInput.value.trim()}%`)
-    .limit(8)
-  buyerSuggestions.value = data || []
+    .from('erp_buyers')
+    .select('id, buyer_number, name, status, total_completed, success_rate, after_sale_rate, is_prime_member')
+    .eq(isUuidLike(id) ? 'id' : 'buyer_number', id.trim())
+    .maybeSingle()
+  return data ? normalizeBuyerInfo(data) : null
 }
 
 function selectBuyer(b: BuyerInfo) {
@@ -598,13 +849,17 @@ function clearBuyer() {
   singleResult.value = null
 }
 
-async function fetchBuyerInfo(name: string): Promise<BuyerInfo | null> {
+async function fetchBuyerInfo(buyerKey: string): Promise<BuyerInfo | null> {
+  const keyword = buyerKey.trim()
+  const buyerById = await fetchBuyerById(keyword)
+  if (buyerById) return buyerById
+
   const { data } = await supabase
-    .from('buyers')
-    .select('id, name, status, rating, total_orders')
-    .ilike('name', name)
-    .maybeSingle()
-  return data as BuyerInfo | null
+    .from('erp_buyers')
+    .select('id, buyer_number, name, status, total_completed, success_rate, after_sale_rate, is_prime_member')
+    .ilike('name', keyword)
+    .limit(1)
+  return ((data || []) as any[]).map(normalizeBuyerInfo)[0] || null
 }
 
 function normalizeText(value: any) {
@@ -839,6 +1094,172 @@ function buildDimensionTargets(dimKey: string, associations: AsinAssociation[]) 
   return uniqueFilled([manual])
 }
 
+function setCheckMode(mode: CheckMode) {
+  activeCheckMode.value = mode
+}
+
+function buildManualAssociation(mode: CheckMode, targetValue: string): AsinAssociation {
+  const value = targetValue.trim()
+  return {
+    key: `manual|${mode}|${value}`,
+    asin: mode === 'asin' ? normalizeAsin(value) : '—',
+    storeId: '',
+    storeName: mode === 'store' ? value : '',
+    brandName: mode === 'brand' ? value : '',
+    contactId: '',
+    contactName: '',
+    companyId: '',
+    companyName: mode === 'customer' || mode === 'company' ? value : '',
+    customerIdStr: mode === 'customer' || mode === 'company' ? value : '',
+    productName: '',
+    productImage: '',
+    productPrice: 0,
+    source: 'order_snapshot',
+    lastOrderAt: '',
+    orderCount: 0,
+  }
+}
+
+function truthyRuleValue(value: any) {
+  if (value === true) return true
+  if (typeof value === 'number') return value > 0
+  const text = normalizeText(value)
+  return ['true', '1', 'yes', 'y', 'on', 'enabled', 'enable', '开启', '已开启', '是'].includes(text)
+}
+
+function readTaskRuleFlag(row: any, keys: string[]) {
+  for (const key of keys) {
+    if (row && Object.prototype.hasOwnProperty.call(row, key)) return truthyRuleValue(row[key])
+  }
+  return false
+}
+
+function extractTaskScopeOptions(taskRow: any): ScopeOptions {
+  return {
+    ...scopeOptions,
+    sameCustomerOtherStores: readTaskRuleFlag(taskRow, [
+      'same_customer_other_stores',
+      'same_customer_dedupe',
+      'customer_dedupe',
+      'full_store_dedupe',
+      'all_store_dedupe',
+      'dedupe_customer',
+      'enable_customer_dedupe',
+    ]),
+    sameCompanyAllStores: readTaskRuleFlag(taskRow, [
+      'same_company_all_stores',
+      'same_company_dedupe',
+      'company_dedupe',
+      'organization_dedupe',
+      'org_dedupe',
+      'dedupe_company',
+      'enable_company_dedupe',
+    ]),
+  }
+}
+
+function restrictionDimKeysForMode(mode: CheckMode) {
+  if (mode === 'full' || mode === 'task') return ['asin', 'store', 'brand', 'client_company']
+  if (mode === 'customer' || mode === 'company') return ['client_company']
+  return [mode]
+}
+
+function scopeOptionsForMode(mode: CheckMode): ScopeOptions {
+  return {
+    ...scopeOptions,
+    sameCustomerOtherStores: mode === 'customer' ? false : scopeOptions.sameCustomerOtherStores,
+    sameCompanyAllStores: mode === 'company' ? false : scopeOptions.sameCompanyAllStores,
+  }
+}
+
+async function buildTaskCheckContext(taskId: string) {
+  const normalizedTaskId = taskId.trim()
+  const { data: taskRow } = await supabase
+    .from('erp_orders')
+    .select('*')
+    .eq('id', normalizedTaskId)
+    .maybeSingle()
+
+  if (!taskRow) {
+    return {
+      asin: '',
+      associations: [buildManualAssociation('task', normalizedTaskId)],
+      mode: 'task' as CheckMode,
+      scope: scopeOptionsForMode('task'),
+      dimKeys: restrictionDimKeysForMode('task'),
+    }
+  }
+
+  const { data: subRows } = await supabase
+    .from('sub_orders')
+    .select('asin, store_name, brand_name, customer_name, customer_id_str, product_name, product_image, product_price, created_at')
+    .eq('order_id', normalizedTaskId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+
+  const firstSub = (subRows || [])[0] || {}
+  const asin = normalizeAsin(firstSub.asin || (taskRow as any).asin || '')
+  const association: AsinAssociation = {
+    key: `task|${normalizedTaskId}`,
+    asin,
+    storeId: (taskRow as any).store_id || '',
+    storeName: firstSub.store_name || (taskRow as any).store_name || '',
+    brandName: firstSub.brand_name || (taskRow as any).brand_name || '',
+    contactId: '',
+    contactName: '',
+    companyId: (taskRow as any).company_id || '',
+    companyName: firstSub.customer_name || (taskRow as any).customer_name || '',
+    customerIdStr: firstSub.customer_id_str || (taskRow as any).customer_id_str || '',
+    productName: firstSub.product_name || (taskRow as any).product_name || '',
+    productImage: firstSub.product_image || (taskRow as any).product_image || '',
+    productPrice: Number(firstSub.product_price || (taskRow as any).product_price || 0),
+    source: 'order_snapshot',
+    lastOrderAt: firstSub.created_at || (taskRow as any).created_at || '',
+    orderCount: 1,
+  }
+
+  return {
+    asin,
+    associations: [association],
+    mode: 'task' as CheckMode,
+    scope: extractTaskScopeOptions(taskRow),
+    dimKeys: restrictionDimKeysForMode('task'),
+  }
+}
+
+async function buildCheckContextForMode(mode: CheckMode) {
+  const config = checkModeOptions.find(item => item.key === mode) || checkModeOptions[0]
+  const rawValue = dimValues[config.inputKey].trim()
+  const targetValue = config.inputKey === 'asin' ? normalizeAsin(rawValue) : rawValue
+  if (!targetValue) return null
+
+  if (mode === 'task') return buildTaskCheckContext(targetValue)
+
+  if (mode === 'full' || mode === 'asin') {
+    const foundAssociations = await fetchAsinAssociations(targetValue)
+    const associations = foundAssociations.length > 0
+      ? foundAssociations
+      : mode === 'full'
+        ? buildMockAssociations(targetValue)
+        : [buildManualAssociation('asin', targetValue)]
+    return {
+      asin: targetValue,
+      associations,
+      mode,
+      scope: scopeOptionsForMode(mode),
+      dimKeys: restrictionDimKeysForMode(mode),
+    }
+  }
+
+  return {
+    asin: '',
+    associations: [buildManualAssociation(mode, targetValue)],
+    mode,
+    scope: scopeOptionsForMode(mode),
+    dimKeys: restrictionDimKeysForMode(mode),
+  }
+}
+
 async function fetchRestrictionRules(buyerName: string, dimKey: string, targetValues: string[]) {
   const targets = targetValues.length ? targetValues : ['']
   const allRules: RestrictionRule[] = []
@@ -1031,17 +1452,17 @@ function buildMockBlockingDemo(): CheckResult {
       records: [sameBrandRecord],
     },
     {
-      key: 'mock-same-customer',
-      title: '同客户其他店铺限制',
-      status: 'fail',
-      reason: `该客户开启了“全店排重”，已购买客户「${assoc.companyName}」下其他店铺。`,
+      key: 'mock-full-customer-history',
+      title: '客户历史查询',
+      status: 'pass',
+      reason: `该买手有购买过客户「${assoc.companyName}」下的历史订单，是否拦截需使用任务校验判断。`,
       records: [sameCustomerRecord],
     },
     {
-      key: 'mock-same-company',
-      title: '同客户公司限制',
-      status: 'fail',
-      reason: '该客户开启了“组织级排重”，已购买同公司主体下其他店铺。',
+      key: 'mock-full-company-history',
+      title: '客户公司历史查询',
+      status: 'pass',
+      reason: '该买手有购买过公司主体「Demo Trading Group」下的历史订单，是否拦截需使用任务校验判断。',
       records: [sameCompanyRecord],
     },
     {
@@ -1147,7 +1568,7 @@ function buildMockBuyerResult(
       key: `${buyerName}-same-customer`,
       title: '同客户其他店铺限制',
       status: 'fail',
-      reason: `该客户开启了“全店排重”，${buyerName} 命中客户「${assoc.companyName}」其他店铺限制。`,
+      reason: `此任务开启了“全店排重”，${buyerName} 命中客户「${assoc.companyName}」其他店铺限制。`,
       records: [{
         id: `${buyerName}-customer`,
         orderNumber: `SUB-${normalizeText(buyerName).replace(/\s+/g, '-').toUpperCase()}-C01`,
@@ -1164,7 +1585,7 @@ function buildMockBuyerResult(
       key: `${buyerName}-same-company`,
       title: '同客户公司限制',
       status: 'fail',
-      reason: `该客户开启了“组织级排重”，${buyerName} 命中同公司主体限制。`,
+      reason: `此任务开启了“组织级排重”，${buyerName} 命中同公司主体限制。`,
       records: [{
         id: `${buyerName}-company`,
         orderNumber: `SUB-${normalizeText(buyerName).replace(/\s+/g, '-').toUpperCase()}-O01`,
@@ -1203,12 +1624,419 @@ function buildMockBuyerResult(
   }
 }
 
+function mockModeTarget(mode: CheckMode) {
+  if (mode === 'store') return 'FreshJoy Home'
+  if (mode === 'brand') return 'FreshJoy'
+  if (mode === 'customer') return 'Demo Trading LLC'
+  if (mode === 'company') return 'Demo Trading Group'
+  if (mode === 'task') return '00000000-0000-0000-0000-000000000001'
+  return 'B0MOCKSINGLE01'
+}
+
+function buildSingleDimensionMockAssociations(mode: CheckMode): AsinAssociation[] {
+  const target = mockModeTarget(mode)
+  if (mode === 'task') {
+    return [{
+      key: `mock-single|task|${target}`,
+      asin: 'B0MOCKTASK01',
+      storeId: '',
+      storeName: 'FreshJoy Home',
+      brandName: 'FreshJoy',
+      contactId: '',
+      contactName: '',
+      companyId: '',
+      companyName: 'Demo Trading Group',
+      customerIdStr: 'ORG-GROUP',
+      productName: '',
+      productImage: '',
+      productPrice: 0,
+      source: 'order_snapshot',
+      lastOrderAt: '',
+      orderCount: 0,
+      isMock: true,
+    }]
+  }
+  return [{
+    key: `mock-single|${mode}|${target}`,
+    asin: mode === 'asin' ? target : '—',
+    storeId: '',
+    storeName: mode === 'store' ? target : '',
+    brandName: mode === 'brand' ? target : '',
+    contactId: '',
+    contactName: '',
+    companyId: '',
+    companyName: mode === 'customer' || mode === 'company' ? target : '',
+    customerIdStr: mode === 'customer' || mode === 'company' ? target : '',
+    productName: '',
+    productImage: '',
+    productPrice: 0,
+    source: 'order_snapshot',
+    lastOrderAt: '',
+    orderCount: 0,
+    isMock: true,
+  }]
+}
+
+function buildSingleDimensionRisk(
+  mode: Exclude<CheckMode, 'full'>,
+  status: 'pass' | 'fail' | 'enabled-pass' | 'disabled-pass',
+): BuyerHistoryRisk {
+  const target = mockModeTarget(mode)
+  const record: BuyerHistoryRecord = {
+    id: `mock-single-${mode}`,
+    orderNumber: `SUB-MOCK-${mode.toUpperCase()}-01`,
+    asin: mode === 'asin' ? target : mode === 'task' ? 'B0MOCKTASK01' : `B0MOCK${mode.toUpperCase()}01`,
+    storeName: mode === 'store' ? target : 'FreshJoy History Store',
+    brandName: mode === 'brand' ? target : 'FreshJoy',
+    customerName: mode === 'customer' || mode === 'company' ? target : mode === 'task' ? 'Demo Trading Group' : 'Demo Trading LLC',
+    customerIdStr: mode === 'customer' || mode === 'company' ? target : mode === 'task' ? 'ORG-GROUP' : 'ORG-DEMO',
+    date: mockRiskDate(mode === 'brand' ? 8 : 21),
+    isMock: true,
+  }
+
+  if (mode === 'task') {
+    return {
+      key: 'mock-task-company-dedupe',
+      title: '任务排重规则',
+      status: status === 'fail' ? 'fail' : 'pass',
+      reason: status === 'fail'
+        ? '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单，不可下单。'
+        : status === 'enabled-pass'
+          ? '此任务开启了“全店排重”和“组织级排重”，未发现该买手命中客户或公司主体历史，可下单。'
+          : '此任务未开启“全店排重”和“组织级排重”，可下单。',
+      records: status === 'fail' ? [record] : [],
+    }
+  }
+  const normalizedStatus: BuyerHistoryRisk['status'] = status === 'fail' ? 'fail' : 'pass'
+
+  if (mode === 'asin') {
+    return {
+      key: 'mock-single-asin',
+      title: '同买手重复 ASIN',
+      status: normalizedStatus,
+      reason: status === 'fail'
+        ? `该买手已购买过 ASIN ${target}，不可下单。`
+        : `该买手未购买过 ASIN ${target}，可下单。`,
+      records: status === 'fail' ? [record] : [],
+    }
+  }
+
+  if (mode === 'store') {
+    return {
+      key: 'mock-single-store',
+      title: '同店铺历史限制',
+      status: normalizedStatus,
+      reason: status === 'fail'
+        ? `3 个月内已购买过店铺「${target}」。`
+        : `该买手 3 个月内未购买过店铺「${target}」，可下单。`,
+      records: status === 'fail' ? [record] : [],
+    }
+  }
+
+  if (mode === 'brand') {
+    return {
+      key: 'mock-single-brand',
+      title: '同品牌 1 个月限制',
+      status: normalizedStatus,
+      reason: status === 'fail'
+        ? `1 个月内已购买过品牌「${target}」。`
+        : `该买手未在 1 个月内购买过品牌「${target}」的 ASIN，可下单。`,
+      records: status === 'fail' ? [record] : [],
+    }
+  }
+
+  if (mode === 'customer') {
+    return {
+      key: 'mock-single-customer',
+      title: '客户历史查询',
+      status: 'pass',
+      reason: status === 'fail'
+        ? `该买手有购买过客户「${target}」下的历史订单，是否拦截需结合任务规则判断。`
+        : `未发现该买手购买过客户「${target}」下的历史订单。`,
+      records: status === 'fail' ? [record] : [],
+    }
+  }
+
+  return {
+    key: 'mock-single-company',
+    title: '客户公司历史查询',
+    status: 'pass',
+    reason: status === 'fail'
+      ? `该买手有购买过公司主体「${target}」下的历史订单，是否拦截需结合任务规则判断。`
+      : `未发现该买手购买过公司主体「${target}」下的历史订单。`,
+    records: status === 'fail' ? [record] : [],
+  }
+}
+
+function buildSingleDimensionMockResult(
+  mode: Exclude<CheckMode, 'full'>,
+  status: 'pass' | 'fail' | 'enabled-pass' | 'disabled-pass',
+  associations: AsinAssociation[],
+): CheckResult {
+  const risk = buildSingleDimensionRisk(mode, status)
+  return {
+    buyerName: 'Michael Brown',
+    buyerInfo: {
+      id: 'mock-buyer',
+      name: 'Michael Brown',
+      status: 'active',
+      rating: 4.8,
+      total_orders: 13,
+    },
+    items: [],
+    asinAssociations: associations,
+    buyerHistory: {
+      total: risk.records.length,
+      risks: [risk],
+      hasBlockingRisk: risk.status === 'fail',
+    },
+    overallPass: risk.status !== 'fail',
+    passCount: risk.status === 'pass' ? 1 : 0,
+    failCount: risk.status === 'fail' ? 1 : 0,
+    warnCount: 0,
+    usingMock: true,
+  }
+}
+
+function buildTaskMockDemo(status: 'pass' | 'fail'): CheckResult {
+  const associations = [{
+    ...buildMockAssociations('B0MOCKTASK01')[0],
+    key: 'mock-task-context',
+    asin: 'B0MOCKTASK01',
+    storeName: 'FreshJoy Home',
+    brandName: 'FreshJoy',
+    companyName: 'Demo Trading Group',
+    customerIdStr: 'ORG-GROUP',
+    isMock: true,
+  }]
+  const assoc = associations[0]
+  const sameAsinRecord: BuyerHistoryRecord = {
+    id: 'mock-task-same-asin',
+    orderNumber: 'SUB-TASK-ASIN-01',
+    asin: assoc.asin,
+    storeName: assoc.storeName,
+    brandName: assoc.brandName,
+    customerName: assoc.companyName,
+    customerIdStr: assoc.customerIdStr,
+    date: mockRiskDate(26),
+    isMock: true,
+  }
+  const sameStoreRecord: BuyerHistoryRecord = {
+    id: 'mock-task-same-store',
+    orderNumber: 'SUB-TASK-STORE-01',
+    asin: 'B0TASKSTORE02',
+    storeName: assoc.storeName,
+    brandName: 'OtherBrand',
+    customerName: assoc.companyName,
+    customerIdStr: assoc.customerIdStr,
+    date: mockRiskDate(42),
+    isMock: true,
+  }
+  const companyRecord: BuyerHistoryRecord = {
+    id: 'mock-task-company',
+    orderNumber: 'SUB-TASK-ORG-01',
+    asin: 'B0TASKORG03',
+    storeName: 'FreshJoy Company Store',
+    brandName: 'KitchenPeak',
+    customerName: assoc.companyName,
+    customerIdStr: assoc.customerIdStr,
+    date: mockRiskDate(58),
+    isMock: true,
+  }
+  const comboRecord: BuyerHistoryRecord = {
+    id: 'mock-task-combo',
+    orderNumber: 'SUB-TASK-COMBO-01',
+    asin: 'B0MOCKCOMBO01',
+    storeName: assoc.storeName,
+    brandName: assoc.brandName,
+    customerName: assoc.companyName,
+    customerIdStr: assoc.customerIdStr,
+    date: mockRiskDate(7),
+    isMock: true,
+  }
+
+  const risks: BuyerHistoryRisk[] = status === 'pass'
+    ? [
+        {
+          key: 'mock-task-pass-asin',
+          title: '同买手重复 ASIN',
+          status: 'pass',
+          reason: `该买手未购买过任务 ASIN ${assoc.asin}。`,
+          records: [],
+        },
+        {
+          key: 'mock-task-pass-store',
+          title: '同店铺历史限制',
+          status: 'pass',
+          reason: `该买手 3 个月内未购买过任务店铺「${assoc.storeName}」。`,
+          records: [],
+        },
+        {
+          key: 'mock-task-pass-brand',
+          title: '同品牌 1 个月限制',
+          status: 'pass',
+          reason: `该买手 1 个月内未购买过任务品牌「${assoc.brandName}」。`,
+          records: [],
+        },
+        {
+          key: 'mock-task-pass-customer',
+          title: '任务排重规则',
+          status: 'pass',
+          reason: '此任务开启了“全店排重”和“组织级排重”，未发现客户或公司主体历史命中，可下单。',
+          records: [],
+        },
+      ]
+    : [
+        {
+          key: 'mock-task-fail-asin',
+          title: '同买手重复 ASIN',
+          status: 'fail',
+          reason: `该买手已购买过任务 ASIN ${assoc.asin}，不可下单。`,
+          records: [sameAsinRecord],
+        },
+        {
+          key: 'mock-task-fail-store',
+          title: '同店铺历史限制',
+          status: 'fail',
+          reason: `3 个月内已购买过任务店铺「${assoc.storeName}」，不可下单。`,
+          records: [sameStoreRecord],
+        },
+        {
+          key: 'mock-task-fail-company',
+          title: '同客户公司限制',
+          status: 'fail',
+          reason: '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单，不可下单。',
+          records: [companyRecord],
+        },
+        {
+          key: 'mock-task-fail-combo',
+          title: 'ASIN 组合购买风险',
+          status: 'fail',
+          reason: '该买手继续接此任务会形成高风险 ASIN 组合购买轨迹，不可下单。',
+          records: [comboRecord],
+          detailLines: [
+            '组合：B0MOCKCOMBO01 + B0MOCKTASK01',
+            '历史轨迹：该买手已购买组合内产品 B0MOCKCOMBO01',
+            '本次任务：继续购买 B0MOCKTASK01 会形成相同组合购买轨迹。',
+          ],
+        },
+      ]
+
+  return {
+    buyerName: 'Michael Brown',
+    buyerInfo: {
+      id: 'mock-buyer',
+      name: 'Michael Brown',
+      status: 'active',
+      rating: 4.8,
+      total_orders: 13,
+    },
+    items: [],
+    asinAssociations: associations,
+    buyerHistory: {
+      total: status === 'fail' ? 4 : 0,
+      risks,
+      hasBlockingRisk: status === 'fail',
+    },
+    overallPass: status === 'pass',
+    passCount: risks.filter(r => r.status === 'pass').length,
+    failCount: risks.filter(r => r.status === 'fail').length,
+    warnCount: 0,
+    usingMock: true,
+  }
+}
+
+function showTaskMockDemo(status: 'pass' | 'fail') {
+  activeCheckMode.value = 'task'
+  dimValues.task_id = mockModeTarget('task')
+  buyerInput.value = 'Michael Brown'
+  selectedBuyer.value = {
+    id: 'mock-buyer',
+    name: 'Michael Brown',
+    status: 'active',
+    rating: 4.8,
+    total_orders: 13,
+  }
+  buyerSuggestions.value = []
+  batchResults.value = []
+  expandedBatch.value = []
+  singleResult.value = buildTaskMockDemo(status)
+}
+
+function showSingleDimensionGroupDemo(status: 'pass' | 'fail') {
+  activeCheckMode.value = selectedSingleDimensionMode.value
+  showMockSingleDimensionDemo(status)
+}
+
+function showMockSingleDimensionDemo(status: 'pass' | 'fail' | 'enabled-pass' | 'disabled-pass') {
+  const mode = activeCheckMode.value === 'full' ? 'asin' : activeCheckMode.value
+  const target = mockModeTarget(mode)
+  const associations = buildSingleDimensionMockAssociations(mode)
+  activeCheckMode.value = mode
+  dimValues[activeModeConfig.value.inputKey] = target
+  buyerInput.value = 'Michael Brown'
+  selectedBuyer.value = {
+    id: 'mock-buyer',
+    name: 'Michael Brown',
+    status: 'active',
+    rating: 4.8,
+    total_orders: 13,
+  }
+  buyerSuggestions.value = []
+  batchResults.value = []
+  expandedBatch.value = []
+  singleResult.value = buildSingleDimensionMockResult(mode, status, associations)
+}
+
+function withMockBuyer(result: CheckResult, buyerName: string): CheckResult {
+  return {
+    ...result,
+    buyerName,
+    buyerInfo: result.buyerInfo
+      ? {
+          ...result.buyerInfo,
+          id: `mock-${normalizeText(buyerName).replace(/\s+/g, '-')}`,
+          name: buyerName,
+        }
+      : null,
+  }
+}
+
 function showMockBatchDemo() {
+  const mode = activeCheckMode.value
+  buyerInput.value = 'Michael Brown\nEmily Stone\nJames Wilson'
+  selectedBuyer.value = null
+  buyerSuggestions.value = []
+  singleResult.value = null
+  expandedBatch.value = []
+
+  if (mode === 'task') {
+    dimValues.task_id = mockModeTarget('task')
+    batchResults.value = [
+      withMockBuyer(buildTaskMockDemo('fail'), 'Michael Brown'),
+      withMockBuyer(buildTaskMockDemo('pass'), 'Emily Stone'),
+      withMockBuyer(buildTaskMockDemo('fail'), 'James Wilson'),
+    ]
+    return
+  }
+
+  if (mode !== 'full') {
+    const singleMode = selectedSingleDimensionMode.value
+    const target = mockModeTarget(singleMode)
+    const associations = buildSingleDimensionMockAssociations(singleMode)
+    dimValues[activeModeConfig.value.inputKey] = target
+    batchResults.value = [
+      withMockBuyer(buildSingleDimensionMockResult(singleMode, 'fail', associations), 'Michael Brown'),
+      withMockBuyer(buildSingleDimensionMockResult(singleMode, 'pass', associations), 'Emily Stone'),
+      withMockBuyer(buildSingleDimensionMockResult(singleMode, 'fail', associations), 'James Wilson'),
+    ]
+    return
+  }
+
   const asin = 'B0MOCKBATCH01'
   const associations = buildMockAssociations(asin)
+  activeCheckMode.value = 'full'
   dimValues.asin = asin
-  batchPanelOpen.value = true
-  batchInput.value = 'Michael Brown\nEmily Stone\nJames Wilson'
   const michael = buildMockBuyerResult('Michael Brown', ['asin', 'store', 'brand'], asin, associations)
   michael.buyerHistory.risks.push({
     key: 'michael-batch-combo',
@@ -1233,6 +2061,7 @@ function showMockBatchDemo() {
 }
 
 function showMockBlockingDemo() {
+  activeCheckMode.value = 'full'
   buyerInput.value = 'Michael Brown'
   dimValues.asin = 'B0MOCKBLOCK01'
   selectedBuyer.value = {
@@ -1246,11 +2075,88 @@ function showMockBlockingDemo() {
   singleResult.value = buildMockBlockingDemo()
 }
 
+function buildFullPassDemo(): CheckResult {
+  const asin = 'B0MOCKPASS01'
+  const buyerName = 'Michael Brown'
+  const associations = buildMockAssociations(asin)
+  const assoc = associations[0]
+  const risks: BuyerHistoryRisk[] = [
+    {
+      key: 'mock-full-pass-asin',
+      title: '同买手重复 ASIN',
+      status: 'pass',
+      reason: `该买手未购买过 ASIN ${asin}，可下单。`,
+      records: [],
+    },
+    {
+      key: 'mock-full-pass-store',
+      title: '同店铺历史限制',
+      status: 'pass',
+      reason: `该买手 3 个月内未购买过店铺「${assoc.storeName}」，可下单。`,
+      records: [],
+    },
+    {
+      key: 'mock-full-pass-brand',
+      title: '同品牌 1 个月限制',
+      status: 'pass',
+      reason: `该买手 1 个月内未购买过品牌「${assoc.brandName}」的 ASIN，可下单。`,
+      records: [],
+    },
+    {
+      key: 'mock-full-customer-history',
+      title: '客户/公司历史查询',
+      status: 'pass',
+      reason: '未发现客户或公司主体历史购买记录；如需最终排重结论，请使用任务校验。',
+      records: [],
+    },
+  ]
+  return {
+    buyerName,
+    buyerInfo: {
+      id: 'mock-buyer',
+      name: buyerName,
+      status: 'active',
+      rating: 4.8,
+      total_orders: 13,
+    },
+    items: [],
+    asinAssociations: associations,
+    buyerHistory: {
+      total: 0,
+      risks,
+      hasBlockingRisk: false,
+    },
+    overallPass: true,
+    passCount: risks.length,
+    failCount: 0,
+    warnCount: 0,
+    usingMock: true,
+  }
+}
+
+function showFullPassDemo() {
+  activeCheckMode.value = 'full'
+  buyerInput.value = 'Michael Brown'
+  dimValues.asin = 'B0MOCKPASS01'
+  selectedBuyer.value = {
+    id: 'mock-buyer',
+    name: 'Michael Brown',
+    status: 'active',
+    rating: 4.8,
+    total_orders: 13,
+  }
+  buyerSuggestions.value = []
+  batchResults.value = []
+  expandedBatch.value = []
+  singleResult.value = buildFullPassDemo()
+}
+
 async function fetchBuyerAsinHistory(
   buyerInfo: BuyerInfo | null,
   asin: string,
   associations: AsinAssociation[],
   options: ScopeOptions,
+  mode: CheckMode = 'full',
 ): Promise<BuyerHistorySummary> {
   if (!buyerInfo?.id) {
     return {
@@ -1290,18 +2196,27 @@ async function fetchBuyerAsinHistory(
   const currentAsin = normalizeAsin(asin)
   const currentStores = new Set(associations.map(a => normalizeText(a.storeName)).filter(Boolean))
   const currentBrands = new Set(associations.map(a => a.brandName).filter(b => b && !isGeneralBrand(b)).map(normalizeText))
-  const sameAsinRecords = historyRecords.filter(r => normalizeAsin(r.asin) === currentAsin)
-  const firstSameAsin = sameAsinRecords[0]
+  const shouldCheckAsin = Boolean(currentAsin) && (mode === 'full' || mode === 'task' || mode === 'asin')
+  const shouldCheckStore = currentStores.size > 0 && (mode === 'full' || mode === 'task' || mode === 'store')
+  const shouldCheckBrand = currentBrands.size > 0 && (mode === 'full' || mode === 'task' || mode === 'brand')
+  const shouldCheckCustomer = mode === 'customer' || (mode === 'task' && options.sameCustomerOtherStores) || (mode === 'full' && options.sameCustomerOtherStores)
+  const shouldCheckCompany = mode === 'company' || (mode === 'task' && options.sameCompanyAllStores) || (mode === 'full' && options.sameCompanyAllStores)
 
-  risks.push({
-    key: 'same-asin',
-    title: '同买手重复 ASIN',
-    status: sameAsinRecords.length > 0 ? 'fail' : 'pass',
-    reason: sameAsinRecords.length > 0
-      ? `该买手已购买过当前 ASIN。`
-      : `该买手未购买过 ASIN ${currentAsin}，可继续校验下单。`,
-    records: sameAsinRecords,
-  })
+  if (shouldCheckAsin) {
+    const sameAsinRecords = currentAsin
+      ? historyRecords.filter(r => normalizeAsin(r.asin) === currentAsin)
+      : []
+
+    risks.push({
+      key: 'same-asin',
+      title: '同买手重复 ASIN',
+      status: sameAsinRecords.length > 0 ? 'fail' : 'pass',
+      reason: sameAsinRecords.length > 0
+        ? `该买手已购买过当前 ASIN。`
+        : `该买手未购买过 ASIN ${currentAsin}，可继续校验下单。`,
+      records: sameAsinRecords,
+    })
+  }
 
   const sameStoreRecords = currentStores.size
     ? historyRecords.filter(r => currentStores.has(normalizeText(r.storeName)))
@@ -1313,59 +2228,118 @@ async function fetchBuyerAsinHistory(
     : sameStoreRecords.length === 1
       ? 'warn'
       : 'pass'
-  risks.push({
-    key: 'same-store',
-    title: '同店铺历史限制',
-    status: storeStatus,
-    reason: storeStatus === 'fail'
-      ? sameStoreRecords.length >= 2
-        ? `店铺「${firstSameStore?.storeName || '未知店铺'}」已达到终身限制条件。`
-        : `3 个月内已购买过店铺「${firstSameStore?.storeName || '未知店铺'}」。`
-      : storeStatus === 'warn'
-        ? `该买手历史上已有 1 次同店铺记录（${makeRiskRecordText(firstSameStore)}）；若本次允许，后续将进入该店铺终身限制。`
-        : '该买手 3 个月内未购买过此 ASIN 对应店铺，可下单。',
-    records: sameStoreRecords,
-  })
+  if (shouldCheckStore) {
+    risks.push({
+      key: 'same-store',
+      title: '同店铺历史限制',
+      status: storeStatus,
+      reason: storeStatus === 'fail'
+        ? sameStoreRecords.length >= 2
+          ? `店铺「${firstSameStore?.storeName || '未知店铺'}」已达到终身限制条件。`
+          : `3 个月内已购买过店铺「${firstSameStore?.storeName || '未知店铺'}」。`
+        : storeStatus === 'warn'
+          ? `该买手历史上已有 1 次同店铺记录（${makeRiskRecordText(firstSameStore)}）；若本次允许，后续将进入该店铺终身限制。`
+          : '该买手 3 个月内未购买过此店铺，可下单。',
+      records: sameStoreRecords,
+    })
+  }
 
   const sameBrandRecords = currentBrands.size
     ? historyRecords.filter(r => currentBrands.has(normalizeText(r.brandName)) && isWithinLastMonths(r.date, 1))
     : []
   const currentBrandLabel = associations.find(a => a.brandName && !isGeneralBrand(a.brandName))?.brandName || ''
-  const firstBrandRecord = sameBrandRecords[0]
-  risks.push({
-    key: 'same-brand-1m',
-    title: '同品牌 1 个月限制',
-    status: currentBrandLabel && sameBrandRecords.length > 0 ? 'fail' : 'pass',
-    reason: !currentBrandLabel
-      ? '当前品牌为 General 或未识别品牌，不进入同品牌 1 个月限制。'
-      : sameBrandRecords.length > 0
-        ? `1 个月内已购买过品牌「${currentBrandLabel}」。`
-        : `该买手未在 1 个月内购买过品牌「${currentBrandLabel}」的 ASIN，可下单。`,
-    records: sameBrandRecords,
-  })
+  if (shouldCheckBrand) {
+    risks.push({
+      key: 'same-brand-1m',
+      title: '同品牌 1 个月限制',
+      status: currentBrandLabel && sameBrandRecords.length > 0 ? 'fail' : 'pass',
+      reason: !currentBrandLabel
+        ? '当前品牌为 General 或未识别品牌，不进入同品牌 1 个月限制。'
+        : sameBrandRecords.length > 0
+          ? `1 个月内已购买过品牌「${currentBrandLabel}」。`
+          : `该买手未在 1 个月内购买过品牌「${currentBrandLabel}」的 ASIN，可下单。`,
+      records: sameBrandRecords,
+    })
+  }
 
   const sameCustomerRecords = historyRecords.filter(r => matchesCurrentCustomer(r, associations))
   const otherStoreCustomerRecords = sameCustomerRecords.filter(r => !currentStores.has(normalizeText(r.storeName)))
-  if (options.sameCustomerOtherStores) {
+  if (
+    mode === 'task'
+    && !options.sameCustomerOtherStores
+    && !options.sameCompanyAllStores
+    && (associations[0]?.companyName || associations[0]?.customerIdStr)
+  ) {
+    risks.push({
+      key: 'task-dedupe-disabled',
+      title: '任务排重规则',
+      status: 'pass',
+      reason: '此任务未开启“全店排重”和“组织级排重”，可下单。',
+      records: [],
+    })
+  } else if (mode === 'task' && !options.sameCustomerOtherStores && (associations[0]?.companyName || associations[0]?.customerIdStr)) {
+    risks.push({
+      key: 'task-customer-dedupe-disabled',
+      title: '同客户其他店铺限制',
+      status: 'pass',
+      reason: '此任务未开启“全店排重”，可下单。',
+      records: [],
+    })
+  } else if (mode === 'customer') {
+    const customerLabel = associations[0]?.companyName || associations[0]?.customerIdStr || '当前客户'
+    risks.push({
+      key: 'customer-history-query',
+      title: '客户历史查询',
+      status: 'pass',
+      reason: sameCustomerRecords.length > 0
+        ? `该买手有购买过客户「${customerLabel}」下的历史订单，是否拦截需结合任务规则判断。`
+        : `未发现该买手购买过客户「${customerLabel}」下的历史订单。`,
+      records: sameCustomerRecords,
+    })
+  } else if (shouldCheckCustomer) {
     risks.push({
       key: 'same-customer-other-stores',
       title: '同客户其他店铺限制',
       status: otherStoreCustomerRecords.length > 0 ? 'fail' : 'pass',
       reason: otherStoreCustomerRecords.length > 0
-        ? '该客户开启了“全店排重”，已购买过当前客户下其他店铺。'
-        : '该客户开启了“全店排重”，未发现该买手命中其他店铺历史。',
+        ? '此任务开启了“全店排重”，该买手已购买过当前客户下其他店铺，不可下单。'
+        : '此任务开启了“全店排重”，未发现该买手命中其他店铺历史，可下单。',
       records: otherStoreCustomerRecords,
     })
   }
 
-  if (options.sameCompanyAllStores) {
+  if (
+    mode === 'task'
+    && !options.sameCompanyAllStores
+    && options.sameCustomerOtherStores
+    && (associations[0]?.companyName || associations[0]?.customerIdStr)
+  ) {
+    risks.push({
+      key: 'task-company-dedupe-disabled',
+      title: '同客户公司限制',
+      status: 'pass',
+      reason: '此任务未开启“组织级排重”，可下单。',
+      records: [],
+    })
+  } else if (mode === 'company') {
+    const companyLabel = associations[0]?.companyName || associations[0]?.customerIdStr || '当前公司主体'
+    risks.push({
+      key: 'company-history-query',
+      title: '客户公司历史查询',
+      status: 'pass',
+      reason: sameCustomerRecords.length > 0
+        ? `该买手有购买过公司主体「${companyLabel}」下的历史订单，是否拦截需结合任务规则判断。`
+        : `未发现该买手购买过公司主体「${companyLabel}」下的历史订单。`,
+      records: sameCustomerRecords,
+    })
+  } else if (shouldCheckCompany) {
     risks.push({
       key: 'same-company-all-stores',
       title: '同客户公司限制',
       status: sameCustomerRecords.length > 0 ? 'fail' : 'pass',
       reason: sameCustomerRecords.length > 0
-        ? '该客户开启了“组织级排重”，已购买过当前公司主体下的 ASIN。'
-        : '该客户开启了“组织级排重”，未发现该买手命中公司主体历史。',
+        ? '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单，不可下单。'
+        : '此任务开启了“组织级排重”，未发现该买手命中公司主体历史，可下单。',
       records: sameCustomerRecords,
     })
   }
@@ -1398,27 +2372,41 @@ async function fetchBuyerAsinHistory(
 
 async function checkOneBuyer(
   buyerName: string,
-  context: { asin?: string; associations?: AsinAssociation[]; scope?: ScopeOptions } = {},
+  context: {
+    asin?: string
+    associations?: AsinAssociation[]
+    scope?: ScopeOptions
+    mode?: CheckMode
+    dimKeys?: string[]
+  } = {},
+  buyerOverride: BuyerInfo | null = null,
 ): Promise<CheckResult> {
-  const buyerInfo = await fetchBuyerInfo(buyerName)
+  const buyerInfo = buyerOverride || await fetchBuyerInfo(buyerName)
+  const resolvedBuyerName = buyerInfo?.name || buyerName
   const items: DimResult[] = []
   const associations = context.associations || []
 
-  for (const dimKey of selectedDims.value) {
+  for (const dimKey of context.dimKeys || selectedDims.value) {
     const targets = buildDimensionTargets(dimKey, associations)
     const targetValue = targets.join(' / ')
-    const rules = await fetchRestrictionRules(buyerName, dimKey, targets)
+    const rules = await fetchRestrictionRules(resolvedBuyerName, dimKey, targets)
     const hasDeny = rules.some(r => r.rule_type === 'deny')
     let status: 'pass' | 'fail' | 'warn' = 'pass'
     if (hasDeny) status = 'fail'
-    else if (buyerInfo && buyerInfo.status !== 'active') status = 'warn'
+    else if (buyerInfo && !isBuyerActive(buyerInfo.status)) status = 'warn'
 
     items.push({ dimension: dimKey, targetValue, status, rules })
   }
 
-  if (!context.asin) return emptyCheckResult(buyerName, buyerInfo, items)
+  if (!context.asin && associations.length === 0) return emptyCheckResult(resolvedBuyerName, buyerInfo, items)
 
-  const buyerHistory = await fetchBuyerAsinHistory(buyerInfo, context.asin, associations, context.scope || scopeOptions)
+  const buyerHistory = await fetchBuyerAsinHistory(
+    buyerInfo,
+    context.asin || '',
+    associations,
+    context.scope || scopeOptions,
+    context.mode || 'full',
+  )
   const riskFailCount = buyerHistory.risks.filter(r => r.status === 'fail').length
   const riskWarnCount = buyerHistory.risks.filter(r => r.status === 'warn').length
   const riskPassCount = buyerHistory.risks.filter(r => r.status === 'pass').length
@@ -1427,7 +2415,7 @@ async function checkOneBuyer(
   const passCount = items.filter(i => i.status === 'pass').length + riskPassCount
 
   return {
-    buyerName,
+    buyerName: resolvedBuyerName,
     buyerInfo,
     items,
     asinAssociations: associations,
@@ -1441,31 +2429,39 @@ async function checkOneBuyer(
 }
 
 async function runSingleCheck() {
-  const asin = normalizeAsin(dimValues.asin)
-  if (!buyerInput.value.trim() || !asin) return
+  if (!canRunCheck.value) return
   buyerSuggestions.value = []
+  if (buyerNames.value.length > 1) {
+    await runBatchCheck()
+    return
+  }
   checking.value = true
+  batchResults.value = []
+  expandedBatch.value = []
   try {
-    const foundAssociations = await fetchAsinAssociations(asin)
-    const associations = foundAssociations.length > 0 ? foundAssociations : buildMockAssociations(asin)
-    singleResult.value = await checkOneBuyer(buyerInput.value.trim(), { asin, associations, scope: scopeOptions })
+    const context = await buildCheckContextForMode(activeCheckMode.value)
+    if (!context) return
+    singleResult.value = await checkOneBuyer(buyerNames.value[0], context, selectedBuyer.value)
   } finally {
     checking.value = false
   }
 }
 
 async function runBatchCheck() {
-  const asin = normalizeAsin(dimValues.asin)
-  if (batchNames.value.length === 0 || !asin) return
+  if (!canRunBatchCheck.value) return
   batchChecking.value = true
+  singleResult.value = null
   batchResults.value = []
   expandedBatch.value = []
-  const foundAssociations = await fetchAsinAssociations(asin)
-  const associations = foundAssociations.length > 0 ? foundAssociations : buildMockAssociations(asin)
-  for (const name of batchNames.value) {
-    batchResults.value.push(await checkOneBuyer(name, { asin, associations, scope: scopeOptions }))
+  try {
+    const context = await buildCheckContextForMode(activeCheckMode.value)
+    if (!context) return
+    for (const name of batchNames.value) {
+      batchResults.value.push(await checkOneBuyer(name, context))
+    }
+  } finally {
+    batchChecking.value = false
   }
-  batchChecking.value = false
 }
 
 function primaryAssociationText(result: CheckResult) {
@@ -1474,13 +2470,134 @@ function primaryAssociationText(result: CheckResult) {
   return `${assoc.asin} / ${assoc.storeName || '未知店铺'} / ${assoc.brandName || '未知品牌'} / ${assoc.companyName || assoc.customerIdStr || '未知客户'}`
 }
 
+function contextItems(result: CheckResult) {
+  const assoc = result.asinAssociations[0]
+  if (!assoc) return []
+  const customerValue = assoc.companyName || assoc.customerIdStr
+  return [
+    { label: 'ASIN', value: assoc.asin },
+    { label: '店铺', value: assoc.storeName },
+    { label: '品牌', value: assoc.brandName },
+    { label: '客户', value: customerValue },
+  ].filter(item => item.value && item.value !== '—')
+}
+
+function showContextCard(result: CheckResult) {
+  return !isSingleDimensionDemoResult(result)
+}
+
+function isSingleDimensionDemoResult(result: CheckResult) {
+  return result.usingMock
+    && result.buyerHistory.risks.length === 1
+    && contextItems(result).length <= 1
+}
+
+function primaryResultReason(result: CheckResult) {
+  if (isTaskDemoResult(result)) {
+    return result.overallPass
+      ? '此任务的 ASIN、店铺、品牌和已开启排重规则均未命中，可下单。'
+      : `此任务命中 ${blockingRisks(result).length} 个拦截维度，不可下单。`
+  }
+  if (isFullCheckResult(result)) {
+    return result.overallPass
+      ? '综合排查未命中 ASIN、店铺、品牌等拦截维度；客户/公司主体仅展示历史记录，最终排重请使用任务校验。'
+      : `综合排查命中 ${blockingRisks(result).length} 个拦截维度；客户/公司主体仅展示历史记录，不在此处直接拦截。`
+  }
+  const risks = result.buyerHistory.risks
+  if (result.overallPass) return risks.find(risk => risk.status === 'pass')?.reason || '未命中拦截规则。'
+  return blockingRisks(result)[0]?.reason || '命中拦截规则。'
+}
+
+function isFullCheckResult(result: CheckResult) {
+  return !isTaskDemoResult(result)
+    && !isHistoryOnlyResult(result)
+    && !isSingleDimensionDemoResult(result)
+    && contextItems(result).some(item => item.label === 'ASIN')
+}
+
+function isHistoryLookupRisk(risk: BuyerHistoryRisk) {
+  return [
+    'customer-history-query',
+    'company-history-query',
+    'mock-single-customer',
+    'mock-single-company',
+    'mock-full-customer-history',
+    'mock-full-company-history',
+  ].includes(risk.key)
+}
+
+function isHistoryOnlyResult(result: CheckResult) {
+  return result.buyerHistory.risks.length === 1
+    && isHistoryLookupRisk(result.buyerHistory.risks[0])
+}
+
+function hasHistoryRecords(result: CheckResult) {
+  return result.buyerHistory.risks.some(risk => risk.records.length > 0)
+}
+
+function resultHeroClass(result: CheckResult) {
+  if (isHistoryOnlyResult(result)) return hasHistoryRecords(result) ? 'hero-neutral' : 'hero-pass'
+  return result.overallPass ? 'hero-pass' : 'hero-fail'
+}
+
+function heroBadgeClass(result: CheckResult) {
+  if (isHistoryOnlyResult(result)) return hasHistoryRecords(result) ? 'badge-neutral' : 'badge-pass'
+  return result.overallPass ? 'badge-pass' : 'badge-fail'
+}
+
+function heroStatusText(result: CheckResult) {
+  if (isHistoryOnlyResult(result)) return hasHistoryRecords(result) ? '有购买记录' : '无购买记录'
+  return result.overallPass ? '通过' : '拦截'
+}
+
+function riskBadgeText(risk: BuyerHistoryRisk) {
+  if (isHistoryLookupRisk(risk)) return risk.records.length > 0 ? '有记录' : '无记录'
+  return risk.status === 'fail' ? '拦截' : '通过'
+}
+
+function riskVisualStatus(risk: BuyerHistoryRisk) {
+  if (isHistoryLookupRisk(risk) && risk.records.length > 0) return 'fail'
+  return risk.status
+}
+
+function canExpandBatchResult(result: CheckResult) {
+  return !result.overallPass || (isHistoryOnlyResult(result) && hasHistoryRecords(result))
+}
+
+function isTaskDemoResult(result: CheckResult) {
+  return result.usingMock && result.buyerHistory.risks.some(risk => risk.key.startsWith('mock-task-'))
+}
+
 function blockingRisks(result: CheckResult) {
   return result.buyerHistory.risks.filter(r => r.status === 'fail')
 }
 
+function detailRisks(result: CheckResult) {
+  const blocking = blockingRisks(result)
+  if (blocking.length) {
+    const historyLookups = result.buyerHistory.risks.filter(risk => isHistoryLookupRisk(risk))
+    return [...blocking, ...historyLookups]
+  }
+  return result.buyerHistory.risks.filter(risk => risk.records.length > 0)
+}
+
+function detailSectionTitle(result: CheckResult) {
+  return blockingRisks(result).length > 0 ? '拦截明细' : '历史记录'
+}
+
+function detailSectionSubtitle(result: CheckResult) {
+  return blockingRisks(result).length > 0
+    ? '按维度展示具体原因和历史订单'
+    : '仅展示历史购买事实，是否拦截需结合任务规则判断'
+}
+
 function visibleRisks(result: CheckResult) {
   const blocking = blockingRisks(result)
-  return blocking.length ? blocking : result.buyerHistory.risks
+  if (blocking.length) {
+    const historyLookups = result.buyerHistory.risks.filter(risk => isHistoryLookupRisk(risk))
+    return [...blocking, ...historyLookups]
+  }
+  return result.buyerHistory.risks
 }
 
 function riskDimensionLabel(risk: BuyerHistoryRisk) {
@@ -1619,6 +2736,21 @@ function getDimIconComp(dim: string) {
 
 .buyer-input-wrap { position: relative; }
 
+.buyer-input-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 7px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.45;
+  .anticon {
+    margin-top: 2px;
+    color: #2563eb;
+    flex-shrink: 0;
+  }
+}
+
 .suggestions-panel {
   position: absolute;
   top: calc(100% + 4px);
@@ -1659,7 +2791,7 @@ function getDimIconComp(dim: string) {
 }
 
 .suggestion-info { flex: 1; min-width: 0; }
-.suggestion-name { font-size: 13px; font-weight: 600; color: #1e293b; }
+.suggestion-name { font-size: 13px; font-weight: 600; color: #1e293b; word-break: break-all; }
 .suggestion-meta { font-size: 11px; color: #94a3b8; }
 
 .suggestion-status {
@@ -1668,7 +2800,8 @@ function getDimIconComp(dim: string) {
   border-radius: 6px;
   font-weight: 600;
   &.active { background: #dcfce7; color: #16a34a; }
-  &.inactive { background: #fef2f2; color: #dc2626; }
+  &.inactive { background: #fef3c7; color: #d97706; }
+  &.blacklist { background: #fef2f2; color: #dc2626; }
 }
 
 .buyer-profile-card {
@@ -1697,7 +2830,7 @@ function getDimIconComp(dim: string) {
 }
 
 .profile-info { flex: 1; }
-.profile-name { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
+.profile-name { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 4px; word-break: break-all; }
 .profile-stats { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .profile-status {
@@ -1722,6 +2855,88 @@ function getDimIconComp(dim: string) {
   border-radius: 4px;
   transition: all .15s;
   &:hover { color: #ef4444; background: #fef2f2; }
+}
+
+.check-mode-panel {
+  margin-bottom: 18px;
+}
+
+.check-mode-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.check-mode-group {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.check-mode-group-title {
+  margin-bottom: 8px;
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.check-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  &.cols-1 {
+    grid-template-columns: 1fr;
+  }
+  &.cols-5 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.check-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 66px;
+  padding: 10px 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all .18s ease;
+  .anticon {
+    font-size: 17px;
+    color: #9ca3af;
+  }
+  &:hover {
+    color: #2563eb;
+    border-color: rgba(37, 99, 235, .35);
+    background: #eff6ff;
+    .anticon { color: #2563eb; }
+  }
+  &.active {
+    color: #2563eb;
+    border-color: rgba(37, 99, 235, .55);
+    background: rgba(37, 99, 235, .08);
+    box-shadow: 0 6px 18px rgba(37, 99, 235, .12);
+    .anticon { color: #2563eb; }
+  }
+}
+
+.mode-demo-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.common-demo-row {
+  margin-top: 12px;
 }
 
 .asin-lookup-hint {
@@ -1803,7 +3018,6 @@ function getDimIconComp(dim: string) {
 }
 
 .demo-btn {
-  margin-top: 10px;
   height: 40px;
   border-radius: 10px;
   color: #7c3aed;
@@ -1814,6 +3028,66 @@ function getDimIconComp(dim: string) {
     color: #6d28d9;
     border-color: #7c3aed;
     background: rgba(124, 58, 237, 0.1);
+  }
+}
+
+.demo-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.single-dim-demo-btn {
+  height: 40px;
+  border-radius: 10px;
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, .35);
+  background: rgba(37, 99, 235, .06);
+  font-weight: 700;
+  &:hover {
+    color: #1d4ed8;
+    border-color: #2563eb;
+    background: rgba(37, 99, 235, .1);
+  }
+}
+
+.single-dim-demo-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.single-dim-demo-btn.pass {
+  color: #059669;
+  border-color: rgba(5, 150, 105, .35);
+  background: rgba(5, 150, 105, .06);
+  &:hover {
+    color: #047857;
+    border-color: #059669;
+    background: rgba(5, 150, 105, .1);
+  }
+}
+
+.single-dim-demo-btn.fail {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, .35);
+  background: rgba(220, 38, 38, .06);
+  &:hover {
+    color: #b91c1c;
+    border-color: #dc2626;
+    background: rgba(220, 38, 38, .1);
+  }
+}
+
+.single-dim-demo-btn.neutral {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, .35);
+  background: rgba(37, 99, 235, .06);
+  &:hover {
+    color: #1d4ed8;
+    border-color: #2563eb;
+    background: rgba(37, 99, 235, .1);
   }
 }
 
@@ -1879,6 +3153,10 @@ function getDimIconComp(dim: string) {
     background: linear-gradient(135deg, #fef2f2 0%, #fff1f2 100%);
     border-color: #fecaca;
   }
+  &.hero-neutral {
+    background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+    border-color: rgba(37, 99, 235, .22);
+  }
 }
 
 .hero-left { display: flex; align-items: center; gap: 14px; }
@@ -1897,7 +3175,7 @@ function getDimIconComp(dim: string) {
   box-shadow: 0 4px 12px rgba(0,0,0,.15);
 }
 
-.hero-name { font-size: 20px; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
+.hero-name { font-size: 20px; font-weight: 800; color: #0f172a; margin-bottom: 6px; word-break: break-all; }
 .hero-info { display: flex; align-items: center; gap: 10px; }
 .hero-stat { font-size: 12px; color: #64748b; }
 .hero-unknown { font-size: 12px; color: #94a3b8; font-style: italic; }
@@ -1915,6 +3193,7 @@ function getDimIconComp(dim: string) {
   margin-bottom: 8px;
   &.badge-pass { background: #dcfce7; color: #15803d; }
   &.badge-fail { background: #fecaca; color: #dc2626; }
+  &.badge-neutral { background: #dbeafe; color: #2563eb; }
 }
 
 .hero-counts {
@@ -1923,6 +3202,14 @@ function getDimIconComp(dim: string) {
   justify-content: flex-end;
   font-size: 12px;
   font-weight: 600;
+}
+
+.hero-reason {
+  max-width: 360px;
+  margin-top: 4px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .hc-pass { color: #16a34a; }
@@ -2765,7 +4052,7 @@ function getDimIconComp(dim: string) {
 }
 
 .brc-info { min-width: 0; }
-.brc-name { font-size: 14px; font-weight: 700; color: #1e293b; }
+.brc-name { font-size: 14px; font-weight: 700; color: #1e293b; word-break: break-all; }
 .brc-meta { font-size: 11px; color: #94a3b8; }
 .brc-no-record { font-style: italic; }
 
