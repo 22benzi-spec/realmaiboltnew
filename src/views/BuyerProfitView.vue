@@ -140,6 +140,7 @@
         </a-table>
       </template>
     </div>
+
   </div>
 </template>
 
@@ -190,6 +191,14 @@ const monthlyColumns = [
   { title: '净盈亏', key: 'net', width: 130 },
 ]
 
+function isLossIssue(issue: any) {
+  return !!issue.principal_stolen
+}
+
+function getLossAmount(issue: any) {
+  return Number(issue.principal_amount || 0)
+}
+
 async function loadData() {
   loading.value = true
   try {
@@ -237,7 +246,7 @@ async function recalc() {
   let totalStolen = 0
   let totalProfit = 0
   filtered.forEach(i => {
-    if (i.principal_stolen) totalStolen += Number(i.principal_amount || 0)
+    if (isLossIssue(i)) totalStolen += getLossAmount(i)
     totalProfit += Number(i.profit_diff || 0)
   })
   summaryStats.value = {
@@ -267,9 +276,9 @@ async function recalc() {
       }
       const row = map.get(key)
       row.issue_count++
-      if (i.principal_stolen) {
+      if (isLossIssue(i)) {
         row.stolen_count++
-        row.stolen_amount += Number(i.principal_amount || 0)
+        row.stolen_amount += getLossAmount(i)
       }
       row.profit_diff += Number(i.profit_diff || 0)
       row.net = row.profit_diff - row.stolen_amount
@@ -305,9 +314,9 @@ async function recalc() {
       const row = map.get(key)
       row.issue_count++
       if (i.buyer_id) row.buyer_set.add(i.buyer_id)
-      if (i.principal_stolen) {
+      if (isLossIssue(i)) {
         row.stolen_count++
-        row.stolen_amount += Number(i.principal_amount || 0)
+        row.stolen_amount += getLossAmount(i)
       }
       row.profit_diff += Number(i.profit_diff || 0)
       row.net = row.profit_diff - row.stolen_amount
@@ -332,9 +341,9 @@ async function recalc() {
       }
       const row = map.get(m)
       row.issue_count++
-      if (i.principal_stolen) {
+      if (isLossIssue(i)) {
         row.stolen_count++
-        row.stolen_amount += Number(i.principal_amount || 0)
+        row.stolen_amount += getLossAmount(i)
       }
       row.profit_diff += Number(i.profit_diff || 0)
       row.net = row.profit_diff - row.stolen_amount
@@ -372,6 +381,10 @@ onMounted(loadData)
 
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+.detail-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.detail-title { font-size: 16px; font-weight: 700; color: #1a1a2e; }
+.detail-desc { margin-top: 4px; font-size: 12px; color: #6b7280; }
+.detail-count { font-size: 12px; color: #9ca3af; }
 
 .cell-buyer-name { font-weight: 600; color: #1a1a2e; }
 .cell-meta { font-size: 11px; color: #9ca3af; }

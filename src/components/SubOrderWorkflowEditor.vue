@@ -323,7 +323,7 @@
         </div>
       </div>
 
-      <div class="wf-panel">
+      <div v-if="showProofStep" class="wf-panel">
         <div class="wf-panel-head">
           <div class="wf-panel-header">
             <span class="wf-panel-index">4.</span>
@@ -357,7 +357,7 @@
       <div class="wf-panel">
         <div class="wf-panel-head">
           <div class="wf-panel-header">
-            <span class="wf-panel-index">5.</span>
+            <span class="wf-panel-index">{{ showProofStep ? '5.' : '4.' }}</span>
             <span>子单备注</span>
             <span v-if="task.notes" class="wf-panel-status done">已填写</span>
             <span v-else class="wf-panel-status todo">选填</span>
@@ -374,6 +374,7 @@
               @blur="saveOrderNotes(task)"
             />
           </div>
+          <slot name="order-notes-extra" :task="task"></slot>
         </div>
       </div>
     </div>
@@ -392,6 +393,7 @@ const props = withDefaults(defineProps<{
   showProcessedRefundList?: boolean
   showCorrectionAction?: boolean
   showReplaceProductButton?: boolean
+  showProofStep?: boolean
   replaceProductButtonLabel?: string
   detailHintText?: string
   deadlineAlert?: any | null
@@ -427,6 +429,7 @@ const props = withDefaults(defineProps<{
   showProcessedRefundList: false,
   showCorrectionAction: false,
   showReplaceProductButton: true,
+  showProofStep: true,
   replaceProductButtonLabel: '更换产品',
   detailHintText: '明细请点右侧「详情」查看',
   deadlineAlert: null,
@@ -466,6 +469,7 @@ const {
   showProcessedRefundList,
   showCorrectionAction,
   showReplaceProductButton,
+  showProofStep,
   replaceProductButtonLabel,
   detailHintText,
   deadlineAlert,

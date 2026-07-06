@@ -321,7 +321,7 @@ export interface AfterSaleIssue {
   store_name?: string
   product_price?: number
   issue_type: '不下单' | '取消' | '退款' | '无此订单'
-  issue_status: '待处理' | '处理中' | '已替换订单' | '需补单' | '已补单' | '已确认损失' | '已关闭'
+  issue_status: '待处理' | '处理中' | '已替换订单' | '无新单号' | '已补单' | '已确认损失' | '已关闭'
   principal_stolen?: boolean
   principal_amount?: number
   old_amazon_order_id?: string

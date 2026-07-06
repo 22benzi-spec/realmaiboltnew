@@ -2132,6 +2132,7 @@ function normalizeAfterSaleStatus(value: any) {
   const raw = String(value || '').trim()
   if (raw === '已替换订单') return '已替换单号'
   if (raw === '已退款给客户') return '无需处理'
+  if (raw === '需补单') return '无新单号'
   return raw
 }
 
@@ -2164,7 +2165,7 @@ function getAfterSaleResultLabel(record: AfterSaleRow) {
 function getAfterSaleStatusColor(status: any) {
   const normalized = normalizeAfterSaleStatus(status)
   if (['已替换单号', '已补单', '已追回本金', '已关闭', '无需处理'].includes(normalized)) return 'green'
-  if (['处理中', '需补单'].includes(normalized)) return 'processing'
+  if (['处理中', '无新单号'].includes(normalized)) return 'processing'
   if (['待处理', '待确认'].includes(normalized)) return 'orange'
   return 'default'
 }

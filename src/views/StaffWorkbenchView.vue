@@ -1667,6 +1667,7 @@ const afterSaleWorkbenchSummary = computed(() => {
   const normalize = (status: string) => {
     if (status === '已替换订单') return '已替换单号'
     if (status === '已退款给客户') return '无需处理'
+    if (status === '需补单') return '无新单号'
     return status || '待处理'
   }
   const getPrincipalStatus = (issue: any) => {
@@ -1683,8 +1684,8 @@ const afterSaleWorkbenchSummary = computed(() => {
   return {
     total,
     pending: issues.filter(issue => normalize(issue.issue_status) === '待处理').length,
-    processing: issues.filter(issue => ['处理中', '需补单'].includes(normalize(issue.issue_status))).length,
-    needReorder: issues.filter(issue => normalize(issue.issue_status) === '需补单').length,
+    processing: issues.filter(issue => ['处理中', '无新单号'].includes(normalize(issue.issue_status))).length,
+    needReorder: issues.filter(issue => normalize(issue.issue_status) === '无新单号').length,
     done,
     donePct: total ? Math.round((done / total) * 100) : 0,
     principalRisk: riskIssues.length,
@@ -3289,7 +3290,7 @@ function buildMockTasks() {
         id: 'mock_after_sale_1003',
         sub_order_id: 'mock_after_review_paypal_done',
         issue_type: '退款',
-        issue_status: '需补单',
+        issue_status: '无新单号',
         principal_stolen: true,
         principal_amount: 21.21,
         refund_to_client_method: '',

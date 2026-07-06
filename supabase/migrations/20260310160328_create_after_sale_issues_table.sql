@@ -19,7 +19,7 @@
       - `store_name` (text) - 店铺名
       - `product_price` (numeric) - 产品价格
       - `issue_type` (text) - 问题类型：不下单/取消/退款/无此订单
-      - `issue_status` (text) - 处理状态：待处理/处理中/已替换订单/需补单/已补单/已确认损失/已关闭
+      - `issue_status` (text) - 处理状态：待处理/处理中/已替换订单/无新单号/已补单/已确认损失/已关闭
       - `principal_stolen` (boolean) - 本金是否被骗
       - `principal_amount` (numeric) - 被骗本金金额
       - `old_amazon_order_id` (text) - 旧亚马逊订单号
