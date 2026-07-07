@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-text">
         <h1 class="page-title">买手校验中心</h1>
-        <p class="page-desc">支持全面排查和单维度校验，系统按风险维度输出判定原因和历史证据</p>
+        <p class="page-desc">支持任务校验和多维度查询，系统按买手、目标和风险维度输出判定原因与历史证据</p>
       </div>
     </div>
 
@@ -65,76 +65,115 @@
 
           <div class="check-mode-panel">
             <div class="field-label">校验方式 <span class="required">*</span></div>
-            <div class="check-mode-groups">
-              <div v-for="group in checkModeGroups" :key="group.key" class="check-mode-group">
-                <div class="check-mode-group-title">{{ group.title }}</div>
-                <div class="check-mode-grid" :class="'cols-' + group.modes.length">
-                  <button
-                    v-for="mode in group.modes"
-                    :key="mode.key"
-                    type="button"
-                    :class="['check-mode-card', { active: activeCheckMode === mode.key }]"
-                    @click="setCheckMode(mode.key)"
-                  >
-                    <component :is="mode.icon" />
-                    <span>{{ mode.shortLabel }}</span>
-                  </button>
-                </div>
-                <div v-if="group.key === 'final'" class="mode-demo-row">
-                  <a-button size="small" class="single-dim-demo-btn pass" @click="showTaskMockDemo('pass')">
-                    任务通过演示
-                  </a-button>
-                  <a-button size="small" class="single-dim-demo-btn fail" @click="showTaskMockDemo('fail')">
-                    任务综合拦截演示
-                  </a-button>
-                </div>
-                <div v-else-if="group.key === 'full'" class="mode-demo-row">
-                  <a-button size="small" class="single-dim-demo-btn pass" @click="showFullPassDemo">
-                    综合通过演示
-                  </a-button>
-                  <a-button size="small" class="demo-btn" @click="showMockBlockingDemo">
-                    多维拦截演示
-                  </a-button>
-                </div>
-                <div v-else class="mode-demo-row">
-                  <a-button
-                    size="small"
-                    :class="['single-dim-demo-btn', isHistoryOnlyMode ? 'neutral' : 'pass']"
-                    @click="showSingleDimensionGroupDemo('pass')"
-                  >
-                    {{ singleDimPassDemoText }}
-                  </a-button>
-                  <a-button
-                    size="small"
-                    :class="['single-dim-demo-btn', isHistoryOnlyMode ? 'neutral' : 'fail']"
-                    @click="showSingleDimensionGroupDemo('fail')"
-                  >
-                    {{ singleDimFailDemoText }}
-                  </a-button>
-                </div>
-              </div>
-              <div class="common-demo-row">
-                <a-button size="small" block class="batch-demo-btn" @click="showMockBatchDemo">
-                  当前方式批量演示
+            <div class="check-mode-grid cols-2">
+              <button
+                v-for="mode in mainCheckModes"
+                :key="mode.key"
+                type="button"
+                :class="['check-mode-card', { active: activeCheckMode === mode.key }]"
+                @click="setCheckMode(mode.key)"
+              >
+                <component :is="mode.icon" />
+                <span>{{ mode.shortLabel }}</span>
+              </button>
+            </div>
+            <div class="mode-demo-row">
+              <template v-if="activeCheckMode === 'task'">
+                <a-button size="small" class="single-dim-demo-btn pass" @click="showTaskMockDemo('pass')">
+                  任务通过演示
                 </a-button>
-              </div>
+                <a-button size="small" class="single-dim-demo-btn fail" @click="showTaskMockDemo('fail')">
+                  任务综合拦截演示
+                </a-button>
+              </template>
+              <template v-else>
+                <a-button size="small" class="single-dim-demo-btn pass" @click="showMultiDimensionDemo('pass')">
+                  多维通过演示
+                </a-button>
+                <a-button size="small" class="demo-btn" @click="showMultiDimensionDemo('fail')">
+                  多维拦截演示
+                </a-button>
+              </template>
+            </div>
+            <div class="common-demo-row">
+              <a-button
+                v-if="activeCheckMode !== 'task'"
+                size="small"
+                block
+                class="single-target-demo-btn"
+                @click="showSingleBuyerMultiTargetDemo"
+              >
+                单买手多目标演示
+              </a-button>
+              <a-button size="small" block class="batch-demo-btn" @click="showMockBatchDemo">
+                当前方式批量演示
+              </a-button>
             </div>
           </div>
 
-          <div class="field">
-            <label class="field-label">{{ activeModeConfig.inputLabel }} <span class="required">*</span></label>
+          <div v-if="activeCheckMode === 'task'" class="field">
+            <label class="field-label">任务ID <span class="required">*</span></label>
             <a-input
-              v-model:value="dimValues[activeModeConfig.inputKey]"
-              :placeholder="activeModeConfig.placeholder"
+              v-model:value="dimValues.task_id"
+              placeholder="输入任务ID，按本次任务规则判断排重"
               size="large"
               allow-clear
               @press-enter="runSingleCheck"
             >
-              <template #prefix><component :is="activeModeConfig.icon" style="color:#bbb" /></template>
+              <template #prefix><SafetyCertificateOutlined style="color:#bbb" /></template>
             </a-input>
             <div class="asin-lookup-hint">
-              {{ activeModeConfig.hint }}
+              读取当前任务规则，只有这里才判断全店排重/组织级排重是否开启。
             </div>
+          </div>
+
+          <div v-else class="multi-query-panel">
+            <div class="multi-query-head">
+              <div>
+                <div class="field-label">多维度查询条件 <span class="required">*</span></div>
+                <div class="asin-lookup-hint">自定义维度需要各填各的；全选快捷只填 ASIN，并自动带出关联店铺、品牌、客户和公司主体。</div>
+              </div>
+              <a-checkbox v-model:checked="fullAutoLookup">全选快捷</a-checkbox>
+            </div>
+
+            <template v-if="fullAutoLookup">
+              <div class="field compact-field">
+                <label class="field-label">ASIN <span class="required">*</span></label>
+                <a-textarea
+                  v-model:value="dimValues.asin"
+                  placeholder="每行一个 ASIN，系统自动带出关联维度"
+                  allow-clear
+                  :auto-size="{ minRows: 2, maxRows: 5 }"
+                />
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="multi-dim-selector">
+                <button
+                  v-for="dim in queryDimensionOptions"
+                  :key="dim.key"
+                  type="button"
+                  :class="['multi-dim-chip', { active: selectedQueryDims.includes(dim.key) }]"
+                  @click="toggleQueryDim(dim.key)"
+                >
+                  <component :is="dim.icon" />
+                  <span>{{ dim.label }}</span>
+                </button>
+              </div>
+
+              <div class="multi-input-grid">
+                <div v-for="dim in visibleQueryDimensions" :key="dim.key" class="field compact-field">
+                  <label class="field-label">{{ dim.label }} <span class="required">*</span></label>
+                  <a-textarea
+                    v-model:value="dimValues[dim.key]"
+                    :placeholder="dim.placeholder"
+                    allow-clear
+                    :auto-size="{ minRows: 2, maxRows: 5 }"
+                  />
+                </div>
+              </div>
+            </template>
           </div>
 
           <a-button
@@ -161,6 +200,7 @@
               </div>
               <div>
                 <div class="hero-name">{{ resultBuyerDisplayName(singleResult) }}</div>
+                <div v-if="singleResult.checkLabel" class="hero-check-label">{{ singleResult.checkLabel }}</div>
                 <div class="hero-info">
                   <template v-if="singleResult.buyerInfo">
                     <a-tag :color="buyerStatusColor(singleResult.buyerInfo.status)" size="small">
@@ -287,6 +327,140 @@
           </div>
         </template>
 
+        <template v-else-if="batchResults.length > 0">
+          <div class="batch-results-section right-batch-results">
+            <div v-if="isSingleBuyerBatch && batchBuyerSummary" class="batch-buyer-hero">
+              <div class="hero-left">
+                <div class="hero-avatar" :style="{ background: getAvatarColor(batchBuyerSummary.buyerName) }">
+                  {{ batchBuyerSummary.buyerName.charAt(0) }}
+                </div>
+                <div>
+                  <div class="hero-name">{{ resultBuyerDisplayName(batchBuyerSummary) }}</div>
+                  <div class="hero-info">
+                    <template v-if="batchBuyerSummary.buyerInfo">
+                      <a-tag :color="buyerStatusColor(batchBuyerSummary.buyerInfo.status)" size="small">
+                        {{ buyerStatusText(batchBuyerSummary.buyerInfo.status) }}
+                      </a-tag>
+                      <a-tag :color="batchBuyerSummary.buyerInfo.is_prime_member ? 'gold' : 'default'" size="small">
+                        {{ batchBuyerSummary.buyerInfo.is_prime_member ? 'Prime' : '非Prime' }}
+                      </a-tag>
+                      <span class="hero-stat">{{ batchBuyerSummary.buyerInfo.total_orders }} 单</span>
+                      <span class="hero-stat">售后率 {{ formatAfterSaleRate(batchBuyerSummary.buyerInfo) }}</span>
+                    </template>
+                    <span v-else class="hero-unknown">系统无此买手档案</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="batch-results-header">
+              <div class="batch-results-title">{{ isSingleBuyerBatch ? '多目标校验结果' : '校验结果' }}</div>
+              <div class="batch-stats-row">
+                <span class="bs-item bs-total">共 {{ batchResults.length }} {{ batchResultUnitText }}</span>
+                <template v-if="batchHistoryOnly">
+                  <span class="bs-item bs-pass">{{ batchResults.filter(r => !hasHistoryRecords(r)).length }} 无记录</span>
+                  <span class="bs-item bs-fail">{{ batchResults.filter(r => hasHistoryRecords(r)).length }} 有记录</span>
+                </template>
+                <template v-else>
+                  <span class="bs-item bs-pass">{{ batchResults.filter(r => r.overallPass).length }} 通过</span>
+                  <span class="bs-item bs-fail">{{ batchResults.filter(r => !r.overallPass).length }} 拦截</span>
+                </template>
+              </div>
+              <div class="batch-filter-row">
+                <span
+                  :class="['bf-tab', batchFilter === 'all' ? 'active' : '']"
+                  @click="batchFilter = 'all'"
+                >全部</span>
+                <span
+                  :class="['bf-tab', batchFilter === 'pass' ? 'active' : '']"
+                  @click="batchFilter = 'pass'"
+                >{{ batchHistoryOnly ? '无记录' : '通过' }}</span>
+                <span
+                  :class="['bf-tab', batchFilter === 'fail' ? 'active' : '']"
+                  @click="batchFilter = 'fail'"
+                >{{ batchHistoryOnly ? '有记录' : '拦截' }}</span>
+              </div>
+            </div>
+
+            <div class="batch-results-list" :class="{ compact: isSingleBuyerBatch }">
+              <div
+                v-for="br in filteredBatchResults"
+                :key="batchResultKey(br)"
+                :class="['batch-result-card', br.overallPass ? 'card-pass' : 'card-fail', { 'single-buyer-target-card': isSingleBuyerBatch }]"
+              >
+                <div v-if="!isSingleBuyerBatch" class="brc-left">
+                  <div class="brc-avatar" :style="{ background: getAvatarColor(br.buyerName) }">
+                    {{ br.buyerName.charAt(0) }}
+                  </div>
+                  <div class="brc-info">
+                    <div class="brc-name">{{ resultBuyerDisplayName(br) }}</div>
+                    <div v-if="br.checkLabel" class="brc-check-label">{{ br.checkLabel }}</div>
+                    <div class="brc-meta">
+                      <template v-if="br.buyerInfo">
+                        {{ br.buyerInfo.total_orders }} 单 / {{ br.buyerInfo.is_prime_member ? 'Prime' : '非Prime' }} / 售后率 {{ formatAfterSaleRate(br.buyerInfo) }}
+                      </template>
+                      <span v-else class="brc-no-record">无档案</span>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="brc-target-main">
+                  <div class="brc-check-label">{{ br.checkLabel || resultBuyerDisplayName(br) }}</div>
+                </div>
+                <div class="brc-dims">
+                  <span
+                    v-for="risk in visibleRisks(br).slice(0, 4)"
+                    :key="risk.key"
+                    :class="['brc-dim-tag', riskVisualStatus(risk)]"
+                  >
+                    {{ riskDimensionLabel(risk) }}:
+                    {{ riskBadgeText(risk) }}
+                  </span>
+                </div>
+                <div :class="['brc-verdict', br.overallPass ? 'pass' : 'fail']">
+                  <ExclamationCircleOutlined v-if="isHistoryOnlyResult(br) && hasHistoryRecords(br)" />
+                  <CheckCircleOutlined v-else-if="br.overallPass" />
+                  <CloseCircleOutlined v-else />
+                  {{ isHistoryOnlyResult(br) ? heroStatusText(br) : br.overallPass ? '通过' : '拦截' }}
+                </div>
+                <div v-if="canExpandBatchResult(br)" class="brc-expand" @click="toggleExpand(batchResultKey(br))">
+                  <DownOutlined :class="{ rotated: expandedBatch.includes(batchResultKey(br)) }" />
+                </div>
+                <div v-if="expandedBatch.includes(batchResultKey(br))" class="brc-detail">
+                  <div class="risk-board batch-risk-board">
+                    <div
+                      v-for="risk in visibleRisks(br)"
+                      :key="risk.key"
+                      :class="['risk-card-v2', risk.status, riskDimensionClass(risk)]"
+                    >
+                      <div class="risk-card-top">
+                        <span class="risk-dim-badge">{{ riskDimensionLabel(risk) }}</span>
+                        <span :class="['history-risk-badge', riskVisualStatus(risk)]">
+                          {{ riskBadgeText(risk) }}
+                        </span>
+                      </div>
+                      <div class="risk-reason-v2">{{ risk.reason }}</div>
+                      <div v-if="risk.records.length > 0" class="risk-evidence-list">
+                        <div class="risk-evidence-title">历史订单</div>
+                        <div v-for="record in risk.records.slice(0, 4)" :key="record.id" class="risk-evidence-card">
+                          <div v-for="field in historyEvidenceFields(record)" :key="field.label" class="risk-evidence-field">
+                            <span>{{ field.label }}</span>
+                            <strong>{{ field.value }}</strong>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-if="visibleRiskDetailLines(risk).length" class="risk-detail-lines">
+                        <div v-for="(line, li) in visibleRiskDetailLines(risk)" :key="li" class="risk-detail-line">
+                          {{ line }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
         <div v-else class="empty-state">
           <div class="empty-visual">
             <SafetyCertificateOutlined class="empty-main-icon" />
@@ -303,109 +477,6 @@
       </div>
     </div>
 
-    <div v-if="batchResults.length > 0" class="batch-results-section left-batch-results">
-        <div class="batch-results-header">
-          <div class="batch-results-title">校验结果</div>
-          <div class="batch-stats-row">
-            <span class="bs-item bs-total">共 {{ batchResults.length }} 人</span>
-            <template v-if="batchHistoryOnly">
-              <span class="bs-item bs-pass">{{ batchResults.filter(r => !hasHistoryRecords(r)).length }} 无记录</span>
-              <span class="bs-item bs-fail">{{ batchResults.filter(r => hasHistoryRecords(r)).length }} 有记录</span>
-            </template>
-            <template v-else>
-              <span class="bs-item bs-pass">{{ batchResults.filter(r => r.overallPass).length }} 通过</span>
-              <span class="bs-item bs-fail">{{ batchResults.filter(r => !r.overallPass).length }} 拦截</span>
-            </template>
-          </div>
-          <div class="batch-filter-row">
-            <span
-              :class="['bf-tab', batchFilter === 'all' ? 'active' : '']"
-              @click="batchFilter = 'all'"
-            >全部</span>
-            <span
-              :class="['bf-tab', batchFilter === 'pass' ? 'active' : '']"
-              @click="batchFilter = 'pass'"
-            >{{ batchHistoryOnly ? '无记录' : '通过' }}</span>
-            <span
-              :class="['bf-tab', batchFilter === 'fail' ? 'active' : '']"
-              @click="batchFilter = 'fail'"
-            >{{ batchHistoryOnly ? '有记录' : '拦截' }}</span>
-          </div>
-        </div>
-
-        <div class="batch-results-list">
-          <div
-            v-for="br in filteredBatchResults"
-            :key="batchResultKey(br)"
-            :class="['batch-result-card', br.overallPass ? 'card-pass' : 'card-fail']"
-          >
-            <div class="brc-left">
-              <div class="brc-avatar" :style="{ background: getAvatarColor(br.buyerName) }">
-                {{ br.buyerName.charAt(0) }}
-              </div>
-              <div class="brc-info">
-                <div class="brc-name">{{ resultBuyerDisplayName(br) }}</div>
-                <div class="brc-meta">
-                  <template v-if="br.buyerInfo">
-                    {{ br.buyerInfo.total_orders }} 单 / {{ br.buyerInfo.is_prime_member ? 'Prime' : '非Prime' }} / 售后率 {{ formatAfterSaleRate(br.buyerInfo) }}
-                  </template>
-                  <span v-else class="brc-no-record">无档案</span>
-                </div>
-              </div>
-            </div>
-            <div class="brc-dims">
-              <span
-                v-for="risk in visibleRisks(br).slice(0, 4)"
-                :key="risk.key"
-                :class="['brc-dim-tag', riskVisualStatus(risk)]"
-              >
-                {{ riskDimensionLabel(risk) }}:
-                {{ riskBadgeText(risk) }}
-              </span>
-            </div>
-            <div :class="['brc-verdict', br.overallPass ? 'pass' : 'fail']">
-              <ExclamationCircleOutlined v-if="isHistoryOnlyResult(br) && hasHistoryRecords(br)" />
-              <CheckCircleOutlined v-else-if="br.overallPass" />
-              <CloseCircleOutlined v-else />
-              {{ isHistoryOnlyResult(br) ? heroStatusText(br) : br.overallPass ? '通过' : '拦截' }}
-            </div>
-            <div v-if="canExpandBatchResult(br)" class="brc-expand" @click="toggleExpand(batchResultKey(br))">
-              <DownOutlined :class="{ rotated: expandedBatch.includes(batchResultKey(br)) }" />
-            </div>
-            <div v-if="expandedBatch.includes(batchResultKey(br))" class="brc-detail">
-              <div class="risk-board batch-risk-board">
-                <div
-                  v-for="risk in visibleRisks(br)"
-                  :key="risk.key"
-                  :class="['risk-card-v2', risk.status, riskDimensionClass(risk)]"
-                >
-                  <div class="risk-card-top">
-                    <span class="risk-dim-badge">{{ riskDimensionLabel(risk) }}</span>
-                    <span :class="['history-risk-badge', riskVisualStatus(risk)]">
-                      {{ riskBadgeText(risk) }}
-                    </span>
-                  </div>
-                  <div class="risk-reason-v2">{{ risk.reason }}</div>
-                  <div v-if="risk.records.length > 0" class="risk-evidence-list">
-                    <div class="risk-evidence-title">历史订单</div>
-                    <div v-for="record in risk.records.slice(0, 4)" :key="record.id" class="risk-evidence-card">
-                      <div v-for="field in historyEvidenceFields(record)" :key="field.label" class="risk-evidence-field">
-                        <span>{{ field.label }}</span>
-                        <strong>{{ field.value }}</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-if="visibleRiskDetailLines(risk).length" class="risk-detail-lines">
-                    <div v-for="(line, li) in visibleRiskDetailLines(risk)" :key="li" class="risk-detail-line">
-                      {{ line }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-    </div>
   </div>
 </template>
 
@@ -499,7 +570,7 @@ interface ScopeOptions {
   partialStoreNames: string
 }
 
-type CheckMode = 'full' | 'task' | 'asin' | 'store' | 'brand' | 'customer' | 'company'
+type CheckMode = 'full' | 'task' | 'multi' | 'asin' | 'store' | 'brand' | 'customer' | 'company'
 type DimensionInputKey = 'asin' | 'task_id' | 'store' | 'brand' | 'client_contact' | 'client_company'
 
 interface CheckModeConfig {
@@ -516,6 +587,7 @@ interface CheckModeConfig {
 interface CheckResult {
   buyerName: string
   buyerInfo: BuyerInfo | null
+  checkLabel?: string
   items: DimResult[]
   asinAssociations: AsinAssociation[]
   buyerHistory: BuyerHistorySummary
@@ -524,6 +596,16 @@ interface CheckResult {
   failCount: number
   warnCount: number
   usingMock: boolean
+}
+
+interface CheckContext {
+  asin?: string
+  associations?: AsinAssociation[]
+  scope?: ScopeOptions
+  mode?: CheckMode
+  dimKeys?: string[]
+  targetOverrides?: Record<string, string[]>
+  checkLabel?: string
 }
 
 const allDimensions = [
@@ -541,7 +623,9 @@ const selectedDims = ref<string[]>(['asin', 'store', 'client_contact', 'client_c
 const dimValues = reactive<Record<string, string>>({
   asin: '', task_id: '', store: '', brand: '', client_contact: '', client_company: '',
 })
-const activeCheckMode = ref<CheckMode>('full')
+const activeCheckMode = ref<CheckMode>('multi')
+const selectedQueryDims = ref<DimensionInputKey[]>(['asin'])
+const fullAutoLookup = ref(false)
 const scopeOptions = reactive<ScopeOptions>({
   sameCustomerOtherStores: false,
   sameCompanyAllStores: false,
@@ -579,17 +663,23 @@ const filteredBatchResults = computed(() => {
   return batchResults.value
 })
 
+const batchResultUnitText = computed(() =>
+  batchResults.value.some(result => result.checkLabel) ? '条' : '人'
+)
+
+const batchBuyerKeys = computed(() =>
+  [...new Set(batchResults.value.map(result => result.buyerInfo?.id || result.buyerName))]
+)
+
+const isSingleBuyerBatch = computed(() =>
+  batchResults.value.length > 1 && batchBuyerKeys.value.length === 1
+)
+
+const batchBuyerSummary = computed(() =>
+  isSingleBuyerBatch.value ? batchResults.value[0] : null
+)
+
 const checkModeOptions: CheckModeConfig[] = [
-  {
-    key: 'full',
-    label: '全面排查',
-    shortLabel: '全面',
-    inputKey: 'asin',
-    inputLabel: 'ASIN',
-    placeholder: '输入 ASIN，自动关联店铺、品牌、客户信息',
-    hint: '适合下单前最终判断：ASIN、店铺、品牌等风险会一起校验。',
-    icon: SafetyCertificateOutlined,
-  },
   {
     key: 'task',
     label: '任务校验',
@@ -598,6 +688,26 @@ const checkModeOptions: CheckModeConfig[] = [
     inputLabel: '任务ID',
     placeholder: '输入任务ID，按本次任务规则判断排重',
     hint: '读取当前任务规则，只有这里才判断全店排重/组织级排重是否开启。',
+    icon: SafetyCertificateOutlined,
+  },
+  {
+    key: 'multi',
+    label: '多维度查询',
+    shortLabel: '多维查询',
+    inputKey: 'asin',
+    inputLabel: '查询条件',
+    placeholder: '选择维度后填写查询值',
+    hint: '支持单个或多个维度查询；各输入框可多行批量填写。',
+    icon: SearchOutlined,
+  },
+  {
+    key: 'full',
+    label: '全面排查',
+    shortLabel: '全面',
+    inputKey: 'asin',
+    inputLabel: 'ASIN',
+    placeholder: '输入 ASIN，自动关联店铺、品牌、客户信息',
+    hint: '适合下单前最终判断：ASIN、店铺、品牌等风险会一起校验。',
     icon: SafetyCertificateOutlined,
   },
   {
@@ -652,43 +762,50 @@ const checkModeOptions: CheckModeConfig[] = [
   },
 ]
 
-const checkModeGroups = [
-  {
-    key: 'final',
-    title: '最终下单判断',
-    modes: checkModeOptions.filter(mode => mode.key === 'task'),
-  },
-  {
-    key: 'full',
-    title: '综合排查',
-    modes: checkModeOptions.filter(mode => mode.key === 'full'),
-  },
-  {
-    key: 'single',
-    title: '单维度查询',
-    modes: checkModeOptions.filter(mode => ['asin', 'store', 'brand', 'customer', 'company'].includes(mode.key)),
-  },
+const mainCheckModes = checkModeOptions.filter(mode => ['task', 'multi'].includes(mode.key))
+
+const queryDimensionOptions = [
+  { key: 'asin' as DimensionInputKey, mode: 'asin' as CheckMode, label: 'ASIN', icon: BarcodeOutlined, placeholder: '每行一个 ASIN' },
+  { key: 'store' as DimensionInputKey, mode: 'store' as CheckMode, label: '店铺', icon: ShopOutlined, placeholder: '每行一个店铺名称' },
+  { key: 'brand' as DimensionInputKey, mode: 'brand' as CheckMode, label: '品牌', icon: TagOutlined, placeholder: '每行一个品牌名称，General 不进入品牌限制' },
+  { key: 'client_contact' as DimensionInputKey, mode: 'customer' as CheckMode, label: '客户', icon: ContactsOutlined, placeholder: '每行一个客户名称或客户编号' },
+  { key: 'client_company' as DimensionInputKey, mode: 'company' as CheckMode, label: '公司主体', icon: BankOutlined, placeholder: '每行一个公司主体名称或编号' },
 ]
+
+const visibleQueryDimensions = computed(() =>
+  queryDimensionOptions.filter(dim => selectedQueryDims.value.includes(dim.key))
+)
 
 const activeModeConfig = computed(() => checkModeOptions.find(mode => mode.key === activeCheckMode.value) || checkModeOptions[0])
 
 const activeTargetValue = computed(() => dimValues[activeModeConfig.value.inputKey] || '')
 
-const canRunCheck = computed(() => buyerNames.value.length > 0 && Boolean(activeTargetValue.value.trim()))
+const canRunCheck = computed(() => {
+  if (buyerNames.value.length === 0) return false
+  if (activeCheckMode.value === 'task') return Boolean(dimValues.task_id.trim())
+  if (fullAutoLookup.value) return parseMultiValues(dimValues.asin, 'asin').length > 0
+  return selectedQueryDims.value.some(key => parseMultiValues(dimValues[key], key).length > 0)
+})
 
-const canRunBatchCheck = computed(() => batchNames.value.length > 0 && Boolean(activeTargetValue.value.trim()))
+const canRunBatchCheck = computed(() => canRunCheck.value)
+
+const currentQueryTargetCount = computed(() => {
+  if (activeCheckMode.value === 'task') return parseMultiValues(dimValues.task_id, 'task_id').length
+  if (fullAutoLookup.value) return parseMultiValues(dimValues.asin, 'asin').length
+  return selectedQueryDims.value.reduce((total, key) => total + parseMultiValues(dimValues[key], key).length, 0)
+})
 
 const runButtonText = computed(() => {
   const count = buyerNames.value.length
-  const action = activeCheckMode.value === 'full'
-    ? '全面排查'
-    : activeCheckMode.value === 'task'
+  const targetCount = currentQueryTargetCount.value
+  const action = activeCheckMode.value === 'task'
       ? '任务校验'
-      : '开始校验'
-  if (count > 1) {
-    if (activeCheckMode.value === 'full') return `批量全面排查 ${count} 人`
+      : fullAutoLookup.value
+        ? '全选排查'
+        : '多维查询'
+  if (count > 1 || targetCount > 1) {
     if (activeCheckMode.value === 'task') return `批量任务校验 ${count} 人`
-    return `批量校验 ${count} 人`
+    return `批量查询 ${count} 人 / ${targetCount} 项`
   }
   return action
 })
@@ -705,9 +822,9 @@ const singleDimFailDemoText = computed(() =>
     : '当前维度拦截演示'
 )
 
-const selectedSingleDimensionMode = computed<Exclude<CheckMode, 'full' | 'task'>>(() => {
+const selectedSingleDimensionMode = computed<Exclude<CheckMode, 'full' | 'task' | 'multi'>>(() => {
   if (['asin', 'store', 'brand', 'customer', 'company'].includes(activeCheckMode.value)) {
-    return activeCheckMode.value as Exclude<CheckMode, 'full' | 'task'>
+    return activeCheckMode.value as Exclude<CheckMode, 'full' | 'task' | 'multi'>
   }
   return 'asin'
 })
@@ -735,7 +852,7 @@ function resultBuyerDisplayName(result: CheckResult) {
 }
 
 function batchResultKey(result: CheckResult) {
-  return result.buyerInfo?.id || result.buyerName
+  return `${result.buyerInfo?.id || result.buyerName}|${result.checkLabel || 'single'}`
 }
 
 function isUuidLike(value: string) {
@@ -872,6 +989,28 @@ function normalizeAsin(value: any) {
 
 function uniqueFilled(values: string[]) {
   return [...new Set(values.map(v => String(v || '').trim()).filter(Boolean))]
+}
+
+function parseMultiValues(value: string, key?: string) {
+  return uniqueFilled(
+    String(value || '')
+      .split(/[\n,，]+/)
+      .map(item => key === 'asin' ? normalizeAsin(item) : item.trim()),
+  )
+}
+
+function dimensionOptionByKey(key: DimensionInputKey) {
+  return queryDimensionOptions.find(dim => dim.key === key)
+}
+
+function toggleQueryDim(key: DimensionInputKey) {
+  const index = selectedQueryDims.value.indexOf(key)
+  if (index >= 0) {
+    if (selectedQueryDims.value.length === 1) return
+    selectedQueryDims.value.splice(index, 1)
+  } else {
+    selectedQueryDims.value.push(key)
+  }
 }
 
 function isGeneralBrand(value: string) {
@@ -1085,7 +1224,8 @@ function buildMockAssociations(asin: string): AsinAssociation[] {
   }]
 }
 
-function buildDimensionTargets(dimKey: string, associations: AsinAssociation[]) {
+function buildDimensionTargets(dimKey: string, associations: AsinAssociation[], targetOverrides: Record<string, string[]> = {}) {
+  if (targetOverrides[dimKey]?.length) return targetOverrides[dimKey]
   const manual = dimValues[dimKey] || ''
   if (dimKey === 'asin') return uniqueFilled([manual])
   if (dimKey === 'store') return uniqueFilled([manual, ...associations.map(a => a.storeName)])
@@ -1258,6 +1398,82 @@ async function buildCheckContextForMode(mode: CheckMode) {
     scope: scopeOptionsForMode(mode),
     dimKeys: restrictionDimKeysForMode(mode),
   }
+}
+
+async function buildContextForDimension(dim: (typeof queryDimensionOptions)[number], targetValue: string): Promise<CheckContext> {
+  const value = dim.key === 'asin' ? normalizeAsin(targetValue) : targetValue.trim()
+  const mode = dim.mode
+
+  if (mode === 'asin') {
+    const foundAssociations = await fetchAsinAssociations(value)
+    const associations = foundAssociations.length > 0 ? foundAssociations : [buildManualAssociation('asin', value)]
+    return {
+      asin: value,
+      associations,
+      mode,
+      scope: scopeOptionsForMode(mode),
+      dimKeys: restrictionDimKeysForMode(mode),
+      targetOverrides: { asin: [value] },
+      checkLabel: `ASIN：${value}`,
+    }
+  }
+
+  const association = buildManualAssociation(mode, value)
+  const dimKey = mode === 'customer' || mode === 'company' ? 'client_company' : dim.key
+  return {
+    asin: '',
+    associations: [association],
+    mode,
+    scope: scopeOptionsForMode(mode),
+    dimKeys: restrictionDimKeysForMode(mode),
+    targetOverrides: { [dimKey]: [value] },
+    checkLabel: `${dim.label}：${value}`,
+  }
+}
+
+async function buildCheckContextsForCurrent(): Promise<CheckContext[]> {
+  if (activeCheckMode.value === 'task') {
+    const taskIds = parseMultiValues(dimValues.task_id, 'task_id')
+    const contexts = await Promise.all(taskIds.map(async taskId => {
+      const context = await buildTaskCheckContext(taskId)
+      return { ...context, checkLabel: `任务：${taskId}`, targetOverrides: { task_id: [taskId] } }
+    }))
+    return contexts
+  }
+
+  if (fullAutoLookup.value) {
+    const asins = parseMultiValues(dimValues.asin, 'asin')
+    const contexts = await Promise.all(asins.map(async asin => {
+      const foundAssociations = await fetchAsinAssociations(asin)
+      const associations = foundAssociations.length > 0 ? foundAssociations : buildMockAssociations(asin)
+      return {
+        asin,
+        associations,
+        mode: 'full' as CheckMode,
+        scope: scopeOptionsForMode('full'),
+        dimKeys: restrictionDimKeysForMode('full'),
+        targetOverrides: {
+          asin: [asin],
+          store: uniqueFilled(associations.map(a => a.storeName)),
+          brand: uniqueFilled(associations.map(a => a.brandName)),
+          client_company: uniqueFilled(associations.map(a => a.companyName || a.customerIdStr)),
+        },
+        checkLabel: `全选：${asin}`,
+      }
+    }))
+    return contexts
+  }
+
+  const contexts: CheckContext[] = []
+  for (const dimKey of selectedQueryDims.value) {
+    const dim = dimensionOptionByKey(dimKey)
+    if (!dim) continue
+    const values = parseMultiValues(dimValues[dim.key], dim.key)
+    for (const value of values) {
+      contexts.push(await buildContextForDimension(dim, value))
+    }
+  }
+  return contexts
 }
 
 async function fetchRestrictionRules(buyerName: string, dimKey: string, targetValues: string[]) {
@@ -1680,8 +1896,9 @@ function buildSingleDimensionMockAssociations(mode: CheckMode): AsinAssociation[
 function buildSingleDimensionRisk(
   mode: Exclude<CheckMode, 'full'>,
   status: 'pass' | 'fail' | 'enabled-pass' | 'disabled-pass',
+  targetOverride?: string,
 ): BuyerHistoryRisk {
-  const target = mockModeTarget(mode)
+  const target = targetOverride || mockModeTarget(mode)
   const record: BuyerHistoryRecord = {
     id: `mock-single-${mode}`,
     orderNumber: `SUB-MOCK-${mode.toUpperCase()}-01`,
@@ -1772,17 +1989,20 @@ function buildSingleDimensionMockResult(
   mode: Exclude<CheckMode, 'full'>,
   status: 'pass' | 'fail' | 'enabled-pass' | 'disabled-pass',
   associations: AsinAssociation[],
+  options: { target?: string, buyerName?: string, checkLabel?: string } = {},
 ): CheckResult {
-  const risk = buildSingleDimensionRisk(mode, status)
+  const risk = buildSingleDimensionRisk(mode, status, options.target)
+  const buyerName = options.buyerName || 'Michael Brown'
   return {
-    buyerName: 'Michael Brown',
+    buyerName,
     buyerInfo: {
       id: 'mock-buyer',
-      name: 'Michael Brown',
+      name: buyerName,
       status: 'active',
       rating: 4.8,
       total_orders: 13,
     },
+    checkLabel: options.checkLabel,
     items: [],
     asinAssociations: associations,
     buyerHistory: {
@@ -1988,6 +2208,118 @@ function showMockSingleDimensionDemo(status: 'pass' | 'fail' | 'enabled-pass' | 
   singleResult.value = buildSingleDimensionMockResult(mode, status, associations)
 }
 
+function activeCustomDemoDimensions() {
+  const dims = visibleQueryDimensions.value.length > 0
+    ? visibleQueryDimensions.value
+    : queryDimensionOptions.filter(dim => dim.key === 'asin')
+  return dims.map(dim => ({
+    ...dim,
+    mode: dim.mode as Exclude<CheckMode, 'full' | 'task' | 'multi'>,
+  }))
+}
+
+function buildMultiDimensionCustomDemo(status: 'pass' | 'fail'): CheckResult {
+  const dims = activeCustomDemoDimensions()
+  const associations = dims.flatMap(dim => buildSingleDimensionMockAssociations(dim.mode))
+  const risks = dims.map(dim => buildSingleDimensionRisk(dim.mode, status, mockModeTarget(dim.mode)))
+  const blocking = risks.filter(risk => risk.status === 'fail' && !isHistoryLookupRisk(risk))
+  return {
+    buyerName: 'Michael Brown',
+    buyerInfo: {
+      id: 'mock-buyer',
+      name: 'Michael Brown',
+      status: 'active',
+      rating: 4.8,
+      total_orders: 13,
+    },
+    checkLabel: dims.map(dim => dim.label).join(' + '),
+    items: [],
+    asinAssociations: associations,
+    buyerHistory: {
+      total: risks.reduce((sum, risk) => sum + risk.records.length, 0),
+      risks,
+      hasBlockingRisk: blocking.length > 0,
+    },
+    overallPass: blocking.length === 0,
+    passCount: risks.filter(risk => risk.status === 'pass').length,
+    failCount: blocking.length,
+    warnCount: 0,
+    usingMock: true,
+  }
+}
+
+function showMultiDimensionDemo(status: 'pass' | 'fail') {
+  if (fullAutoLookup.value) {
+    if (status === 'pass') showFullPassDemo()
+    else showMockBlockingDemo()
+    return
+  }
+
+  activeCheckMode.value = 'multi'
+  buyerInput.value = 'Michael Brown'
+  selectedBuyer.value = {
+    id: 'mock-buyer',
+    name: 'Michael Brown',
+    status: 'active',
+    rating: 4.8,
+    total_orders: 13,
+  }
+  activeCustomDemoDimensions().forEach(dim => {
+    dimValues[dim.key] = mockModeTarget(dim.mode)
+  })
+  buyerSuggestions.value = []
+  batchResults.value = []
+  expandedBatch.value = []
+  singleResult.value = buildMultiDimensionCustomDemo(status)
+}
+
+function mockTargetsForMode(mode: Exclude<CheckMode, 'full' | 'task' | 'multi'>) {
+  if (mode === 'asin') return ['B0MOCKMULTI01', 'B0MOCKMULTI02', 'B0MOCKMULTI03']
+  if (mode === 'store') return ['FreshJoy Home', 'NorthPeak Store', 'UrbanLife Outlet']
+  if (mode === 'brand') return ['FreshJoy', 'KitchenPeak', 'UrbanLife']
+  if (mode === 'customer') return ['Demo Trading LLC', 'Bright Client Group', 'NorthPeak Customer']
+  return ['Demo Trading Group', 'Bright Holdings', 'NorthPeak Global']
+}
+
+function buildAssociationForTarget(mode: Exclude<CheckMode, 'full' | 'task' | 'multi'>, target: string) {
+  return {
+    ...buildManualAssociation(mode, target),
+    key: `mock-multi-target|${mode}|${target}`,
+    isMock: true,
+  }
+}
+
+function showSingleBuyerMultiTargetDemo() {
+  activeCheckMode.value = 'multi'
+  fullAutoLookup.value = false
+  buyerInput.value = 'Michael Brown'
+  selectedBuyer.value = {
+    id: 'mock-buyer',
+    name: 'Michael Brown',
+    status: 'active',
+    rating: 4.8,
+    total_orders: 13,
+  }
+  buyerSuggestions.value = []
+  singleResult.value = null
+  expandedBatch.value = []
+
+  const dims = activeCustomDemoDimensions()
+  batchResults.value = dims.flatMap(dim => {
+    const targets = mockTargetsForMode(dim.mode)
+    dimValues[dim.key] = targets.join('\n')
+    return targets.map((target, index) => {
+      const status = index % 2 === 0 ? 'fail' : 'pass'
+      const associations = [buildAssociationForTarget(dim.mode, target)]
+      return buildSingleDimensionMockResult(dim.mode, status, associations, {
+        target,
+        buyerName: 'Michael Brown',
+        checkLabel: `${dim.label}：${target}`,
+      })
+    })
+  })
+}
+
 function withMockBuyer(result: CheckResult, buyerName: string): CheckResult {
   return {
     ...result,
@@ -2020,11 +2352,14 @@ function showMockBatchDemo() {
     return
   }
 
-  if (mode !== 'full') {
-    const singleMode = selectedSingleDimensionMode.value
+  if (mode !== 'full' && !(mode === 'multi' && fullAutoLookup.value)) {
+    const firstDimKey = mode === 'multi' ? (selectedQueryDims.value[0] || 'asin') : activeModeConfig.value.inputKey
+    const singleMode = (dimensionOptionByKey(firstDimKey)?.mode || selectedSingleDimensionMode.value) as Exclude<CheckMode, 'full' | 'task' | 'multi'>
     const target = mockModeTarget(singleMode)
     const associations = buildSingleDimensionMockAssociations(singleMode)
-    dimValues[activeModeConfig.value.inputKey] = target
+    activeCheckMode.value = 'multi'
+    fullAutoLookup.value = false
+    dimValues[firstDimKey] = target
     batchResults.value = [
       withMockBuyer(buildSingleDimensionMockResult(singleMode, 'fail', associations), 'Michael Brown'),
       withMockBuyer(buildSingleDimensionMockResult(singleMode, 'pass', associations), 'Emily Stone'),
@@ -2035,7 +2370,8 @@ function showMockBatchDemo() {
 
   const asin = 'B0MOCKBATCH01'
   const associations = buildMockAssociations(asin)
-  activeCheckMode.value = 'full'
+  activeCheckMode.value = 'multi'
+  fullAutoLookup.value = true
   dimValues.asin = asin
   const michael = buildMockBuyerResult('Michael Brown', ['asin', 'store', 'brand'], asin, associations)
   michael.buyerHistory.risks.push({
@@ -2061,7 +2397,8 @@ function showMockBatchDemo() {
 }
 
 function showMockBlockingDemo() {
-  activeCheckMode.value = 'full'
+  activeCheckMode.value = 'multi'
+  fullAutoLookup.value = true
   buyerInput.value = 'Michael Brown'
   dimValues.asin = 'B0MOCKBLOCK01'
   selectedBuyer.value = {
@@ -2135,7 +2472,8 @@ function buildFullPassDemo(): CheckResult {
 }
 
 function showFullPassDemo() {
-  activeCheckMode.value = 'full'
+  activeCheckMode.value = 'multi'
+  fullAutoLookup.value = true
   buyerInput.value = 'Michael Brown'
   dimValues.asin = 'B0MOCKPASS01'
   selectedBuyer.value = {
@@ -2372,13 +2710,7 @@ async function fetchBuyerAsinHistory(
 
 async function checkOneBuyer(
   buyerName: string,
-  context: {
-    asin?: string
-    associations?: AsinAssociation[]
-    scope?: ScopeOptions
-    mode?: CheckMode
-    dimKeys?: string[]
-  } = {},
+  context: CheckContext = {},
   buyerOverride: BuyerInfo | null = null,
 ): Promise<CheckResult> {
   const buyerInfo = buyerOverride || await fetchBuyerInfo(buyerName)
@@ -2387,7 +2719,7 @@ async function checkOneBuyer(
   const associations = context.associations || []
 
   for (const dimKey of context.dimKeys || selectedDims.value) {
-    const targets = buildDimensionTargets(dimKey, associations)
+    const targets = buildDimensionTargets(dimKey, associations, context.targetOverrides)
     const targetValue = targets.join(' / ')
     const rules = await fetchRestrictionRules(resolvedBuyerName, dimKey, targets)
     const hasDeny = rules.some(r => r.rule_type === 'deny')
@@ -2398,7 +2730,9 @@ async function checkOneBuyer(
     items.push({ dimension: dimKey, targetValue, status, rules })
   }
 
-  if (!context.asin && associations.length === 0) return emptyCheckResult(resolvedBuyerName, buyerInfo, items)
+  if (!context.asin && associations.length === 0) {
+    return { ...emptyCheckResult(resolvedBuyerName, buyerInfo, items), checkLabel: context.checkLabel }
+  }
 
   const buyerHistory = await fetchBuyerAsinHistory(
     buyerInfo,
@@ -2417,6 +2751,7 @@ async function checkOneBuyer(
   return {
     buyerName: resolvedBuyerName,
     buyerInfo,
+    checkLabel: context.checkLabel,
     items,
     asinAssociations: associations,
     buyerHistory,
@@ -2431,17 +2766,23 @@ async function checkOneBuyer(
 async function runSingleCheck() {
   if (!canRunCheck.value) return
   buyerSuggestions.value = []
-  if (buyerNames.value.length > 1) {
-    await runBatchCheck()
-    return
-  }
   checking.value = true
   batchResults.value = []
   expandedBatch.value = []
   try {
-    const context = await buildCheckContextForMode(activeCheckMode.value)
-    if (!context) return
-    singleResult.value = await checkOneBuyer(buyerNames.value[0], context, selectedBuyer.value)
+    const contexts = await buildCheckContextsForCurrent()
+    if (contexts.length === 0) return
+    if (buyerNames.value.length === 1 && contexts.length === 1) {
+      singleResult.value = await checkOneBuyer(buyerNames.value[0], contexts[0], selectedBuyer.value)
+      return
+    }
+    singleResult.value = null
+    for (const buyerName of buyerNames.value) {
+      const buyerOverride = buyerNames.value.length === 1 ? selectedBuyer.value : null
+      for (const context of contexts) {
+        batchResults.value.push(await checkOneBuyer(buyerName, context, buyerOverride))
+      }
+    }
   } finally {
     checking.value = false
   }
@@ -2454,10 +2795,12 @@ async function runBatchCheck() {
   batchResults.value = []
   expandedBatch.value = []
   try {
-    const context = await buildCheckContextForMode(activeCheckMode.value)
-    if (!context) return
+    const contexts = await buildCheckContextsForCurrent()
+    if (contexts.length === 0) return
     for (const name of batchNames.value) {
-      batchResults.value.push(await checkOneBuyer(name, context))
+      for (const context of contexts) {
+        batchResults.value.push(await checkOneBuyer(name, context))
+      }
     }
   } finally {
     batchChecking.value = false
@@ -2509,7 +2852,9 @@ function primaryResultReason(result: CheckResult) {
 }
 
 function isFullCheckResult(result: CheckResult) {
-  return !isTaskDemoResult(result)
+  const isFullDemo = result.usingMock && result.buyerHistory.risks.some(risk => risk.key.startsWith('mock-full-') || risk.key === 'mock-same-asin')
+  return (isFullDemo || result.checkLabel?.startsWith('全选'))
+    && !isTaskDemoResult(result)
     && !isHistoryOnlyResult(result)
     && !isSingleDimensionDemoResult(result)
     && contextItems(result).some(item => item.label === 'ASIN')
@@ -2888,6 +3233,9 @@ function getDimIconComp(dim: string) {
   &.cols-1 {
     grid-template-columns: 1fr;
   }
+  &.cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   &.cols-5 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -2936,7 +3284,63 @@ function getDimIconComp(dim: string) {
 }
 
 .common-demo-row {
+  display: grid;
+  gap: 8px;
   margin-top: 12px;
+}
+
+.multi-query-panel {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.multi-query-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.multi-dim-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.multi-dim-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all .18s ease;
+  &:hover,
+  &.active {
+    color: #2563eb;
+    border-color: rgba(37, 99, 235, .45);
+    background: rgba(37, 99, 235, .08);
+  }
+}
+
+.multi-input-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-field {
+  margin-bottom: 0;
 }
 
 .asin-lookup-hint {
@@ -3176,6 +3580,18 @@ function getDimIconComp(dim: string) {
 }
 
 .hero-name { font-size: 20px; font-weight: 800; color: #0f172a; margin-bottom: 6px; word-break: break-all; }
+.hero-check-label {
+  display: inline-flex;
+  max-width: 100%;
+  margin-bottom: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, .08);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+  word-break: break-all;
+}
 .hero-info { display: flex; align-items: center; gap: 10px; }
 .hero-stat { font-size: 12px; color: #64748b; }
 .hero-unknown { font-size: 12px; color: #94a3b8; font-style: italic; }
@@ -3971,6 +4387,21 @@ function getDimIconComp(dim: string) {
   border: 1px solid #e2e8f0;
 }
 
+.right-batch-results {
+  min-height: 400px;
+}
+
+.batch-buyer-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
 .batch-results-header { margin-bottom: 16px; }
 
 .batch-results-title {
@@ -4020,6 +4451,9 @@ function getDimIconComp(dim: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  &.compact {
+    gap: 6px;
+  }
 }
 
 .batch-result-card {
@@ -4034,6 +4468,14 @@ function getDimIconComp(dim: string) {
   &:hover { box-shadow: 0 2px 8px rgba(0,0,0,.05); }
   &.card-pass { border-left: 4px solid #22c55e; }
   &.card-fail { border-left: 4px solid #ef4444; }
+}
+
+.single-buyer-target-card {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
 }
 
 .brc-left { display: flex; align-items: center; gap: 10px; min-width: 160px; }
@@ -4053,6 +4495,16 @@ function getDimIconComp(dim: string) {
 
 .brc-info { min-width: 0; }
 .brc-name { font-size: 14px; font-weight: 700; color: #1e293b; word-break: break-all; }
+.brc-target-main {
+  min-width: 0;
+}
+.brc-check-label {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #2563eb;
+  word-break: break-all;
+}
 .brc-meta { font-size: 11px; color: #94a3b8; }
 .brc-no-record { font-style: italic; }
 
@@ -4101,6 +4553,11 @@ function getDimIconComp(dim: string) {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.single-buyer-target-card .brc-detail {
+  grid-column: 1 / -1;
+  padding-left: 0;
 }
 
 .brc-detail-row {
