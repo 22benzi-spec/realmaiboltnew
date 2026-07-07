@@ -42,6 +42,9 @@
         <a-select v-model:value="filterType" style="width: 110px" @change="reloadFromFirstPage" allow-clear placeholder="订单状态">
           <a-select-option v-for="t in issueTypes" :key="t" :value="t">{{ t }}</a-select-option>
         </a-select>
+        <a-select v-model:value="filterCountry" style="width: 110px" @change="reloadFromFirstPage" allow-clear placeholder="国家">
+          <a-select-option v-for="c in countryOptions" :key="c" :value="c">{{ c }}</a-select-option>
+        </a-select>
         <a-select v-model:value="filterStatus" style="width: 170px" @change="reloadFromFirstPage" allow-clear placeholder="处理进度">
           <a-select-option v-for="s in processStatusOptions" :key="s" :value="s">{{ s }}</a-select-option>
         </a-select>
@@ -50,7 +53,7 @@
         </a-select>
         <a-input-search
           v-model:value="filterSearch"
-          placeholder="搜索子订单号/买手/客户/ASIN..."
+          placeholder="搜索订单号/订单ID/买手/客户/ASIN..."
           style="width: 260px"
           @search="reloadFromFirstPage"
           allow-clear
@@ -76,11 +79,17 @@
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'product_info'">
+            <div class="cell-info">
+              <div class="cell-product-name">{{ record.product_name || '--' }}</div>
+              <div class="cell-meta">{{ record.asin || '--' }}</div>
+              <div class="cell-country">{{ record.country || '--' }}</div>
+            </div>
+          </template>
           <template v-if="column.key === 'sub_info'">
             <div class="cell-info">
-              <a class="link-text" @click="openDetail(record)">{{ record.sub_order_number }}</a>
-              <div class="cell-meta">{{ record.product_name || '--' }} / {{ record.asin || '--' }}</div>
-              <div class="cell-amazon-id">订单号: {{ record.old_amazon_order_id || '--' }}</div>
+              <a class="link-text" @click="openDetail(record)">{{ record.old_amazon_order_id || '--' }}</a>
+              <div class="cell-meta">订单ID: {{ record.sub_order_number || '--' }}</div>
             </div>
           </template>
           <template v-if="column.key === 'client'">
@@ -108,13 +117,21 @@
                 <a-tag :color="getPrincipalStatusColor(record)">{{ getPrincipalStatus(record) }}</a-tag>
                 <div class="amount-loss">{{ formatMoney(getPrincipalAmount(record), record) }}</div>
               </template>
-              <a-tag v-else :color="getPrincipalStatusColor(record)">{{ getPrincipalStatus(record) }}</a-tag>
+              <template v-else>
+                <a-tag :color="getPrincipalStatusColor(record)">{{ getPrincipalStatus(record) }}</a-tag>
+                <div
+                  v-if="record.issue_type === '本金多返' && getPrincipalStatus(record) === '待追回'"
+                  class="principal-paid-hint"
+                >
+                  后台实付 {{ getActualPaidDisplayAmount(record) }}
+                </div>
+              </template>
             </div>
           </template>
           <template v-if="column.key === 'after_sale_progress'">
             <div v-if="editingProgressId === record.id" class="inline-edit-stack">
               <a-select v-model:value="progressDraft.status" size="small">
-                <a-select-option v-for="status in inlineProcessStatusOptions" :key="status" :value="status">
+                <a-select-option v-for="status in getInlineProgressOptions(record)" :key="status" :value="status">
                   {{ formatIssueStatusLabel(status) }}
                 </a-select-option>
               </a-select>
@@ -1010,6 +1027,7 @@ const exporting = ref(false)
 const issues = ref<any[]>([])
 const filterStatus = ref<string | undefined>(undefined)
 const filterType = ref<string | undefined>(undefined)
+const filterCountry = ref<string | undefined>(undefined)
 const filterResolutionResult = ref<string | undefined>(undefined)
 const filterPrincipalStatus = ref<string | undefined>(undefined)
 const filterSearch = ref('')
@@ -1028,6 +1046,7 @@ const progressDraft = reactive({
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 
 const issueTypes = ['不下单', '取消', '退款', '无此订单', '本金多返']
+const countryOptions = ['US', 'CA', 'UK', 'DE', 'JP']
 const processStatusOptions = ['待处理', '处理中', '处理中-无新单号', '处理中-抢单大厅', '已处理']
 const resolutionResultOptions = ['已替换单号', '已补新单', '已追回本金', '已关闭', '无需处理']
 const principalStatusOptions = ['正常', '待确定', '待追回', '已损失']
@@ -1133,14 +1152,17 @@ const resultHandleActionOptions = computed(() =>
 
 const visibleBusinessHandleActionOptions = computed(() => {
   const currentPrincipal = getPrincipalStatus(currentIssue.value || {})
+  const isHandledView = getAfterSaleProgressMainStatus(currentIssue.value || {}) === '已处理'
+  const isOverpaidIssue = currentIssue.value?.issue_type === '本金多返'
   return businessHandleActionOptions.value.filter(action =>
-    action.key !== 'recover-principal' || ['待追回', '已损失'].includes(currentPrincipal)
+    action.key !== 'recover-principal' || ['待追回', '已损失'].includes(currentPrincipal) || isHandledView || isOverpaidIssue
   )
 })
 
 const columns = computed(() => {
   const baseColumns: any[] = [
-  { title: '订单信息', key: 'sub_info', width: 240 },
+  { title: '产品信息', key: 'product_info', width: 200 },
+  { title: '订单信息', key: 'sub_info', width: 180 },
   { title: '客户/商务', key: 'client', width: 140 },
   { title: '业务员 / 买手 / 聊单号', key: 'buyer', width: 180 },
   { title: '返款信息', key: 'refund_info', width: 150 },
@@ -1231,13 +1253,14 @@ function applyIssueFilters<T>(query: T, options?: { includeStatusFilter?: boolea
   if (options?.includeStatusFilter !== false && filterStatus.value) nextQuery = applyProcessStatusFilter(nextQuery, filterStatus.value)
   if (filterResolutionResult.value) nextQuery = applyResolutionResultFilter(nextQuery, filterResolutionResult.value)
   if (filterType.value) nextQuery = nextQuery.eq('issue_type', filterType.value)
+  if (filterCountry.value) nextQuery = nextQuery.eq('country', filterCountry.value)
   if (filterPrincipalStatus.value) nextQuery = applyPrincipalStatusFilter(nextQuery, filterPrincipalStatus.value)
 
   const searchVal = getSearchValue()
   if (searchVal) {
     filterSearch.value = searchVal
     const kw = `%${searchVal}%`
-    nextQuery = nextQuery.or(`sub_order_number.ilike.${kw},buyer_name.ilike.${kw},customer_name.ilike.${kw},asin.ilike.${kw},old_amazon_order_id.ilike.${kw},business_manager_name.ilike.${kw}`)
+    nextQuery = nextQuery.or(`sub_order_number.ilike.${kw},order_number.ilike.${kw},buyer_name.ilike.${kw},customer_name.ilike.${kw},asin.ilike.${kw},old_amazon_order_id.ilike.${kw},new_amazon_order_id.ilike.${kw},business_manager_name.ilike.${kw}`)
   }
 
   return nextQuery
@@ -1351,6 +1374,7 @@ function filterMockIssues(records: any[], options?: { includeStatusFilter?: bool
       if (!options?.includeClosedStatuses && !filterStatus.value && !['待处理', '处理中', '无新单号'].includes(normalizeIssueStatus(record.issue_status))) return false
     }
     if (filterType.value && record.issue_type !== filterType.value) return false
+    if (filterCountry.value && record.country !== filterCountry.value) return false
     if (options?.includeStatusFilter !== false && filterStatus.value) {
       const normalizedStatus = normalizeIssueStatus(record.issue_status)
       if (filterStatus.value === '处理中-无新单号' && normalizedStatus !== '无新单号') return false
@@ -1370,7 +1394,9 @@ function filterMockIssues(records: any[], options?: { includeStatusFilter?: bool
       record.buyer_name,
       record.customer_name,
       record.asin,
+      record.order_number,
       record.old_amazon_order_id,
+      record.new_amazon_order_id,
       record.business_manager_name,
     ].join(' ').toLowerCase()
     return haystack.includes(keyword)
@@ -1496,7 +1522,8 @@ function getActualPaidDisplayAmount(record: any) {
 
 function buildExportRow(record: any) {
   return {
-    '订单信息': `${record.sub_order_number || '--'} / ${record.product_name || '--'} / ${record.asin || '--'} / ${record.old_amazon_order_id || '--'}`,
+    '产品信息': `${record.asin || '--'} / ${record.product_name || '--'} / ${record.country || '--'}`,
+    '订单信息': `${record.sub_order_number || '--'} / ${record.old_amazon_order_id || '--'}`,
     '客户/商务': `${record.customer_name || '--'} / ${record.business_manager_name || '--'}`,
     '业务员/买手/聊单号': `${record.staff_name || '--'} / ${record.buyer_name || '--'} / ${getBuyerChatDisplay(record)}`,
     '实返金额': getRefundDisplayAmount(record),
@@ -1534,6 +1561,7 @@ async function exportCurrentView() {
     const rows = [...mockRows, ...(data || [])]
     const exportRows = rows.map(buildExportRow)
     const headers = Object.keys(exportRows[0] || {
+      '产品信息': '',
       '订单信息': '',
       '客户/商务': '',
       '业务员/买手/聊单号': '',
@@ -2023,7 +2051,16 @@ function onPrincipalChange() {
 }
 
 function isProcessEditable(record: any) {
-  return !['已处理', '已替换单号', '已补单', '已追回本金', '已关闭', '无需处理'].includes(normalizeIssueStatus(record.issue_status))
+  return !!record?.id
+}
+
+function getInlineProgressOptions(record: any) {
+  const normalized = normalizeIssueStatus(record.issue_status)
+  const processOptions = [...inlineProcessStatusOptions]
+  if (getAfterSaleProgressMainStatus(record) === '已处理') {
+    return Array.from(new Set([normalized, ...processOptions]))
+  }
+  return processOptions
 }
 
 function startProgressEdit(record: any) {
@@ -2076,15 +2113,23 @@ async function persistIssueUpdate(record: any, update: any) {
 
 async function saveProgressEdit(record: any) {
   const nextStatus = normalizeIssueStatus(progressDraft.status)
-  const nextPrincipalStatus = getDefaultPrincipalStatus(record)
   saving.value = true
   try {
-    await persistIssueUpdate(record, {
+    const isProcessStatus = ['待处理', '处理中', '无新单号'].includes(nextStatus)
+    const update: any = {
       issue_status: nextStatus,
-      ...buildPrincipalUpdate(nextPrincipalStatus, record.issue_type === '本金多返' ? getPrincipalAmount(record) || getIssueActualPaidAmount(record) : 0, ''),
-      resolved_at: null,
-      refund_to_client_at: null,
-    })
+      resolved_at: isProcessStatus ? null : new Date().toISOString(),
+    }
+    if (isProcessStatus) {
+      const nextPrincipalStatus = getDefaultPrincipalStatus(record)
+      Object.assign(update, buildPrincipalUpdate(
+        nextPrincipalStatus,
+        record.issue_type === '本金多返' ? getPrincipalAmount(record) || getIssueActualPaidAmount(record) : 0,
+        '',
+      ))
+      update.refund_to_client_at = null
+    }
+    await persistIssueUpdate(record, update)
     message.success(`售后进度已更新为${formatIssueStatusLabel(nextStatus)}`)
     cancelProgressEdit()
     await load()
@@ -2553,7 +2598,7 @@ function getResolutionMethodLabel(record: any) {
     if (record.refund_to_client_method || record.refund_to_client_amount || /无需处理/.test(String(record.resolution_notes || ''))) return '无需处理'
     return '已处理'
   }
-  if (normalized === '已替换单号') return '已修改订单号'
+  if (normalized === '已替换单号') return '已替换单号'
   if (normalized === '已补单') return '已补单'
   if (normalized === '无新单号') return '无新单号'
   if (normalized === '已追回本金') return '已追回本金'
@@ -2901,8 +2946,10 @@ watch(() => [props.issueId, props.subOrder, props.staffId], () => {
 
 .link-text { color: #2563eb; cursor: pointer; font-family: 'Courier New', monospace; font-size: 12px; font-weight: 600; }
 .cell-info { display: flex; flex-direction: column; gap: 2px; }
+.cell-product-name { font-weight: 700; font-size: 13px; color: #1a1a2e; }
 .cell-meta { font-size: 11px; color: #9ca3af; }
 .cell-amazon-id { font-size: 10px; color: #9ca3af; font-family: 'Courier New', monospace; }
+.cell-country { font-size: 11px; color: #6b7280; }
 .cell-client-name { font-weight: 600; font-size: 13px; color: #1a1a2e; }
 .cell-result-main { color: #1a1a2e; font-size: 12px; font-weight: 700; }
 .resolution-result-cell {
@@ -2941,6 +2988,11 @@ watch(() => [props.issueId, props.subOrder, props.staffId], () => {
   line-height: 1.3;
 }
 .refund-info-sub {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.principal-paid-hint {
   color: #6b7280;
   font-size: 11px;
   line-height: 1.35;
