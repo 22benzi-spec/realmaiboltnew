@@ -1134,12 +1134,12 @@ const handleActionOptions: Array<{
   tone?: string
 }> = [
   { key: 'reorder', label: '补单', desc: '生成新子订单并回流处理', tone: 'is-primary' },
-  { key: 'replace-order', label: '替换单号', desc: '订单号填错或无此订单时使用' },
+  { key: 'replace-order', label: '替换单号', desc: '同个买手需替换订单号' },
   { key: 'recover-principal', label: '追回本金', desc: '记录追回金额和方式', tone: 'is-success' },
   { key: 'transfer-other', label: '转给他人', desc: '当前业务员处理不了，转交他人', tone: 'is-purple' },
-  { key: 'release-grab', label: '放入抢单大厅', desc: '释放给其他业务员抢单', tone: 'is-purple' },
-  { key: 'mark-closed', label: '关闭', desc: '问题已终止，不再继续处理' },
-  { key: 'mark-no-need', label: '无需处理', desc: '确认不需要补单或返款', tone: 'is-purple' },
+  { key: 'release-grab', label: '放入抢单大厅', desc: '释放给所有业务员处理', tone: 'is-purple' },
+  { key: 'mark-closed', label: '关闭', desc: '不再继续处理此单', tone: 'is-purple' },
+  { key: 'mark-no-need', label: '无需处理', desc: '卖家已确定无需补单', tone: 'is-purple' },
 ]
 
 const businessHandleActionOptions = computed(() =>
