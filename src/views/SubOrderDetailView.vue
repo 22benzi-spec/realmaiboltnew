@@ -570,7 +570,7 @@
             <div class="pi-item"><span class="pi-label">订单号</span><span class="pi-val mono-sm">{{ editTask.amazon_order_id || '—' }}</span></div>
             <div class="pi-item"><span class="pi-label">ASIN</span><span class="pi-val mono-sm">{{ editTask.asin || '—' }}</span></div>
             <div class="pi-item"><span class="pi-label">产品名</span><span class="pi-val">{{ editTask.product_name || '—' }}</span></div>
-            <div class="pi-item"><span class="pi-label">买手</span><span class="pi-val">{{ editTask.buyer_name || '未分配' }}</span></div>
+            <div class="pi-item"><span class="pi-label">买手</span><span class="pi-val">{{ getReplaceBuyerName(editTask) }}</span></div>
             <div class="pi-item pi-item-wide"><span class="pi-label">返款信息</span><span class="pi-val">{{ formatReplaceRefundInfo(editTask) }}</span></div>
           </div>
           <div v-if="replaceProductSourceNeedsDecision" class="replace-source-decision">
@@ -1366,6 +1366,24 @@ function formatReplaceRefundInfo(task: any) {
   return `${sequence} / ${status} / $${amount.toFixed(2)} / ${method}`
 }
 
+const NON_BUYER_NAME_VALUES = new Set(['未分配', '待分配', '待匹配', '已分配', '进行中', '已完成', '已截单', '已取消', '暂停中'])
+
+function getReplaceBuyerName(task: any) {
+  const linkedBuyer = buyerList.value.find(b => b.id === task?.buyer_id)
+  const name = String(task?._replace_buyer_name || linkedBuyer?.name || task?.buyer_name || '').trim()
+  return name && !NON_BUYER_NAME_VALUES.has(name) ? name : '—'
+}
+
+async function hydrateReplaceSourceBuyerName(task: any) {
+  if (!task?.buyer_id || getReplaceBuyerName(task) !== '—') return
+  const { data } = await supabase
+    .from('erp_buyers')
+    .select('name')
+    .eq('id', task.buyer_id)
+    .maybeSingle()
+  if (data?.name) task._replace_buyer_name = data.name
+}
+
 function getRefundStatusColor(s: string) {
   const map: Record<string, string> = {
     '未返款': 'default',
@@ -2134,6 +2152,7 @@ async function openReplaceProduct() {
   replaceProductTargetInfo.value = null
   replaceProductSourceOrder.value = null
   replaceProductOpen.value = true
+  await hydrateReplaceSourceBuyerName(editTask.value)
   if (editTask.value.order_id && !isPreviewTask(editTask.value)) {
     const { data } = await supabase.from('erp_orders').select('*').eq('id', editTask.value.order_id).maybeSingle()
     replaceProductSourceOrder.value = data || null

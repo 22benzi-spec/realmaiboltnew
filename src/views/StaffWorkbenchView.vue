@@ -1199,7 +1199,7 @@
             <div class="pi-item"><span class="pi-label">订单号</span><span class="pi-val mono-sm">{{ replaceProductTarget.amazon_order_id || '—' }}</span></div>
             <div class="pi-item"><span class="pi-label">ASIN</span><span class="pi-val mono-sm">{{ replaceProductTarget.asin || '—' }}</span></div>
             <div class="pi-item"><span class="pi-label">产品名</span><span class="pi-val">{{ replaceProductTarget.product_name || '—' }}</span></div>
-            <div class="pi-item"><span class="pi-label">买手</span><span class="pi-val">{{ replaceProductTarget.buyer_name || '未分配' }}</span></div>
+            <div class="pi-item"><span class="pi-label">买手</span><span class="pi-val">{{ getReplaceBuyerName(replaceProductTarget) }}</span></div>
             <div class="pi-item pi-item-wide"><span class="pi-label">返款信息</span><span class="pi-val">{{ formatReplaceRefundInfo(replaceProductTarget) }}</span></div>
           </div>
           <div v-if="replaceProductSourceNeedsDecision" class="replace-source-decision">
@@ -2225,6 +2225,24 @@ function formatReplaceRefundInfo(task: any) {
   const amount = Number(latest?.refund_amount_usd || task?.refund_amount || 0)
   const method = latest?.refund_method || task?.refund_method || '—'
   return `${sequence} / ${status} / $${amount.toFixed(2)} / ${method}`
+}
+
+const NON_BUYER_NAME_VALUES = new Set(['未分配', '待分配', '待匹配', '已分配', '进行中', '已完成', '已截单', '已取消', '暂停中'])
+
+function getReplaceBuyerName(task: any) {
+  const linkedBuyer = buyerList.value.find(b => b.id === task?.buyer_id)
+  const name = String(task?._replace_buyer_name || task?.buyer?.name || linkedBuyer?.name || task?.buyer_name || '').trim()
+  return name && !NON_BUYER_NAME_VALUES.has(name) ? name : '—'
+}
+
+async function hydrateReplaceSourceBuyerName(task: any) {
+  if (!task?.buyer_id || getReplaceBuyerName(task) !== '—') return
+  const { data } = await supabase
+    .from('erp_buyers')
+    .select('name')
+    .eq('id', task.buyer_id)
+    .maybeSingle()
+  if (data?.name) task._replace_buyer_name = data.name
 }
 
 function getImprovingOrderNote(task: any) {
@@ -4053,7 +4071,7 @@ function openTaskOpsDetail(task: any) {
   taskOpsDetailOpen.value = true
 }
 
-function openReplaceProductModal(task: any) {
+async function openReplaceProductModal(task: any) {
   replaceProductTarget.value = task
   replaceProductForm.value = {
     targetSubOrderKey: '',
@@ -4067,6 +4085,7 @@ function openReplaceProductModal(task: any) {
   }
   replaceProductTargetInfo.value = null
   replaceProductOpen.value = true
+  await hydrateReplaceSourceBuyerName(task)
 }
 
 async function lookupReplaceProductTargetInfo() {
