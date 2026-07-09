@@ -2249,6 +2249,8 @@ async function saveAppendOrders() {
       .update({
         order_quantity: nextQty,
         total_orders: nextQty,
+        status: '进行中',
+        status_reason: null,
       })
       .eq('id', orderId)
 
@@ -2262,6 +2264,8 @@ async function saveAppendOrders() {
 
     sourceTask.order_quantity = nextQty
     sourceTask.total_orders = nextQty
+    sourceTask.status = '进行中'
+    sourceTask.status_reason = null
     sourceTask._sub_total = Number(sourceTask._sub_total || 0) + count
 
     const taskInList = tasks.value.find((item: any) => item.id === orderId)

@@ -55,6 +55,10 @@
           allow-clear
         />
         <a-button @click="showAllHistory">全部历史</a-button>
+        <a-select v-model:value="countryFilter" style="width:120px" @change="recalc">
+          <a-select-option value="all">全部国家</a-select-option>
+          <a-select-option v-for="country in countryOptions" :key="country" :value="country">{{ country }}</a-select-option>
+        </a-select>
         <a-select v-model:value="amountFilter" style="width:160px" @change="recalc">
           <a-select-option value="all">全部金额情况</a-select-option>
           <a-select-option value="lostPrincipal">已损失本金</a-select-option>
@@ -73,11 +77,14 @@
         :loading="loading"
         row-key="buyer_id"
         size="middle"
-        :scroll="{ x: 960 }"
+        :scroll="{ x: 1050 }"
         :pagination="{ pageSize: 20 }"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'buyer'">
+          <template v-if="column.key === 'country'">
+            <a-tag>{{ record.country || '--' }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'buyer'">
             <div class="cell-buyer-name">{{ record.buyer_name }}</div>
             <div class="cell-meta">{{ record.buyer_number || '暂无编号' }}</div>
           </template>
@@ -293,6 +300,7 @@ const emptySummary = (): SummaryStats => ({
 const loading = ref(false)
 const viewDimension = ref<ViewDimension>('buyer')
 const amountFilter = ref<AmountFilter>('all')
+const countryFilter = ref('all')
 const defaultDateRange = (): [dayjs.Dayjs, dayjs.Dayjs] => [dayjs().startOf('month'), dayjs().endOf('day')]
 const dateRange = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(defaultDateRange())
 const filterSearch = ref('')
@@ -322,6 +330,7 @@ const lossColumnKeys = ['lost_principal', 'principal_over_refund', 'fission_comm
 const profitColumnKeys = ['principal_short_refund']
 
 const buyerColumns = [
+  { title: '国家', key: 'country', width: 90, fixed: 'left' as const },
   { title: '买手', key: 'buyer', width: 170, fixed: 'left' as const },
   { title: '业务员', dataIndex: 'staff_name', key: 'staff_name', width: 110 },
   { title: '净盈亏', key: 'net', width: 130, sorter: (a: any, b: any) => a.net - b.net, defaultSortOrder: 'ascend' as const },
@@ -559,6 +568,18 @@ const filteredDetailRows = computed(() => {
   return allDetailRows.value.filter(row => row.situation === detailSituationFilter.value)
 })
 const commissionCurrencyLabel = computed(() => currencyLabel(commissionForm.value.country))
+const baseCountryOptions = ['美国', '英国', '德国', '加拿大']
+const countryOptions = computed(() => {
+  const set = new Set<string>(baseCountryOptions)
+  rawIssues.value.forEach(issue => {
+    if (issue?.country) set.add(normalizeCountry(issue.country))
+  })
+  rawRefunds.value.forEach(refund => {
+    const country = refund?.sub_orders?.country || refund?.country
+    if (country) set.add(normalizeCountry(country))
+  })
+  return [...set].filter(Boolean).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+})
 const periodLabel = computed(() => {
   if (!dateRange.value || !dateRange.value[0] || !dateRange.value[1]) return '全部历史'
   return `${dateRange.value[0].format('YYYY-MM-DD')} 至 ${dateRange.value[1].format('YYYY-MM-DD')}`
@@ -798,15 +819,6 @@ function getBuyerKeyFromRefund(refund: any) {
   return sub?.buyer_id || (sub?.buyer_name ? `name:${sub.buyer_name}` : refund?.buyer_name ? `name:${refund.buyer_name}` : 'unknown')
 }
 
-function getStaffKeyFromIssue(issue: any) {
-  return issue?.staff_id || (issue?.staff_name ? `name:${issue.staff_name}` : 'unknown')
-}
-
-function getStaffKeyFromRefund(refund: any) {
-  const sub = refund?.sub_orders
-  return sub?.staff_id || (sub?.staff_name ? `name:${sub.staff_name}` : refund?.staff_name ? `name:${refund.staff_name}` : 'unknown')
-}
-
 function createAmountRow(seed: Record<string, any> = {}) {
   return {
     issue_count: 0,
@@ -834,9 +846,14 @@ function applyAmountFilter(rows: any[]) {
   return rows
 }
 
+function applyCountryFilter(rows: any[]) {
+  if (countryFilter.value === 'all') return rows
+  return rows.filter(row => normalizeCountry(row.country) === countryFilter.value)
+}
+
 function matchesSearch(row: any, kw: string) {
   if (!kw) return true
-  return [row.buyer_name, row.buyer_number, row.staff_name]
+  return [row.country, row.buyer_name, row.buyer_number, row.staff_name]
     .some(value => String(value || '').toLowerCase().includes(kw))
 }
 
@@ -954,50 +971,30 @@ function buildBuyerRows() {
 function buildStaffRows(sourceRows: any[]) {
   const map = new Map<string, any>()
 
-  rawIssues.value.forEach(issue => {
-    const key = getStaffKeyFromIssue(issue)
+  sourceRows.forEach(sourceRow => {
+    const key = sourceRow.staff_name || sourceRow.staff_id || '未分配'
     if (!map.has(key)) {
       map.set(key, createAmountRow({
-        staff_id: key,
-        staff_name: issue.staff_name || '未分配',
+        staff_id: sourceRow.staff_id || key,
+        staff_name: sourceRow.staff_name || '未分配',
         buyer_set: new Set<string>(),
       }))
     }
     const row = map.get(key)
-    row.issue_count++
-    if (issue.buyer_id) row.buyer_set.add(issue.buyer_id)
-    row.lost_principal += getIssueLostPrincipal(issue)
-    row.principal_over_refund += getIssueManualOverRefund(issue)
-    row.principal_short_refund += getIssueShortRefund(issue)
+    row.buyer_set.add(sourceRow.buyer_id || sourceRow.buyer_name)
+    row.lost_principal += sourceRow.lost_principal
+    row.principal_over_refund += sourceRow.principal_over_refund
+    row.principal_short_refund += sourceRow.principal_short_refund
+    row.fission_commission += sourceRow.fission_commission
   })
 
-  rawRefunds.value.forEach(refund => {
-    const key = getStaffKeyFromRefund(refund)
-    const sub = refund.sub_orders || {}
-    if (!map.has(key)) {
-      map.set(key, createAmountRow({
-        staff_id: key,
-        staff_name: sub.staff_name || refund.staff_name || '未分配',
-        buyer_set: new Set<string>(),
-      }))
-    }
-    const row = map.get(key)
-    const buyerKey = getBuyerKeyFromRefund(refund)
-    if (buyerKey !== 'unknown') row.buyer_set.add(buyerKey)
-    row.principal_over_refund += getRefundOverAmount(refund)
-    row.fission_commission += getFissionCommissionAmount(refund)
-  })
-
-  const allowedStaff = new Set(sourceRows.map(row => row.staff_name || row.staff_id))
   return [...map.values()]
     .map(row => finalizeRow({ ...row, buyer_count: row.buyer_set.size }))
-    .filter(row => allowedStaff.has(row.staff_name) || amountFilter.value === 'all')
 }
 
 async function recalc() {
   const kw = filterSearch.value.toLowerCase()
   let rows = buildBuyerRows().filter(row => matchesSearch(row, kw))
-  rows = applyAmountFilter(rows)
 
   const buyerIds = rows
     .map(row => row.buyer_id)
@@ -1012,8 +1009,11 @@ async function recalc() {
     }
   })
 
+  rows = applyCountryFilter(rows)
+  rows = applyAmountFilter(rows)
+
   buyerData.value = rows.sort((a, b) => a.net - b.net)
-  staffData.value = applyAmountFilter(buildStaffRows(rows))
+  staffData.value = buildStaffRows(rows)
     .filter(row => matchesSearch(row, kw))
     .sort((a, b) => a.net - b.net)
 

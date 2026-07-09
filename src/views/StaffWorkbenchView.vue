@@ -1184,35 +1184,121 @@
       title="更换产品"
       @ok="saveReplaceProduct"
       :confirm-loading="replaceProductSaving"
-      ok-text="保存"
+      ok-text="提交"
       cancel-text="取消"
       width="720px"
       :destroy-on-close="true"
     >
-      <a-form v-if="replaceProductTarget" layout="vertical" size="small">
-        <div class="form-row-2">
-          <a-form-item label="ASIN">
-            <a-input v-model:value="replaceProductForm.asin" placeholder="输入新的 ASIN" />
-          </a-form-item>
-          <a-form-item label="产品名称">
-            <a-input v-model:value="replaceProductForm.product_name" placeholder="输入新的产品名称" />
-          </a-form-item>
-          <a-form-item label="店铺">
-            <a-input v-model:value="replaceProductForm.store_name" placeholder="输入新的店铺" />
-          </a-form-item>
-          <a-form-item label="品牌">
-            <a-input v-model:value="replaceProductForm.brand_name" placeholder="输入新的品牌" />
-          </a-form-item>
-          <a-form-item label="类目">
-            <a-input v-model:value="replaceProductForm.category" placeholder="输入新的类目" />
-          </a-form-item>
-          <a-form-item label="变体">
-            <a-input v-model:value="replaceProductForm.variant_info" placeholder="输入新的变体/变参" />
-          </a-form-item>
-          <a-form-item label="售价 ($)">
-            <a-input-number v-model:value="replaceProductForm.product_price" :min="0" :precision="2" style="width:100%" />
-          </a-form-item>
+      <a-form v-if="replaceProductTarget" layout="vertical" size="small" class="replace-product-form">
+        <div class="replace-product-card">
+          <div class="rpc-title-row">
+            <span class="rpc-title">当前子订单</span>
+            <a-tag color="default">{{ replaceProductTarget.sub_order_number || replaceProductTarget.id }}</a-tag>
+          </div>
+          <div class="product-info-bar replace-product-info-bar">
+            <div class="pi-item"><span class="pi-label">订单号</span><span class="pi-val mono-sm">{{ replaceProductTarget.amazon_order_id || '—' }}</span></div>
+            <div class="pi-item"><span class="pi-label">ASIN</span><span class="pi-val mono-sm">{{ replaceProductTarget.asin || '—' }}</span></div>
+            <div class="pi-item"><span class="pi-label">产品名</span><span class="pi-val">{{ replaceProductTarget.product_name || '—' }}</span></div>
+            <div class="pi-item"><span class="pi-label">买手</span><span class="pi-val">{{ replaceProductTarget.buyer_name || '未分配' }}</span></div>
+            <div class="pi-item pi-item-wide"><span class="pi-label">返款信息</span><span class="pi-val">{{ formatReplaceRefundInfo(replaceProductTarget) }}</span></div>
+          </div>
+          <div v-if="replaceProductSourceNeedsDecision" class="replace-source-decision">
+            <div class="rpc-title-row">
+              <span class="rpc-title">原产品处理</span>
+              <a-tag :color="getMainOrderStatusColor(replaceProductTarget?._order_status)">{{ replaceProductTarget?._order_status || '—' }}</a-tag>
+            </div>
+            <a-radio-group v-model:value="replaceProductForm.sourceContinue">
+              <a-radio :value="true">继续进行</a-radio>
+              <a-radio :value="false">不再进行</a-radio>
+            </a-radio-group>
+          </div>
         </div>
+
+        <div class="replace-product-card">
+          <div class="rpc-title-row">
+            <span class="rpc-title">目标子订单</span>
+          </div>
+          <a-form-item label="子订单ID">
+            <div class="replace-target-input-row">
+              <a-input
+                v-model:value="replaceProductForm.targetSubOrderKey"
+                placeholder="输入子订单ID"
+                allow-clear
+                @press-enter="lookupReplaceProductTargetInfo"
+              />
+              <a-button :loading="replaceProductLookupLoading" @click="lookupReplaceProductTargetInfo">查询</a-button>
+            </div>
+          </a-form-item>
+          <div v-if="replaceProductTargetInfo" class="replace-target-preview">
+            <div class="rpc-title-row">
+              <span class="rpc-title">子订单信息</span>
+              <div class="replace-target-tags">
+                <a-tag :color="getMainOrderStatusColor(replaceProductTargetInfo.order?.status)">{{ replaceProductTargetInfo.order?.status || '—' }}</a-tag>
+                <a-tag :color="getStatusColor(replaceProductTargetInfo.subOrder?.status)">{{ getReplaceSubStatusLabel(replaceProductTargetInfo.subOrder?.status) }}</a-tag>
+              </div>
+            </div>
+            <div class="replace-target-detail-grid">
+              <div class="replace-detail-item span-2"><span class="replace-detail-label">产品名</span><span class="replace-detail-val">{{ replaceProductTargetInfo.subOrder.product_name || '—' }}</span></div>
+              <div class="replace-detail-item"><span class="replace-detail-label">ASIN</span><span class="replace-detail-val mono-sm">{{ replaceProductTargetInfo.subOrder.asin || '—' }}</span></div>
+              <div class="replace-detail-item"><span class="replace-detail-label">售价</span><span class="replace-detail-val">${{ Number(replaceProductTargetInfo.subOrder.product_price || 0).toFixed(2) }}</span></div>
+              <div class="replace-detail-item"><span class="replace-detail-label">店铺</span><span class="replace-detail-val">{{ replaceProductTargetInfo.subOrder.store_name || '—' }}</span></div>
+              <div class="replace-detail-item"><span class="replace-detail-label">品牌</span><span class="replace-detail-val">{{ replaceProductTargetInfo.subOrder.brand_name || '—' }}</span></div>
+              <div class="replace-detail-item"><span class="replace-detail-label">关键词</span><span class="replace-detail-val">{{ replaceProductTargetInfo.subOrder.keyword || replaceProductTargetInfo.subOrder.search_link || '—' }}</span></div>
+              <div class="replace-detail-item"><span class="replace-detail-label">类型</span><span class="replace-detail-val">{{ replaceProductTargetInfo.subOrder.review_type || replaceProductTargetInfo.subOrder.order_type || '—' }}</span></div>
+              <div class="replace-detail-item"><span class="replace-detail-label">等级</span><span class="replace-detail-val">{{ replaceProductTargetInfo.subOrder.review_level || '—' }}</span></div>
+              <div class="replace-detail-item"><span class="replace-detail-label">排期日期</span><span class="replace-detail-val">{{ replaceProductTargetInfo.subOrder.scheduled_date || '—' }}</span></div>
+              <div class="replace-detail-item span-2"><span class="replace-detail-label">任务备注</span><span class="replace-detail-val">{{ replaceProductTargetInfo.subOrder.task_notes || '—' }}</span></div>
+            </div>
+            <div class="replace-refund-edit-grid">
+              <a-form-item label="实付金额">
+                <a-input-number v-model:value="replaceProductForm.targetActualPaid" :min="0" :precision="2" prefix="$" style="width:100%" />
+              </a-form-item>
+              <a-form-item label="返款方式">
+                <a-radio-group v-model:value="replaceProductForm.targetRefundMethod">
+                  <a-radio value="礼品卡">礼品卡</a-radio>
+                  <a-radio value="PayPal">PayPal</a-radio>
+                </a-radio-group>
+              </a-form-item>
+              <a-form-item v-if="replaceProductForm.targetRefundMethod === '礼品卡'" label="需返金额">
+                <a-input-number v-model:value="replaceProductForm.targetRefundAmount" :min="0" :precision="2" prefix="$" style="width:100%" />
+              </a-form-item>
+              <template v-if="replaceProductForm.targetRefundMethod === 'PayPal'">
+                <a-form-item label="贝宝手续费">
+                  <a-input-number v-model:value="replaceProductForm.targetPaypalFee" :min="0" :precision="2" prefix="$" style="width:100%" />
+                </a-form-item>
+                <a-form-item label="贝宝邮箱">
+                  <a-input v-model:value="replaceProductForm.targetPaypalEmail" placeholder="buyer@example.com" />
+                </a-form-item>
+                <div class="replace-refund-total">
+                  <span>合计返款</span>
+                  <strong>${{ replaceProductPaypalTotal.toFixed(2) }}</strong>
+                </div>
+              </template>
+            </div>
+            <a-alert
+              v-if="!replaceProductTargetInfo.validation.ok"
+              type="warning"
+              show-icon
+              :message="replaceProductTargetInfo.validation.reason"
+              style="margin-top:10px"
+            />
+            <a-alert
+              v-else-if="isClosedMainTaskStatus(replaceProductTargetInfo.order?.status)"
+              type="info"
+              show-icon
+              message="目标主任务当前已完成或已截单。通常应由商务先追加子单并恢复任务；迁移后系统会按目标子单完成情况同步为已完成。"
+              style="margin-top:10px"
+            />
+          </div>
+        </div>
+
+        <a-form-item label="订单备注">
+          <a-textarea
+            v-model:value="replaceProductForm.note"
+            :rows="2"
+            placeholder="填写订单备注，记录商务确认结果、子订单来源等"
+          />
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -1420,6 +1506,13 @@ import { useCurrentUser } from '../composables/useCurrentUser'
 import AfterSaleIssueList from '../components/AfterSaleIssueList.vue'
 import SubOrderWorkflowEditor from '../components/SubOrderWorkflowEditor.vue'
 import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
+import {
+  canUseTargetSubOrder,
+  isClosedMainTaskStatus,
+  lookupReplaceProductTarget,
+  migrateSubOrderToReplacement,
+  needsSourceContinueDecision,
+} from '../utils/replaceProductMigration'
 
 const ALL_STAFF_KEY = '__all_staff__'
 const AUTO_RELEASE_REASON = '工作台待匹配超期自动回流到抢单大厅'
@@ -1492,14 +1585,17 @@ const replaceProductOpen = ref(false)
 const replaceProductSaving = ref(false)
 const replaceProductTarget = ref<any>(null)
 const replaceProductForm = ref<any>({
-  asin: '',
-  product_name: '',
-  store_name: '',
-  brand_name: '',
-  category: '',
-  variant_info: '',
-  product_price: undefined,
+  targetSubOrderKey: '',
+  sourceContinue: undefined,
+  targetActualPaid: undefined,
+  targetRefundAmount: undefined,
+  targetRefundMethod: '礼品卡',
+  targetPaypalFee: 0,
+  targetPaypalEmail: '',
+  note: '',
 })
+const replaceProductLookupLoading = ref(false)
+const replaceProductTargetInfo = ref<any>(null)
 const mainOrderDetailOpen = ref(false)
 const mainOrderDetailLoading = ref(false)
 const currentMainOrderDetail = ref<any>(null)
@@ -1516,6 +1612,8 @@ const enableMockPreview = ref(true)
 const pendingListSearchSnapshot = ref('')
 
 const isAllStaffSelected = computed(() => selectedStaffId.value === ALL_STAFF_KEY)
+const replaceProductSourceNeedsDecision = computed(() => needsSourceContinueDecision(replaceProductTarget.value?._order_status))
+const replaceProductPaypalTotal = computed(() => Number((Number(replaceProductForm.value.targetActualPaid || 0) + Number(replaceProductForm.value.targetPaypalFee || 0)).toFixed(2)))
 
 const filterTabs = computed(() => {
   if (wbNav.value === 'pending') {
@@ -1770,13 +1868,20 @@ function getStatusColor(s: string) {
   return map[s] || 'default'
 }
 
+function getReplaceSubStatusLabel(status: string) {
+  return status === '待分配' ? '待匹配' : (status || '待匹配')
+}
+
 function getMainOrderStatusColor(status: string) {
   const map: Record<string, string> = {
     '待处理': 'default',
     '进行中': 'blue',
     '已完成': 'green',
+    '已完结': 'green',
+    '已截单': 'red',
     '已取消': 'red',
     '暂停': 'orange',
+    '已暂停': 'orange',
   }
   return map[status] || 'default'
 }
@@ -2111,6 +2216,15 @@ function getImprovingRefundSummary(task: any) {
   const time = fmtTime(latest?.handled_at || latest?.updated_at || task?.refund_date || null)
   const method = latest?.refund_method || task?.refund_method || '—'
   return { status, time, method }
+}
+
+function formatReplaceRefundInfo(task: any) {
+  const latest = task?._refund_request_latest_processed
+  const sequence = latest?.refund_sequence || task?.refund_sequence || '—'
+  const status = refundStatusLabel(task?.refund_status || '') || '未返款'
+  const amount = Number(latest?.refund_amount_usd || task?.refund_amount || 0)
+  const method = latest?.refund_method || task?.refund_method || '—'
+  return `${sequence} / ${status} / $${amount.toFixed(2)} / ${method}`
 }
 
 function getImprovingOrderNote(task: any) {
@@ -3942,40 +4056,82 @@ function openTaskOpsDetail(task: any) {
 function openReplaceProductModal(task: any) {
   replaceProductTarget.value = task
   replaceProductForm.value = {
-    asin: task.asin || '',
-    product_name: task.product_name || '',
-    store_name: task.store_name || '',
-    brand_name: task.brand_name || '',
-    category: task.category || '',
-    variant_info: task.variant_info || '',
-    product_price: task.product_price != null ? Number(task.product_price) : undefined,
+    targetSubOrderKey: '',
+    sourceContinue: undefined,
+    targetActualPaid: task.product_price != null ? Number(task.product_price) : undefined,
+    targetRefundAmount: task.refund_amount ? Number(task.refund_amount) : (task.product_price != null ? Number(task.product_price) : undefined),
+    targetRefundMethod: task.refund_method || '礼品卡',
+    targetPaypalFee: 0,
+    targetPaypalEmail: task.buyer_paypal_email || task._buyer_paypal_email || '',
+    note: '',
   }
+  replaceProductTargetInfo.value = null
   replaceProductOpen.value = true
+}
+
+async function lookupReplaceProductTargetInfo() {
+  const key = String(replaceProductForm.value.targetSubOrderKey || '').trim()
+  if (!key) {
+    message.warning('请先填写子订单ID')
+    return
+  }
+  replaceProductLookupLoading.value = true
+  try {
+    const result = await lookupReplaceProductTarget(supabase, key)
+    replaceProductTargetInfo.value = {
+      ...result,
+      validation: canUseTargetSubOrder(result.subOrder, replaceProductTarget.value?.id),
+    }
+    replaceProductForm.value.targetActualPaid = Number(result.subOrder?.product_price || replaceProductTarget.value?.actual_paid || replaceProductTarget.value?.product_price || 0)
+    replaceProductForm.value.targetRefundAmount = Number(result.subOrder?.product_price || replaceProductTarget.value?.refund_amount || replaceProductTarget.value?.product_price || 0)
+    replaceProductForm.value.targetRefundMethod = replaceProductTarget.value?.refund_method || '礼品卡'
+    replaceProductForm.value.targetPaypalFee = 0
+    replaceProductForm.value.targetPaypalEmail = replaceProductTarget.value?.buyer_paypal_email || replaceProductTarget.value?._buyer_paypal_email || ''
+  } catch (e: any) {
+    replaceProductTargetInfo.value = null
+    message.error(e.message || '查询子订单失败')
+  } finally {
+    replaceProductLookupLoading.value = false
+  }
 }
 
 async function saveReplaceProduct() {
   if (!replaceProductTarget.value) return
   replaceProductSaving.value = true
   try {
-    const payload = {
-      asin: String(replaceProductForm.value.asin || '').trim(),
-      product_name: String(replaceProductForm.value.product_name || '').trim(),
-      store_name: String(replaceProductForm.value.store_name || '').trim(),
-      brand_name: String(replaceProductForm.value.brand_name || '').trim(),
-      category: String(replaceProductForm.value.category || '').trim(),
-      variant_info: String(replaceProductForm.value.variant_info || '').trim(),
-      product_price: Number(replaceProductForm.value.product_price || 0),
+    if (!replaceProductTargetInfo.value) {
+      await lookupReplaceProductTargetInfo()
     }
-    const { error } = await supabase.from('sub_orders').update(payload).eq('id', replaceProductTarget.value.id)
-    if (error) throw error
-    Object.assign(replaceProductTarget.value, payload)
-    if (!replaceProductTarget.value._refund_request_pending) {
-      replaceProductTarget.value._refund_amount_usd = payload.product_price
-      replaceProductTarget.value._refund_final_amount_usd = payload.product_price
-      syncRefundComputed(replaceProductTarget.value)
+    if (!replaceProductTargetInfo.value?.validation?.ok) {
+      throw new Error(replaceProductTargetInfo.value?.validation?.reason || '子订单不可用')
     }
+    if (replaceProductSourceNeedsDecision.value && typeof replaceProductForm.value.sourceContinue !== 'boolean') {
+      throw new Error('请选择原产品处理方式')
+    }
+    if (replaceProductForm.value.targetRefundMethod === '礼品卡' && !Number(replaceProductForm.value.targetRefundAmount || 0)) {
+      throw new Error('请填写礼品卡需返金额')
+    }
+    if (replaceProductForm.value.targetRefundMethod === 'PayPal' && !String(replaceProductForm.value.targetPaypalEmail || '').trim()) {
+      throw new Error('请填写贝宝邮箱')
+    }
+    const result = await migrateSubOrderToReplacement({
+      supabase,
+      sourceSubOrder: replaceProductTarget.value,
+      targetSubOrderKey: replaceProductForm.value.targetSubOrderKey,
+      sourceContinue: replaceProductForm.value.sourceContinue,
+      operatorName: currentUser.value?.name || replaceProductTarget.value.staff_name || '',
+      note: replaceProductForm.value.note,
+      targetActualPaid: Number(replaceProductForm.value.targetActualPaid || 0),
+      targetRefundMethod: replaceProductForm.value.targetRefundMethod,
+      targetRefundAmount: Number(replaceProductForm.value.targetRefundAmount || 0),
+      targetPaypalFee: Number(replaceProductForm.value.targetPaypalFee || 0),
+      targetPaypalEmail: replaceProductForm.value.targetPaypalEmail,
+    })
+    Object.assign(replaceProductTarget.value, result.sourceSubOrder)
+    allTasks.value = allTasks.value.filter(task => task.id !== replaceProductTarget.value.id)
+    await loadTasks()
     replaceProductOpen.value = false
-    message.success('产品信息已更新')
+    message.success(`已迁移到子订单 ${result.targetSubOrder.sub_order_number || result.targetSubOrder.id}`)
   } catch (e: any) {
     message.error('更换产品失败：' + e.message)
   } finally {
@@ -5834,6 +5990,89 @@ onUnmounted(() => {
 .pi-val { font-size: 12px; color: #1a1a2e; font-weight: 500; }
 .pi-actions { margin-left: auto; padding: 3px 0 3px 12px; }
 .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.replace-product-form { display: flex; flex-direction: column; gap: 12px; }
+.replace-product-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f9fafb;
+  padding: 12px;
+}
+.rpc-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.rpc-title { font-size: 13px; font-weight: 700; color: #1a1a2e; }
+.rpc-hint { font-size: 12px; color: #6b7280; }
+.replace-product-info-bar { margin-bottom: 0; }
+.replace-product-info-bar .pi-item-wide { flex: 1 1 280px; }
+.replace-source-decision {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+}
+.replace-source-decision .rpc-title-row { margin-bottom: 8px; }
+.replace-target-input-row { display: flex; gap: 8px; }
+.replace-target-preview {
+  border-top: 1px dashed #e5e7eb;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.replace-target-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.replace-target-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.replace-detail-item {
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+}
+.replace-detail-item.span-2 { grid-column: span 2; }
+.replace-detail-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+.replace-detail-val {
+  display: block;
+  font-size: 12px;
+  color: #1a1a2e;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.replace-refund-edit-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+.replace-refund-edit-grid :deep(.ant-form-item) { margin-bottom: 0; }
+.replace-refund-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #2563eb;
+}
+.replace-refund-total strong { font-size: 14px; }
+.mono-sm { font-family: 'Courier New', monospace; }
 
 /* Steps + Collapse 流程 */
 .workflow-steps-modern { padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 12px; }
@@ -6254,5 +6493,8 @@ onUnmounted(() => {
   .today-focus-stats,
   .after-sale-dashboard,
   .filter-right { width: 100%; margin-left: 0; flex-wrap: wrap; }
+  .replace-target-detail-grid { grid-template-columns: 1fr; }
+  .replace-detail-item.span-2 { grid-column: span 1; }
+  .replace-refund-edit-grid { grid-template-columns: 1fr; }
 }
 </style>
