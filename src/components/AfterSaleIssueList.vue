@@ -408,10 +408,11 @@
 
     <a-modal
       v-model:open="actionModalOpen"
-      :title="actionModalType === 'replace-order' ? '替换单号' : '补单编辑'"
+      :title="actionModalType === 'replace-order' ? '替换单号' : `补单编辑 · ${currentIssue?.sub_order_number || currentIssue?.sub_order_id || '--'}`"
       :width="actionModalType === 'reorder' ? 1080 : 760"
       :confirm-loading="saving"
       :ok-text="actionModalType === 'reorder' ? '确认补单' : '确认'"
+      :footer="actionModalType === 'reorder' ? null : undefined"
       destroy-on-close
       @ok="submitActionModal"
       @cancel="closeActionModal"
@@ -433,11 +434,10 @@
             v-if="reorderEditorTask"
             :task="reorderEditorTask"
             :buyer-list="reorderBuyerOptions"
-            :show-summary-header="false"
+            editor-mode="pending-order"
             :show-processed-refund-list="false"
             :show-correction-action="false"
             :show-replace-product-button="true"
-            :show-proof-step="false"
             :replace-product-button-label="'更换产品'"
             :progress-badge-class-fn="getReorderTaskProgressBadgeClass"
             :progress-label-fn="getReorderTaskProgressLabel"
@@ -464,6 +464,9 @@
             :save-amazon-order="saveReorderAmazonOrder"
             :save-screenshot="saveReorderScreenshot"
             :save-order-notes="saveReorderOrderNotes"
+            :submit-all-changes="submitReorderEditorChanges"
+            :release-to-hall="releaseReorderToHall"
+            :transfer-to-other="transferReorderToOther"
             :on-open-replace-product="openReorderReplaceProductHint"
             :format-audit-edit="formatReorderAuditEdit"
           >
@@ -707,6 +710,11 @@ const MOCK_AFTER_SALE_ISSUES = [
     asin: 'B0MOCKAS2006',
     store_name: 'US-Store-18',
     product_name: 'Portable Neck Fan',
+    keyword: 'portable neck fan',
+    keyword_type: 'keyword',
+    order_type: '图片评',
+    review_type: '图片评',
+    review_level: 'B',
     product_price: 19.8,
     commission_fee: 34,
     issue_type: '退款',
@@ -1339,7 +1347,13 @@ function loadMockIssuesState() {
     const raw = window.localStorage.getItem(MOCK_AFTER_SALE_ISSUES_KEY)
     const parsed = raw ? JSON.parse(raw) : []
     const seeded = Array.isArray(parsed)
-      ? parsed.map((item: any) => item?.issue_status === '需补单' ? { ...item, issue_status: '无新单号' } : item)
+      ? parsed.map((item: any) => {
+          const seed = MOCK_AFTER_SALE_ISSUES.find(candidate => candidate.id === item?.id)
+          const normalized = item?.issue_status === '需补单'
+            ? { ...item, issue_status: '无新单号' }
+            : item
+          return seed ? { ...seed, ...normalized } : normalized
+        })
       : []
     const merged = [...seeded]
     MOCK_AFTER_SALE_ISSUES.forEach(seed => {
@@ -1610,15 +1624,17 @@ function buildReorderEditorTask(record: any) {
     product_name: record.product_name || '',
     brand_name: record.brand_name || '',
     category: record.category || '',
-    review_level: record.review_level || '',
+    review_level: record.review_level || 'A',
     asin: record.asin || '',
     store_name: record.store_name || '',
     country: record.country || '',
     product_price: Number(record.product_price || 0),
     scheduled_date: dayjs().format('YYYY-MM-DD'),
     keyword: record.keyword || '',
+    keyword_type: record.keyword_type || 'keyword',
+    search_link: record.search_link || '',
     order_type: record.order_type || '',
-    review_type: record.review_type || '',
+    review_type: record.review_type || record.order_type || '文字评',
     customer_name: record.customer_name || '',
     sales_person: record.business_manager_name || record.sales_person || '',
     variant_info: record.variant_info || '',
@@ -1690,6 +1706,26 @@ function applyReorderBuyerMeta(task: any) {
   if (!task._buyer_paypal_email) {
     task._buyer_paypal_email = buyer.paypal_email || ''
   }
+}
+
+async function hydrateReorderEditorSource(record: any) {
+  if (isMockIssue(record) || !record?.sub_order_id) return
+  const { data, error } = await supabase
+    .from('sub_orders')
+    .select('keyword, keyword_type, search_link, order_type, review_type, review_level')
+    .eq('id', record.sub_order_id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data || !reorderEditorTask.value) return
+
+  Object.assign(reorderEditorTask.value, {
+    keyword: record.keyword || data.keyword || '',
+    keyword_type: record.keyword_type || data.keyword_type || 'keyword',
+    search_link: record.search_link || data.search_link || '',
+    order_type: record.order_type || data.order_type || '',
+    review_type: record.review_type || data.review_type || record.order_type || data.order_type || '文字评',
+    review_level: record.review_level || data.review_level || 'A',
+  })
 }
 
 async function loadReorderBuyerOptions() {
@@ -1995,6 +2031,43 @@ function saveReorderOrderNotes(task: any) {
   editForm.resolution_notes = task.notes
 }
 
+async function submitReorderEditorChanges(task: any) {
+  if (task?._buyer_validation?.blocked) {
+    message.error(task._buyer_validation.reason)
+    return
+  }
+  if (task?._sel_buyer_id && task._sel_buyer_id !== task.buyer_id) {
+    assignReorderBuyer(task)
+  }
+  if (!task?.buyer_id) {
+    message.warning('请选择补单买手')
+    return
+  }
+  saveReorderOrderNotes(task)
+  if (String(task._input_amazon_order_id || '').trim()) {
+    task.amazon_order_id = String(task._input_amazon_order_id).trim()
+    editForm.new_amazon_order_id = task.amazon_order_id
+  }
+  if (String(task._input_screenshot_url || '').trim()) {
+    if (task._proof_type === 'Feedback') {
+      task.fb_image_url = task._input_screenshot_url
+    } else {
+      task.review_screenshot_url = task._input_screenshot_url
+    }
+  }
+  await submitActionModal()
+}
+
+function releaseReorderToHall() {
+  closeActionModal()
+  setHandleAction('release-grab')
+}
+
+function transferReorderToOther() {
+  closeActionModal()
+  setHandleAction('transfer-other')
+}
+
 function openReorderReplaceProductHint() {
   message.info('当前补单弹框已直接复用工作台编辑页，产品信息沿用原问题单数据')
 }
@@ -2172,6 +2245,9 @@ function openActionModal(record: any, type: 'replace-order' | 'reorder') {
     reorderEditorTask.value = buildReorderEditorTask({
       ...record,
       replacement_sub_order_number: editForm.replacement_sub_order_number,
+    })
+    hydrateReorderEditorSource(record).catch((error: any) => {
+      message.error(`加载原子订单信息失败：${error.message}`)
     })
     loadReorderBuyerOptions().catch((error: any) => {
       message.error(`加载买手失败：${error.message}`)

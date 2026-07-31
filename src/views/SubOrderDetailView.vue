@@ -222,6 +222,7 @@
         :show-summary-header="true"
         :show-processed-refund-list="true"
         :show-correction-action="true"
+        :show-unified-submit-button="true"
         detail-hint-text="明细请点右侧「详情」查看"
         :progress-badge-class-fn="getWorkflowProgressBadgeClass"
         :progress-label-fn="getWorkflowProgressLabel"
@@ -248,6 +249,7 @@
         :save-amazon-order="saveAmazonOrder"
         :save-screenshot="saveScreenshot"
         :save-order-notes="saveOrderNotes"
+        :submit-all-changes="submitEditTaskChanges"
         :on-open-replace-product="openReplaceProduct"
         :format-audit-edit="formatAuditEdit"
       />
@@ -1161,6 +1163,8 @@ const dateRange = ref<[Dayjs, Dayjs] | null>(null)
 
 const editOpen = ref(false)
 const editTask = ref<any | null>(null)
+const editTaskDraftSnapshot = ref<any | null>(null)
+const editTaskSubmitted = ref(false)
 const buyerList = ref<any[]>([])
 const buyerMonthlyCountMap = ref<Record<string, number>>({})
 const buyerAsinMap = ref<Record<string, string[]>>({})
@@ -1548,7 +1552,7 @@ function isRefundStepReadonly(task: any) {
 function refundPanelTitle(task: any) {
   if (task._refund_supplement_mode) return '追加返款申请'
   if (task._refund_correction_mode) return '更正返款申请'
-  if (isRefundStepReadonly(task)) return '财务返款申请'
+  if (isRefundStepReadonly(task)) return '返款申请'
   if (task._refund_request_pending) return '返款申请（待审核）'
   return '返款申请'
 }
@@ -1718,13 +1722,74 @@ function initializeEditTask(raw: SubOrder) {
     _proof_type: raw.fb_link || raw.fb_image_url ? 'Feedback' : 'Review',
     _proof_comment_link: raw.fb_link || raw.review_link || '',
     _input_screenshot_url: raw.fb_image_url || raw.review_screenshot_url || '',
+    _proof_file_list: (raw.fb_image_url || raw.review_screenshot_url) ? [{
+      uid: 'existing-proof',
+      name: 'proof-image',
+      status: 'done',
+      url: raw.fb_image_url || raw.review_screenshot_url,
+    }] : [],
     _saving_screenshot: false,
     _edit_order_notes: raw.notes || '',
   }
 }
 
+function captureEditTaskDraft(task: any) {
+  return {
+    _sel_buyer_id: task._sel_buyer_id || '',
+    _editing_buyer: !!task._editing_buyer,
+    _sel_refund_sequence: task._sel_refund_sequence || '',
+    _sel_refund_method: task._sel_refund_method || '',
+    _buyer_paypal_email: task._buyer_paypal_email || '',
+    _refund_amount_usd: Number(task._refund_amount_usd || 0),
+    _refund_fee_usd: Number(task._refund_fee_usd || 0),
+    _refund_final_amount_usd: Number(task._refund_final_amount_usd || 0),
+    _refund_apply_notes: task._refund_apply_notes || '',
+    _need_finance_screenshot: !!task._need_finance_screenshot,
+    _refund_supplement_mode: !!task._refund_supplement_mode,
+    _refund_correction_mode: !!task._refund_correction_mode,
+    _refund_correction_target_id: task._refund_correction_target_id || null,
+    _extra_refund_amount: Number(task._extra_refund_amount || 0),
+    _extra_refund_method: task._extra_refund_method || '',
+    _extra_refund_reason: task._extra_refund_reason || '',
+    _input_amazon_order_id: task._input_amazon_order_id || '',
+    _proof_type: task._proof_type || 'Review',
+    _proof_comment_link: task._proof_comment_link || '',
+    _input_screenshot_url: task._input_screenshot_url || '',
+    _proof_file_list: Array.isArray(task._proof_file_list) ? [...task._proof_file_list] : [],
+    _edit_order_notes: task._edit_order_notes || '',
+  }
+}
+
+function restoreEditTaskDraft(task: any, snapshot: any) {
+  if (!task || !snapshot) return
+  task._sel_buyer_id = snapshot._sel_buyer_id
+  task._editing_buyer = snapshot._editing_buyer
+  task._sel_refund_sequence = snapshot._sel_refund_sequence
+  task._sel_refund_method = snapshot._sel_refund_method
+  task._buyer_paypal_email = snapshot._buyer_paypal_email
+  task._refund_amount_usd = snapshot._refund_amount_usd
+  task._refund_fee_usd = snapshot._refund_fee_usd
+  task._refund_final_amount_usd = snapshot._refund_final_amount_usd
+  task._refund_apply_notes = snapshot._refund_apply_notes
+  task._need_finance_screenshot = snapshot._need_finance_screenshot
+  task._refund_supplement_mode = snapshot._refund_supplement_mode
+  task._refund_correction_mode = snapshot._refund_correction_mode
+  task._refund_correction_target_id = snapshot._refund_correction_target_id
+  task._extra_refund_amount = snapshot._extra_refund_amount
+  task._extra_refund_method = snapshot._extra_refund_method
+  task._extra_refund_reason = snapshot._extra_refund_reason
+  task._input_amazon_order_id = snapshot._input_amazon_order_id
+  task._proof_type = snapshot._proof_type
+  task._proof_comment_link = snapshot._proof_comment_link
+  task._input_screenshot_url = snapshot._input_screenshot_url
+  task._proof_file_list = Array.isArray(snapshot._proof_file_list) ? [...snapshot._proof_file_list] : []
+  task._edit_order_notes = snapshot._edit_order_notes
+}
+
 async function openEdit(r: SubOrder) {
   editTask.value = initializeEditTask(r)
+  editTaskDraftSnapshot.value = captureEditTaskDraft(editTask.value)
+  editTaskSubmitted.value = false
   editOpen.value = true
   if ((r as any)._is_preview_mock || !isUuid(String(r.id || ''))) {
     syncRefundComputed(editTask.value)
@@ -1796,6 +1861,11 @@ async function openEditById(id: string) {
 }
 
 function handleEditClosed() {
+  if (!editTaskSubmitted.value && editTask.value && editTaskDraftSnapshot.value) {
+    restoreEditTaskDraft(editTask.value, editTaskDraftSnapshot.value)
+  }
+  editTaskDraftSnapshot.value = null
+  editTaskSubmitted.value = false
   if (editOnlyMode.value) emit('closed')
 }
 
@@ -2135,6 +2205,102 @@ async function saveOrderNotes(task: any) {
   } catch (e: any) {
     message.error('备注保存失败：' + e.message)
   }
+}
+
+function hasEditRefundDraftChanged(task: any, snapshot: any) {
+  if (!snapshot) return false
+  return [
+    String(task._sel_refund_sequence || ''),
+    String(task._sel_refund_method || ''),
+    String(task._buyer_paypal_email || ''),
+    Number(task._refund_amount_usd || 0),
+    Number(task._refund_fee_usd || 0),
+    Number(task._refund_final_amount_usd || 0),
+    String(task._refund_apply_notes || ''),
+    !!task._need_finance_screenshot,
+    !!task._refund_supplement_mode,
+    !!task._refund_correction_mode,
+    task._refund_correction_target_id || null,
+    Number(task._extra_refund_amount || 0),
+    String(task._extra_refund_method || ''),
+    String(task._extra_refund_reason || ''),
+  ].some((value, index) => value !== [
+    String(snapshot._sel_refund_sequence || ''),
+    String(snapshot._sel_refund_method || ''),
+    String(snapshot._buyer_paypal_email || ''),
+    Number(snapshot._refund_amount_usd || 0),
+    Number(snapshot._refund_fee_usd || 0),
+    Number(snapshot._refund_final_amount_usd || 0),
+    String(snapshot._refund_apply_notes || ''),
+    !!snapshot._need_finance_screenshot,
+    !!snapshot._refund_supplement_mode,
+    !!snapshot._refund_correction_mode,
+    snapshot._refund_correction_target_id || null,
+    Number(snapshot._extra_refund_amount || 0),
+    String(snapshot._extra_refund_method || ''),
+    String(snapshot._extra_refund_reason || ''),
+  ][index])
+}
+
+async function submitEditTaskChanges(task: any) {
+  const snapshot = editTaskDraftSnapshot.value
+  if (!task || !snapshot) return
+
+  let didSubmit = false
+
+  if (String(task._sel_buyer_id || '') !== String(snapshot._sel_buyer_id || '') && task._sel_buyer_id) {
+    await assignBuyer(task)
+    didSubmit = true
+  }
+
+  if (hasEditRefundDraftChanged(task, snapshot)) {
+    const extraRefundChanged =
+      Number(task._extra_refund_amount || 0) !== Number(snapshot._extra_refund_amount || 0)
+      || String(task._extra_refund_method || '') !== String(snapshot._extra_refund_method || '')
+      || String(task._extra_refund_reason || '') !== String(snapshot._extra_refund_reason || '')
+    const currentRefundChanged =
+      String(task._sel_refund_method || '') !== String(snapshot._sel_refund_method || '')
+      || String(task._buyer_paypal_email || '') !== String(snapshot._buyer_paypal_email || '')
+      || Number(task._refund_amount_usd || 0) !== Number(snapshot._refund_amount_usd || 0)
+      || Number(task._refund_final_amount_usd || 0) !== Number(snapshot._refund_final_amount_usd || 0)
+    if (isRefundStepReadonly(task)) {
+      if (extraRefundChanged && Number(task._extra_refund_amount || 0) > 0) startSupplementalRefund(task)
+      else if (currentRefundChanged) startCorrectionRefund(task)
+    }
+    await submitRefundRequest(task)
+    didSubmit = true
+  }
+
+  if (
+    String(task._input_amazon_order_id || '').trim()
+    && String(task._input_amazon_order_id || '').trim() !== String(snapshot._input_amazon_order_id || '').trim()
+  ) {
+    await saveAmazonOrder(task)
+    didSubmit = true
+  }
+
+  const proofDraftChanged =
+    String(task._proof_type || '') !== String(snapshot._proof_type || '')
+    || String(task._proof_comment_link || '') !== String(snapshot._proof_comment_link || '')
+    || String(task._input_screenshot_url || '') !== String(snapshot._input_screenshot_url || '')
+
+  if (proofDraftChanged && task._input_screenshot_url) {
+    await saveScreenshot(task)
+    didSubmit = true
+  }
+
+  if (String(task._edit_order_notes || '') !== String(snapshot._edit_order_notes || '')) {
+    await saveOrderNotes(task)
+    didSubmit = true
+  }
+
+  if (!didSubmit) {
+    message.info('未检测到需要提交的改动')
+    return
+  }
+
+  editTaskSubmitted.value = true
+  editTaskDraftSnapshot.value = captureEditTaskDraft(task)
 }
 
 async function openReplaceProduct() {

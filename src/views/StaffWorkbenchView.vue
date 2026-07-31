@@ -148,7 +148,13 @@
                           >
                             {{ formatReviewType(group.review_type || group.order_type) }}
                           </a-tag>
-                          <a-tag v-if="group.review_level" color="gold" class="info-tag">{{ group.review_level }}</a-tag>
+                          <a-tag
+                            v-if="group.review_level && getReviewLevelLabel(group.review_level) !== '普通'"
+                            color="gold"
+                            class="info-tag"
+                          >
+                            {{ getReviewLevelLabel(group.review_level) }}
+                          </a-tag>
                         </div>
                         <div class="main-order-detail-row">
                           <span class="detail-item-text">产品名称：{{ group.product_name || group.asin || '—' }}</span>
@@ -204,6 +210,7 @@
                         <div>类型</div>
                         <div>售价</div>
                         <div>关键词</div>
+                        <div>店铺</div>
                         <div>操作</div>
                       </div>
                       <div v-for="sub in group.subs" :key="sub.id" class="inline-sub-grid inline-sub-row">
@@ -217,7 +224,7 @@
                           <span v-else class="text-gray">—</span>
                         </div>
                         <div>
-                          <a-tag v-if="sub.review_level" color="gold" size="small">{{ sub.review_level }}</a-tag>
+                          <a-tag v-if="sub.review_level" color="gold" size="small">{{ getReviewLevelLabel(sub.review_level) }}</a-tag>
                           <span v-else class="text-gray">—</span>
                         </div>
                         <div>
@@ -235,9 +242,12 @@
                           <span v-if="sub.keyword" class="inline-keyword">{{ sub.keyword }}</span>
                           <span v-else class="text-gray">—</span>
                         </div>
+                        <div>
+                          <span>{{ sub.store_name || '—' }}</span>
+                        </div>
                         <div class="inline-sub-actions">
                           <a-button size="small" @click.stop="openTaskOpsDetail(sub)">详情</a-button>
-                          <a-button size="small" type="primary" ghost @click.stop="focusTask(sub)">编辑</a-button>
+                          <a-button size="small" type="primary" ghost @click.stop="openTaskEditor(sub)">编辑</a-button>
                         </div>
                       </div>
                     </div>
@@ -292,7 +302,13 @@
                           >
                             {{ formatReviewType(group.review_type || group.order_type) }}
                           </a-tag>
-                          <a-tag v-if="group.review_level" color="gold" class="info-tag">{{ group.review_level }}</a-tag>
+                          <a-tag
+                            v-if="group.review_level && getReviewLevelLabel(group.review_level) !== '普通'"
+                            color="gold"
+                            class="info-tag"
+                          >
+                            {{ getReviewLevelLabel(group.review_level) }}
+                          </a-tag>
                           <a-tag :color="getMainOrderStatusColor(getImprovingGroupStatus(group))" class="status-tag">
                             {{ getImprovingGroupStatus(group) }}
                           </a-tag>
@@ -326,6 +342,8 @@
                         <div>买手 / 聊单号</div>
                         <div>产品名称 / ASIN</div>
                         <div>类型 / 等级</div>
+                        <div>关键词</div>
+                        <div>店铺</div>
                         <div>售价 / 实付 / 实返</div>
                         <div>返款状态 / 时间 / 方式</div>
                         <div>订单进度</div>
@@ -335,12 +353,17 @@
                       </div>
                       <div v-for="sub in group.subs" :key="sub.id" class="improving-sub-grid improving-sub-row">
                         <div class="inline-sub-no">{{ sub.sub_order_number }}</div>
-                        <div>{{ getImprovingBuyerChat(sub) }}</div>
+                        <div class="improving-buyer-cell">
+                          <div class="improving-buyer-name">{{ getImprovingBuyerName(sub) }}</div>
+                          <div class="improving-chat-id">{{ getImprovingBuyerChatId(sub) }}</div>
+                        </div>
                         <div class="improving-product-cell">
                           <div class="inline-sub-product-name">{{ sub.product_name || '—' }}</div>
                           <div class="inline-sub-asin">{{ sub.asin || '—' }}</div>
                         </div>
                         <div>{{ getImprovingTypeLevel(sub) }}</div>
+                        <div>{{ sub.keyword || '—' }}</div>
+                        <div>{{ sub.store_name || '—' }}</div>
                         <div class="improving-stack-cell">
                           <span>售价：{{ getImprovingPricePaidRefund(sub).price }}</span>
                           <span>实付：{{ getImprovingPricePaidRefund(sub).actualPaid }}</span>
@@ -355,12 +378,21 @@
                           <span :class="getTaskProgressBadgeClass(sub)">{{ getTaskProgressLabel(sub) }}</span>
                         </div>
                         <div>
-                          <a-tag :color="getStatusColor(sub.status)" size="small">{{ sub.status || '—' }}</a-tag>
+                          <a-select
+                            :value="getWorkbenchOrderIssueType(sub)"
+                            size="small"
+                            style="width: 120px"
+                            @change="(value: string) => updateWorkbenchOrderIssueType(sub, value)"
+                          >
+                            <a-select-option v-for="status in workbenchOrderIssueOptions" :key="status" :value="status">
+                              {{ status }}
+                            </a-select-option>
+                          </a-select>
                         </div>
                         <div class="improving-note-cell" :title="getImprovingOrderNote(sub)">{{ getImprovingOrderNote(sub) }}</div>
                         <div class="inline-sub-actions">
                           <a-button size="small" @click.stop="openTaskOpsDetail(sub)">详情</a-button>
-                          <a-button size="small" type="primary" ghost @click.stop="focusTask(sub)">编辑</a-button>
+                          <a-button size="small" type="primary" ghost @click.stop="openTaskEditor(sub)">编辑</a-button>
                         </div>
                       </div>
                     </div>
@@ -390,6 +422,8 @@
                     <div>买手 / 聊单号</div>
                     <div>产品名称 / ASIN</div>
                     <div>类型 / 等级</div>
+                    <div>关键词</div>
+                    <div>店铺</div>
                     <div>售价 / 实付 / 实返</div>
                     <div>返款状态 / 时间 / 方式</div>
                     <div>订单进度</div>
@@ -399,12 +433,17 @@
                   </div>
                   <div v-for="task in displayedImprovingListTasks" :key="task.id" class="improving-sub-grid improving-sub-row">
                     <div class="inline-sub-no">{{ task.sub_order_number }}</div>
-                    <div>{{ getImprovingBuyerChat(task) }}</div>
+                    <div class="improving-buyer-cell">
+                      <div class="improving-buyer-name">{{ getImprovingBuyerName(task) }}</div>
+                      <div class="improving-chat-id">{{ getImprovingBuyerChatId(task) }}</div>
+                    </div>
                     <div class="improving-product-cell">
                       <div class="inline-sub-product-name">{{ task.product_name || '—' }}</div>
                       <div class="inline-sub-asin">{{ task.asin || '—' }}</div>
                     </div>
                     <div>{{ getImprovingTypeLevel(task) }}</div>
+                    <div>{{ task.keyword || '—' }}</div>
+                    <div>{{ task.store_name || '—' }}</div>
                     <div class="improving-stack-cell">
                       <span>售价：{{ getImprovingPricePaidRefund(task).price }}</span>
                       <span>实付：{{ getImprovingPricePaidRefund(task).actualPaid }}</span>
@@ -419,12 +458,21 @@
                       <span :class="getTaskProgressBadgeClass(task)">{{ getTaskProgressLabel(task) }}</span>
                     </div>
                     <div>
-                      <a-tag :color="getStatusColor(task.status)" size="small">{{ task.status || '—' }}</a-tag>
+                      <a-select
+                        :value="getWorkbenchOrderIssueType(task)"
+                        size="small"
+                        style="width: 120px"
+                        @change="(value: string) => updateWorkbenchOrderIssueType(task, value)"
+                      >
+                        <a-select-option v-for="status in workbenchOrderIssueOptions" :key="status" :value="status">
+                          {{ status }}
+                        </a-select-option>
+                      </a-select>
                     </div>
                     <div class="improving-note-cell" :title="getImprovingOrderNote(task)">{{ getImprovingOrderNote(task) }}</div>
                     <div class="inline-sub-actions">
                       <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
-                      <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
+                      <a-button size="small" type="primary" ghost @click.stop="openTaskEditor(task)">编辑</a-button>
                     </div>
                   </div>
                 </div>
@@ -505,7 +553,7 @@
                     </div>
                     <div class="improving-note-cell" :title="getImprovingOrderNote(task)">{{ getImprovingOrderNote(task) }}</div>
                     <div class="inline-sub-actions">
-                      <a-button size="small" type="primary" ghost @click.stop="openReviewFollowEditor(task)">编辑</a-button>
+                      <a-button size="small" type="primary" ghost @click.stop="openTaskEditor(task, 'review')">编辑</a-button>
                       <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
                       <a-popover trigger="click" placement="bottomRight" overlay-class-name="review-follow-popover">
                         <template #content>
@@ -595,7 +643,7 @@
                       :class="getReviewFollowActionLabel(task) === '无法完成' ? 'follow-review-btn danger' : 'follow-review-btn'"
                       @click.stop="handleReviewFollowAction(task)"
                     >{{ getReviewFollowActionLabel(task) }}</a-button>
-                    <a-button size="small" type="primary" ghost @click.stop="focusTask(task)">编辑</a-button>
+                    <a-button size="small" type="primary" ghost @click.stop="openTaskEditor(task)">编辑</a-button>
                     <a-button size="small" @click.stop="openTaskOpsDetail(task)">详情</a-button>
                   </a-space>
                 </div>
@@ -610,6 +658,9 @@
                   :show-summary-header="false"
                   :show-processed-refund-list="false"
                   :show-correction-action="false"
+                  :show-buyer-step="!reviewFollowEditMode"
+                  :show-refund-step="!reviewFollowEditMode"
+                  :show-amazon-order-step="!reviewFollowEditMode"
                   detail-hint-text="明细请点子订单后的「详情」查看"
                   :progress-badge-class-fn="getTaskProgressBadgeClass"
                   :progress-label-fn="getTaskProgressLabel"
@@ -1180,6 +1231,61 @@
     />
 
     <a-modal
+      v-model:open="taskEditorOpen"
+      :title="taskEditorTarget ? `编辑子订单 · ${taskEditorTarget.sub_order_number || taskEditorTarget.id}` : '编辑子订单'"
+      :footer="null"
+      width="1080px"
+      :destroy-on-close="true"
+      @cancel="closeTaskEditor"
+    >
+      <SubOrderWorkflowEditor
+        v-if="taskEditorTarget"
+        :task="taskEditorTarget"
+        :buyer-list="buyerList"
+        :editor-mode="taskEditorMode === 'full' ? 'pending-order' : 'default'"
+        :deadline-alert="getTaskDeadlineAlert(taskEditorTarget)"
+        :show-summary-header="true"
+        :show-processed-refund-list="false"
+        :show-correction-action="false"
+        :show-unified-submit-button="true"
+        :show-buyer-step="taskEditorMode !== 'review'"
+        :show-refund-step="taskEditorMode !== 'review'"
+        :show-amazon-order-step="taskEditorMode !== 'review'"
+        detail-hint-text="明细请点子订单后的「详情」查看"
+        :progress-badge-class-fn="getTaskProgressBadgeClass"
+        :progress-label-fn="getTaskProgressLabel"
+        :format-time="fmtShortTime"
+        :get-buyer-block-reason="getBuyerBlockReason"
+        :on-buyer-select="onBuyerSelect"
+        :assign-buyer="assignBuyer"
+        :refund-panel-title="refundPanelTitle"
+        :is-refund-step-readonly="isRefundStepReadonly"
+        :processed-refunds-for-display="processedRefundsForDisplay"
+        :aggregate-processed-refunds="aggregateProcessedRefunds"
+        :refund-request-type-label="refundRequestTypeLabel"
+        :infer-actual-paid-usd="inferActualPaidUsd"
+        :refund-status-label="refundStatusLabel"
+        :start-supplemental-refund="startSupplementalRefund"
+        :start-correction-refund="startCorrectionRefund"
+        :cancel-refund-special-modes="cancelRefundSpecialModes"
+        :sync-refund-computed="syncRefundComputed"
+        :is-no-refund-selection="isNoRefundSelection"
+        :get-refund-final-amount="getRefundFinalAmount"
+        :refund-submit-button-text="refundSubmitButtonText"
+        :submit-refund-request="submitRefundRequest"
+        :is-prepay-mode="isPrepayMode"
+        :save-amazon-order="saveAmazonOrder"
+        :save-screenshot="saveScreenshot"
+        :save-order-notes="saveWorkbenchOrderNotes"
+        :submit-all-changes="submitWorkbenchTaskEditor"
+        :release-to-hall="releaseToHall"
+        :transfer-to-other="openTransferModal"
+        :on-open-replace-product="openReplaceProductModal"
+        :format-audit-edit="formatAuditEdit"
+      />
+    </a-modal>
+
+    <a-modal
       v-model:open="replaceProductOpen"
       title="更换产品"
       @ok="saveReplaceProduct"
@@ -1552,6 +1658,8 @@ const filterSoon = ref(false)
 const buyerList = ref<any[]>([])
 const buyerMonthlyCountMap = ref<Record<string, number>>({})
 const buyerAsinMap = ref<Record<string, string[]>>({})
+const reviewFollowEditMode = ref(false)
+const workbenchOrderIssueOptions = ['正常', '不下单', '取消', '退款', '无此订单']
 
 const cancelModalOpen = ref(false)
 const cancelSaving = ref(false)
@@ -1581,6 +1689,11 @@ const reviewFailureForm = ref<any>({ reason: '已掉评' })
 const reviewFailureTarget = ref<any>(null)
 const taskOpsDetailOpen = ref(false)
 const taskOpsDetailTarget = ref<any>(null)
+const taskEditorOpen = ref(false)
+const taskEditorTarget = ref<any>(null)
+const taskEditorMode = ref<'full' | 'review'>('full')
+const taskEditorDraftSnapshot = ref<any | null>(null)
+const taskEditorSubmitted = ref(false)
 const replaceProductOpen = ref(false)
 const replaceProductSaving = ref(false)
 const replaceProductTarget = ref<any>(null)
@@ -2135,12 +2248,7 @@ function handleReviewFollowAction(task: any, action?: '已催评' | '已上评' 
 }
 
 function openReviewFollowEditor(task: any) {
-  wbNav.value = 'improving'
-  wbViewMode.value = 'sub'
-  taskFilter.value = ''
-  taskSearch.value = task.sub_order_number || task._order_number || ''
-  filterTaskList()
-  allTasks.value.forEach(t => { t._expanded = t.id === task.id })
+  openTaskEditor(task, 'review')
 }
 
 function isTodayReviewFollowUrgentTask(task: any) {
@@ -2192,11 +2300,24 @@ function getImprovingBuyerChat(task: any) {
   return buyer || chat || '—'
 }
 
+function getImprovingBuyerName(task: any) {
+  return String(task?.buyer_name || '').trim() || '—'
+}
+
+function getImprovingBuyerChatId(task: any) {
+  return String(task?.buyer_chat_id || '').trim() || '—'
+}
+
 function getImprovingTypeLevel(task: any) {
   const type = formatReviewType(task?.review_type || task?.order_type)
-  const level = String(task?.review_level || '').trim()
+  const level = getReviewLevelLabel(task?.review_level || '')
   if (type && level) return `${type} / ${level}`
   return type || level || '—'
+}
+
+function getWorkbenchOrderIssueType(task: any) {
+  const current = String(task?._after_sale_issue?.issue_type || '').trim()
+  return workbenchOrderIssueOptions.includes(current) ? current : '正常'
 }
 
 function getImprovingPricePaidRefund(task: any) {
@@ -2263,6 +2384,15 @@ function formatReviewType(value: string) {
   if (raw === 'FB' || raw === 'Feedback') return 'Feedback'
   if (raw === '免评') return '免评'
   return raw
+}
+
+function getReviewLevelLabel(value: string) {
+  const raw = String(value || '').trim().toUpperCase()
+  if (!raw) return ''
+  if (raw === 'A') return '普通'
+  if (raw === 'B') return '高等'
+  if (raw === 'S') return '极高等'
+  return value
 }
 
 function getWorkbenchOrderTypeColor(type: string) {
@@ -2485,7 +2615,7 @@ function isRefundStepReadonly(task: any) {
 function refundPanelTitle(task: any) {
   if (task._refund_supplement_mode) return '追加返款申请'
   if (task._refund_correction_mode) return '更正返款申请'
-  if (isRefundStepReadonly(task)) return '财务返款申请'
+  if (isRefundStepReadonly(task)) return '返款申请'
   if (task._refund_request_pending) return '返款申请（待审核）'
   return '返款申请'
 }
@@ -3800,9 +3930,15 @@ function initTaskFields(task: any) {
   task._saving_amazon = false
   task._saving_delivery = false
   task._show_delivery_estimate = false
-  task._proof_type = 'Review'
-  task._proof_comment_link = ''
-  task._input_screenshot_url = task.review_screenshot_url || ''
+  task._proof_type = task.fb_image_url ? 'Feedback' : 'Review'
+  task._proof_comment_link = task.fb_image_url ? (task.fb_link || '') : (task.review_link || '')
+  task._input_screenshot_url = task.fb_image_url || task.review_screenshot_url || ''
+  task._proof_file_list = task._input_screenshot_url ? [{
+    uid: 'existing-proof',
+    name: 'proof-image',
+    status: 'done',
+    url: task._input_screenshot_url,
+  }] : []
   task._editing_screenshot = false
   task._saving_screenshot = false
   task._completing = false
@@ -3970,26 +4106,30 @@ async function autoReleaseOverdueTasks(tasks: any[]) {
 }
 
 function setWorkbenchNav(next: WorkbenchNavKey) {
+  closeTaskEditor()
+  reviewFollowEditMode.value = false
   wbNav.value = next
+  taskFilter.value = ''
+  taskSearch.value = ''
+  expandedOrderIds.value = []
+  allTasks.value.forEach(t => { t._expanded = false })
   if (next === 'pending') wbViewMode.value = 'order'
   if (next === 'reviewFollow') {
     wbViewMode.value = 'sub'
-    taskFilter.value = ''
     filterTomorrow.value = false
     filterDayAfterTomorrow.value = false
     filterSoon.value = false
   }
   if (next === 'improving') {
+    wbViewMode.value = 'sub'
     filterTomorrow.value = false
     filterDayAfterTomorrow.value = false
     filterSoon.value = false
   }
   if (next === 'afterSale') {
-    taskFilter.value = ''
     filterTomorrow.value = false
     filterDayAfterTomorrow.value = false
     filterSoon.value = false
-    taskSearch.value = ''
   }
   filterTaskList()
 }
@@ -4046,7 +4186,82 @@ function toggleOrderExpand(orderId: string) {
   }
 }
 
+function captureTaskEditorDraft(task: any) {
+  return {
+    _sel_buyer_id: task._sel_buyer_id || '',
+    _editing_buyer: !!task._editing_buyer,
+    _sel_refund_sequence: task._sel_refund_sequence || '',
+    _sel_refund_method: task._sel_refund_method || '',
+    _buyer_paypal_email: task._buyer_paypal_email || '',
+    _refund_amount_usd: Number(task._refund_amount_usd || 0),
+    _refund_fee_usd: Number(task._refund_fee_usd || 0),
+    _refund_final_amount_usd: Number(task._refund_final_amount_usd || 0),
+    _refund_apply_notes: task._refund_apply_notes || '',
+    _need_finance_screenshot: !!task._need_finance_screenshot,
+    _refund_supplement_mode: !!task._refund_supplement_mode,
+    _refund_correction_mode: !!task._refund_correction_mode,
+    _refund_correction_target_id: task._refund_correction_target_id || null,
+    _extra_refund_amount: Number(task._extra_refund_amount || 0),
+    _extra_refund_method: task._extra_refund_method || '',
+    _extra_refund_reason: task._extra_refund_reason || '',
+    _input_amazon_order_id: task._input_amazon_order_id || '',
+    _proof_type: task._proof_type || 'Review',
+    _proof_comment_link: task._proof_comment_link || '',
+    _input_screenshot_url: task._input_screenshot_url || '',
+    _proof_file_list: Array.isArray(task._proof_file_list) ? [...task._proof_file_list] : [],
+    _edit_order_notes: task._edit_order_notes || '',
+  }
+}
+
+function restoreTaskEditorDraft(task: any, snapshot: any) {
+  if (!task || !snapshot) return
+  task._sel_buyer_id = snapshot._sel_buyer_id
+  task._editing_buyer = snapshot._editing_buyer
+  task._sel_refund_sequence = snapshot._sel_refund_sequence
+  task._sel_refund_method = snapshot._sel_refund_method
+  task._buyer_paypal_email = snapshot._buyer_paypal_email
+  task._refund_amount_usd = snapshot._refund_amount_usd
+  task._refund_fee_usd = snapshot._refund_fee_usd
+  task._refund_final_amount_usd = snapshot._refund_final_amount_usd
+  task._refund_apply_notes = snapshot._refund_apply_notes
+  task._need_finance_screenshot = snapshot._need_finance_screenshot
+  task._refund_supplement_mode = snapshot._refund_supplement_mode
+  task._refund_correction_mode = snapshot._refund_correction_mode
+  task._refund_correction_target_id = snapshot._refund_correction_target_id
+  task._extra_refund_amount = snapshot._extra_refund_amount
+  task._extra_refund_method = snapshot._extra_refund_method
+  task._extra_refund_reason = snapshot._extra_refund_reason
+  task._input_amazon_order_id = snapshot._input_amazon_order_id
+  task._proof_type = snapshot._proof_type
+  task._proof_comment_link = snapshot._proof_comment_link
+  task._input_screenshot_url = snapshot._input_screenshot_url
+  task._proof_file_list = Array.isArray(snapshot._proof_file_list) ? [...snapshot._proof_file_list] : []
+  task._edit_order_notes = snapshot._edit_order_notes
+}
+
+function openTaskEditor(task: any, mode: 'full' | 'review' = 'full') {
+  reviewFollowEditMode.value = mode === 'review'
+  taskEditorDraftSnapshot.value = captureTaskEditorDraft(task)
+  taskEditorSubmitted.value = false
+  taskEditorTarget.value = task
+  taskEditorMode.value = mode
+  taskEditorOpen.value = true
+}
+
+function closeTaskEditor() {
+  if (!taskEditorSubmitted.value && taskEditorTarget.value && taskEditorDraftSnapshot.value) {
+    restoreTaskEditorDraft(taskEditorTarget.value, taskEditorDraftSnapshot.value)
+  }
+  taskEditorOpen.value = false
+  taskEditorTarget.value = null
+  taskEditorMode.value = 'full'
+  taskEditorDraftSnapshot.value = null
+  taskEditorSubmitted.value = false
+  reviewFollowEditMode.value = false
+}
+
 function focusTask(task: any) {
+  reviewFollowEditMode.value = false
   if (wbNav.value === 'pending') {
     pendingListSearchSnapshot.value = taskSearch.value
     wbViewMode.value = 'sub'
@@ -4060,6 +4275,7 @@ function focusTask(task: any) {
 }
 
 function backToPendingOrderList() {
+  reviewFollowEditMode.value = false
   wbViewMode.value = 'order'
   taskSearch.value = pendingListSearchSnapshot.value
   filterTaskList()
@@ -4187,12 +4403,184 @@ async function handleAfterSaleChanged() {
 }
 
 async function quickSave(task: any, field: string, value: any) {
+  if (task?._is_mock || String(task?.id || '').startsWith('mock_')) {
+    task[field] = value
+    return
+  }
   const { error } = await supabase.from('sub_orders').update({ [field]: value }).eq('id', task.id)
   if (!error) task[field] = value
 }
 
+async function updateWorkbenchOrderIssueType(task: any, issueType: string) {
+  const nextType = String(issueType || '').trim()
+  const currentType = getWorkbenchOrderIssueType(task)
+  if (!nextType || nextType === currentType) return
+  try {
+    const isMockTask = String(task.id || '').startsWith('mock_')
+    const nowIso = new Date().toISOString()
+    const existingIssue = task._after_sale_issue && !String(task._after_sale_issue.id || '').startsWith('mock_')
+      ? task._after_sale_issue
+      : null
+
+    if (nextType === '正常') {
+      if (!isMockTask && existingIssue?.id) {
+        const { error } = await supabase.from('after_sale_issues').delete().eq('id', existingIssue.id)
+        if (error) throw error
+      }
+      task._after_sale_issue = null
+    } else {
+      const payload = {
+        sub_order_id: isMockTask ? null : task.id,
+        sub_order_number: task.sub_order_number || '',
+        order_id: isMockTask ? null : (task.order_id || null),
+        order_number: task._order_number || '',
+        buyer_id: isMockTask ? null : (task.buyer_id || null),
+        buyer_name: task.buyer_name || '',
+        staff_id: isMockTask ? null : (task.staff_id || null),
+        staff_name: task.staff_name || '',
+        customer_name: task.customer_name || '',
+        asin: task.asin || '',
+        store_name: task.store_name || '',
+        product_price: Number(task.product_price || 0),
+        issue_type: nextType,
+        issue_status: task._after_sale_issue?.issue_status || '待处理',
+        principal_status: task._after_sale_issue?.principal_status || '待确定',
+        old_amazon_order_id: task.amazon_order_id || '',
+        description: `工作台更新订单状态为${nextType}`,
+      }
+
+      if (isMockTask) {
+        task._after_sale_issue = {
+          ...(task._after_sale_issue || {}),
+          id: task._after_sale_issue?.id || `mock_workbench_issue_${task.id}`,
+          created_at: task._after_sale_issue?.created_at || nowIso,
+          updated_at: nowIso,
+          ...payload,
+        }
+      } else if (existingIssue?.id) {
+        const { data, error } = await supabase
+          .from('after_sale_issues')
+          .update(payload)
+          .eq('id', existingIssue.id)
+          .select('*')
+          .single()
+        if (error) throw error
+        task._after_sale_issue = data
+      } else {
+        const { data, error } = await supabase
+          .from('after_sale_issues')
+          .insert(payload)
+          .select('*')
+          .single()
+        if (error) throw error
+        task._after_sale_issue = data
+      }
+    }
+    filterTaskList()
+    message.success('订单状态已更新')
+  } catch (e: any) {
+    message.error('更新订单状态失败：' + e.message)
+  }
+}
+
 function saveWorkbenchOrderNotes(task: any) {
   return quickSave(task, 'notes', task._edit_order_notes)
+}
+
+function hasRefundDraftChanged(task: any, snapshot: any) {
+  if (!snapshot) return false
+  return [
+    String(task._sel_refund_sequence || ''),
+    String(task._sel_refund_method || ''),
+    String(task._buyer_paypal_email || ''),
+    Number(task._refund_amount_usd || 0),
+    Number(task._refund_fee_usd || 0),
+    Number(task._refund_final_amount_usd || 0),
+    String(task._refund_apply_notes || ''),
+    !!task._need_finance_screenshot,
+    !!task._refund_supplement_mode,
+    !!task._refund_correction_mode,
+    task._refund_correction_target_id || null,
+    Number(task._extra_refund_amount || 0),
+    String(task._extra_refund_method || ''),
+    String(task._extra_refund_reason || ''),
+  ].some((value, index) => value !== [
+    String(snapshot._sel_refund_sequence || ''),
+    String(snapshot._sel_refund_method || ''),
+    String(snapshot._buyer_paypal_email || ''),
+    Number(snapshot._refund_amount_usd || 0),
+    Number(snapshot._refund_fee_usd || 0),
+    Number(snapshot._refund_final_amount_usd || 0),
+    String(snapshot._refund_apply_notes || ''),
+    !!snapshot._need_finance_screenshot,
+    !!snapshot._refund_supplement_mode,
+    !!snapshot._refund_correction_mode,
+    snapshot._refund_correction_target_id || null,
+    Number(snapshot._extra_refund_amount || 0),
+    String(snapshot._extra_refund_method || ''),
+    String(snapshot._extra_refund_reason || ''),
+  ][index])
+}
+
+async function submitWorkbenchTaskEditor(task: any) {
+  const snapshot = taskEditorDraftSnapshot.value
+  if (!task || !snapshot) return
+
+  let didSubmit = false
+
+  if (String(task._sel_buyer_id || '') !== String(snapshot._sel_buyer_id || '') && task._sel_buyer_id) {
+    await assignBuyer(task)
+    didSubmit = true
+  }
+
+  if (hasRefundDraftChanged(task, snapshot)) {
+    const extraRefundChanged =
+      Number(task._extra_refund_amount || 0) !== Number(snapshot._extra_refund_amount || 0)
+      || String(task._extra_refund_method || '') !== String(snapshot._extra_refund_method || '')
+      || String(task._extra_refund_reason || '') !== String(snapshot._extra_refund_reason || '')
+    const currentRefundChanged =
+      String(task._sel_refund_method || '') !== String(snapshot._sel_refund_method || '')
+      || String(task._buyer_paypal_email || '') !== String(snapshot._buyer_paypal_email || '')
+      || Number(task._refund_amount_usd || 0) !== Number(snapshot._refund_amount_usd || 0)
+      || Number(task._refund_final_amount_usd || 0) !== Number(snapshot._refund_final_amount_usd || 0)
+    if (isRefundStepReadonly(task)) {
+      if (extraRefundChanged && Number(task._extra_refund_amount || 0) > 0) startSupplementalRefund(task)
+      else if (currentRefundChanged) startCorrectionRefund(task)
+    }
+    await submitRefundRequest(task)
+    didSubmit = true
+  }
+
+  if (
+    String(task._input_amazon_order_id || '').trim()
+    && String(task._input_amazon_order_id || '').trim() !== String(snapshot._input_amazon_order_id || '').trim()
+  ) {
+    await saveAmazonOrder(task)
+    didSubmit = true
+  }
+
+  const proofDraftChanged =
+    String(task._proof_type || '') !== String(snapshot._proof_type || '')
+    || String(task._proof_comment_link || '') !== String(snapshot._proof_comment_link || '')
+    || String(task._input_screenshot_url || '') !== String(snapshot._input_screenshot_url || '')
+
+  if (proofDraftChanged && task._input_screenshot_url) {
+    await saveScreenshot(task)
+    didSubmit = true
+  }
+
+  if (String(task._edit_order_notes || '') !== String(snapshot._edit_order_notes || '')) {
+    await saveWorkbenchOrderNotes(task)
+    didSubmit = true
+  }
+
+  if (!didSubmit) {
+    message.info('未检测到需要提交的改动')
+    return
+  }
+
+  taskEditorSubmitted.value = true
+  taskEditorDraftSnapshot.value = captureTaskEditorDraft(task)
 }
 
 async function onBuyerSelect(task: any, buyerId: string) {
@@ -4261,9 +4649,13 @@ async function assignBuyer(task: any) {
       status: task.status === '待分配' ? '已分配' : task.status,
       buyer_assigned_at: new Date().toISOString(),
     }
-    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
-    if (error) throw error
-    Object.assign(task, payload)
+    if (task._is_mock || String(task.id || '').startsWith('mock_')) {
+      Object.assign(task, payload)
+    } else {
+      const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+      if (error) throw error
+      Object.assign(task, payload)
+    }
     task._editing_buyer = false
     task._buyer_validation = null
     message.success('买手已分配')
@@ -4611,9 +5003,13 @@ async function saveAmazonOrder(task: any) {
       amazon_order_placed_at: new Date().toISOString(),
       status: '已下单',
     }
-    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
-    if (error) throw error
-    Object.assign(task, payload)
+    if (task._is_mock || String(task.id || '').startsWith('mock_')) {
+      Object.assign(task, payload)
+    } else {
+      const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+      if (error) throw error
+      Object.assign(task, payload)
+    }
     task._editing_amazon = false
     message.success('Amazon订单号已保存')
   } catch (e: any) {
@@ -4642,16 +5038,38 @@ async function saveScreenshot(task: any) {
   if (!task._input_screenshot_url) return
   task._saving_screenshot = true
   try {
-    const payload = {
-      review_screenshot_url: task._input_screenshot_url,
-      review_submitted_at: new Date().toISOString(),
-      status: '已留评',
+    const isFeedback = task._proof_type === 'Feedback'
+    const payload = isFeedback
+      ? {
+          fb_link: task._proof_comment_link || '',
+          fb_image_url: task._input_screenshot_url,
+          review_link: '',
+          review_screenshot_url: '',
+          status: '已留评',
+        }
+      : {
+          review_link: task._proof_comment_link || '',
+          review_screenshot_url: task._input_screenshot_url,
+          fb_link: '',
+          fb_image_url: '',
+          review_submitted_at: new Date().toISOString(),
+          status: '已留评',
+        }
+    if (task._is_mock || String(task.id || '').startsWith('mock_')) {
+      Object.assign(task, payload)
+    } else {
+      const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+      if (error) throw error
+      Object.assign(task, payload)
     }
-    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
-    if (error) throw error
-    Object.assign(task, payload)
+    task._proof_file_list = task._input_screenshot_url ? [{
+      uid: 'existing-proof',
+      name: 'proof-image',
+      status: 'done',
+      url: task._input_screenshot_url,
+    }] : []
     task._editing_screenshot = false
-    message.success('截图已提交')
+    message.success(isFeedback ? 'Feedback凭证已提交' : '留评凭证已提交')
   } catch (e: any) {
     message.error('保存失败：' + e.message)
   } finally {
@@ -5255,7 +5673,7 @@ onUnmounted(() => {
 }
 .inline-sub-grid {
   display: grid;
-  grid-template-columns: 140px 1.7fr 120px 90px 100px 100px 1.1fr 140px;
+  grid-template-columns: 132px minmax(150px, 1.2fr) minmax(210px, 1.5fr) 108px 108px 108px minmax(140px, 1fr) minmax(140px, 1fr) 148px;
   align-items: center;
 }
 .inline-sub-header {
@@ -5326,7 +5744,7 @@ onUnmounted(() => {
 }
 .improving-sub-grid {
   display: grid;
-  grid-template-columns: 130px 170px 1.4fr 120px 150px 170px 110px 110px 1.1fr 140px;
+  grid-template-columns: 130px 170px 1.3fr 120px 140px 140px 150px 170px 110px 120px 1fr 140px;
   align-items: center;
 }
 .improving-sub-header {
@@ -5356,6 +5774,20 @@ onUnmounted(() => {
   min-width: 0;
   font-size: 12px;
   color: #374151;
+}
+.improving-buyer-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.improving-buyer-name {
+  color: #1a1a2e;
+  font-weight: 600;
+}
+.improving-chat-id {
+  color: #6b7280;
+  font-size: 11px;
+  word-break: break-all;
 }
 .improving-product-cell { min-width: 0; }
 .improving-stack-cell {
@@ -6388,6 +6820,30 @@ onUnmounted(() => {
   backdrop-filter: blur(2px);
 }
 .wf-footer-divider { color: #9ca3af; font-size: 12px; }
+.task-editor-footer-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+.task-editor-footer-btn-hall {
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.32);
+}
+.task-editor-footer-btn-hall:hover,
+.task-editor-footer-btn-hall:focus {
+  color: #b45309 !important;
+  border-color: rgba(217, 119, 6, 0.5) !important;
+}
+.task-editor-footer-btn-transfer {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.28);
+}
+.task-editor-footer-btn-transfer:hover,
+.task-editor-footer-btn-transfer:focus {
+  color: #1d4ed8 !important;
+  border-color: rgba(37, 99, 235, 0.5) !important;
+}
 
 /* 空状态 */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: #9ca3af; gap: 12px; font-size: 14px; background: #fff; border-radius: 12px; }

@@ -1,32 +1,30 @@
 <template>
   <div class="workflow-editor">
     <div
-      v-if="showSummaryHeader"
+      v-if="effectiveShowSummaryHeader"
       class="workflow-edit-header"
     >
       <div class="task-meta">
         <div class="meta-row1">
-          <span class="sub-no-text">{{ task.sub_order_number }}</span>
-          <a-tag v-if="task.order_type" color="default" style="font-size:10px">{{ task.order_type }}</a-tag>
-          <div v-if="task.keyword" class="keyword-badge">{{ task.keyword }}</div>
-          <span v-if="task.product_name" class="product-name-sm">{{ task.product_name }}</span>
-        </div>
-        <div class="meta-row2">
+          <span class="product-name-sm">{{ task.product_name || '—' }}</span>
           <span class="mono-sm">{{ task.asin || '—' }}</span>
-          <span class="sep">{{ task.store_name || '—' }}</span>
-          <span class="price-sm">${{ Number(task.product_price || 0).toFixed(2) }}</span>
-          <span v-if="task.category" class="sep text-gray">{{ task.category }}</span>
-          <span v-if="task.country" class="sep text-gray">{{ task.country }}</span>
+          <a-tag v-if="getReviewTypeLabel(task.review_type || task.order_type)" color="blue" class="meta-tone-tag">
+            测评类型 · {{ getReviewTypeLabel(task.review_type || task.order_type) }}
+          </a-tag>
+          <a-tag v-if="getReviewLevelLabel(task.review_level)" color="gold" class="meta-tone-tag">
+            测评等级 · {{ getReviewLevelLabel(task.review_level) }}
+          </a-tag>
         </div>
-        <div class="meta-row3">
-          <span class="meta-focus-item"><span class="meta-focus-label">测评等级</span><span class="meta-focus-value">{{ task.review_level || '—' }}</span></span>
-          <span class="meta-focus-item"><span class="meta-focus-label">指定变体</span><span class="meta-focus-value">{{ task.variant_info || '—' }}</span></span>
-          <span class="meta-focus-item meta-focus-item-wide"><span class="meta-focus-label">任务备注</span><span class="meta-focus-value">{{ task.task_notes || '—' }}</span></span>
+        <div class="meta-chip-row">
+          <span class="meta-chip meta-chip-price"><span class="meta-chip-label">售价</span><span class="meta-chip-value">${{ Number(task.product_price || 0).toFixed(2) }}</span></span>
+          <span class="meta-chip"><span class="meta-chip-label">店铺</span><span class="meta-chip-value">{{ task.store_name || '—' }}</span></span>
+          <span class="meta-chip"><span class="meta-chip-label">关键词</span><span class="meta-chip-value">{{ getKeywordDisplay(task) }}</span></span>
+          <span v-if="shouldShowVariantInfo(task.variant_info)" class="meta-chip">
+            <span class="meta-chip-label">变体信息</span>
+            <span class="meta-chip-value">{{ task.variant_info }}</span>
+          </span>
+          <span class="meta-chip meta-chip-wide"><span class="meta-chip-label">任务备注</span><span class="meta-chip-value">{{ task.task_notes || '—' }}</span></span>
         </div>
-      </div>
-      <div class="workflow-edit-side">
-        <span :class="progressBadgeClassFn(task)">{{ progressLabelFn(task) }}</span>
-        <span v-if="task.buyer_name" class="assign-name">{{ task.buyer_name }}</span>
       </div>
     </div>
 
@@ -40,18 +38,16 @@
     </div>
 
     <div class="product-info-bar">
-      <div class="pi-item"><span class="pi-label">产品名称</span><span class="pi-val">{{ task.product_name || '—' }}</span></div>
       <div class="pi-item"><span class="pi-label">品牌</span><span class="pi-val">{{ task.brand_name || '—' }}</span></div>
-      <div class="pi-item"><span class="pi-label">类目</span><span class="pi-val">{{ task.category || '—' }}</span></div>
       <div class="pi-item"><span class="pi-label">客户</span><span class="pi-val">{{ task.customer_name || '—' }}</span></div>
       <div class="pi-item"><span class="pi-label">商务</span><span class="pi-val">{{ task.sales_person || '—' }}</span></div>
-      <div v-if="showReplaceProductButton" class="pi-actions">
+      <div v-if="effectiveShowReplaceProductButton" class="pi-actions">
         <a-button size="small" @click="onOpenReplaceProduct(task)">{{ replaceProductButtonLabel }}</a-button>
       </div>
     </div>
 
     <div class="workflow-steps-modern">
-      <div class="wf-panel">
+      <div v-if="effectiveShowBuyerStep" class="wf-panel">
         <div class="wf-panel-head">
           <div class="wf-panel-header">
             <span class="wf-panel-index">1.</span>
@@ -65,8 +61,8 @@
           <div v-if="task.buyer_id && !task._editing_buyer" class="buyer-brief-row">
             <span class="buyer-name-text">{{ task.buyer_name }}</span>
           </div>
-          <div v-if="task.buyer_id && !task._editing_buyer" class="buyer-brief-desc">
-            {{ task._buyer_country || task.buyer?.country || '—' }} · {{ task._buyer_level || task.buyer?.level || '—' }}
+          <div v-if="task.buyer_id && !task._editing_buyer && getBuyerBriefMeta(task)" class="buyer-brief-desc">
+            {{ getBuyerBriefMeta(task) }}
           </div>
           <div v-if="!task.buyer_id || task._editing_buyer" class="buyer-assign-area">
             <div class="step-input-row">
@@ -95,6 +91,7 @@
                 </a-select-option>
               </a-select>
               <a-button
+                v-if="!effectiveShowUnifiedSubmitButton"
                 type="primary"
                 size="small"
                 :loading="task._saving_buyer || task._validating_buyer"
@@ -114,7 +111,7 @@
         </div>
       </div>
 
-      <div class="wf-panel">
+      <div v-if="effectiveShowRefundStep" class="wf-panel">
         <div class="wf-panel-head">
           <div class="wf-panel-header">
             <span class="wf-panel-index">2.</span>
@@ -126,48 +123,49 @@
         </div>
         <div class="wf-panel-body">
           <template v-if="isRefundStepReadonly(task)">
-            <div class="refund-compact-card">
-              <div class="refund-compact-main">
-                <div class="refund-compact-title">已处理返款 {{ processedRefundsForDisplay(task).length }} 笔</div>
-                <div class="refund-compact-meta">
-                  <span v-if="task.refund_method">当前方式 {{ task.refund_method }}</span>
-                  <span v-if="aggregateProcessedRefunds(task).any">累计 ${{ (aggregateProcessedRefunds(task).paypalTotal + aggregateProcessedRefunds(task).giftFace).toFixed(2) }}</span>
-                  <span>{{ detailHintText }}</span>
+            <div class="refund-readonly-summary">
+              <span class="refund-readonly-count">已返款 {{ processedRefundsForDisplay(task).length }} 笔</span>
+              <span class="refund-readonly-inline">
+                <span class="refund-readonly-inline-label">实返金额</span>
+                <strong>${{ Number(task._refund_final_amount_usd || task.refund_amount || 0).toFixed(2) }}</strong>
+              </span>
+              <span class="refund-readonly-inline">
+                <span class="refund-readonly-inline-label">方式</span>
+                <a-tag :color="(task._sel_refund_method || task.refund_method) === 'PayPal' ? 'blue' : 'orange'" size="small">
+                  {{ task._sel_refund_method || task.refund_method || '—' }}
+                </a-tag>
+              </span>
+            </div>
+            <div class="refund-readonly-paid-row">
+              <label>实付金额</label>
+              <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:160px" prefix="$" @change="syncRefundComputed(task)" />
+            </div>
+            <div class="refund-readonly-extra">
+              <div class="refund-readonly-extra-title">追加返款</div>
+              <div class="refund-readonly-grid">
+                <div class="refund-readonly-item">
+                  <label>追加金额</label>
+                  <a-input-number v-model:value="task._extra_refund_amount" size="small" :min="0" :precision="2" style="width:160px" prefix="$" />
+                </div>
+                <div class="refund-readonly-item refund-readonly-item-wide">
+                  <label>追加方式</label>
+                  <a-radio-group v-model:value="task._extra_refund_method" size="small">
+                    <a-radio value="礼品卡">礼品卡</a-radio>
+                    <a-radio value="PayPal">Paypal</a-radio>
+                  </a-radio-group>
+                </div>
+                <div v-if="task._extra_refund_method === 'PayPal'" class="refund-readonly-item refund-readonly-item-wide">
+                  <label>Paypal邮箱</label>
+                  <a-input v-model:value="task._buyer_paypal_email" size="small" placeholder="amanda@example.com" />
+                </div>
+                <div class="refund-readonly-item refund-readonly-item-wide">
+                  <label>追加原因</label>
+                  <a-radio-group v-model:value="task._extra_refund_reason" size="small">
+                    <a-radio value="产品涨价">产品涨价</a-radio>
+                    <a-radio value="产品额外佣金">产品额外佣金</a-radio>
+                  </a-radio-group>
                 </div>
               </div>
-            </div>
-            <div v-if="showProcessedRefundList && processedRefundsForDisplay(task).length" class="refund-processed-list">
-              <div v-for="row in processedRefundsForDisplay(task)" :key="row.id" class="refund-processed-card">
-                <div class="rpc-head">
-                  <div class="rpc-head-main">
-                    <span class="rpc-type">{{ refundRequestTypeLabel(row) }}</span>
-                    <span class="rpc-method">{{ row.refund_method || '—' }}</span>
-                    <span class="rpc-status">{{ refundStatusLabel(row.status) || row.status || '已处理' }}</span>
-                  </div>
-                  <span class="rpc-time">{{ formatTime(row.updated_at || row.created_at) }}</span>
-                </div>
-                <div class="rpc-body">
-                  <span>返款金额 ${{ Number(row.refund_amount_usd || row.refund_amount || 0).toFixed(2) }}</span>
-                  <span v-if="row.refund_method === 'PayPal'">实付 ${{ inferActualPaidUsd(row).toFixed(2) }}</span>
-                  <span v-if="row.refund_method === 'PayPal'">手续费 ${{ Number(row.paypal_fee_usd || 0).toFixed(2) }}</span>
-                  <span v-if="row.buyer_paypal_email">PayPal {{ row.buyer_paypal_email }}</span>
-                </div>
-              </div>
-            </div>
-            <div class="extra-refund-bar">
-              <a-button size="small" type="primary" ghost @click="startSupplementalRefund(task)">追加返款</a-button>
-              <a-button v-if="showCorrectionAction" size="small" @click="startCorrectionRefund(task)" :disabled="!task._refund_request_latest_processed">更正返款</a-button>
-              <a-input-number v-model:value="task._extra_refund_amount" size="small" :min="0" :precision="2" style="width:130px" placeholder="追加基数$" />
-              <span class="extra-method-label">追加方式</span>
-              <a-radio-group v-model:value="task._extra_refund_method" size="small">
-                <a-radio value="同首笔">同首笔</a-radio>
-                <a-radio value="礼品卡">礼品卡</a-radio>
-                <a-radio value="PayPal">PayPal</a-radio>
-              </a-radio-group>
-              <a-radio-group v-model:value="task._extra_refund_reason" size="small">
-                <a-radio value="产品涨价">产品涨价</a-radio>
-                <a-radio value="产品额外佣金">产品额外佣金</a-radio>
-              </a-radio-group>
             </div>
           </template>
 
@@ -223,7 +221,7 @@
               <span class="refund-setup-label">返款方式</span>
               <a-radio-group v-model:value="task._sel_refund_method" size="small" @change="syncRefundComputed(task)">
                 <a-radio value="礼品卡">礼品卡</a-radio>
-                <a-radio value="PayPal">贝宝(PayPal)</a-radio>
+                <a-radio value="PayPal">Paypal</a-radio>
                 <a-radio value="其他">其他</a-radio>
               </a-radio-group>
             </div>
@@ -233,17 +231,14 @@
             </div>
             <div v-if="!isNoRefundSelection(task)" class="refund-amount-box">
               <div class="refund-amount-title">金额明细</div>
-              <div class="refund-product-ref">系统产品标价（参考）<span class="refund-product-ref-val">${{ Number(task.product_price || 0).toFixed(2) }}</span></div>
               <div v-if="task._sel_refund_method === 'PayPal'" class="refund-amount-fields">
                 <div class="raf-line">
                   <span class="raf-label">实付金额</span>
                   <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
-                  <span class="raf-hint">买手实际支付</span>
                 </div>
                 <div class="raf-line">
-                  <span class="raf-label">贝宝手续费</span>
+                  <span class="raf-label">Paypal手续费</span>
                   <a-input-number v-model:value="task._refund_fee_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
-                  <span class="raf-hint">由财务承担的手续费，计入打款总额</span>
                 </div>
                 <div class="raf-line raf-total">
                   <span class="raf-label">合计返款</span>
@@ -254,23 +249,17 @@
                 <div class="raf-line">
                   <span class="raf-label">实付金额</span>
                   <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
-                  <span class="raf-hint">买手实际支付（可与标价不同）</span>
                 </div>
                 <div class="raf-line">
                   <span class="raf-label">应返礼品卡面额</span>
                   <a-input-number v-model:value="task._refund_final_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" />
-                  <span class="raf-hint">发给买手的卡面金额，可与实付一致或含补贴</span>
                 </div>
               </div>
             </div>
-            <div class="refund-row">
-              <label>备注</label>
-              <a-input v-model:value="task._refund_apply_notes" size="small" style="width:360px" placeholder="选填，例如：买手催款..." />
-            </div>
-            <div v-if="!isNoRefundSelection(task)" class="refund-row">
+            <div v-if="task._sel_refund_method === 'PayPal'" class="refund-row">
               <a-checkbox v-model:checked="task._need_finance_screenshot">需财务提供水单</a-checkbox>
             </div>
-            <div class="refund-action-row">
+            <div v-if="!effectiveShowUnifiedSubmitButton" class="refund-action-row">
               <a-button
                 type="primary"
                 size="small"
@@ -285,7 +274,7 @@
         </div>
       </div>
 
-      <div class="wf-panel">
+      <div v-if="effectiveShowAmazonOrderStep" class="wf-panel">
         <div class="wf-panel-head">
           <div class="wf-panel-header">
             <span class="wf-panel-index">3.</span>
@@ -295,13 +284,6 @@
           </div>
         </div>
         <div class="wf-panel-body">
-          <a-alert
-            v-if="isPrepayMode(task) && !isRefundStepReadonly(task)"
-            type="info"
-            show-icon
-            message="预付模式需等待财务返款完成后，才可填写Amazon订单号"
-            style="margin-bottom:10px"
-          />
           <div class="step-input-row">
             <a-input
               v-model:value="task._input_amazon_order_id"
@@ -311,6 +293,7 @@
               :disabled="isPrepayMode(task) && !isRefundStepReadonly(task)"
             />
             <a-button
+              v-if="!effectiveShowUnifiedSubmitButton"
               type="primary"
               size="small"
               :loading="task._saving_amazon"
@@ -323,7 +306,7 @@
         </div>
       </div>
 
-      <div v-if="showProofStep" class="wf-panel">
+      <div v-if="effectiveShowProofStep" class="wf-panel">
         <div class="wf-panel-head">
           <div class="wf-panel-header">
             <span class="wf-panel-index">4.</span>
@@ -346,9 +329,21 @@
           </div>
           <div class="refund-row">
             <label>{{ task._proof_type === 'Feedback' ? '反馈图片' : '凭证图片' }}</label>
-            <a-input v-model:value="task._input_screenshot_url" size="small" style="width:360px" placeholder="粘贴图片URL（支持多张可用逗号分隔）" />
+            <a-upload
+              :file-list="getProofFileList()"
+              list-type="picture-card"
+              accept="image/*"
+              :max-count="1"
+              :before-upload="beforeProofUpload"
+              @remove="clearProofUpload"
+            >
+              <div v-if="getProofFileList().length < 1" class="proof-upload-trigger">
+                <span class="proof-upload-plus">+</span>
+                <span>上传图片</span>
+              </div>
+            </a-upload>
           </div>
-          <div class="refund-action-row">
+          <div v-if="!effectiveShowUnifiedSubmitButton" class="refund-action-row">
             <a-button type="primary" size="small" :loading="task._saving_screenshot" :disabled="!task._input_screenshot_url" @click="saveScreenshot(task)">提交</a-button>
           </div>
         </div>
@@ -357,7 +352,7 @@
       <div class="wf-panel">
         <div class="wf-panel-head">
           <div class="wf-panel-header">
-            <span class="wf-panel-index">{{ showProofStep ? '5.' : '4.' }}</span>
+            <span class="wf-panel-index">{{ effectiveShowProofStep ? '5.' : '4.' }}</span>
             <span>子单备注</span>
             <span v-if="task.notes" class="wf-panel-status done">已填写</span>
             <span v-else class="wf-panel-status todo">选填</span>
@@ -371,29 +366,59 @@
               size="small"
               style="width:360px"
               placeholder="填写子单备注"
-              @blur="saveOrderNotes(task)"
+              @blur="handleOrderNotesBlur(task)"
             />
           </div>
           <slot name="order-notes-extra" :task="task"></slot>
         </div>
+      </div>
+      <div v-if="effectiveShowUnifiedSubmitButton" class="workflow-submit-bar">
+        <slot name="footer-actions" :task="task" :submitting="unifiedSubmitting" :submit="handleUnifiedSubmit">
+          <div class="workflow-footer-actions">
+            <a-button type="primary" :loading="unifiedSubmitting" @click="handleUnifiedSubmit">提交</a-button>
+            <a-button
+              v-if="releaseToHall"
+              ghost
+              class="workflow-footer-btn workflow-footer-btn-hall"
+              @click="releaseToHall(task)"
+            >
+              放到抢单大厅
+            </a-button>
+            <a-button
+              v-if="transferToOther"
+              ghost
+              class="workflow-footer-btn workflow-footer-btn-transfer"
+              @click="transferToOther(task)"
+            >
+              转给他人
+            </a-button>
+          </div>
+        </slot>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { toRef } from 'vue'
+import { computed, ref, toRef } from 'vue'
+import { message } from 'ant-design-vue'
 
 type Fn<T extends any[] = any[], R = any> = (...args: T) => R
+type EditorMode = 'default' | 'pending-order'
 
 const props = withDefaults(defineProps<{
   task: any
   buyerList: any[]
+  editorMode?: EditorMode
   showSummaryHeader?: boolean
   showProcessedRefundList?: boolean
   showCorrectionAction?: boolean
   showReplaceProductButton?: boolean
+  showBuyerStep?: boolean
+  showRefundStep?: boolean
+  showAmazonOrderStep?: boolean
   showProofStep?: boolean
+  showUnifiedSubmitButton?: boolean
   replaceProductButtonLabel?: string
   detailHintText?: string
   deadlineAlert?: any | null
@@ -422,14 +447,22 @@ const props = withDefaults(defineProps<{
   saveAmazonOrder?: Fn<[any], void>
   saveScreenshot?: Fn<[any], void>
   saveOrderNotes?: Fn<[any], void>
+  submitAllChanges?: Fn<[any], void | Promise<void>>
+  releaseToHall?: Fn<[any], void>
+  transferToOther?: Fn<[any], void>
   onOpenReplaceProduct?: Fn<[any], void>
   formatAuditEdit?: Fn<[any], string>
 }>(), {
+  editorMode: 'default',
   showSummaryHeader: false,
   showProcessedRefundList: false,
   showCorrectionAction: false,
   showReplaceProductButton: true,
+  showBuyerStep: true,
+  showRefundStep: true,
+  showAmazonOrderStep: true,
   showProofStep: true,
+  showUnifiedSubmitButton: false,
   replaceProductButtonLabel: '更换产品',
   detailHintText: '明细请点右侧「详情」查看',
   deadlineAlert: null,
@@ -458,6 +491,7 @@ const props = withDefaults(defineProps<{
   saveAmazonOrder: () => undefined,
   saveScreenshot: () => undefined,
   saveOrderNotes: () => undefined,
+  submitAllChanges: () => undefined,
   onOpenReplaceProduct: () => undefined,
   formatAuditEdit: (edit: any) => String(edit ?? ''),
 })
@@ -469,7 +503,11 @@ const {
   showProcessedRefundList,
   showCorrectionAction,
   showReplaceProductButton,
+  showBuyerStep,
+  showRefundStep,
+  showAmazonOrderStep,
   showProofStep,
+  showUnifiedSubmitButton,
   replaceProductButtonLabel,
   detailHintText,
   deadlineAlert,
@@ -498,9 +536,126 @@ const {
   saveAmazonOrder,
   saveScreenshot,
   saveOrderNotes,
+  submitAllChanges,
+  releaseToHall,
+  transferToOther,
   onOpenReplaceProduct,
   formatAuditEdit,
 } = props
+
+const unifiedSubmitting = ref(false)
+const isPendingOrderMode = computed(() => props.editorMode === 'pending-order')
+const effectiveShowSummaryHeader = computed(() => isPendingOrderMode.value || props.showSummaryHeader)
+const effectiveShowReplaceProductButton = computed(() => isPendingOrderMode.value || props.showReplaceProductButton)
+const effectiveShowBuyerStep = computed(() => isPendingOrderMode.value || props.showBuyerStep)
+const effectiveShowRefundStep = computed(() => isPendingOrderMode.value || props.showRefundStep)
+const effectiveShowAmazonOrderStep = computed(() => isPendingOrderMode.value || props.showAmazonOrderStep)
+const effectiveShowProofStep = computed(() => isPendingOrderMode.value || props.showProofStep)
+const effectiveShowUnifiedSubmitButton = computed(() => isPendingOrderMode.value || props.showUnifiedSubmitButton)
+
+function getReviewTypeLabel(value: any) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (['文字评', '文字'].includes(raw)) return '文字'
+  if (['图片评', '图片'].includes(raw)) return '图片'
+  if (['视频评', '视频'].includes(raw)) return '视频'
+  if (['Feedback评', 'Feedback'].includes(raw)) return 'Feedback'
+  return raw
+}
+
+function getReviewLevelLabel(value: any) {
+  const raw = String(value || '').trim().toUpperCase()
+  if (!raw) return ''
+  if (raw === 'A') return '普通'
+  if (raw === 'B') return '高等'
+  if (raw === 'S') return '极高等'
+  return String(value || '')
+}
+
+function getKeywordDisplay(currentTask: any) {
+  return String(currentTask?.keyword || currentTask?.search_link || '').trim() || '—'
+}
+
+function shouldShowVariantInfo(value: any) {
+  const raw = String(value || '').trim()
+  return !!raw && raw !== '无变体'
+}
+
+function getBuyerBriefMeta(currentTask: any) {
+  const parts = [
+    String(currentTask?._buyer_country || currentTask?.buyer?.country || '').trim(),
+    String(currentTask?._buyer_level || currentTask?.buyer?.level || '').trim(),
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
+
+function getProofFileList() {
+  if (Array.isArray(task.value?._proof_file_list) && task.value._proof_file_list.length) {
+    return task.value._proof_file_list
+  }
+  const url = String(task.value?._input_screenshot_url || '').trim()
+  if (!url) return []
+  return [{
+    uid: 'existing-proof',
+    name: 'proof-image',
+    status: 'done',
+    url,
+  }]
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('图片读取失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function beforeProofUpload(file: File) {
+  if (!file.type.startsWith('image/')) {
+    message.error('只能上传图片文件')
+    return false
+  }
+  if (file.size / 1024 / 1024 >= 5) {
+    message.error('图片不能超过 5MB')
+    return false
+  }
+  try {
+    const dataUrl = await readFileAsDataUrl(file)
+    task.value._input_screenshot_url = dataUrl
+    task.value._proof_file_list = [{
+      uid: `${Date.now()}`,
+      name: file.name,
+      status: 'done',
+      url: dataUrl,
+      originFileObj: file,
+    }]
+  } catch (error: any) {
+    message.error(error?.message || '图片读取失败')
+  }
+  return false
+}
+
+function clearProofUpload() {
+  task.value._input_screenshot_url = ''
+  task.value._proof_file_list = []
+}
+
+function handleOrderNotesBlur(currentTask: any) {
+  if (effectiveShowUnifiedSubmitButton.value) return
+  saveOrderNotes(currentTask)
+}
+
+async function handleUnifiedSubmit() {
+  if (!submitAllChanges) return
+  unifiedSubmitting.value = true
+  try {
+    await submitAllChanges(task.value)
+  } finally {
+    unifiedSubmitting.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -525,47 +680,30 @@ const {
 .task-meta {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.meta-row1,
-.meta-row2,
-.meta-row3 {
+.meta-row1 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-}
-
-.meta-row2,
-.meta-row3 {
-  margin-top: 8px;
+  gap: 8px;
 }
 
 .sub-no-text {
   font-family: 'Courier New', monospace;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: #1a1a2e;
 }
 
-.keyword-badge {
-  background: #eff6ff;
-  color: #2563eb;
-  border: 1px solid #bfdbfe;
-  border-radius: 12px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .product-name-sm {
-  font-size: 12px;
-  color: #374151;
-  max-width: 220px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a2e;
+  max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -573,48 +711,49 @@ const {
 
 .mono-sm {
   font-family: 'Courier New', monospace;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #374151;
 }
 
-.sep {
-  padding-left: 10px;
+.meta-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.price-sm {
-  font-size: 12px;
-  font-weight: 600;
-  color: #059669;
-  padding-left: 10px;
-}
-
-.text-gray {
-  color: #9ca3af;
-}
-
-.meta-focus-item {
+.meta-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: #1a1a2e;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
 }
 
-.meta-focus-item-wide {
-  max-width: 420px;
+.meta-chip-price .meta-chip-value {
+  color: #059669;
+  font-size: 13px;
 }
 
-.meta-focus-label {
+.meta-tone-tag { margin-inline-end: 0; }
+
+.meta-chip-wide {
+  max-width: min(100%, 560px);
+}
+
+.meta-chip-label {
   font-size: 12px;
   font-weight: 600;
-  color: #1a1a2e;
+  color: #6b7280;
   white-space: nowrap;
 }
 
-.meta-focus-value {
+.meta-chip-value {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: #1a1a2e;
   min-width: 0;
   overflow: hidden;
@@ -672,27 +811,24 @@ const {
 .product-info-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+  gap: 18px;
   background: #f8fafc;
-  border-bottom: 1px solid #e5e7eb;
-  padding: 8px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
 }
 
 .pi-item {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 12px;
-  border-right: 1px solid #e5e7eb;
-}
-
-.pi-item:last-child {
-  border-right: none;
+  gap: 8px;
+  padding: 0;
 }
 
 .pi-label {
   font-size: 12px;
-  color: #1a1a2e;
+  color: #6b7280;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -700,12 +836,12 @@ const {
 .pi-val {
   font-size: 12px;
   color: #1a1a2e;
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .pi-actions {
   margin-left: auto;
-  padding: 3px 0 3px 12px;
+  padding: 0;
 }
 
 .workflow-steps-modern {
@@ -775,6 +911,59 @@ const {
   color: #2563eb;
 }
 
+.proof-upload-trigger {
+  width: 96px;
+  height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.proof-upload-plus {
+  font-size: 20px;
+  line-height: 1;
+  color: #2563eb;
+}
+
+.workflow-submit-bar {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.workflow-footer-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.workflow-footer-btn-hall {
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.32);
+}
+
+.workflow-footer-btn-hall:hover,
+.workflow-footer-btn-hall:focus {
+  color: #b45309 !important;
+  border-color: rgba(217, 119, 6, 0.5) !important;
+}
+
+.workflow-footer-btn-transfer {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.28);
+}
+
+.workflow-footer-btn-transfer:hover,
+.workflow-footer-btn-transfer:focus {
+  color: #1d4ed8 !important;
+  border-color: rgba(37, 99, 235, 0.5) !important;
+}
+
 .buyer-brief-row {
   display: flex;
   align-items: center;
@@ -840,6 +1029,88 @@ const {
 .buyer-validation-hint.checking { color: #2563eb; }
 .buyer-validation-hint.blocked { color: #dc2626; }
 .buyer-validation-hint.passed { color: #15803d; }
+
+.refund-readonly-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.refund-readonly-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.refund-readonly-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #1a1a2e;
+}
+
+.refund-readonly-inline-label {
+  color: #6b7280;
+}
+
+.refund-readonly-paid-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.refund-readonly-paid-row label {
+  min-width: 88px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.refund-readonly-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.refund-readonly-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.refund-readonly-item label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.refund-readonly-item-wide {
+  grid-column: 1 / -1;
+}
+
+.refund-readonly-static {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.refund-readonly-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.refund-readonly-extra-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
 
 .refund-compact-card {
   display: flex;
