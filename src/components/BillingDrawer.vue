@@ -1,7 +1,7 @@
 <template>
   <a-drawer
     :open="open"
-    title="账单管理"
+    title="账款管理"
     width="680"
     placement="right"
     :body-style="{ padding: '0', background: '#f8f9fb' }"
@@ -355,14 +355,14 @@
           </a-upload>
         </div>
         <div v-if="addRecordType !== '账面抵消' || !offsetOpenedFromNestedAction" class="ar-field">
-          <label class="ar-label">账单状态变更</label>
+          <label class="ar-label">账款状态变更</label>
           <a-radio-group v-model:value="addRecordForm.update_debt_status" size="small">
             <a-radio-button value="cleared">已结清</a-radio-button>
             <a-radio-button value="owed">有欠款</a-radio-button>
             <a-radio-button value="surplus">有溢款</a-radio-button>
           </a-radio-group>
           <div v-if="addRecordForm.update_debt_status" class="debt-status-reminder">
-            账单状态需手动确认，实际情况请以商务核实为准
+            账款状态需手动确认，实际情况请以商务核实为准
           </div>
         </div>
         <div v-if="addRecordType !== '账面抵消' || !offsetOpenedFromNestedAction" class="ar-field">

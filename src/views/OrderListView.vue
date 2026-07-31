@@ -23,8 +23,8 @@
           <a-select-option value="">全部类型</a-select-option>
           <a-select-option v-for="t in orderTypeOptions" :key="t" :value="t">{{ t }}</a-select-option>
         </a-select>
-        <a-select v-model:value="filterBilling" style="width: 130px" @change="loadOrders" allow-clear placeholder="账单状态">
-          <a-select-option value="">全部账单</a-select-option>
+        <a-select v-model:value="filterBilling" style="width: 130px" @change="loadOrders" allow-clear placeholder="账款状态">
+          <a-select-option value="">全部账款</a-select-option>
           <a-select-option value="billing_incomplete">入账未完成</a-select-option>
           <a-select-option value="debt">有欠款</a-select-option>
         </a-select>
@@ -236,7 +236,7 @@
             <a-space>
               <a-button type="link" size="small" @click="viewDetail(record)">详情</a-button>
               <a-button type="link" size="small" @click="openFeedbackModal(record)">反馈</a-button>
-              <a-button type="link" size="small" @click="openBillingDrawer(record)">账单</a-button>
+              <a-button type="link" size="small" @click="openBillingDrawer(record)">账款</a-button>
               <a-popconfirm title="确定删除这条任务吗?" @confirm="deleteOrder(record.id)">
                 <a-button type="link" size="small" danger>删除</a-button>
               </a-popconfirm>
@@ -759,7 +759,7 @@
       @updated="loadOrders"
     />
 
-    <!-- 统一账单抽屉 -->
+    <!-- 统一账款抽屉 -->
     <BillingDrawer
       :open="billingDrawerOpen"
       :order="billingDrawerOrder"
@@ -1022,7 +1022,7 @@ const columns = [
   { title: '佣金', key: 'commission_fee', width: 90 },
   { title: '应收基础款项', key: 'receivable_amount', width: 130 },
   { title: '实收基础款项', key: 'actual_received', width: 130 },
-  { title: '账单状态', key: 'billing', width: 130 },
+  { title: '账款状态', key: 'billing', width: 130 },
   { title: '反馈状态', key: 'feedback', width: 130 },
   { title: '商务备注', key: 'notes', width: 140 },
   { title: '商务', key: 'sales_person', width: 110 },

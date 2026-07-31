@@ -1,7 +1,7 @@
 <template>
   <a-drawer
     :open="open"
-    :title="`任务组账单：${groupData?.label || groupData?.batch_number || ''}`"
+    :title="`任务组账款：${groupData?.label || groupData?.batch_number || ''}`"
     width="820"
     placement="right"
     :body-style="{ padding: '0', background: '#f8f9fb' }"
