@@ -1680,6 +1680,7 @@ function buildReorderEditorTask(record: any) {
   task._refund_request_pending = null
   task._refund_request_latest_processed = null
   task._refund_request = null
+  task._replacement_sub_order_id = record.replacement_sub_order_id || ''
   task._input_amazon_order_id = task.amazon_order_id || ''
   task._editing_amazon = false
   task._saving_amazon = false
@@ -1695,6 +1696,137 @@ function buildReorderEditorTask(record: any) {
   syncReorderRefundComputed(task)
   applyReorderBuyerMeta(task)
   return task
+}
+
+function isDeferredReorderRefundSequence(task: any) {
+  return ['出单后返', '收货后返', '评后返'].includes(
+    String(task?._sel_refund_sequence || task?.refund_sequence || ''),
+  )
+}
+
+async function ensureReorderSubOrder(task: any) {
+  if (!currentIssue.value) throw new Error('未找到当前售后问题单')
+  const existingId = task?._replacement_sub_order_id || currentIssue.value?.replacement_sub_order_id
+  if (existingId) {
+    const amazonOrderId = String(task.amazon_order_id || task._input_amazon_order_id || '').trim()
+    const noRefund = isReorderNoRefundSelection(task)
+    const syncPayload = {
+      buyer_id: task.buyer_id || null,
+      buyer_name: task.buyer_name || '',
+      amazon_order_id: amazonOrderId,
+      amazon_order_placed_at: amazonOrderId ? new Date().toISOString() : null,
+      status: amazonOrderId ? '已下单' : '已分配',
+      refund_method: noRefund ? '' : (task._sel_refund_method || task.refund_method || ''),
+      refund_sequence: noRefund ? '无需返款' : (task._sel_refund_sequence || task.refund_sequence || '预付'),
+      refund_status: noRefund ? '无需退款' : '未返款',
+      actual_paid: Number(task._refund_amount_usd || 0),
+    }
+    if (!isMockIssue(currentIssue.value)) {
+      const { error } = await supabase.from('sub_orders').update(syncPayload).eq('id', existingId)
+      if (error) throw error
+    }
+    return {
+      id: existingId,
+      sub_order_number: task.sub_order_number || currentIssue.value?.replacement_sub_order_number || '',
+      order_id: task.order_id || currentIssue.value?.order_id || '',
+    }
+  }
+
+  if (isMockIssue(currentIssue.value)) {
+    const mockSubOrder = {
+      id: `mock_replacement_sub_order_${Date.now()}`,
+      sub_order_number: task.sub_order_number || generateReplacementSubOrderNumber(currentIssue.value),
+      order_id: currentIssue.value.order_id || currentIssue.value.id,
+    }
+    task._replacement_sub_order_id = mockSubOrder.id
+    task.sub_order_number = mockSubOrder.sub_order_number
+    Object.assign(currentIssue.value, {
+      replacement_sub_order_id: mockSubOrder.id,
+      replacement_sub_order_number: mockSubOrder.sub_order_number,
+    })
+    await persistIssueUpdate(currentIssue.value, {
+      replacement_sub_order_id: mockSubOrder.id,
+      replacement_sub_order_number: mockSubOrder.sub_order_number,
+      replacement_buyer_id: task.buyer_id || null,
+      replacement_buyer_name: task.buyer_name || '',
+    })
+    return mockSubOrder
+  }
+
+  let orderId = currentIssue.value.order_id || task.order_id || ''
+  if (!orderId && currentIssue.value.sub_order_id) {
+    const { data: sourceSubOrder, error: sourceError } = await supabase
+      .from('sub_orders')
+      .select('order_id')
+      .eq('id', currentIssue.value.sub_order_id)
+      .maybeSingle()
+    if (sourceError) throw sourceError
+    orderId = sourceSubOrder?.order_id || ''
+  }
+  if (!orderId) throw new Error('原子订单缺少主订单ID，无法创建补单')
+
+  const amazonOrderId = String(task.amazon_order_id || task._input_amazon_order_id || '').trim()
+  const noRefund = isReorderNoRefundSelection(task)
+  const payload = {
+    order_id: orderId,
+    sub_order_number: '',
+    scheduled_date: task.scheduled_date || dayjs().format('YYYY-MM-DD'),
+    asin: task.asin || '',
+    store_name: task.store_name || '',
+    country: task.country || '美国',
+    order_type: task.order_type || task.review_type || '免评',
+    product_price: Number(task.product_price || 0),
+    keyword: task.keyword || '',
+    product_name: task.product_name || '',
+    brand_name: task.brand_name || '',
+    category: task.category || '',
+    review_level: task.review_level || '',
+    review_type: task.review_type || task.order_type || '',
+    variant_info: task.variant_info || '',
+    task_notes: task.task_notes || '',
+    customer_name: task.customer_name || '',
+    sales_person: task.sales_person || '',
+    status: amazonOrderId ? '已下单' : '已分配',
+    staff_id: currentIssue.value.staff_id || null,
+    staff_name: currentIssue.value.staff_name || task.staff_name || '',
+    buyer_id: task.buyer_id || null,
+    buyer_name: task.buyer_name || '',
+    buyer_assigned_at: new Date().toISOString(),
+    amazon_order_id: amazonOrderId,
+    amazon_order_placed_at: amazonOrderId ? new Date().toISOString() : null,
+    notes: `售后补单，源子单 ${currentIssue.value.sub_order_number || currentIssue.value.sub_order_id || ''}`.trim(),
+    refund_status: noRefund ? '无需退款' : '未返款',
+    refund_method: noRefund ? '' : (task._sel_refund_method || task.refund_method || ''),
+    refund_sequence: noRefund ? '无需返款' : (task._sel_refund_sequence || task.refund_sequence || '预付'),
+    actual_paid: Number(task._refund_amount_usd || 0),
+  }
+  const { data: newSubOrder, error: insertError } = await supabase
+    .from('sub_orders')
+    .insert(payload)
+    .select('id, sub_order_number, order_id')
+    .single()
+  if (insertError) throw insertError
+
+  try {
+    await persistIssueUpdate(currentIssue.value, {
+      replacement_sub_order_id: newSubOrder.id,
+      replacement_sub_order_number: newSubOrder.sub_order_number,
+      replacement_buyer_id: task.buyer_id || null,
+      replacement_buyer_name: task.buyer_name || '',
+    })
+  } catch (error) {
+    await supabase.from('sub_orders').delete().eq('id', newSubOrder.id)
+    throw error
+  }
+
+  task._replacement_sub_order_id = newSubOrder.id
+  task.order_id = newSubOrder.order_id
+  task.sub_order_number = newSubOrder.sub_order_number
+  Object.assign(currentIssue.value, {
+    replacement_sub_order_id: newSubOrder.id,
+    replacement_sub_order_number: newSubOrder.sub_order_number,
+  })
+  return newSubOrder
 }
 
 function applyReorderBuyerMeta(task: any) {
@@ -1972,47 +2104,136 @@ function syncReorderRefundComputed(task: any) {
   }
 }
 
-function submitReorderRefundRequest(task: any) {
+async function saveDeferredReorderRefundConfig(task: any, replacementSubOrder?: any) {
+  const newSubOrder = replacementSubOrder || await ensureReorderSubOrder(task)
+  const payload = {
+    refund_method: task._sel_refund_method || task.refund_method || '',
+    refund_sequence: task._sel_refund_sequence || task.refund_sequence || '预付',
+    refund_status: '未返款',
+    actual_paid: Number(task._refund_amount_usd || 0),
+  }
+  if (!isMockIssue(currentIssue.value)) {
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', newSubOrder.id)
+    if (error) throw error
+  }
+  Object.assign(task, payload)
+  message.success('返款设置已保存，点击“申请返款”后才会进入付款审批')
+}
+
+async function submitReorderRefundRequest(task: any) {
   const noRefund = isReorderNoRefundSelection(task)
-  if (noRefund) {
-    task.refund_sequence = '无需返款'
-    task.refund_status = '无需退款'
-    task.refund_amount = 0
-    task._refund_request_pending = null
-    task._refund_request = task._refund_request_latest_processed || null
-    task._refund_requests_list = (task._refund_requests_list || []).filter((item: any) => item.status !== '待处理')
-    task._refund_apply_notes = ''
-    task._need_finance_screenshot = false
-    message.success('已标记为无需返款')
-    return
+  if (task?._buyer_validation?.blocked) {
+    message.error(task._buyer_validation.reason)
+    return false
+  }
+  if (!task?.buyer_id) {
+    message.warning('请先选择补单买手')
+    return false
   }
   if (!getReorderRefundFinalAmount(task)) {
-    message.warning('请先填写返款金额')
-    return
+    if (!noRefund) message.warning('请先填写返款金额')
+    if (!noRefund) return false
   }
-  if (task._sel_refund_method === 'PayPal' && !String(task._buyer_paypal_email || '').trim()) {
+  if (!noRefund && task._sel_refund_method === 'PayPal' && !String(task._buyer_paypal_email || '').trim()) {
     message.warning('请填写买手 PayPal 邮箱')
-    return
+    return false
   }
   task._submitting_refund = true
-  const request = {
-    id: task._refund_request_pending?.id || `mock_reorder_refund_${Date.now()}`,
-    status: '待处理',
-    refund_method: task._sel_refund_method,
-    refund_sequence: task._sel_refund_sequence,
-    refund_amount_usd: getReorderRefundFinalAmount(task),
-    actual_paid_usd: Number(task._refund_amount_usd || 0),
-    paypal_fee_usd: Number(task._refund_fee_usd || 0),
-    buyer_paypal_email: task._buyer_paypal_email || '',
-    notes: String(task._refund_apply_notes || '').trim(),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+  try {
+    const newSubOrder = await ensureReorderSubOrder(task)
+    if (noRefund) {
+      const noRefundPayload = {
+        refund_method: '',
+        refund_sequence: '无需返款',
+        refund_status: '无需退款',
+        refund_amount: 0,
+      }
+      if (!isMockIssue(currentIssue.value)) {
+        const { error } = await supabase.from('sub_orders').update(noRefundPayload).eq('id', newSubOrder.id)
+        if (error) throw error
+      }
+      Object.assign(task, noRefundPayload)
+      task._refund_request_pending = null
+      task._refund_request = task._refund_request_latest_processed || null
+      task._refund_requests_list = (task._refund_requests_list || []).filter((item: any) => item.status !== '待处理')
+      task._refund_apply_notes = ''
+      task._need_finance_screenshot = false
+      message.success('已标记为无需返款')
+      return true
+    }
+
+    const now = new Date().toISOString()
+    const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
+    const commonFields = {
+      sub_order_id: newSubOrder.id,
+      order_id: newSubOrder.order_id,
+      sub_order_number: newSubOrder.sub_order_number,
+      buyer_name: task.buyer_name || '',
+      buyer_paypal_email: task._buyer_paypal_email || '',
+      refund_method: task._sel_refund_method,
+      refund_sequence: task._sel_refund_sequence,
+      refund_amount_usd: getReorderRefundFinalAmount(task),
+      refund_amount: getReorderRefundFinalAmount(task),
+      actual_paid_usd: Number(task._refund_amount_usd || 0),
+      paypal_fee_usd: Number(task._refund_fee_usd || 0),
+      product_name: task.product_name || '',
+      product_price: Number(task.product_price || 0),
+      store_name: task.store_name || '',
+      staff_name: currentIssue.value?.staff_name || task.staff_name || '',
+      asin: task.asin || '',
+      notes,
+      status: '待处理',
+      request_type: 'initial',
+      updated_at: now,
+    }
+    let request: any
+    if (isMockIssue(currentIssue.value)) {
+      request = {
+        ...commonFields,
+        id: task._refund_request_pending?.id || `mock_reorder_refund_${Date.now()}`,
+        created_at: task._refund_request_pending?.created_at || now,
+      }
+    } else if (task._refund_request_pending?.id) {
+      const { data, error } = await supabase
+        .from('refund_requests')
+        .update(commonFields)
+        .eq('id', task._refund_request_pending.id)
+        .select()
+        .single()
+      if (error) throw error
+      request = data
+    } else {
+      const { data, error } = await supabase
+        .from('refund_requests')
+        .insert({ ...commonFields, created_at: now })
+        .select()
+        .single()
+      if (error) throw error
+      request = data
+    }
+
+    const refundConfig = {
+      refund_method: task._sel_refund_method,
+      refund_sequence: task._sel_refund_sequence,
+      refund_status: '未返款',
+      actual_paid: Number(task._refund_amount_usd || 0),
+    }
+    if (!isMockIssue(currentIssue.value)) {
+      const { error } = await supabase.from('sub_orders').update(refundConfig).eq('id', newSubOrder.id)
+      if (error) throw error
+    }
+    Object.assign(task, refundConfig)
+    task._refund_request_pending = request
+    task._refund_request = request
+    task._refund_requests_list = [request, ...(task._refund_requests_list || []).filter((item: any) => item.id !== request.id)]
+    message.success('返款申请已提交，订单已进入付款审批')
+    return true
+  } catch (error: any) {
+    message.error(`申请返款失败：${error.message}`)
+    throw error
+  } finally {
+    task._submitting_refund = false
   }
-  task._refund_request_pending = request
-  task._refund_request = request
-  task._refund_requests_list = [request, ...(task._refund_requests_list || []).filter((item: any) => item.id !== request.id)]
-  task._submitting_refund = false
-  message.success('已暂存返款申请，确认补单后会一并保存')
 }
 
 function saveReorderAmazonOrder(task: any) {
@@ -2069,6 +2290,14 @@ async function submitReorderEditorChanges(task: any) {
     } else {
       task.review_screenshot_url = task._input_screenshot_url
     }
+  }
+  const replacementSubOrder = await ensureReorderSubOrder(task)
+  if (isReorderNoRefundSelection(task)) {
+    if (!await submitReorderRefundRequest(task)) return
+  } else if (isDeferredReorderRefundSequence(task)) {
+    await saveDeferredReorderRefundConfig(task, replacementSubOrder)
+  } else {
+    if (!await submitReorderRefundRequest(task)) return
   }
   await submitActionModal()
 }
@@ -2562,6 +2791,7 @@ async function submitActionModal() {
         issue_status: '已补单',
         replacement_buyer_id: replacementBuyerId || null,
         replacement_buyer_name: replacementBuyerName,
+        replacement_sub_order_id: reorderTask?._replacement_sub_order_id || currentIssue.value.replacement_sub_order_id || null,
         replacement_sub_order_number: replacementSubOrderNumber,
         new_amazon_order_id: newAmazonOrderId || null,
         resolved_at: new Date().toISOString(),

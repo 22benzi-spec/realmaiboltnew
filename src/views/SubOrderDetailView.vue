@@ -1991,7 +1991,7 @@ async function submitRefundRequest(task: any) {
   const isUpdatePending = !!(pending && !task._refund_supplement_mode && !task._refund_correction_mode)
   const actualPaid = Number(task._refund_amount_usd || 0)
   const feeUsd = selectedMethod === 'PayPal' ? Number(task._refund_fee_usd || 0) : 0
-  const notes = `${task._refund_apply_notes || ''}${editOnlyMode.value && task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
+  const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
   const staffName = currentUser.value?.name || task.sales_person || '订单列表'
   const supplementReason = task._refund_supplement_mode
     ? (task._extra_refund_reason || '追加返款')
@@ -2258,6 +2258,30 @@ function validatePriceIncreaseActualPaid(task: any, snapshot: any) {
   return false
 }
 
+function isDeferredRefundSequence(task: any) {
+  return ['出单后返', '收货后返', '评后返'].includes(
+    String(task?._sel_refund_sequence || task?.refund_sequence || ''),
+  )
+}
+
+async function saveDeferredRefundConfig(task: any) {
+  const payload = {
+    refund_method: task._sel_refund_method || task.refund_method || '',
+    refund_sequence: task._sel_refund_sequence || task.refund_sequence || '预付',
+    refund_status: '未返款',
+    actual_paid: Number(task._refund_amount_usd || 0),
+  }
+  if (isPreviewTask(task)) {
+    Object.assign(task, payload)
+  } else {
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+    if (error) throw error
+    Object.assign(task, payload)
+    updateOrderRow(task.id, payload)
+  }
+  message.success('返款设置已保存，点击“申请返款”后才会进入付款审批')
+}
+
 async function submitEditTaskChanges(task: any) {
   const snapshot = editTaskDraftSnapshot.value
   if (!task || !snapshot) return
@@ -2285,8 +2309,12 @@ async function submitEditTaskChanges(task: any) {
         startSupplementalRefund(task)
       }
       else if (currentRefundChanged) startCorrectionRefund(task)
+      await submitRefundRequest(task)
+    } else if (!editOnlyMode.value && isDeferredRefundSequence(task)) {
+      await saveDeferredRefundConfig(task)
+    } else {
+      await submitRefundRequest(task)
     }
-    await submitRefundRequest(task)
     didSubmit = true
   }
 

@@ -1123,10 +1123,10 @@
     <!-- 互转请求弹窗 -->
     <a-modal
       v-model:open="transferModalOpen"
-      title="发起互转请求"
+      title="转给他人"
       @ok="submitTransfer"
       :confirm-loading="transferSaving"
-      ok-text="发送请求"
+      ok-text="提交"
     >
       <div v-if="transferTarget" class="transfer-req-modal-body">
         <div class="transfer-req-info">
@@ -1143,9 +1143,6 @@
                 :key="s.id" :value="s.id" :label="s.name"
               >{{ s.name }}</a-select-option>
             </a-select>
-          </a-form-item>
-          <a-form-item label="转单原因（可选）">
-            <a-input v-model:value="transferForm.reason" placeholder="如：客户指定、负载均衡、专业匹配等" />
           </a-form-item>
         </a-form>
       </div>
@@ -4537,6 +4534,29 @@ function validatePriceIncreaseActualPaid(task: any, snapshot: any) {
   return false
 }
 
+function isDeferredRefundSequence(task: any) {
+  return ['出单后返', '收货后返', '评后返'].includes(
+    String(task?._sel_refund_sequence || task?.refund_sequence || ''),
+  )
+}
+
+async function saveDeferredRefundConfig(task: any) {
+  const payload = {
+    refund_method: task._sel_refund_method || task.refund_method || '',
+    refund_sequence: task._sel_refund_sequence || task.refund_sequence || '预付',
+    refund_status: '未返款',
+    actual_paid: Number(task._refund_amount_usd || 0),
+  }
+  if (task._is_mock || String(task.id || '').startsWith('mock_')) {
+    Object.assign(task, payload)
+  } else {
+    const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
+    if (error) throw error
+    Object.assign(task, payload)
+  }
+  message.success('返款设置已保存，点击“申请返款”后才会进入付款审批')
+}
+
 async function submitWorkbenchTaskEditor(task: any) {
   const snapshot = taskEditorDraftSnapshot.value
   if (!task || !snapshot) return
@@ -4564,8 +4584,12 @@ async function submitWorkbenchTaskEditor(task: any) {
         startSupplementalRefund(task)
       }
       else if (currentRefundChanged) startCorrectionRefund(task)
+      await submitRefundRequest(task)
+    } else if (isDeferredRefundSequence(task)) {
+      await saveDeferredRefundConfig(task)
+    } else {
+      await submitRefundRequest(task)
     }
-    await submitRefundRequest(task)
     didSubmit = true
   }
 
@@ -4821,7 +4845,7 @@ async function submitRefundRequest(task: any) {
 
   const actualPaid = Number(task._refund_amount_usd || 0)
   const feeUsd = selectedMethod === 'PayPal' ? Number(task._refund_fee_usd || 0) : 0
-  const notes = String(task._refund_apply_notes || '').trim()
+  const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
   const supplementReason = task._refund_supplement_mode
     ? (task._extra_refund_reason || '追加返款')
     : task._refund_correction_mode

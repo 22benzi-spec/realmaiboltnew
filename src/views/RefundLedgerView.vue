@@ -34,7 +34,7 @@
               <a-select-option value="yes">是</a-select-option>
               <a-select-option value="no">否</a-select-option>
             </a-select>
-            <a-input-search v-model:value="gcSearch" placeholder="搜索买手/子订单/产品" style="width:220px" allow-clear @search="reloadGiftCardFromFirstPage" />
+            <a-input-search v-model:value="gcSearch" placeholder="搜索买手/子订单/产品/流水ID" style="width:240px" allow-clear @search="reloadGiftCardFromFirstPage" />
             <a-button @click="reloadGiftCardFromFirstPage"><ReloadOutlined /></a-button>
             <a-button @click="exportLedger('giftcard')">导出</a-button>
             <span class="total-hint">共 {{ gcPagination.total }} 条</span>
@@ -47,7 +47,7 @@
             :pagination="gcPagination"
             row-key="id"
             size="middle"
-            :scroll="{ x: 1320 }"
+            :scroll="{ x: 1470 }"
             @change="handleGcTableChange"
           >
             <template #bodyCell="{ column, record }">
@@ -55,11 +55,9 @@
                 <div class="cell-info">
                   <div class="cell-sub-row">
                     <div class="cell-subno">{{ record.sub_order_number || '—' }}</div>
-                    <a-tag v-if="record._isNew" color="red" class="new-tag">NEW</a-tag>
                   </div>
                   <div class="cell-product">{{ record.product_name || '—' }}</div>
                   <div class="cell-meta">{{ record.asin || '' }}</div>
-                  <div v-if="record._batch_label" class="batch-chip">批次 {{ record._batch_label }}</div>
                 </div>
               </template>
               <template v-if="column.key === 'buyer'">
@@ -107,16 +105,25 @@
                 </div>
               </template>
               <template v-if="column.key === 'refund_status'">
-                <a-select
-                  v-if="record._isMock"
-                  :value="record.refund_status || '已返款'"
-                  size="small"
-                  style="width:120px"
-                  @change="changeRefundStatus('giftcard', record, $event)"
-                >
-                  <a-select-option v-for="item in giftRefundStatusOptions" :key="item" :value="item">{{ item }}</a-select-option>
-                </a-select>
-                <a-tag v-else :color="refundStatusColor(record.refund_status || '已返款')">{{ record.refund_status || '已返款' }}</a-tag>
+                <div class="refund-status-cell">
+                  <div class="refund-status-head">
+                    <a-select
+                      v-if="record._isMock"
+                      :value="record.refund_status || '已返款'"
+                      size="small"
+                      style="width:120px"
+                      @change="changeRefundStatus('giftcard', record, $event)"
+                    >
+                      <a-select-option v-for="item in giftRefundStatusOptions" :key="item" :value="item">{{ item }}</a-select-option>
+                    </a-select>
+                    <a-tag v-else :color="refundStatusColor(record.refund_status || '已返款')">{{ record.refund_status || '已返款' }}</a-tag>
+                    <a-tag v-if="record._isNew" color="red" class="new-tag">NEW</a-tag>
+                  </div>
+                  <div v-if="record._related_refund_id" class="refund-relation">
+                    <span class="refund-relation-direction">{{ record._relation_direction }}</span>
+                    <span class="refund-relation-id" :title="record._related_refund_id">关联流水ID：{{ record._related_refund_id }}</span>
+                  </div>
+                </div>
               </template>
               <template v-if="column.key === 'handled_at'">
                 <div class="time-cell">
@@ -178,7 +185,7 @@
             <a-select v-model:value="ppAccountFilter" style="width:220px" allow-clear placeholder="全部 PayPal 账号" @change="reloadPaypalFromFirstPage">
               <a-select-option v-for="acc in ppAccountList" :key="acc.email" :value="acc.email">{{ acc.email }}</a-select-option>
             </a-select>
-            <a-input-search v-model:value="ppSearch" placeholder="搜索买手/子订单/产品/邮箱" style="width:220px" allow-clear @search="reloadPaypalFromFirstPage" />
+            <a-input-search v-model:value="ppSearch" placeholder="搜索买手/子订单/产品/邮箱/流水ID" style="width:260px" allow-clear @search="reloadPaypalFromFirstPage" />
             <a-button @click="reloadPaypalFromFirstPage"><ReloadOutlined /></a-button>
             <a-button @click="exportLedger('paypal')">导出</a-button>
             <span class="total-hint">共 {{ ppPagination.total }} 条</span>
@@ -192,7 +199,7 @@
             row-key="id"
             :row-class-name="paypalRowClassName"
             size="middle"
-            :scroll="{ x: 1480 }"
+            :scroll="{ x: 1630 }"
             @change="handlePpTableChange"
           >
             <template #bodyCell="{ column, record }">
@@ -200,13 +207,9 @@
                 <div class="cell-info">
                   <div class="cell-sub-row">
                     <div class="cell-subno">{{ record.sub_order_number || '—' }}</div>
-                    <a-tag v-if="record._isNew" color="red" class="new-tag">NEW</a-tag>
-                    <a-tag v-if="record._isSupplementalRefund" color="gold" class="new-tag">追加</a-tag>
-                    <a-tag v-else-if="record._refund_group_count > 1" color="blue" class="new-tag">首笔</a-tag>
                   </div>
                   <div class="cell-product">{{ record.product_name || '—' }}</div>
                   <div class="cell-meta">{{ record.asin || '' }}</div>
-                  <div v-if="record._batch_label" class="batch-chip">批次 {{ record._batch_label }}</div>
                 </div>
               </template>
               <template v-if="column.key === 'buyer'">
@@ -249,16 +252,27 @@
                 <div v-else class="pp-account">{{ record.assigned_paypal_email || '—' }}</div>
               </template>
               <template v-if="column.key === 'refund_status'">
-                <a-select
-                  v-if="record._isMock"
-                  :value="record.refund_status || '已返款'"
-                  size="small"
-                  style="width:120px"
-                  @change="changeRefundStatus('paypal', record, $event)"
-                >
-                  <a-select-option v-for="item in paypalRefundStatusOptions" :key="item" :value="item">{{ item }}</a-select-option>
-                </a-select>
-                <a-tag v-else :color="refundStatusColor(record.refund_status || '已返款')">{{ record.refund_status || '已返款' }}</a-tag>
+                <div class="refund-status-cell">
+                  <div class="refund-status-head">
+                    <a-select
+                      v-if="record._isMock"
+                      :value="record.refund_status || '已返款'"
+                      size="small"
+                      style="width:120px"
+                      @change="changeRefundStatus('paypal', record, $event)"
+                    >
+                      <a-select-option v-for="item in paypalRefundStatusOptions" :key="item" :value="item">{{ item }}</a-select-option>
+                    </a-select>
+                    <a-tag v-else :color="refundStatusColor(record.refund_status || '已返款')">{{ record.refund_status || '已返款' }}</a-tag>
+                    <a-tag v-if="record._isNew" color="red" class="new-tag">NEW</a-tag>
+                    <a-tag v-if="record._isSupplementalRefund" color="gold" class="new-tag">追加</a-tag>
+                    <a-tag v-else-if="record._refund_group_count > 1" color="blue" class="new-tag">首笔</a-tag>
+                  </div>
+                  <div v-if="record._related_refund_id" class="refund-relation">
+                    <span class="refund-relation-direction">{{ record._relation_direction }}</span>
+                    <span class="refund-relation-id" :title="record._related_refund_id">关联流水ID：{{ record._related_refund_id }}</span>
+                  </div>
+                </div>
               </template>
               <template v-if="column.key === 'screenshot'">
                 <div class="water-slip-cell">
@@ -363,6 +377,10 @@
               <a-input-number v-model:value="item.correctedAmountUsd" :min="0" :precision="2" style="width:160px" />
             </div>
           </div>
+          <div class="resubmit-batch-total">
+            <span>本批次合计</span>
+            <strong>${{ money(resubmitItemsTotal) }}</strong>
+          </div>
         </a-form-item>
 
         <a-form-item
@@ -370,6 +388,10 @@
           label="重新申请的返款金额 (USD)"
         >
           <a-input-number v-model:value="actionForm.correctedAmountUsd" :min="0" :precision="2" style="width:100%" />
+          <div v-if="resubmitItems.length > 1" class="resubmit-batch-total">
+            <span>本批次合计</span>
+            <strong>${{ money(actionForm.correctedAmountUsd) }}</strong>
+          </div>
         </a-form-item>
 
         <a-form-item
@@ -782,6 +804,147 @@ const mockPaypalSeed = [
     _demo_new: true,
     _isMock: true,
   },
+  {
+    id: 'mock-ledger-cross-pp-gift-single-origin',
+    sub_order_id: 'SUB-MOCK-CROSS-PP-GC-SINGLE-001',
+    sub_order_number: 'MOCK-换卡-PP-单次-001',
+    product_name: 'PayPal 改礼品卡单次演示',
+    asin: 'MOCKPP2GCSINGLE',
+    country: '美国',
+    buyer_name: '买手-换卡单次',
+    chat_account: 'mock-cross-pp-gc-single',
+    buyer_paypal_email: 'cross.single.pp@gmail.com',
+    refund_amount_usd: 14.5,
+    assigned_paypal_email: 'finance-us-01@company.com',
+    paypal_receipt_screenshot: '',
+    handled_at: dayjs().subtract(18, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原 PayPal 返款失败，本条历史记录永久保留用于对账',
+    workflow_label: '第1次 · PayPal 失败',
+    workflow_detail: '后续改用礼品卡并返款成功',
+    workflow_state: 'failed',
+    refund_status: '返款失败',
+    buyer_paypal_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-pp-gift-batch-origin-1',
+    sub_order_id: 'SUB-MOCK-CROSS-PP-GC-BATCH-001',
+    sub_order_number: 'MOCK-换卡-PP-批量-001',
+    product_name: 'PayPal 改礼品卡批次 A',
+    asin: 'MOCKPP2GCBATCH01',
+    country: '英国',
+    buyer_name: '买手-换卡批次PP',
+    chat_account: 'mock-cross-pp-gc-batch',
+    buyer_paypal_email: 'cross.batch.pp@gmail.com',
+    refund_amount_usd: 10.2,
+    assigned_paypal_email: 'finance-us-02@company.com',
+    paypal_receipt_screenshot: '',
+    handled_at: dayjs().subtract(16, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原 PayPal 批次返款失败，本条历史记录永久保留用于对账',
+    workflow_label: '第1次 · PayPal 失败',
+    workflow_detail: '批次后续改用礼品卡成功',
+    workflow_state: 'failed',
+    refund_status: '返款失败',
+    buyer_paypal_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-pp-gift-batch-origin-2',
+    sub_order_id: 'SUB-MOCK-CROSS-PP-GC-BATCH-002',
+    sub_order_number: 'MOCK-换卡-PP-批量-002',
+    product_name: 'PayPal 改礼品卡批次 B',
+    asin: 'MOCKPP2GCBATCH02',
+    country: '英国',
+    buyer_name: '买手-换卡批次PP',
+    chat_account: 'mock-cross-pp-gc-batch',
+    buyer_paypal_email: 'cross.batch.pp@gmail.com',
+    refund_amount_usd: 7.8,
+    assigned_paypal_email: 'finance-us-02@company.com',
+    paypal_receipt_screenshot: '',
+    handled_at: dayjs().subtract(16, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原 PayPal 批次返款失败，本条历史记录永久保留用于对账',
+    workflow_label: '第1次 · PayPal 失败',
+    workflow_detail: '批次后续改用礼品卡成功',
+    workflow_state: 'failed',
+    refund_status: '返款失败',
+    buyer_paypal_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-gift-paypal-single-success',
+    supersedes_request_id: 'mock-ledger-cross-gift-paypal-single-origin',
+    sub_order_id: 'SUB-MOCK-CROSS-GC-PP-SINGLE-001',
+    sub_order_number: 'MOCK-换PP-GC-单次-001',
+    product_name: '礼品卡改 PayPal 单次演示',
+    asin: 'MOCKGC2PPSINGLE',
+    country: '德国',
+    buyer_name: '买手-换PP单次',
+    chat_account: 'mock-cross-gc-pp-single',
+    buyer_paypal_email: 'cross.single.gc.to.pp@gmail.com',
+    refund_amount_usd: 18,
+    assigned_paypal_email: 'finance-us-03@company.com',
+    paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=Gift+to+PayPal',
+    handled_at: dayjs().subtract(9, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原礼品卡返款失败后改用 PayPal，本次返款成功',
+    workflow_label: '第2次 · 改 PayPal 成功',
+    workflow_detail: '原礼品卡失败记录保留在礼品卡账单',
+    workflow_state: 'success',
+    refund_status: '已返款',
+    buyer_paypal_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-gift-paypal-batch-success-1',
+    supersedes_request_id: 'mock-ledger-cross-gift-paypal-batch-origin-1',
+    sub_order_id: 'SUB-MOCK-CROSS-GC-PP-BATCH-001',
+    sub_order_number: 'MOCK-换PP-GC-批量-001',
+    product_name: '礼品卡改 PayPal 批次 A',
+    asin: 'MOCKGC2PPBATCH01',
+    country: '加拿大',
+    buyer_name: '买手-换PP批次',
+    chat_account: 'mock-cross-gc-pp-batch',
+    buyer_paypal_email: 'cross.batch.gc.to.pp@gmail.com',
+    refund_amount_usd: 11,
+    assigned_paypal_email: 'finance-us-03@company.com',
+    paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=Gift+to+PayPal+Batch',
+    handled_at: dayjs().subtract(7, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原礼品卡批次返款失败后改用 PayPal，本次返款成功',
+    workflow_label: '第2次 · 改 PayPal 成功',
+    workflow_detail: '原礼品卡批次失败记录仍保留',
+    workflow_state: 'success',
+    refund_status: '已返款',
+    buyer_paypal_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-gift-paypal-batch-success-2',
+    supersedes_request_id: 'mock-ledger-cross-gift-paypal-batch-origin-2',
+    sub_order_id: 'SUB-MOCK-CROSS-GC-PP-BATCH-002',
+    sub_order_number: 'MOCK-换PP-GC-批量-002',
+    product_name: '礼品卡改 PayPal 批次 B',
+    asin: 'MOCKGC2PPBATCH02',
+    country: '加拿大',
+    buyer_name: '买手-换PP批次',
+    chat_account: 'mock-cross-gc-pp-batch',
+    buyer_paypal_email: 'cross.batch.gc.to.pp@gmail.com',
+    refund_amount_usd: 9,
+    assigned_paypal_email: 'finance-us-03@company.com',
+    paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=Gift+to+PayPal+Batch',
+    handled_at: dayjs().subtract(7, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原礼品卡批次返款失败后改用 PayPal，本次返款成功',
+    workflow_label: '第2次 · 改 PayPal 成功',
+    workflow_detail: '原礼品卡批次失败记录仍保留',
+    workflow_state: 'success',
+    refund_status: '已返款',
+    buyer_paypal_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
 ]
 
 const mockGiftSeed = [
@@ -995,6 +1158,168 @@ const mockGiftSeed = [
     _demo_new: true,
     _isMock: true,
   },
+  {
+    id: 'mock-ledger-cross-pp-gift-single-success',
+    supersedes_request_id: 'mock-ledger-cross-pp-gift-single-origin',
+    sub_order_id: 'SUB-MOCK-CROSS-PP-GC-SINGLE-001',
+    sub_order_number: 'MOCK-换卡-PP-单次-001',
+    product_name: 'PayPal 改礼品卡单次演示',
+    asin: 'MOCKPP2GCSINGLE',
+    country: '美国',
+    buyer_name: '买手-换卡单次',
+    chat_account: 'mock-cross-pp-gc-single',
+    refund_amount_usd: 14.5,
+    assigned_gift_card_id: 'GC-MOCK-CROSS-PP-GC-SINGLE',
+    assigned_gift_card_number: 'GC-CROSS-PP-GC-SINGLE',
+    assigned_gift_card_code: 'CROSS-PP2GC-001',
+    gift_card_face_value_usd: 14.5,
+    handled_at: dayjs().subtract(15, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原 PayPal 返款失败后改用礼品卡，本次返款成功',
+    workflow_label: '第2次 · 改礼品卡成功',
+    workflow_detail: '原 PayPal 失败记录保留在 PayPal 账单',
+    workflow_state: 'success',
+    refund_status: '已返款',
+    gift_returned: false,
+    gift_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-pp-gift-batch-success-1',
+    supersedes_request_id: 'mock-ledger-cross-pp-gift-batch-origin-1',
+    sub_order_id: 'SUB-MOCK-CROSS-PP-GC-BATCH-001',
+    sub_order_number: 'MOCK-换卡-PP-批量-001',
+    product_name: 'PayPal 改礼品卡批次 A',
+    asin: 'MOCKPP2GCBATCH01',
+    country: '英国',
+    buyer_name: '买手-换卡批次PP',
+    chat_account: 'mock-cross-pp-gc-batch',
+    refund_amount_usd: 10.2,
+    assigned_gift_card_id: 'GC-MOCK-CROSS-PP-GC-BATCH-1',
+    assigned_gift_card_number: 'GC-CROSS-PP-GC-BATCH-001',
+    assigned_gift_card_code: 'CROSS-PP2GC-B01',
+    gift_card_face_value_usd: 10.2,
+    handled_at: dayjs().subtract(13, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原 PayPal 批次返款失败后改用礼品卡，本次返款成功',
+    workflow_label: '第2次 · 改礼品卡成功',
+    workflow_detail: '原 PayPal 批次失败记录仍保留',
+    workflow_state: 'success',
+    refund_status: '已返款',
+    gift_returned: false,
+    gift_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-pp-gift-batch-success-2',
+    supersedes_request_id: 'mock-ledger-cross-pp-gift-batch-origin-2',
+    sub_order_id: 'SUB-MOCK-CROSS-PP-GC-BATCH-002',
+    sub_order_number: 'MOCK-换卡-PP-批量-002',
+    product_name: 'PayPal 改礼品卡批次 B',
+    asin: 'MOCKPP2GCBATCH02',
+    country: '英国',
+    buyer_name: '买手-换卡批次PP',
+    chat_account: 'mock-cross-pp-gc-batch',
+    refund_amount_usd: 7.8,
+    assigned_gift_card_id: 'GC-MOCK-CROSS-PP-GC-BATCH-2',
+    assigned_gift_card_number: 'GC-CROSS-PP-GC-BATCH-002',
+    assigned_gift_card_code: 'CROSS-PP2GC-B02',
+    gift_card_face_value_usd: 7.8,
+    handled_at: dayjs().subtract(13, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原 PayPal 批次返款失败后改用礼品卡，本次返款成功',
+    workflow_label: '第2次 · 改礼品卡成功',
+    workflow_detail: '原 PayPal 批次失败记录仍保留',
+    workflow_state: 'success',
+    refund_status: '已返款',
+    gift_returned: false,
+    gift_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-gift-paypal-single-origin',
+    sub_order_id: 'SUB-MOCK-CROSS-GC-PP-SINGLE-001',
+    sub_order_number: 'MOCK-换PP-GC-单次-001',
+    product_name: '礼品卡改 PayPal 单次演示',
+    asin: 'MOCKGC2PPSINGLE',
+    country: '德国',
+    buyer_name: '买手-换PP单次',
+    chat_account: 'mock-cross-gc-pp-single',
+    refund_amount_usd: 18,
+    assigned_gift_card_id: 'GC-MOCK-CROSS-GC-PP-SINGLE',
+    assigned_gift_card_number: 'GC-CROSS-GC-PP-SINGLE',
+    assigned_gift_card_code: 'CROSS-GC2PP-001',
+    gift_card_face_value_usd: 18,
+    returned_gift_card_number: 'GC-CROSS-GC-PP-SINGLE',
+    returned_gift_card_code: 'CROSS-GC2PP-001',
+    gift_returned_at: dayjs().subtract(11, 'minute').startOf('minute').toISOString(),
+    handled_at: dayjs().subtract(12, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原礼品卡返款失败并已回流，本条历史记录永久保留用于对账',
+    workflow_label: '第1次 · 礼品卡失败',
+    workflow_detail: '后续改用 PayPal 并返款成功',
+    workflow_state: 'failed',
+    refund_status: '返款失败',
+    gift_returned: true,
+    gift_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-gift-paypal-batch-origin-1',
+    sub_order_id: 'SUB-MOCK-CROSS-GC-PP-BATCH-001',
+    sub_order_number: 'MOCK-换PP-GC-批量-001',
+    product_name: '礼品卡改 PayPal 批次 A',
+    asin: 'MOCKGC2PPBATCH01',
+    country: '加拿大',
+    buyer_name: '买手-换PP批次',
+    chat_account: 'mock-cross-gc-pp-batch',
+    refund_amount_usd: 11,
+    assigned_gift_card_id: 'GC-MOCK-CROSS-GC-PP-BATCH-1',
+    assigned_gift_card_number: 'GC-CROSS-GC-PP-BATCH-001',
+    assigned_gift_card_code: 'CROSS-GC2PP-B01',
+    gift_card_face_value_usd: 11,
+    returned_gift_card_number: 'GC-CROSS-GC-PP-BATCH-001',
+    returned_gift_card_code: 'CROSS-GC2PP-B01',
+    gift_returned_at: dayjs().subtract(9, 'minute').startOf('minute').toISOString(),
+    handled_at: dayjs().subtract(10, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原礼品卡批次返款失败并已回流，本条历史记录永久保留用于对账',
+    workflow_label: '第1次 · 礼品卡失败',
+    workflow_detail: '批次后续改用 PayPal 成功',
+    workflow_state: 'failed',
+    refund_status: '返款失败',
+    gift_returned: true,
+    gift_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-cross-gift-paypal-batch-origin-2',
+    sub_order_id: 'SUB-MOCK-CROSS-GC-PP-BATCH-002',
+    sub_order_number: 'MOCK-换PP-GC-批量-002',
+    product_name: '礼品卡改 PayPal 批次 B',
+    asin: 'MOCKGC2PPBATCH02',
+    country: '加拿大',
+    buyer_name: '买手-换PP批次',
+    chat_account: 'mock-cross-gc-pp-batch',
+    refund_amount_usd: 9,
+    assigned_gift_card_id: 'GC-MOCK-CROSS-GC-PP-BATCH-2',
+    assigned_gift_card_number: 'GC-CROSS-GC-PP-BATCH-002',
+    assigned_gift_card_code: 'CROSS-GC2PP-B02',
+    gift_card_face_value_usd: 9,
+    returned_gift_card_number: 'GC-CROSS-GC-PP-BATCH-002',
+    returned_gift_card_code: 'CROSS-GC2PP-B02',
+    gift_returned_at: dayjs().subtract(9, 'minute').startOf('minute').toISOString(),
+    handled_at: dayjs().subtract(10, 'minute').startOf('minute').toISOString(),
+    finance_notes: '原礼品卡批次返款失败并已回流，本条历史记录永久保留用于对账',
+    workflow_label: '第1次 · 礼品卡失败',
+    workflow_detail: '批次后续改用 PayPal 成功',
+    workflow_state: 'failed',
+    refund_status: '返款失败',
+    gift_returned: true,
+    gift_resubmitted: true,
+    _demo_new: true,
+    _isMock: true,
+  },
 ]
 
 const mockPaypalLedgerRecords = ref<any[]>([])
@@ -1120,7 +1445,7 @@ const gcColumns = [
   { title: '需返金额', key: 'refund_amount', width: 110 },
   { title: '实返金额', key: 'actual_amount', width: 210, customCell: actualAmountCell },
   { title: '卡密', key: 'gift_card', width: 220, customCell: giftCardCell },
-  { title: '返款状态', key: 'refund_status', width: 130 },
+  { title: '返款状态', key: 'refund_status', width: 280 },
   { title: '处理人 / 时间', key: 'handled_at', width: 160 },
   { title: '账单备注', key: 'notes', width: 220 },
   { title: '操作', key: 'action', width: 190, fixed: 'right' as const, customCell: batchActionCell },
@@ -1133,7 +1458,7 @@ const ppColumns = [
   { title: '需返金额', key: 'refund_amount', width: 110 },
   { title: '实返金额', key: 'actual_amount', width: 210, customCell: actualAmountCell },
   { title: '付款 PayPal', key: 'paypal_account', width: 210 },
-  { title: '返款状态', key: 'refund_status', width: 130 },
+  { title: '返款状态', key: 'refund_status', width: 280 },
   { title: '水单', key: 'screenshot', width: 160 },
   { title: '处理人 / 时间', key: 'handled_at', width: 160 },
   { title: '账单备注', key: 'notes', width: 220 },
@@ -1248,6 +1573,16 @@ function buildDateFilter(query: any, field: string, range: any) {
     query = query.lte(field, range[1].format('YYYY-MM-DD') + 'T23:59:59')
   }
   return query
+}
+
+function applyRefundLedgerSearch(query: any, search: string, fields: string[]) {
+  const keyword = search.trim()
+  if (!keyword) return query
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(keyword)) {
+    return query.eq('id', keyword)
+  }
+  const fuzzy = `%${keyword}%`
+  return query.or(fields.map(field => `${field}.ilike.${fuzzy}`).join(','))
 }
 
 function clone<T>(value: T): T {
@@ -1463,10 +1798,7 @@ async function fetchGiftLedgerExportRecords() {
     .eq('refund_method', '礼品卡')
     .order('handled_at', { ascending: false })
   query = buildDateFilter(query, 'handled_at', gcDateRange.value)
-  if (gcSearch.value) {
-    const kw = `%${gcSearch.value}%`
-    query = query.or(`buyer_name.ilike.${kw},sub_order_number.ilike.${kw},product_name.ilike.${kw}`)
-  }
+  query = applyRefundLedgerSearch(query, gcSearch.value, ['buyer_name', 'sub_order_number', 'product_name'])
   const { data, error } = await query
   if (error) throw error
   const realRows = gcReturnFilter.value === 'yes' ? [] : (data || [])
@@ -1486,10 +1818,7 @@ async function fetchPaypalLedgerExportRecords() {
     .order('handled_at', { ascending: false })
   query = buildDateFilter(query, 'handled_at', ppDateRange.value)
   if (ppAccountFilter.value) query = query.eq('assigned_paypal_email', ppAccountFilter.value)
-  if (ppSearch.value) {
-    const kw = `%${ppSearch.value}%`
-    query = query.or(`buyer_name.ilike.${kw},sub_order_number.ilike.${kw},product_name.ilike.${kw},buyer_paypal_email.ilike.${kw}`)
-  }
+  query = applyRefundLedgerSearch(query, ppSearch.value, ['buyer_name', 'sub_order_number', 'product_name', 'buyer_paypal_email'])
   const { data, error } = await query
   if (error) throw error
   return annotateBatchDisplay(
@@ -1835,7 +2164,7 @@ function filterPaypalMockRecords() {
     if (ppAccountFilter.value && item.assigned_paypal_email !== ppAccountFilter.value) return false
     if (ppSearch.value) {
       const kw = ppSearch.value.trim().toLowerCase()
-      const haystack = [item.buyer_name, item.chat_account, item.buyer_paypal_email, item.sub_order_number, item.product_name].join(' ').toLowerCase()
+      const haystack = [item.id, item.supersedes_request_id, item.buyer_name, item.chat_account, item.buyer_paypal_email, item.sub_order_number, item.product_name].join(' ').toLowerCase()
       if (!haystack.includes(kw)) return false
     }
     return true
@@ -1850,7 +2179,7 @@ function filterGiftMockRecords() {
     }
     if (gcSearch.value) {
       const kw = gcSearch.value.trim().toLowerCase()
-      const haystack = [item.buyer_name, item.chat_account, item.sub_order_number, item.product_name].join(' ').toLowerCase()
+      const haystack = [item.id, item.supersedes_request_id, item.buyer_name, item.chat_account, item.sub_order_number, item.product_name].join(' ').toLowerCase()
       if (!haystack.includes(kw)) return false
     }
     if (gcReturnFilter.value === 'yes' && !hasGiftReturnTrail(item)) return false
@@ -1871,16 +2200,45 @@ function reloadPaypalFromFirstPage() {
   loadPaypalStats()
 }
 
+function annotateRefundRelations(rows: any[]) {
+  const entries = [
+    ...mockPaypalLedgerRecords.value.map(record => ({ record, method: 'PayPal' })),
+    ...mockGiftLedgerRecords.value.map(record => ({ record, method: '礼品卡' })),
+  ]
+  const byId = new Map(entries.map(entry => [String(entry.record.id), entry]))
+  const successorBySource = new Map<string, { record: any; method: string }>()
+  entries.forEach(entry => {
+    const sourceId = String(entry.record.supersedes_request_id || '')
+    if (sourceId) successorBySource.set(sourceId, entry)
+  })
+
+  return rows.map(row => {
+    const current = byId.get(String(row.id))
+    const sourceId = String(row.supersedes_request_id || '')
+    const source = sourceId ? byId.get(sourceId) : current
+    const successor = sourceId ? current : successorBySource.get(String(row.id))
+    const related = sourceId ? source : successor
+    if (!current || !source || !successor || !related) {
+      return { ...row, _related_refund_id: '', _relation_direction: '' }
+    }
+    return {
+      ...row,
+      _related_refund_id: String(related.record.id),
+      _relation_direction: `${source.method} → ${successor.method}`,
+    }
+  })
+}
+
 async function buildGiftLedgerRows(rows: any[]) {
   return annotateNewFlags(
-    annotateBatchDisplay(await enrichBuyerMeta(rows), 'giftcard'),
+    annotateRefundRelations(annotateBatchDisplay(await enrichBuyerMeta(rows), 'giftcard')),
     'giftcard',
   )
 }
 
 async function buildPaypalLedgerRows(rows: any[]) {
   return annotateNewFlags(
-    annotateBatchDisplay(await enrichBuyerMeta(rows), 'paypal'),
+    annotateRefundRelations(annotateBatchDisplay(await enrichBuyerMeta(rows), 'paypal')),
     'paypal',
   )
 }
@@ -1906,10 +2264,7 @@ async function loadGiftCardRefunds() {
       .eq('refund_method', '礼品卡')
       .order('handled_at', { ascending: false })
     query = buildDateFilter(query, 'handled_at', gcDateRange.value)
-    if (gcSearch.value) {
-      const kw = `%${gcSearch.value}%`
-      query = query.or(`buyer_name.ilike.${kw},sub_order_number.ilike.${kw},product_name.ilike.${kw}`)
-    }
+    query = applyRefundLedgerSearch(query, gcSearch.value, ['buyer_name', 'sub_order_number', 'product_name'])
     if (realPageSize > 0) query = query.range(realStart, realStart + realPageSize - 1)
     else query = query.range(0, -1)
     const { data, count, error } = await query
@@ -1960,10 +2315,7 @@ async function loadPaypalRefunds() {
       .order('handled_at', { ascending: false })
     query = buildDateFilter(query, 'handled_at', ppDateRange.value)
     if (ppAccountFilter.value) query = query.eq('assigned_paypal_email', ppAccountFilter.value)
-    if (ppSearch.value) {
-      const kw = `%${ppSearch.value}%`
-      query = query.or(`buyer_name.ilike.${kw},sub_order_number.ilike.${kw},product_name.ilike.${kw},buyer_paypal_email.ilike.${kw}`)
-    }
+    query = applyRefundLedgerSearch(query, ppSearch.value, ['buyer_name', 'sub_order_number', 'product_name', 'buyer_paypal_email'])
     if (realPageSize > 0) query = query.range(realStart, realStart + realPageSize - 1)
     else query = query.range(0, -1)
     const { data, count, error } = await query
@@ -2192,11 +2544,7 @@ async function submitLedgerAction() {
         amountMap.has(item.id)
           ? {
               ...item,
-              buyer_paypal_email: newEmail,
-              refund_amount_usd: amountMap.get(item.id),
               buyer_paypal_resubmitted: true,
-              finance_notes: [item.finance_notes, `已重新申请，买手 PayPal：${newEmail}，返款金额：$${money(amountMap.get(item.id))}`, actionForm.value.notes].filter(Boolean).join('；'),
-              updated_at: now,
             }
           : item,
       )
@@ -2256,12 +2604,6 @@ async function submitLedgerAction() {
           ? {
               ...item,
               buyer_paypal_resubmitted: true,
-              finance_notes: [
-                item.finance_notes,
-                `重新申请已由 PayPal 改为礼品卡，金额：$${money(mergedGiftAmount)}`,
-                actionForm.value.notes,
-              ].filter(Boolean).join('；'),
-              updated_at: now,
             }
           : item,
       )
@@ -2364,12 +2706,6 @@ async function submitLedgerAction() {
           ? {
               ...item,
               gift_resubmitted: true,
-              finance_notes: [
-                item.finance_notes,
-                `重新申请已由礼品卡改为 PayPal：${buyerPaypalEmail}`,
-                actionForm.value.notes,
-              ].filter(Boolean).join('；'),
-              updated_at: now,
             }
           : item,
       )
@@ -2429,17 +2765,7 @@ async function submitLedgerAction() {
         giftItemIds.has(item.id)
           ? {
               ...item,
-              gift_returned: Boolean(item.gift_returned),
-              gift_voided: Boolean(item.gift_voided),
-              gift_card_processed: true,
               gift_resubmitted: true,
-              returned_gift_card_number: item.returned_gift_card_number || item.assigned_gift_card_number,
-              returned_gift_card_code: item.returned_gift_card_code || item.assigned_gift_card_code,
-              gift_returned_at: item.gift_returned_at,
-              assigned_gift_card_number: '',
-              assigned_gift_card_code: '已重新提交，待财务重新选卡',
-              finance_notes: [item.finance_notes, `已合并重新提交 $${money(mergedGiftAmount)}`, actionForm.value.notes].filter(Boolean).join('；'),
-              updated_at: now,
             }
           : item,
       )
@@ -2587,17 +2913,6 @@ onMounted(async () => {
 .cell-meta { font-size: 11px; color: #9ca3af; }
 .cell-email { font-size: 11px; color: #6b7280; }
 .new-tag { margin: 0; line-height: 16px; }
-.batch-chip {
-  display: inline-flex;
-  align-self: flex-start;
-  margin-top: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.08);
-  border: 1px solid rgba(37, 99, 235, 0.18);
-}
 
 .amount-cell { display: flex; flex-direction: column; gap: 2px; }
 .amount-usd { font-weight: 700; color: #dc2626; font-size: 14px; }
@@ -2800,8 +3115,23 @@ onMounted(async () => {
 
 .pp-account { font-size: 12px; color: #374151; }
 .screenshot-link { font-size: 12px; color: #2563eb; }
-.workflow-cell { display: flex; flex-direction: column; gap: 4px; }
-.workflow-detail { font-size: 11px; color: #6b7280; }
+.refund-status-cell { display: flex; flex-direction: column; gap: 8px; }
+.refund-status-head { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.refund-relation {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid #f0f0f0;
+}
+.refund-relation-direction { color: #2563eb; font-size: 12px; font-weight: 600; }
+.refund-relation-id {
+  color: #6b7280;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  word-break: break-all;
+}
 
 :deep(.supplement-refund-row > td) {
   background: #fffbeb !important;

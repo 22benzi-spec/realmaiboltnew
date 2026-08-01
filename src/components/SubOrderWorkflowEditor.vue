@@ -266,10 +266,10 @@
                 </div>
               </div>
             </div>
-            <div v-if="!syncEditExperience && task._sel_refund_method === 'PayPal'" class="refund-row">
+            <div v-if="!isNoRefundSelection(task) && task._sel_refund_method === 'PayPal'" class="refund-row">
               <a-checkbox v-model:checked="task._need_finance_screenshot">需财务提供水单</a-checkbox>
             </div>
-            <div v-if="!effectiveShowUnifiedSubmitButton" class="refund-action-row">
+            <div v-if="!effectiveShowUnifiedSubmitButton || (syncEditExperience && isDeferredRefundSequence(task))" class="refund-action-row">
               <a-button
                 type="primary"
                 size="small"
@@ -277,7 +277,7 @@
                 :disabled="!isNoRefundSelection(task) && !getRefundFinalAmount(task)"
                 @click="submitRefundRequest(task)"
               >
-                {{ refundSubmitButtonText(task) }}
+                {{ syncEditExperience && isDeferredRefundSequence(task) ? '申请返款' : refundSubmitButtonText(task) }}
               </a-button>
             </div>
           </template>
@@ -584,6 +584,12 @@ function getReviewLevelLabel(value: any) {
   if (raw === 'B') return '高等'
   if (raw === 'S') return '极高等'
   return String(value || '')
+}
+
+function isDeferredRefundSequence(currentTask: any) {
+  return ['出单后返', '收货后返', '评后返'].includes(
+    String(currentTask?._sel_refund_sequence || currentTask?.refund_sequence || ''),
+  )
 }
 
 function getKeywordDisplay(currentTask: any) {
