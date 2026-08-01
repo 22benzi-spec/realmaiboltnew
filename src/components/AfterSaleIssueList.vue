@@ -434,6 +434,7 @@
             v-if="reorderEditorTask"
             :task="reorderEditorTask"
             :buyer-list="reorderBuyerOptions"
+            sync-edit-experience
             editor-mode="pending-order"
             :show-processed-refund-list="false"
             :show-correction-action="false"
@@ -1669,7 +1670,7 @@ function buildReorderEditorTask(record: any) {
   task._need_finance_screenshot = false
   task._extra_refund_amount = null
   task._extra_refund_method = '同首笔'
-  task._extra_refund_reason = '产品涨价'
+  task._extra_refund_reason = ''
   task._refund_apply_notes = ''
   task._submitting_refund = false
   task._refund_supplement_mode = false
@@ -1882,7 +1883,6 @@ function startReorderSupplementalRefund(task: any) {
   task._refund_supplement_mode = true
   task._refund_correction_mode = false
   task._refund_correction_target_id = null
-  task._refund_amount_usd = Number(task._extra_refund_amount)
   task._refund_fee_usd = 0
   let method = task._refund_request_latest_processed?.refund_method || task.refund_method || '礼品卡'
   if (task._extra_refund_method === '礼品卡') method = '礼品卡'
@@ -1941,7 +1941,9 @@ function isReorderPrepayMode(task: any) {
 }
 
 function getReorderRefundFinalAmount(task: any) {
-  const base = Number(task._refund_amount_usd || 0)
+  const base = task._refund_supplement_mode
+    ? Number(task._extra_refund_amount || 0)
+    : Number(task._refund_amount_usd || 0)
   if (task._sel_refund_method === 'PayPal') {
     return Number((base + Number(task._refund_fee_usd || 0)).toFixed(2))
   }
@@ -1971,11 +1973,24 @@ function syncReorderRefundComputed(task: any) {
 }
 
 function submitReorderRefundRequest(task: any) {
-  if (!isReorderNoRefundSelection(task) && !getReorderRefundFinalAmount(task)) {
+  const noRefund = isReorderNoRefundSelection(task)
+  if (noRefund) {
+    task.refund_sequence = '无需返款'
+    task.refund_status = '无需退款'
+    task.refund_amount = 0
+    task._refund_request_pending = null
+    task._refund_request = task._refund_request_latest_processed || null
+    task._refund_requests_list = (task._refund_requests_list || []).filter((item: any) => item.status !== '待处理')
+    task._refund_apply_notes = ''
+    task._need_finance_screenshot = false
+    message.success('已标记为无需返款')
+    return
+  }
+  if (!getReorderRefundFinalAmount(task)) {
     message.warning('请先填写返款金额')
     return
   }
-  if (!isReorderNoRefundSelection(task) && task._sel_refund_method === 'PayPal' && !String(task._buyer_paypal_email || '').trim()) {
+  if (task._sel_refund_method === 'PayPal' && !String(task._buyer_paypal_email || '').trim()) {
     message.warning('请填写买手 PayPal 邮箱')
     return
   }
@@ -1989,7 +2004,7 @@ function submitReorderRefundRequest(task: any) {
     actual_paid_usd: Number(task._refund_amount_usd || 0),
     paypal_fee_usd: Number(task._refund_fee_usd || 0),
     buyer_paypal_email: task._buyer_paypal_email || '',
-    notes: `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim(),
+    notes: String(task._refund_apply_notes || '').trim(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }

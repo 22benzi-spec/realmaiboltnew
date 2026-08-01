@@ -9,10 +9,10 @@
           <span class="product-name-sm">{{ task.product_name || '—' }}</span>
           <span class="mono-sm">{{ task.asin || '—' }}</span>
           <a-tag v-if="getReviewTypeLabel(task.review_type || task.order_type)" color="blue" class="meta-tone-tag">
-            测评类型 · {{ getReviewTypeLabel(task.review_type || task.order_type) }}
+            {{ syncEditExperience ? getReviewTypeLabel(task.review_type || task.order_type) : `测评类型 · ${getReviewTypeLabel(task.review_type || task.order_type)}` }}
           </a-tag>
           <a-tag v-if="getReviewLevelLabel(task.review_level)" color="gold" class="meta-tone-tag">
-            测评等级 · {{ getReviewLevelLabel(task.review_level) }}
+            {{ syncEditExperience ? getReviewLevelLabel(task.review_level) : `测评等级 · ${getReviewLevelLabel(task.review_level)}` }}
           </a-tag>
         </div>
         <div class="meta-chip-row">
@@ -141,8 +141,18 @@
               <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:160px" prefix="$" @change="syncRefundComputed(task)" />
             </div>
             <div class="refund-readonly-extra">
-              <div class="refund-readonly-extra-title">追加返款</div>
-              <div class="refund-readonly-grid">
+              <button
+                v-if="syncEditExperience"
+                type="button"
+                class="refund-readonly-extra-toggle"
+                :aria-expanded="supplementRefundExpanded"
+                @click="supplementRefundExpanded = !supplementRefundExpanded"
+              >
+                <span>追加返款</span>
+                <span class="refund-readonly-extra-toggle-text">{{ supplementRefundExpanded ? '收起' : '展开' }}</span>
+              </button>
+              <div v-else class="refund-readonly-extra-title">追加返款</div>
+              <div v-show="!syncEditExperience || supplementRefundExpanded" class="refund-readonly-grid">
                 <div class="refund-readonly-item">
                   <label>追加金额</label>
                   <a-input-number v-model:value="task._extra_refund_amount" size="small" :min="0" :precision="2" style="width:160px" prefix="$" />
@@ -216,7 +226,7 @@
                 <a-radio value="无需返款">无需返款</a-radio>
               </a-radio-group>
             </div>
-            <div v-if="isNoRefundSelection(task)" class="refund-no-need-tip">选择“无需返款”后，保存将直接标记为无需退款，不会生成新的财务返款申请。</div>
+            <div v-if="!syncEditExperience && isNoRefundSelection(task)" class="refund-no-need-tip">选择“无需返款”后，保存将直接标记为无需退款，不会生成新的财务返款申请。</div>
             <div v-if="!isNoRefundSelection(task)" class="refund-setup-row">
               <span class="refund-setup-label">返款方式</span>
               <a-radio-group v-model:value="task._sel_refund_method" size="small" @change="syncRefundComputed(task)">
@@ -256,7 +266,7 @@
                 </div>
               </div>
             </div>
-            <div v-if="task._sel_refund_method === 'PayPal'" class="refund-row">
+            <div v-if="!syncEditExperience && task._sel_refund_method === 'PayPal'" class="refund-row">
               <a-checkbox v-model:checked="task._need_finance_screenshot">需财务提供水单</a-checkbox>
             </div>
             <div v-if="!effectiveShowUnifiedSubmitButton" class="refund-action-row">
@@ -410,6 +420,7 @@ const props = withDefaults(defineProps<{
   task: any
   buyerList: any[]
   editorMode?: EditorMode
+  syncEditExperience?: boolean
   showSummaryHeader?: boolean
   showProcessedRefundList?: boolean
   showCorrectionAction?: boolean
@@ -454,6 +465,7 @@ const props = withDefaults(defineProps<{
   formatAuditEdit?: Fn<[any], string>
 }>(), {
   editorMode: 'default',
+  syncEditExperience: false,
   showSummaryHeader: false,
   showProcessedRefundList: false,
   showCorrectionAction: false,
@@ -499,6 +511,7 @@ const props = withDefaults(defineProps<{
 const task = toRef(props, 'task')
 const buyerList = toRef(props, 'buyerList')
 const {
+  syncEditExperience,
   showSummaryHeader,
   showProcessedRefundList,
   showCorrectionAction,
@@ -544,6 +557,7 @@ const {
 } = props
 
 const unifiedSubmitting = ref(false)
+const supplementRefundExpanded = ref(false)
 const isPendingOrderMode = computed(() => props.editorMode === 'pending-order')
 const effectiveShowSummaryHeader = computed(() => isPendingOrderMode.value || props.showSummaryHeader)
 const effectiveShowReplaceProductButton = computed(() => isPendingOrderMode.value || props.showReplaceProductButton)
@@ -1110,6 +1124,27 @@ async function handleUnifiedSubmit() {
   font-size: 12px;
   font-weight: 700;
   color: #1a1a2e;
+}
+
+.refund-readonly-extra-toggle {
+  width: 100%;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f5f7fa;
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.refund-readonly-extra-toggle-text {
+  color: #2563eb;
+  font-weight: 600;
 }
 
 .refund-compact-card {

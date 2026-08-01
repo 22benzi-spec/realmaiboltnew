@@ -26,7 +26,7 @@
 
         <div class="card-panel">
           <div class="queue-hint">
-            这里已填充礼品卡返款 mock 数据，可直接演示“金额填错后退回礼品卡库，并重新提交返款申请”。
+            礼品卡回流后，将返款状态改为“返款失败”或“返款失败-本金流失”，即可重新申请并按需更换返款方式。
           </div>
           <div class="toolbar">
             <a-range-picker v-model:value="gcDateRange" style="width:240px" @change="reloadGiftCardFromFirstPage" allow-clear />
@@ -134,7 +134,7 @@
                     type="primary"
                     size="small"
                     @click="openGiftReturn(record)"
-                  >重新提交</a-button>
+                  >重新申请</a-button>
                   <a-button
                     v-if="!canResubmitGiftCard(record) && canProcessGiftCard(record)"
                     size="small"
@@ -171,7 +171,7 @@
 
         <div class="card-panel">
           <div class="queue-hint">
-            这里已填充 PayPal 返款 mock 数据，可直接演示“换我方转款贝宝”以及“换买手贝宝后重新提交返款审批”。
+            PayPal 返款失败后可重新申请；默认沿用 PayPal，也可以在申请时改用礼品卡。
           </div>
           <div class="toolbar">
             <a-range-picker v-model:value="ppDateRange" style="width:240px" @change="reloadPaypalFromFirstPage" allow-clear />
@@ -302,7 +302,7 @@
     <a-modal
       v-model:open="actionOpen"
       :title="actionTitle"
-      width="560px"
+      width="620px"
       :confirm-loading="actionLoading"
       @ok="submitLedgerAction"
     >
@@ -310,20 +310,52 @@
         <div>子订单：<strong>{{ actionRecord.sub_order_number || '—' }}</strong></div>
         <div>买手：<strong>{{ actionRecord.buyer_name || '—' }}</strong></div>
         <div>返款金额：<strong>${{ money(actionRecord.refund_amount_usd) }}</strong></div>
+        <div v-if="actionType !== 'ppReceipt'">原返款方式：<strong>{{ originalRefundMethod }}</strong></div>
       </div>
 
       <a-form layout="vertical">
-        <a-form-item v-if="actionType === 'ppBuyer'" label="新的买手 PayPal">
+        <div v-if="actionType !== 'ppReceipt'" class="resubmit-method-card">
+          <div class="resubmit-method-head">
+            <div>
+              <div class="resubmit-method-label">本次返款方式</div>
+              <div class="resubmit-method-value">
+                <a-tag :color="actionForm.refundMethod === 'PayPal' ? 'blue' : 'gold'">
+                  {{ actionForm.refundMethod }}
+                </a-tag>
+              </div>
+            </div>
+            <a-button type="link" size="small" @click="handleRefundMethodSwitch">
+              {{ actionForm.refundMethod === originalRefundMethod ? (methodSwitchOpen ? '收起' : '更换返款方式') : '恢复原返款方式' }}
+            </a-button>
+          </div>
+          <div v-if="methodSwitchOpen && actionForm.refundMethod === originalRefundMethod" class="resubmit-method-picker">
+            <a-radio-group
+              :value="actionForm.refundMethod"
+              button-style="solid"
+              @change="changeResubmitRefundMethod($event.target.value)"
+            >
+              <a-radio-button :value="alternateRefundMethod">{{ alternateRefundMethod }}</a-radio-button>
+            </a-radio-group>
+          </div>
+        </div>
+
+        <a-form-item v-if="actionType !== 'ppReceipt' && actionForm.refundMethod === 'PayPal'" label="买手 PayPal">
           <a-input v-model:value="actionForm.buyerPaypalEmail" placeholder="buyer@example.com" />
         </a-form-item>
 
-        <a-form-item v-if="actionType === 'ppBuyer' && actionForm.paypalReturnItems.length <= 1" label="重新申请的返款金额 (USD)">
+        <a-form-item
+          v-if="actionType !== 'ppReceipt' && actionForm.refundMethod === 'PayPal' && resubmitItems.length <= 1"
+          label="重新申请的返款金额 (USD)"
+        >
           <a-input-number v-model:value="actionForm.correctedAmountUsd" :min="0" :precision="2" style="width:100%" />
         </a-form-item>
 
-        <a-form-item v-if="actionType === 'ppBuyer' && actionForm.paypalReturnItems.length > 1" label="重新申请的返款金额 (USD)">
+        <a-form-item
+          v-if="actionType !== 'ppReceipt' && actionForm.refundMethod === 'PayPal' && resubmitItems.length > 1"
+          label="重新申请的返款金额 (USD)"
+        >
           <div class="gift-return-amount-list">
-            <div v-for="item in actionForm.paypalReturnItems" :key="item.id" class="gift-return-amount-row">
+            <div v-for="item in resubmitItems" :key="item.id" class="gift-return-amount-row">
               <div class="gift-return-order">
                 <span class="gift-return-order-id">{{ item.subOrderNumber || item.subOrderId || item.id }}</span>
                 <span class="gift-return-order-meta">{{ item.productName || '—' }}</span>
@@ -333,8 +365,30 @@
           </div>
         </a-form-item>
 
-        <a-form-item v-if="actionType === 'giftReturn'" label="重新提交的返款金额 (USD)">
+        <a-form-item
+          v-if="actionType !== 'ppReceipt' && actionForm.refundMethod === '礼品卡' && !isChangedMethodBatch"
+          label="重新申请的返款金额 (USD)"
+        >
           <a-input-number v-model:value="actionForm.correctedAmountUsd" :min="0" :precision="2" style="width:100%" />
+        </a-form-item>
+
+        <a-form-item
+          v-if="actionType !== 'ppReceipt' && actionForm.refundMethod === '礼品卡' && isChangedMethodBatch"
+          label="批次重新申请金额 (USD)"
+        >
+          <div class="gift-return-amount-list">
+            <div v-for="item in resubmitItems" :key="item.id" class="gift-return-amount-row">
+              <div class="gift-return-order">
+                <span class="gift-return-order-id">{{ item.subOrderNumber || item.subOrderId || item.id }}</span>
+                <span class="gift-return-order-meta">{{ item.productName || '—' }}</span>
+              </div>
+              <a-input-number v-model:value="item.correctedAmountUsd" :min="0" :precision="2" style="width:160px" />
+            </div>
+          </div>
+          <div class="resubmit-batch-total">
+            <span>本批次合计</span>
+            <strong>${{ money(resubmitItemsTotal) }}</strong>
+          </div>
         </a-form-item>
 
         <a-form-item label="账单备注">
@@ -832,8 +886,8 @@ const mockGiftSeed = [
     returned_gift_card_code: 'TYUI-GHJK-BNMM',
     gift_returned_at: dayjs().subtract(1, 'day').hour(14).minute(10).toISOString(),
     handled_at: dayjs().subtract(1, 'day').hour(13).minute(35).toISOString(),
-    finance_notes: '演示：已回流卡库，待重新提交',
-    refund_status: '返款中',
+    finance_notes: '演示：已回流卡库且返款失败，可重新申请或更换返款方式',
+    refund_status: '返款失败',
     gift_returned: true,
     gift_resubmitted: false,
     _isMock: true,
@@ -968,9 +1022,11 @@ const giftActualPaidEditRows = ref<Array<{
 
 const actionOpen = ref(false)
 const actionLoading = ref(false)
+const methodSwitchOpen = ref(false)
 const actionType = ref<'ppBuyer' | 'giftReturn' | 'ppReceipt'>('ppBuyer')
 const actionRecord = ref<any | null>(null)
 const actionForm = ref({
+  refundMethod: 'PayPal' as 'PayPal' | '礼品卡',
   companyPaypalEmail: '',
   buyerPaypalEmail: '',
   correctedAmountUsd: 0,
@@ -999,7 +1055,7 @@ const actionForm = ref({
   notes: '',
 })
 const paypalRefundStatusOptions = ['未返款', '返款中', '已返款', 'On Hold', '返款失败', '返款失败-本金流失', '失误多返']
-const giftRefundStatusOptions = ['未返款', '返款中', '已返款']
+const giftRefundStatusOptions = ['未返款', '返款中', '已返款', '返款失败', '返款失败-本金流失']
 const refundCountryLabels = ['美国', '德国', '英国', '加拿大']
 
 const giftRollbackOptions = computed(() => {
@@ -1032,10 +1088,31 @@ const ppStats = computed(() => {
 })
 
 const actionTitle = computed(() => {
-  if (actionType.value === 'ppBuyer') return '更换买手贝宝并重提审批'
   if (actionType.value === 'ppReceipt') return '追加水单申请'
-  return '重新提交礼品卡申请'
+  return '重新申请款项'
 })
+
+const originalRefundMethod = computed<'PayPal' | '礼品卡'>(() =>
+  actionType.value === 'giftReturn' ? '礼品卡' : 'PayPal',
+)
+
+const alternateRefundMethod = computed<'PayPal' | '礼品卡'>(() =>
+  originalRefundMethod.value === 'PayPal' ? '礼品卡' : 'PayPal',
+)
+
+const resubmitItems = computed(() =>
+  actionType.value === 'giftReturn'
+    ? actionForm.value.giftReturnItems
+    : actionForm.value.paypalReturnItems,
+)
+
+const isChangedMethodBatch = computed(() =>
+  actionForm.value.refundMethod !== originalRefundMethod.value && resubmitItems.value.length > 1,
+)
+
+const resubmitItemsTotal = computed(() =>
+  resubmitItems.value.reduce((sum, item) => sum + Number(item.correctedAmountUsd || 0), 0),
+)
 
 const gcColumns = [
   { title: '子订单 / 产品', key: 'order_info', width: 200 },
@@ -1151,12 +1228,12 @@ function writeStorageText(key: string, value: string) {
 function refundStatusColor(status: string) {
   if (status === '已返款') return 'green'
   if (status === '返款中') return 'blue'
-  if (isPaypalRefundFailed(status) || status === '失误多返') return 'red'
+  if (isRefundFailed(status) || status === '失误多返') return 'red'
   if (status === 'On Hold') return 'gold'
   return 'default'
 }
 
-function isPaypalRefundFailed(status: string) {
+function isRefundFailed(status: string) {
   return status === '返款失败' || status === '返款失败-本金流失'
 }
 
@@ -1496,7 +1573,7 @@ function changeRefundStatus(type: 'paypal' | 'giftcard', record: any, status: st
       ? {
           ...item,
           refund_status: status,
-          finance_notes: isPaypalRefundFailed(status)
+          finance_notes: isRefundFailed(status)
             ? [item.finance_notes, `返款状态已改为${status}，业务员可重新申请`].filter(Boolean).join('；')
             : item.finance_notes,
         }
@@ -1567,7 +1644,8 @@ function getGiftReturnedFaceLimit(record: any) {
 }
 
 function canResubmitGiftCard(record: any) {
-  return record?._isMock && getProcessedGiftCards(record).length > 0
+  if (!record?._isMock) return false
+  return getProcessedGiftCards(record).length > 0
 }
 
 function canProcessGiftCard(record: any) {
@@ -1586,9 +1664,9 @@ function canResubmitPaypal(record: any) {
   if (!record?._isMock) return false
   const group = getPaypalGroupRecords(record)
   if (group.length > 1) {
-    return group.some(item => isPaypalRefundFailed(item.refund_status) && !item.buyer_paypal_resubmitted)
+    return group.some(item => isRefundFailed(item.refund_status) && !item.buyer_paypal_resubmitted)
   }
-  return isPaypalRefundFailed(record.refund_status) && !record.buyer_paypal_resubmitted
+  return isRefundFailed(record.refund_status) && !record.buyer_paypal_resubmitted
 }
 
 function openGiftRollback(record: any) {
@@ -1705,7 +1783,7 @@ async function submitGiftRollback() {
     giftRollbackSelectedIds.value = []
     giftRollbackActions.value = {}
     giftVoidProofs.value = {}
-    message.success('卡密已处理，可继续重新提交')
+    message.success('卡密已处理，可继续重新申请')
   } finally {
     giftRollbackLoading.value = false
   }
@@ -1925,16 +2003,37 @@ async function loadPaypalAccounts() {
   ppAccountList.value = Array.from(emails).sort().map(email => ({ email }))
 }
 
+function changeResubmitRefundMethod(method: 'PayPal' | '礼品卡') {
+  actionForm.value.refundMethod = method
+  if (method === '礼品卡') {
+    actionForm.value.correctedAmountUsd = resubmitItems.value.reduce(
+      (sum, item) => sum + Number(item.correctedAmountUsd || 0),
+      0,
+    )
+  }
+  methodSwitchOpen.value = false
+}
+
+function handleRefundMethodSwitch() {
+  if (actionForm.value.refundMethod !== originalRefundMethod.value) {
+    changeResubmitRefundMethod(originalRefundMethod.value)
+    return
+  }
+  methodSwitchOpen.value = !methodSwitchOpen.value
+}
+
 function openBuyerPaypalChange(record: any) {
   const groupRecords = getPaypalGroupRecords(record)
   const targetRecords = groupRecords.length > 1
-    ? groupRecords.filter(item => item?._isMock && !item.buyer_paypal_resubmitted)
-    : groupRecords.filter(item => item?._isMock && isPaypalRefundFailed(item.refund_status) && !item.buyer_paypal_resubmitted)
+    ? groupRecords.filter(item => item?._isMock && isRefundFailed(item.refund_status) && !item.buyer_paypal_resubmitted)
+    : groupRecords.filter(item => item?._isMock && isRefundFailed(item.refund_status) && !item.buyer_paypal_resubmitted)
   const rows = targetRecords.length ? targetRecords : [record]
   const firstRecord = rows[0]
   actionType.value = 'ppBuyer'
   actionRecord.value = record
+  methodSwitchOpen.value = false
   actionForm.value = {
+    refundMethod: 'PayPal',
     companyPaypalEmail: '',
     buyerPaypalEmail: firstRecord.buyer_paypal_email || '',
     correctedAmountUsd: Number(firstRecord.refund_amount_usd || 0),
@@ -1950,7 +2049,7 @@ function openBuyerPaypalChange(record: any) {
     })),
     giftReturnItems: [],
     reason: '',
-    notes: '买手 PayPal 修改后重新提交返款审批',
+    notes: 'PayPal 返款失败后重新申请',
   }
   actionOpen.value = true
 }
@@ -1958,7 +2057,9 @@ function openBuyerPaypalChange(record: any) {
 function openReceiptSupplement(record: any) {
   actionType.value = 'ppReceipt'
   actionRecord.value = record
+  methodSwitchOpen.value = false
   actionForm.value = {
+    refundMethod: 'PayPal',
     companyPaypalEmail: '',
     buyerPaypalEmail: '',
     correctedAmountUsd: Number(record.refund_amount_usd || 0),
@@ -1974,17 +2075,20 @@ function openGiftReturn(record: any) {
   const processedRecords = getProcessedGiftCards(record)
   const groupRecords = getGiftGroupRecords(record)
   const targetRecords = groupRecords.length > 1
-    ? groupRecords.filter(item => item?._isMock && !item.gift_resubmitted)
-    : (processedRecords.length ? processedRecords : [record])
+    ? groupRecords.filter(item => item?._isMock && isProcessedGiftCard(item) && !item.gift_resubmitted)
+    : processedRecords
+  const rows = targetRecords.length ? targetRecords : [record]
   giftActualPaidOverrideAmount.value = 0
   actionType.value = 'giftReturn'
   actionRecord.value = record
+  methodSwitchOpen.value = false
   actionForm.value = {
+    refundMethod: '礼品卡',
     companyPaypalEmail: '',
-    buyerPaypalEmail: '',
-    correctedAmountUsd: targetRecords.reduce((sum, item) => sum + Number(item.refund_amount_usd || 0), 0),
+    buyerPaypalEmail: record.buyer_paypal_email || '',
+    correctedAmountUsd: rows.reduce((sum, item) => sum + Number(item.refund_amount_usd || 0), 0),
     paypalReturnItems: [],
-    giftReturnItems: targetRecords.map(item => ({
+    giftReturnItems: rows.map(item => ({
       id: item.id,
       subOrderId: item.sub_order_id || '',
       subOrderNumber: item.sub_order_number || '',
@@ -2061,9 +2165,9 @@ async function submitLedgerAction() {
   actionLoading.value = true
   try {
     const now = new Date().toISOString()
-    if (actionType.value === 'ppBuyer') {
+    if (actionType.value === 'ppBuyer' && actionForm.value.refundMethod === 'PayPal') {
       if (!actionForm.value.buyerPaypalEmail.trim()) {
-        message.warning('请填写新的买手 PayPal')
+        message.warning('请填写买手 PayPal')
         return
       }
       const paypalReturnItems = actionForm.value.paypalReturnItems.length > 1
@@ -2091,7 +2195,7 @@ async function submitLedgerAction() {
               buyer_paypal_email: newEmail,
               refund_amount_usd: amountMap.get(item.id),
               buyer_paypal_resubmitted: true,
-              finance_notes: [item.finance_notes, `已重新申请，新买手贝宝：${newEmail}，返款金额：$${money(amountMap.get(item.id))}`, actionForm.value.notes].filter(Boolean).join('；'),
+              finance_notes: [item.finance_notes, `已重新申请，买手 PayPal：${newEmail}，返款金额：$${money(amountMap.get(item.id))}`, actionForm.value.notes].filter(Boolean).join('；'),
               updated_at: now,
             }
           : item,
@@ -2113,7 +2217,7 @@ async function submitLedgerAction() {
           refund_amount_usd: amount,
           product_price: amount,
           status: '待处理',
-          notes: `返款账单重新申请：买手 PayPal 已修改，返款金额 $${money(amount)}。${actionForm.value.notes || ''}`.trim(),
+          notes: `返款账单重新申请：买手 PayPal ${newEmail}，返款金额 $${money(amount)}。${actionForm.value.notes || ''}`.trim(),
           finance_notes: '',
           paypal_receipt_screenshot: '',
           request_type: 'correction',
@@ -2122,6 +2226,68 @@ async function submitLedgerAction() {
         })
       })
       message.success('已重新提交到返款审批中的 PayPal 返款')
+    } else if (actionType.value === 'ppBuyer' && actionForm.value.refundMethod === '礼品卡') {
+      const paypalReturnItems = actionForm.value.paypalReturnItems.length
+        ? actionForm.value.paypalReturnItems
+        : [{
+            id: actionRecord.value.id,
+            subOrderId: actionRecord.value.sub_order_id || '',
+            subOrderNumber: actionRecord.value.sub_order_number || '',
+            productName: actionRecord.value.product_name || '',
+            buyerName: actionRecord.value.buyer_name || '',
+            buyerPaypalEmail: actionRecord.value.buyer_paypal_email || '',
+            asin: actionRecord.value.asin || '',
+            correctedAmountUsd: Number(actionRecord.value.refund_amount_usd || 0),
+          }]
+      if (paypalReturnItems.length > 1 && paypalReturnItems.some(item => Number(item.correctedAmountUsd || 0) <= 0)) {
+        message.warning('请填写每笔重新申请的返款金额')
+        return
+      }
+      const mergedGiftAmount = paypalReturnItems.length > 1
+        ? paypalReturnItems.reduce((sum, item) => sum + Number(item.correctedAmountUsd || 0), 0)
+        : Number(actionForm.value.correctedAmountUsd || 0)
+      if (mergedGiftAmount <= 0) {
+        message.warning('请填写重新申请的返款金额')
+        return
+      }
+      const itemIds = new Set(paypalReturnItems.map(item => item.id))
+      mockPaypalLedgerRecords.value = mockPaypalLedgerRecords.value.map(item =>
+        itemIds.has(item.id)
+          ? {
+              ...item,
+              buyer_paypal_resubmitted: true,
+              finance_notes: [
+                item.finance_notes,
+                `重新申请已由 PayPal 改为礼品卡，金额：$${money(mergedGiftAmount)}`,
+                actionForm.value.notes,
+              ].filter(Boolean).join('；'),
+              updated_at: now,
+            }
+          : item,
+      )
+      persistMockLedgerState('paypal')
+      const firstItem = paypalReturnItems[0]
+      const subOrderText = paypalReturnItems.map(item => item.subOrderNumber || item.subOrderId).filter(Boolean).join(' / ')
+      appendQueueExtra('gift', {
+        id: `mock-gift-resub-${Date.now()}`,
+        sub_order_id: paypalReturnItems.map(item => item.subOrderId).filter(Boolean).join(','),
+        sub_order_number: subOrderText || firstItem.subOrderNumber,
+        buyer_name: firstItem.buyerName,
+        product_name: paypalReturnItems.length > 1 ? `PayPal 转礼品卡重提（${paypalReturnItems.length} 笔）` : firstItem.productName,
+        asin: paypalReturnItems.length > 1 ? '' : firstItem.asin,
+        store_name: '账单重提',
+        staff_name: '财务重提',
+        refund_method: '礼品卡',
+        refund_amount_usd: mergedGiftAmount,
+        product_price: mergedGiftAmount,
+        status: '待处理',
+        notes: `返款账单重新申请：原 PayPal 返款改为礼品卡；子订单 ${subOrderText || '—'}；金额 $${money(mergedGiftAmount)}。${actionForm.value.notes || ''}`.trim(),
+        finance_notes: '',
+        request_type: 'correction',
+        created_at: now,
+        handled_at: null,
+      })
+      message.success('已改为礼品卡并重新提交到返款审批')
     } else if (actionType.value === 'ppReceipt') {
       const resubmitId = `mock-paypal-receipt-${Date.now()}`
       const receiptGroup = getPaypalGroupRecords(actionRecord.value)
@@ -2166,6 +2332,73 @@ async function submitLedgerAction() {
         handled_at: null,
       })
       message.success('已发起追加水单申请，财务会在返款审批里看到待处理提醒')
+    } else if (actionType.value === 'giftReturn' && actionForm.value.refundMethod === 'PayPal') {
+      const buyerPaypalEmail = actionForm.value.buyerPaypalEmail.trim()
+      if (!buyerPaypalEmail) {
+        message.warning('请填写买手 PayPal')
+        return
+      }
+      const giftReturnItems = actionForm.value.giftReturnItems.length
+        ? actionForm.value.giftReturnItems
+        : [{
+            id: actionRecord.value.id,
+            subOrderId: actionRecord.value.sub_order_id || '',
+            subOrderNumber: actionRecord.value.sub_order_number || '',
+            productName: actionRecord.value.product_name || '',
+            buyerName: actionRecord.value.buyer_name || '',
+            asin: actionRecord.value.asin || '',
+            correctedAmountUsd: Number(actionForm.value.correctedAmountUsd || 0),
+            processedCardNumber: actionRecord.value.returned_gift_card_number || actionRecord.value.voided_gift_card_number || '原卡密',
+            processedLabel: giftCardProcessLabel(actionRecord.value),
+          }]
+      if (giftReturnItems.length === 1) {
+        giftReturnItems[0].correctedAmountUsd = Number(actionForm.value.correctedAmountUsd || 0)
+      }
+      if (giftReturnItems.some(item => Number(item.correctedAmountUsd || 0) <= 0)) {
+        message.warning('请填写重新申请的返款金额')
+        return
+      }
+      const giftItemIds = new Set(giftReturnItems.map(item => item.id))
+      mockGiftLedgerRecords.value = mockGiftLedgerRecords.value.map(item =>
+        giftItemIds.has(item.id)
+          ? {
+              ...item,
+              gift_resubmitted: true,
+              finance_notes: [
+                item.finance_notes,
+                `重新申请已由礼品卡改为 PayPal：${buyerPaypalEmail}`,
+                actionForm.value.notes,
+              ].filter(Boolean).join('；'),
+              updated_at: now,
+            }
+          : item,
+      )
+      persistMockLedgerState('giftcard')
+      giftReturnItems.forEach((item, index) => {
+        const amount = Number(item.correctedAmountUsd || 0)
+        appendQueueExtra('paypal', {
+          id: `mock-paypal-resub-${Date.now()}-${index}`,
+          sub_order_id: item.subOrderId,
+          sub_order_number: item.subOrderNumber,
+          buyer_name: item.buyerName,
+          buyer_paypal_email: buyerPaypalEmail,
+          product_name: item.productName,
+          asin: item.asin,
+          store_name: '账单重提',
+          staff_name: '财务重提',
+          refund_method: 'PayPal',
+          refund_amount_usd: amount,
+          product_price: amount,
+          status: '待处理',
+          notes: `返款账单重新申请：原礼品卡返款改为 PayPal；买手 PayPal：${buyerPaypalEmail}；金额 $${money(amount)}。${actionForm.value.notes || ''}`.trim(),
+          finance_notes: '',
+          paypal_receipt_screenshot: '',
+          request_type: 'correction',
+          created_at: now,
+          handled_at: null,
+        })
+      })
+      message.success('已改为 PayPal 并重新提交到返款审批')
     } else {
       const giftReturnItems = actionForm.value.giftReturnItems.length
         ? actionForm.value.giftReturnItems
@@ -2590,6 +2823,49 @@ onMounted(async () => {
   gap: 6px;
   font-size: 13px;
   color: #374151;
+}
+.resubmit-method-card {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.resubmit-method-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.resubmit-method-label {
+  margin-bottom: 6px;
+  color: #1a1a2e;
+  font-size: 13px;
+  font-weight: 600;
+}
+.resubmit-method-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.resubmit-method-picker {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+.resubmit-batch-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid #e5e7eb;
+  color: #6b7280;
+  font-size: 13px;
+}
+.resubmit-batch-total strong {
+  color: #2563eb;
+  font-size: 16px;
 }
 
 @media (max-width: 900px) {

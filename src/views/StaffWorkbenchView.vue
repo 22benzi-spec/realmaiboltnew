@@ -654,6 +654,7 @@
                 <SubOrderWorkflowEditor
                   :task="task"
                   :buyer-list="buyerList"
+                  sync-edit-experience
                   :deadline-alert="getTaskDeadlineAlert(task)"
                   :show-summary-header="false"
                   :show-processed-refund-list="false"
@@ -1242,6 +1243,7 @@
         v-if="taskEditorTarget"
         :task="taskEditorTarget"
         :buyer-list="buyerList"
+        sync-edit-experience
         :editor-mode="taskEditorMode === 'full' ? 'pending-order' : 'default'"
         :deadline-alert="getTaskDeadlineAlert(taskEditorTarget)"
         :show-summary-header="true"
@@ -2765,7 +2767,6 @@ function startSupplementalRefund(task: any) {
   task._refund_supplement_mode = true
   task._refund_correction_mode = false
   task._refund_correction_target_id = null
-  task._refund_amount_usd = Number(task._extra_refund_amount)
   task._refund_fee_usd = 0
   let method = task._refund_request_latest_processed?.refund_method || task.refund_method || '礼品卡'
   if (task._extra_refund_method === '礼品卡') method = '礼品卡'
@@ -2827,7 +2828,12 @@ function isPrepayMode(task: any) {
 }
 
 function getRefundFinalAmount(task: any) {
-  const base = Number(task._refund_amount_usd || 0)
+  if (!task._refund_supplement_mode && task._refund_request_pending?.request_type === 'supplement') {
+    return Number(task._refund_request_pending.refund_amount_usd || task._refund_request_pending.refund_amount || 0)
+  }
+  const base = task._refund_supplement_mode
+    ? Number(task._extra_refund_amount || 0)
+    : Number(task._refund_amount_usd || 0)
   if (task._sel_refund_method === 'PayPal') {
     return Number((base + Number(task._refund_fee_usd || 0)).toFixed(2))
   }
@@ -3898,7 +3904,7 @@ function initTaskFields(task: any) {
   task._need_finance_screenshot = false
   task._extra_refund_amount = null
   task._extra_refund_method = '同首笔'
-  task._extra_refund_reason = '产品涨价'
+  task._extra_refund_reason = ''
   task._refund_apply_notes = ''
   task._submitting_refund = false
   task._refund_supplement_mode = false
@@ -4522,6 +4528,15 @@ function hasRefundDraftChanged(task: any, snapshot: any) {
   ][index])
 }
 
+function validatePriceIncreaseActualPaid(task: any, snapshot: any) {
+  if (String(task._extra_refund_reason || '') !== '产品涨价') return true
+  const currentAmountInCents = Math.round(Number(task._refund_amount_usd || 0) * 100)
+  const originalAmountInCents = Math.round(Number(snapshot?._refund_amount_usd || 0) * 100)
+  if (currentAmountInCents > originalAmountInCents) return true
+  message.error('产品涨价，但未修改实付金额，请修改后再提交！')
+  return false
+}
+
 async function submitWorkbenchTaskEditor(task: any) {
   const snapshot = taskEditorDraftSnapshot.value
   if (!task || !snapshot) return
@@ -4544,7 +4559,10 @@ async function submitWorkbenchTaskEditor(task: any) {
       || Number(task._refund_amount_usd || 0) !== Number(snapshot._refund_amount_usd || 0)
       || Number(task._refund_final_amount_usd || 0) !== Number(snapshot._refund_final_amount_usd || 0)
     if (isRefundStepReadonly(task)) {
-      if (extraRefundChanged && Number(task._extra_refund_amount || 0) > 0) startSupplementalRefund(task)
+      if (extraRefundChanged && Number(task._extra_refund_amount || 0) > 0) {
+        if (!validatePriceIncreaseActualPaid(task, snapshot)) return
+        startSupplementalRefund(task)
+      }
       else if (currentRefundChanged) startCorrectionRefund(task)
     }
     await submitRefundRequest(task)
@@ -4788,21 +4806,12 @@ async function submitRefundRequest(task: any) {
   const finalAmount = getRefundFinalAmount(task)
   if (!noRefund && !finalAmount) return
 
-  if (task._refund_supplement_mode && task._extra_refund_reason === '产品涨价') {
-    const ap = Number(task._refund_amount_usd || 0)
-    const pp = Number(task.product_price || 0)
-    if (Math.abs(ap - pp) < 0.005) {
-      message.error('选择「产品涨价」追加时，实付金额必须与系统标价不同，请填写涨价后的真实支付金额')
-      return
-    }
-  }
-
   const buyer = buyerList.value.find(b => b.id === task.buyer_id)
   const selectedMethod = task._sel_refund_method || task.refund_method
   const paypalEmail = selectedMethod === 'PayPal'
     ? (task._buyer_paypal_email || buyer?.paypal_email || '')
     : ''
-  if (selectedMethod === 'PayPal' && !paypalEmail) {
+  if (selectedMethod === 'PayPal' && !noRefund && !paypalEmail) {
     message.error('请填写买手 PayPal 邮箱')
     return
   }
@@ -4812,7 +4821,7 @@ async function submitRefundRequest(task: any) {
 
   const actualPaid = Number(task._refund_amount_usd || 0)
   const feeUsd = selectedMethod === 'PayPal' ? Number(task._refund_fee_usd || 0) : 0
-  const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
+  const notes = String(task._refund_apply_notes || '').trim()
   const supplementReason = task._refund_supplement_mode
     ? (task._extra_refund_reason || '追加返款')
     : task._refund_correction_mode

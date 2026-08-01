@@ -219,6 +219,7 @@
         v-if="editTask"
         :task="editTask"
         :buyer-list="buyerList"
+        :sync-edit-experience="!editOnlyMode"
         :show-summary-header="true"
         :show-processed-refund-list="true"
         :show-correction-action="true"
@@ -1594,7 +1595,6 @@ function startSupplementalRefund(task: any) {
   task._refund_supplement_mode = true
   task._refund_correction_mode = false
   task._refund_correction_target_id = null
-  task._refund_amount_usd = Number(task._extra_refund_amount)
   task._refund_fee_usd = 0
   let method = task._refund_request_latest_processed?.refund_method || task.refund_method || '礼品卡'
   if (task._extra_refund_method === '礼品卡') method = '礼品卡'
@@ -1655,7 +1655,12 @@ function isPrepayMode(task: any) {
 }
 
 function getRefundFinalAmount(task: any) {
-  const base = Number(task._refund_amount_usd || 0)
+  if (!task._refund_supplement_mode && task._refund_request_pending?.request_type === 'supplement') {
+    return Number(task._refund_request_pending.refund_amount_usd || task._refund_request_pending.refund_amount || 0)
+  }
+  const base = task._refund_supplement_mode
+    ? Number(task._extra_refund_amount || 0)
+    : Number(task._refund_amount_usd || 0)
   if (task._sel_refund_method === 'PayPal') {
     return Number((base + Number(task._refund_fee_usd || 0)).toFixed(2))
   }
@@ -1716,7 +1721,7 @@ function initializeEditTask(raw: SubOrder) {
     _submitting_refund: false,
     _extra_refund_amount: undefined,
     _extra_refund_method: '同首笔',
-    _extra_refund_reason: '产品涨价',
+    _extra_refund_reason: editOnlyMode.value ? '产品涨价' : '',
     _input_amazon_order_id: raw.amazon_order_id || '',
     _saving_amazon: false,
     _proof_type: raw.fb_link || raw.fb_image_url ? 'Feedback' : 'Review',
@@ -1793,6 +1798,7 @@ async function openEdit(r: SubOrder) {
   editOpen.value = true
   if ((r as any)._is_preview_mock || !isUuid(String(r.id || ''))) {
     syncRefundComputed(editTask.value)
+    editTaskDraftSnapshot.value = captureEditTaskDraft(editTask.value)
     return
   }
   try {
@@ -1812,6 +1818,7 @@ async function openEdit(r: SubOrder) {
   } catch {
     syncRefundComputed(editTask.value)
   }
+  editTaskDraftSnapshot.value = captureEditTaskDraft(editTask.value)
 }
 
 async function openEditById(id: string) {
@@ -1984,7 +1991,7 @@ async function submitRefundRequest(task: any) {
   const isUpdatePending = !!(pending && !task._refund_supplement_mode && !task._refund_correction_mode)
   const actualPaid = Number(task._refund_amount_usd || 0)
   const feeUsd = selectedMethod === 'PayPal' ? Number(task._refund_fee_usd || 0) : 0
-  const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
+  const notes = `${task._refund_apply_notes || ''}${editOnlyMode.value && task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
   const staffName = currentUser.value?.name || task.sales_person || '订单列表'
   const supplementReason = task._refund_supplement_mode
     ? (task._extra_refund_reason || '追加返款')
@@ -2242,6 +2249,15 @@ function hasEditRefundDraftChanged(task: any, snapshot: any) {
   ][index])
 }
 
+function validatePriceIncreaseActualPaid(task: any, snapshot: any) {
+  if (editOnlyMode.value || String(task._extra_refund_reason || '') !== '产品涨价') return true
+  const currentAmountInCents = Math.round(Number(task._refund_amount_usd || 0) * 100)
+  const originalAmountInCents = Math.round(Number(snapshot?._refund_amount_usd || 0) * 100)
+  if (currentAmountInCents > originalAmountInCents) return true
+  message.error('产品涨价，但未修改实付金额，请修改后再提交！')
+  return false
+}
+
 async function submitEditTaskChanges(task: any) {
   const snapshot = editTaskDraftSnapshot.value
   if (!task || !snapshot) return
@@ -2264,7 +2280,10 @@ async function submitEditTaskChanges(task: any) {
       || Number(task._refund_amount_usd || 0) !== Number(snapshot._refund_amount_usd || 0)
       || Number(task._refund_final_amount_usd || 0) !== Number(snapshot._refund_final_amount_usd || 0)
     if (isRefundStepReadonly(task)) {
-      if (extraRefundChanged && Number(task._extra_refund_amount || 0) > 0) startSupplementalRefund(task)
+      if (extraRefundChanged && Number(task._extra_refund_amount || 0) > 0) {
+        if (!validatePriceIncreaseActualPaid(task, snapshot)) return
+        startSupplementalRefund(task)
+      }
       else if (currentRefundChanged) startCorrectionRefund(task)
     }
     await submitRefundRequest(task)
