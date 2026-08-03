@@ -2,16 +2,45 @@
 param(
     [string]$Remote = 'origin',
     [string]$Branch,
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
     [string]$Summary,
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
-    [string]$Verification
+    [string]$Verification,
+    [string]$SummaryFile,
+    [string]$VerificationFile
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# Force UTF-8 so Chinese commit subjects / paths are not mojibake on Windows.
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+$utf8Bom = [System.Text.UTF8Encoding]::new($true)
+[Console]::InputEncoding = $utf8NoBom
+[Console]::OutputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
+$env:LANG = 'C.UTF-8'
+$env:LC_ALL = 'C.UTF-8'
+
+function Read-Utf8Text {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "File not found: $Path"
+    }
+    return [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path), $utf8NoBom).Trim()
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SummaryFile)) {
+    $Summary = Read-Utf8Text -Path $SummaryFile
+}
+if (-not [string]::IsNullOrWhiteSpace($VerificationFile)) {
+    $Verification = Read-Utf8Text -Path $VerificationFile
+}
+
+if ([string]::IsNullOrWhiteSpace($Summary)) {
+    throw 'Provide -Summary or -SummaryFile.'
+}
+if ([string]::IsNullOrWhiteSpace($Verification)) {
+    throw 'Provide -Verification or -VerificationFile.'
+}
 
 function Invoke-Git {
     param(
@@ -19,7 +48,7 @@ function Invoke-Git {
         [string[]]$Arguments
     )
 
-    $output = & git @Arguments
+    $output = & git -c core.quotepath=false -c i18n.logOutputEncoding=utf-8 @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Git command failed: git $($Arguments -join ' ')"
     }
@@ -76,7 +105,14 @@ if (Test-Path -LiteralPath $documentPath) {
 
 $commitText = ($commits -join [Environment]::NewLine)
 $fileText = if ($files.Count -gt 0) {
-    ($files | ForEach-Object { "- ``$_``" }) -join [Environment]::NewLine
+    ($files | ForEach-Object {
+        if ($_ -match '^\s*([A-Z])\s+(.+)$') {
+            "- ``$($Matches[1])`` ``$($Matches[2])``"
+        }
+        else {
+            "- ``$_``"
+        }
+    }) -join [Environment]::NewLine
 }
 else {
     '- None'
@@ -106,10 +142,11 @@ $Summary
 $Verification
 "@
 
+# UTF-8 with BOM so Windows editors display Chinese correctly.
 [System.IO.File]::WriteAllText(
     $documentPath,
     $content + [Environment]::NewLine,
-    [System.Text.UTF8Encoding]::new($false)
+    $utf8Bom
 )
 
 $relativePath = "commit/$documentName"
