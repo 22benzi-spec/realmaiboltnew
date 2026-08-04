@@ -49,18 +49,104 @@
                 <span class="detail-item-text">主订单ID：</span>
                 <a class="order-num-link">{{ record.order_number }}</a>
                 <a-tag color="default" class="info-tag">{{ record.country }}</a-tag>
-                <a-tag v-if="shouldShowTaskReviewLevel(record)" :color="getReviewLevelColor(getTaskReviewLevel(record))" class="info-tag">{{ getTaskReviewLevel(record) }}</a-tag>
-                <template v-if="record.order_types && record.order_types.length">
-                  <a-tag v-for="(ot, index) in record.order_types" :key="`${ot}-${index}`" :color="getOrderTypeColor(ot)" class="info-tag">{{ formatReviewType(ot) }}</a-tag>
-                </template>
-                <template v-else-if="record.order_type">
-                  <a-tag :color="getOrderTypeColor(record.order_type)" class="info-tag">{{ formatReviewType(record.order_type) }}</a-tag>
-                </template>
+                <span v-if="shouldShowMainCardReviewLevel(record)" class="main-field-wrap">
+                  <a-tag :color="getReviewLevelColor(getMainCardReviewLevel(record))" class="info-tag">{{ getMainCardReviewLevel(record) }}</a-tag>
+                  <a-popover
+                    v-if="hasMainCardFieldChange(record, 'review_level')"
+                    trigger="click"
+                    placement="bottomLeft"
+                    overlay-class-name="main-field-change-popover"
+                  >
+                    <template #content>
+                      <div class="main-field-change-list">
+                        <div
+                          v-for="item in getMainCardFieldChangeLogs(record, 'review_level')"
+                          :key="item.key"
+                          class="main-field-change-item"
+                        >
+                          <div class="main-field-change-meta">{{ fmtTime(item.changed_at) }} · {{ item.staff_name }}</div>
+                          <div class="main-field-change-text">{{ item.text }}</div>
+                        </div>
+                      </div>
+                    </template>
+                    <span class="main-field-change-dot" title="查看变更记录" @click.stop />
+                  </a-popover>
+                </span>
+                <span v-if="getMainCardTypeLabel(record)" class="main-field-wrap">
+                  <a-tag
+                    :color="getMainCardTypeLabel(record) === '混合' ? 'orange' : getOrderTypeColor(String(getMainCardTypeLabel(record)))"
+                    class="info-tag"
+                  >{{ getMainCardTypeLabel(record) }}</a-tag>
+                  <a-popover
+                    v-if="hasMainCardFieldChange(record, 'review_type')"
+                    trigger="click"
+                    placement="bottomLeft"
+                    overlay-class-name="main-field-change-popover"
+                  >
+                    <template #content>
+                      <div class="main-field-change-list">
+                        <div
+                          v-for="item in getMainCardFieldChangeLogs(record, 'review_type')"
+                          :key="item.key"
+                          class="main-field-change-item"
+                        >
+                          <div class="main-field-change-meta">{{ fmtTime(item.changed_at) }} · {{ item.staff_name }}</div>
+                          <div class="main-field-change-text">{{ item.text }}</div>
+                        </div>
+                      </div>
+                    </template>
+                    <span class="main-field-change-dot" title="查看变更记录" @click.stop />
+                  </a-popover>
+                </span>
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">产品名称：{{ record.product_name || '—' }}</span>
-                <span class="detail-sep">ASIN：<span class="mono-sm">{{ record.asin }}</span></span>
-                <span class="detail-sep">售价：<span class="price-text">${{ Number(record.product_price || 0).toFixed(2) }}</span></span>
+                <span class="detail-sep main-field-wrap">
+                  ASIN：<span class="mono-sm">{{ getMainCardAsin(record) || '—' }}</span>
+                  <a-popover
+                    v-if="hasMainCardFieldChange(record, 'asin')"
+                    trigger="click"
+                    placement="bottomLeft"
+                    overlay-class-name="main-field-change-popover"
+                  >
+                    <template #content>
+                      <div class="main-field-change-list">
+                        <div
+                          v-for="item in getMainCardFieldChangeLogs(record, 'asin')"
+                          :key="item.key"
+                          class="main-field-change-item"
+                        >
+                          <div class="main-field-change-meta">{{ fmtTime(item.changed_at) }} · {{ item.staff_name }}</div>
+                          <div class="main-field-change-text">{{ item.text }}</div>
+                        </div>
+                      </div>
+                    </template>
+                    <span class="main-field-change-dot" title="查看变更记录" @click.stop />
+                  </a-popover>
+                </span>
+                <span class="detail-sep main-field-wrap">
+                  售价：<span class="price-text">{{ getMainCardPriceText(record) }}</span>
+                  <a-popover
+                    v-if="hasMainCardFieldChange(record, 'product_price')"
+                    trigger="click"
+                    placement="bottomLeft"
+                    overlay-class-name="main-field-change-popover"
+                  >
+                    <template #content>
+                      <div class="main-field-change-list">
+                        <div
+                          v-for="item in getMainCardFieldChangeLogs(record, 'product_price')"
+                          :key="item.key"
+                          class="main-field-change-item"
+                        >
+                          <div class="main-field-change-meta">{{ fmtTime(item.changed_at) }} · {{ item.staff_name }}</div>
+                          <div class="main-field-change-text">{{ item.text }}</div>
+                        </div>
+                      </div>
+                    </template>
+                    <span class="main-field-change-dot" title="查看变更记录" @click.stop />
+                  </a-popover>
+                </span>
               </div>
               <div class="task-detail-row">
                 <span class="detail-item-text">客户：{{ record.customer_name || '—' }}</span>
@@ -72,7 +158,29 @@
                 <span class="task-note-text" :title="getTaskRemark(record)">{{ getTaskRemark(record) }}</span>
               </div>
               <div class="task-detail-row">
-                <span class="detail-item-text">任务总量：{{ record.order_quantity || 0 }} 单</span>
+                <span class="detail-item-text main-field-wrap">
+                  任务总量：{{ record.order_quantity || 0 }} 单
+                  <a-popover
+                    v-if="hasMainCardFieldChange(record, 'order_quantity')"
+                    trigger="click"
+                    placement="bottomLeft"
+                    overlay-class-name="main-field-change-popover"
+                  >
+                    <template #content>
+                      <div class="main-field-change-list">
+                        <div
+                          v-for="item in getMainCardFieldChangeLogs(record, 'order_quantity')"
+                          :key="item.key"
+                          class="main-field-change-item"
+                        >
+                          <div class="main-field-change-meta">{{ fmtTime(item.changed_at) }} · {{ item.staff_name }}</div>
+                          <div class="main-field-change-text">{{ item.text }}</div>
+                        </div>
+                      </div>
+                    </template>
+                    <span class="main-field-change-dot" title="查看变更记录" @click.stop />
+                  </a-popover>
+                </span>
                 <span class="detail-sep">创建时间：{{ fmtTime(record.created_at) }}</span>
               </div>
             </div>
@@ -1297,16 +1405,40 @@ import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
 
 // ===== Tab =====
 const activeTab = ref('tasks')
-const ORDER_EDIT_HISTORY_STORAGE_KEY = 'task_management_order_edit_history_v2'
+const ORDER_EDIT_HISTORY_STORAGE_KEY = 'task_management_order_edit_history_v3'
 const TASK_STATUS_REASON_STORAGE_KEY = 'task_management_status_reason_cache_v1'
 const ORDER_EDIT_HISTORY_SEED: Record<string, any[]> = {
   mock_order_pending_a: [
     {
-      changed_at: '2026-04-18T15:20:00.000Z',
+      changed_at: '2026-04-20T11:30:00.000Z',
       staff_name: '任务管理',
+      affected_sub_count: 3,
+      changes: [
+        { field: 'order_quantity', from: 20, to: 23 },
+      ],
+    },
+    {
+      changed_at: '2026-04-19T16:40:00.000Z',
+      staff_name: '陈晨',
+      affected_sub_count: 2,
+      changes: [
+        { field: 'review_type', from: '文字', to: '免评' },
+      ],
+    },
+    {
+      changed_at: '2026-04-19T10:15:00.000Z',
+      staff_name: '王敏',
       affected_sub_count: 5,
       changes: [
-        { field: 'keyword', from: 'wireless charger', to: 'magnetic wireless charger' },
+        { field: 'review_type', from: '文字', to: '图片' },
+      ],
+    },
+    {
+      changed_at: '2026-04-18T15:20:00.000Z',
+      staff_name: '任务管理',
+      affected_sub_count: 4,
+      changes: [
+        { field: 'product_price', from: 17.99, to: 19.99 },
       ],
     },
     {
@@ -1322,10 +1454,7 @@ const ORDER_EDIT_HISTORY_SEED: Record<string, any[]> = {
       staff_name: '陈晨',
       affected_sub_count: 6,
       changes: [
-        { field: 'asin', from: 'B0MOCKOLD001', to: 'B0MOCKNEW001' },
-        { field: 'store_name', from: 'US Store Alpha', to: 'US Store Prime' },
-        { field: 'product_name', from: 'Magnetic Charger', to: 'Magnetic Charger 2-Pack' },
-        { field: 'variant_info', from: '黑色单个装', to: '黑色双个装' },
+        { field: 'asin', from: 'B0MOCKMID001', to: 'B0MOCKNEW001' },
       ],
     },
     {
@@ -1333,37 +1462,43 @@ const ORDER_EDIT_HISTORY_SEED: Record<string, any[]> = {
       staff_name: '王敏',
       affected_sub_count: 4,
       changes: [
-        { field: 'review_type', from: '文字', to: '图片' },
-        { field: 'review_level', from: '普通', to: '高等' },
+        { field: 'asin', from: 'B0MOCKOLD001', to: 'B0MOCKMID001' },
+        { field: 'review_level', from: '高等', to: '极高等' },
       ],
     },
     {
       changed_at: '2026-04-16T11:40:00.000Z',
       staff_name: '任务管理',
-      affected_sub_count: 4,
+      affected_sub_count: 8,
       changes: [
-        { field: 'task_notes', from: '常规排期任务', to: '常规排期任务，优先安排高等级买手' },
-        { field: 'scheduled_date', from: '2026-04-19', to: '2026-04-21' },
+        { field: 'review_level', from: '普通', to: '高等' },
       ],
     },
     {
-      changed_at: '2026-04-14T10:30:00.000Z',
+      changed_at: '2026-04-15T10:30:00.000Z',
       staff_name: '任务管理',
       affected_sub_count: 2,
       changes: [
-        { field: 'product_price', from: 15.99, to: 17.99 },
-        { field: 'store_name', from: 'AAA', to: 'BBB' },
+        { field: 'order_quantity', from: 18, to: 20 },
       ],
     },
   ],
   mock_order_pending_b: [
     {
+      changed_at: '2026-04-16T11:10:00.000Z',
+      staff_name: '王敏',
+      affected_sub_count: 3,
+      changes: [
+        { field: 'review_type', from: '图片', to: '视频' },
+      ],
+    },
+    {
       changed_at: '2026-04-15T16:20:00.000Z',
       staff_name: '陈晨',
       affected_sub_count: 2,
       changes: [
-        { field: 'scheduled_date', from: '2026-04-18', to: '2026-04-20' },
-        { field: 'task_notes', from: '首批任务', to: '首批任务，需优先安排高等级买手' },
+        { field: 'product_price', from: 26.5, to: 28.9 },
+        { field: 'asin', from: 'B0MOCKBOLD01', to: 'B0MOCKBNEW01' },
       ],
     },
   ],
@@ -1629,6 +1764,156 @@ function shouldShowTaskReviewLevel(record: any) {
   return ['高等', '极高等'].includes(getTaskReviewLevel(record))
 }
 
+function getSubOrderTypeValue(sub: any) {
+  return formatReviewType(sub?.review_type || sub?.order_type)
+}
+
+function isExemptReviewType(type: string) {
+  return formatReviewType(type) === '免评'
+}
+
+function isLeaveReviewType(type: string) {
+  const normalized = formatReviewType(type)
+  return !!normalized && normalized !== '免评'
+}
+
+function pickLatestSubOrder(subs: any[]) {
+  if (!Array.isArray(subs) || subs.length === 0) return null
+  return [...subs].sort((a: any, b: any) => {
+    const left = dayjs(a?.updated_at || a?.created_at || 0).valueOf()
+    const right = dayjs(b?.updated_at || b?.created_at || 0).valueOf()
+    return right - left
+  })[0]
+}
+
+function formatMainCardFieldChangeText(change: any, affectedSubCount: number) {
+  const baseText = formatTaskEdit(change)
+  const count = Number(affectedSubCount || 0)
+  if (!count) return baseText
+  return `${baseText} ${count}单`
+}
+
+function getMainCardFieldChangeEntries(record: any, field: string) {
+  const entries: any[] = []
+  getTaskEditHistory(record).forEach((item: any) => {
+    ;(item.changes || []).forEach((change: any, index: number) => {
+      if (String(change?.field || '') !== field) return
+      const affectedSubCount = Number(item.affected_sub_count || 0)
+      entries.push({
+        key: `${item.key}-${field}-${index}`,
+        changed_at: item.changed_at,
+        staff_name: item.staff_name || '任务管理',
+        affected_sub_count: affectedSubCount,
+        from: change?.from,
+        to: change?.to,
+        text: formatMainCardFieldChangeText(change, affectedSubCount),
+      })
+    })
+  })
+  return entries.sort((a: any, b: any) => dayjs(a.changed_at).valueOf() - dayjs(b.changed_at).valueOf())
+}
+
+function hasMainCardFieldChange(record: any, field: string) {
+  return getMainCardFieldChangeEntries(record, field).length > 0
+}
+
+function getMainCardFieldChangeLogs(record: any, field: string) {
+  return getMainCardFieldChangeEntries(record, field).slice().reverse()
+}
+
+function getLatestFieldChangeTo(record: any, field: string) {
+  const entries = getMainCardFieldChangeEntries(record, field)
+  if (!entries.length) return null
+  return entries[entries.length - 1]?.to
+}
+
+function getMainCardAsin(record: any) {
+  const subs = subOrdersMap.value[record?.id] || []
+  const latestSub = pickLatestSubOrder(subs)
+  if (latestSub?.asin) return String(latestSub.asin).trim()
+  const latestFromHistory = getLatestFieldChangeTo(record, 'asin')
+  if (latestFromHistory != null && latestFromHistory !== '') return String(latestFromHistory).trim()
+  return String(record?.asin || '').trim()
+}
+
+function getMainCardReviewLevel(record: any) {
+  const subs = subOrdersMap.value[record?.id] || []
+  const latestSub = pickLatestSubOrder(subs)
+  const latestSubLevel = String(latestSub?.review_level || '').trim()
+  if (latestSubLevel) return latestSubLevel
+  const latestFromHistory = getLatestFieldChangeTo(record, 'review_level')
+  if (latestFromHistory != null && latestFromHistory !== '') return String(latestFromHistory).trim()
+  return getTaskReviewLevel(record)
+}
+
+function shouldShowMainCardReviewLevel(record: any) {
+  const level = getMainCardReviewLevel(record)
+  return ['高等', '极高等'].includes(level) || hasMainCardFieldChange(record, 'review_level')
+}
+
+function getMainCardTypeCandidates(record: any): string[] {
+  const subs = subOrdersMap.value[record?.id] || []
+  if (subs.length) {
+    return subs.map((sub: any) => getSubOrderTypeValue(sub)).filter((type: string): type is string => !!type)
+  }
+  if (Array.isArray(record?.order_types) && record.order_types.length) {
+    return record.order_types.map((item: string) => formatReviewType(item)).filter((type: string): type is string => !!type)
+  }
+  const single = formatReviewType(record?.order_type || record?.review_type || '')
+  return single ? [single] : []
+}
+
+function getMainCardTypeLabel(record: any): string {
+  const candidates = getMainCardTypeCandidates(record)
+  const uniqueTypes = [...new Set(candidates.map((type: string) => String(type || '')).filter(Boolean))]
+  const hasExempt = uniqueTypes.some((type) => isExemptReviewType(type))
+  const hasLeave = uniqueTypes.some((type) => isLeaveReviewType(type))
+  if (hasExempt && hasLeave) return '混合'
+
+  const subs = subOrdersMap.value[record?.id] || []
+  const latestSubType = getSubOrderTypeValue(pickLatestSubOrder(subs))
+  if (latestSubType) return latestSubType
+
+  const latestFromHistory = getLatestFieldChangeTo(record, 'review_type')
+  if (latestFromHistory != null && latestFromHistory !== '') {
+    return formatReviewType(String(latestFromHistory))
+  }
+
+  if (uniqueTypes.length) return uniqueTypes[uniqueTypes.length - 1]
+  return ''
+}
+
+function getMainCardPriceInitial(record: any) {
+  const entries = getMainCardFieldChangeEntries(record, 'product_price')
+  if (entries.length) {
+    const first = entries[0]
+    if (first?.from != null && first.from !== '') return Number(first.from)
+  }
+  return Number(record?.product_price || 0)
+}
+
+function getMainCardPriceLatest(record: any) {
+  const subs = subOrdersMap.value[record?.id] || []
+  const latestSub = pickLatestSubOrder(subs)
+  if (latestSub?.product_price != null && latestSub.product_price !== '') {
+    return Number(latestSub.product_price)
+  }
+  const latestFromHistory = getLatestFieldChangeTo(record, 'product_price')
+  if (latestFromHistory != null && latestFromHistory !== '') return Number(latestFromHistory)
+  return Number(record?.product_price || 0)
+}
+
+function getMainCardPriceText(record: any) {
+  const initial = getMainCardPriceInitial(record)
+  const latest = getMainCardPriceLatest(record)
+  const initialText = `$${Number(initial || 0).toFixed(2)}`
+  const latestText = `$${Number(latest || 0).toFixed(2)}`
+  if (hasMainCardFieldChange(record, 'product_price') && initialText !== latestText) {
+    return `${initialText}-${latestText}`
+  }
+  return latestText
+}
+
 function getSubUploadTime(sub: any) {
   return sub?.amazon_order_placed_at || null
 }
@@ -1877,6 +2162,7 @@ const TASK_EDIT_FIELD_LABELS: Record<string, string> = {
   review_type: '测评类型',
   review_level: '测评等级',
   product_price: '售价',
+  order_quantity: '任务总量',
   keyword: '关键词',
   task_notes: '任务备注',
   notes: '备注',
@@ -1911,6 +2197,7 @@ function formatTaskEdit(change: any) {
   const formatValue = (field: string, value: any) => {
     if (value == null || value === '') return '空'
     if (field === 'product_price') return `$${Number(value).toFixed(2)}`
+    if (field === 'order_quantity') return `${Number(value || 0)} 单`
     if (field === 'review_type') return formatReviewType(String(value))
     return String(value)
   }
@@ -2243,12 +2530,11 @@ async function saveAppendOrders() {
       .select('id')
     if (insertError) throw insertError
 
-    const nextQty = Number(sourceTask.order_quantity || 0) + count
+    const beforeSubTotal = Number(sourceTask._sub_total || 0)
+    const nextSubTotal = beforeSubTotal + count
     const { error: orderError } = await supabase
       .from('erp_orders')
       .update({
-        order_quantity: nextQty,
-        total_orders: nextQty,
         status: '进行中',
         status_reason: null,
       })
@@ -2262,33 +2548,31 @@ async function saveAppendOrders() {
       throw orderError
     }
 
-    sourceTask.order_quantity = nextQty
-    sourceTask.total_orders = nextQty
     sourceTask.status = '进行中'
     sourceTask.status_reason = null
-    sourceTask._sub_total = Number(sourceTask._sub_total || 0) + count
+    sourceTask._sub_total = nextSubTotal
 
     const taskInList = tasks.value.find((item: any) => item.id === orderId)
     if (taskInList) {
-      taskInList.order_quantity = nextQty
-      taskInList.total_orders = nextQty
-      taskInList._sub_total = Number(taskInList._sub_total || 0) + count
+      taskInList.status = '进行中'
+      taskInList.status_reason = null
+      taskInList._sub_total = nextSubTotal
     }
     if (currentTaskDetail.value?.id === orderId) {
       currentTaskDetail.value = {
         ...currentTaskDetail.value,
-        order_quantity: nextQty,
-        total_orders: nextQty,
-        _sub_total: Number(currentTaskDetail.value._sub_total || 0) + count,
+        status: '进行中',
+        status_reason: null,
+        _sub_total: nextSubTotal,
       }
     }
-    if (scheduleModalOrder.value?.id === orderId) {
-      scheduleModalOrder.value = {
-        ...scheduleModalOrder.value,
-        order_quantity: nextQty,
-        total_orders: nextQty,
-      }
-    }
+
+    appendTaskEditHistory(orderId, {
+      changed_at: new Date().toISOString(),
+      staff_name: '任务管理',
+      affected_sub_count: count,
+      changes: [{ field: 'order_quantity', from: beforeSubTotal, to: nextSubTotal }],
+    })
 
     await loadSubOrders(orderId)
     message.success(`已追加 ${count} 条子订单`)
@@ -2344,6 +2628,8 @@ async function saveDetail() {
   try {
     const f = editForm.value
     const parseTs = (v: string) => v ? dayjs(v, 'YYYY-MM-DD HH:mm').toISOString() : null
+    const beforeReviewType = formatReviewType(detailRecord.value.review_type || detailRecord.value.order_type) || null
+    const beforePrice = detailRecord.value.product_price != null ? Number(detailRecord.value.product_price) : null
 
     const payload: any = {
       status: f.status,
@@ -2377,6 +2663,23 @@ async function saveDetail() {
 
     Object.assign(detailRecord.value, payload)
     editMode.value = false
+
+    const changeList: any[] = []
+    if (beforeReviewType !== payload.review_type) {
+      changeList.push({ field: 'review_type', from: beforeReviewType, to: payload.review_type })
+    }
+    const nextPrice = payload.product_price != null && payload.product_price !== '' ? Number(payload.product_price) : null
+    if (beforePrice !== nextPrice) {
+      changeList.push({ field: 'product_price', from: beforePrice, to: nextPrice })
+    }
+    if (detailOrderId.value && changeList.length) {
+      appendTaskEditHistory(detailOrderId.value, {
+        changed_at: new Date().toISOString(),
+        staff_name: '任务管理',
+        affected_sub_count: 1,
+        changes: changeList,
+      })
+    }
 
     if (detailOrderId.value) {
       await loadSubOrders(detailOrderId.value)
@@ -2883,11 +3186,12 @@ async function saveQuickEdit() {
     const updates = { [field]: normalizedValue }
     const { error } = await supabase.from('sub_orders').update(updates).eq('id', quickEditRecord.value.id)
     if (error) throw error
-    Object.assign(quickEditRecord.value, updates)
+    const nowIso = new Date().toISOString()
+    Object.assign(quickEditRecord.value, updates, { updated_at: nowIso })
     const orderId = quickEditRecord.value.order_id
     if (orderId && subOrdersMap.value[orderId]) {
       const sub = subOrdersMap.value[orderId].find((s: any) => s.id === quickEditRecord.value.id)
-      if (sub) Object.assign(sub, updates)
+      if (sub) Object.assign(sub, updates, { updated_at: nowIso })
     }
     if (orderId && beforeValue !== normalizedValue) {
       appendTaskEditHistory(orderId, {
@@ -3269,6 +3573,51 @@ onMounted(() => {
 .detail-sep { color: #6b7280; padding-left: 12px; }
 .mono-sm { font-family: 'Courier New', monospace; font-size: 11px; color: #374151; }
 .price-text { color: #16a34a; font-weight: 600; }
+.main-field-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding-right: 8px;
+}
+.main-field-change-dot {
+  position: absolute;
+  top: -1px;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 0 0 1px #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.main-field-change-dot:hover {
+  background: #b91c1c;
+  transform: scale(1.15);
+}
+.main-field-change-list {
+  max-width: 260px;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.main-field-change-item + .main-field-change-item {
+  border-top: 1px solid #f0f0f0;
+  padding-top: 8px;
+}
+.main-field-change-meta {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+.main-field-change-text {
+  font-size: 12px;
+  color: #1a1a2e;
+  line-height: 1.45;
+  margin-top: 2px;
+}
 .task-note-text {
   color: #6b7280;
   display: inline-block;
@@ -4406,5 +4755,11 @@ onMounted(() => {
   color: #6b7280;
   font-size: 13px;
   font-weight: 600;
+}
+</style>
+
+<style>
+.main-field-change-popover .ant-popover-inner-content {
+  padding: 8px 10px;
 }
 </style>
