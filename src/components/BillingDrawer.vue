@@ -21,12 +21,12 @@
         <div class="billing-header-right">
           <div class="billing-summary-trio">
             <div class="trio-item">
-              <div class="trio-label">基础应收</div>
-              <div class="trio-val trio-expect">¥{{ baseReceivable.toFixed(2) }}</div>
+              <div class="trio-label">实际应收</div>
+              <div class="trio-val trio-expect">¥{{ displayActualReceivable.toFixed(2) }}</div>
             </div>
             <div class="trio-divider"></div>
             <div class="trio-item">
-              <div class="trio-label">已结算金额</div>
+              <div class="trio-label">累计入账</div>
               <div class="trio-val trio-received" :style="{ color: settledTotal > 0 ? '#16a34a' : '#9ca3af' }">
                 ¥{{ settledTotal.toFixed(2) }}
               </div>
@@ -34,9 +34,9 @@
             <div class="trio-divider"></div>
             <div class="trio-item">
               <div class="trio-label">待结算差额</div>
-              <div class="trio-val" :style="{ color: settlementDiff < 0 ? '#dc2626' : settlementDiff > 0 ? '#059669' : '#16a34a' }">
-                <template v-if="settlementDiff > 0.005">+¥{{ settlementDiff.toFixed(2) }}</template>
-                <template v-else-if="settlementDiff < -0.005">-¥{{ Math.abs(settlementDiff).toFixed(2) }}</template>
+              <div class="trio-val" :style="{ color: displaySettlementDiff < 0 ? '#dc2626' : displaySettlementDiff > 0 ? '#059669' : '#16a34a' }">
+                <template v-if="displaySettlementDiff > 0.005">+¥{{ displaySettlementDiff.toFixed(2) }}</template>
+                <template v-else-if="displaySettlementDiff < -0.005">-¥{{ Math.abs(displaySettlementDiff).toFixed(2) }}</template>
                 <template v-else>¥0.00</template>
               </div>
             </div>
@@ -70,33 +70,43 @@
           <!-- 查看态 -->
           <div v-if="!editingDebt" class="debt-view">
             <div class="debt-view-row">
-              <span class="dv-label">入账状态</span>
+              <div class="dv-name-col">
+                <span class="dv-label">实际应收</span>
+              </div>
+              <span class="dv-val">¥{{ displayActualReceivable.toFixed(2) }}</span>
+            </div>
+            <div class="debt-view-row">
+              <div class="dv-name-col">
+                <span class="dv-label">基础入账状态</span>
+                <span class="dv-hint">人工修改</span>
+              </div>
               <a-tag :color="order.billing_status === '未完成' ? 'red' : 'green'" size="small">
                 {{ order.billing_status || '已完成' }}
               </a-tag>
             </div>
             <div class="debt-view-row">
-              <span class="dv-label">账款情况</span>
+              <div class="dv-name-col">
+                <span class="dv-label">账款情况</span>
+                <span class="dv-hint">人工计算</span>
+              </div>
               <a-tag v-if="order.debt_status === 'owed'" color="orange" size="small">客户需补款 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}</a-tag>
               <a-tag v-else-if="order.debt_status === 'surplus'" color="blue" size="small">需退客户 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}</a-tag>
               <a-tag v-else-if="order.debt_status === 'cleared'" color="green" size="small">已结清</a-tag>
               <a-tag v-else color="default" size="small">无异常</a-tag>
             </div>
-            <div v-if="order.debt_notes" class="debt-view-row">
-              <span class="dv-label">商务备注</span>
-              <span class="dv-val">{{ order.debt_notes }}</span>
-            </div>
-            <div v-if="order.debt_marked_by" class="debt-view-row">
-              <span class="dv-label">标记商务</span>
-              <span class="dv-val">
-                {{ order.debt_marked_by }}
-                <span v-if="order.debt_marked_at" class="dv-time">{{ dayjs(order.debt_marked_at).format('MM-DD HH:mm') }}</span>
-              </span>
-            </div>
           </div>
 
           <!-- 编辑态 -->
           <div v-else class="debt-edit">
+            <div class="edit-field">
+              <label class="edit-label">实际应收</label>
+              <a-input-number
+                v-model:value="debtForm.actual_receivable"
+                style="width:200px"
+                :min="0"
+                :precision="2"
+              />
+            </div>
             <div class="edit-field">
               <label class="edit-label">基础入账状态</label>
               <a-radio-group v-model:value="debtForm.billing_status" size="small">
@@ -121,14 +131,6 @@
                   style="width:200px"
                   :min="0"
                   :precision="2"
-                />
-              </div>
-              <div class="edit-field">
-                <label class="edit-label">商务备注</label>
-                <a-textarea
-                  v-model:value="debtForm.debt_notes"
-                  :rows="2"
-                  placeholder="如：税费、汇率差等需要业务说明的原因"
                 />
               </div>
             </template>
@@ -423,13 +425,30 @@ const manualDebtAdjustment = computed(() => {
   return 0
 })
 
-const actualReceivable = computed(() => baseReceivable.value + manualDebtAdjustment.value)
+const systemActualReceivable = computed(() => baseReceivable.value + manualDebtAdjustment.value)
+
+const resolvedActualReceivable = computed(() => {
+  const stored = props.order?.actual_receivable
+  if (stored !== undefined && stored !== null && stored !== '') {
+    return Number(stored)
+  }
+  return systemActualReceivable.value
+})
 
 const settledTotal = computed(() =>
   baseCollectionTotal.value + supplementTotal.value + offsetTotal.value - refundTotal.value
 )
 
-const settlementDiff = computed(() => settledTotal.value - actualReceivable.value)
+const displayActualReceivable = computed(() => {
+  if (editingDebt.value) return Number(debtForm.value.actual_receivable || 0)
+  return resolvedActualReceivable.value
+})
+
+const displaySettlementDiff = computed(() => {
+  const debtStatus = editingDebt.value ? debtForm.value.debt_status : props.order?.debt_status
+  if (debtStatus === 'cleared') return 0
+  return settledTotal.value - displayActualReceivable.value
+})
 
 const needsAttention = computed(() => {
   if (!props.order) return false
@@ -482,19 +501,19 @@ watch(() => props.order, (val) => {
 const editingDebt = ref(false)
 const debtSaving = ref(false)
 const debtForm = ref({
+  actual_receivable: 0,
   billing_status: '已完成',
   debt_status: 'none',
   debt_amount: 0,
-  debt_notes: '',
 })
 
 function startEditDebt() {
   if (!props.order) return
   debtForm.value = {
+    actual_receivable: resolvedActualReceivable.value,
     billing_status: props.order.billing_status || '已完成',
     debt_status: props.order.debt_status || 'none',
     debt_amount: props.order.debt_amount || 0,
-    debt_notes: props.order.debt_notes || '',
   }
   editingDebt.value = true
 }
@@ -508,11 +527,12 @@ async function saveDebt() {
   debtSaving.value = true
   try {
     const hasIssue = debtForm.value.debt_status === 'owed' || debtForm.value.debt_status === 'surplus'
+    const actualReceivableValue = Number(Number(debtForm.value.actual_receivable || 0).toFixed(2))
     const payload: any = {
       billing_status: debtForm.value.billing_status,
       debt_status: debtForm.value.debt_status,
       debt_amount: hasIssue ? debtForm.value.debt_amount : 0,
-      debt_notes: hasIssue ? debtForm.value.debt_notes : null,
+      debt_notes: hasIssue ? (props.order.debt_notes || null) : null,
       debt_marked_by: hasIssue ? (currentUser.value?.name || props.order.debt_marked_by || null) : null,
       debt_marked_at: hasIssue ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
@@ -521,7 +541,7 @@ async function saveDebt() {
     if (error) throw error
     message.success('账款状态已保存')
     editingDebt.value = false
-    emit('updated', { id: props.order.id, ...payload })
+    emit('updated', { id: props.order.id, ...payload, actual_receivable: actualReceivableValue })
   } catch (e: any) {
     message.error('保存失败：' + e.message)
   } finally {
@@ -1221,11 +1241,28 @@ async function deleteRecord(payment: any) {
   border-bottom: none;
 }
 
+.dv-name-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 96px;
+  flex-shrink: 0;
+}
+
 .dv-label {
   font-size: 12px;
   color: #6b7280;
-  min-width: 64px;
+  display: block;
+  line-height: 1.4;
   padding-top: 2px;
+}
+
+.dv-hint {
+  display: block;
+  font-size: 10px;
+  color: #9ca3af;
+  line-height: 1.2;
 }
 
 .dv-val {

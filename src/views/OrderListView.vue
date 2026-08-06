@@ -50,9 +50,56 @@
         size="middle"
         :row-selection="rowSelection"
         @change="handleTableChange"
-        :scroll="{ x: 1900 }"
+        :scroll="tableScroll"
         :row-class-name="getRowClass"
       >
+        <template v-if="hasActiveFilters" #summary>
+          <a-table-summary fixed>
+            <a-table-summary-row class="filter-summary-row">
+              <a-table-summary-cell :index="0">
+                <span class="filter-summary-label">合计</span>
+              </a-table-summary-cell>
+              <a-table-summary-cell :index="1">
+                <span class="filter-summary-hint">筛选 {{ filterSummary.count }} 条</span>
+              </a-table-summary-cell>
+              <a-table-summary-cell :index="2" />
+              <a-table-summary-cell :index="3" />
+              <a-table-summary-cell :index="4" />
+              <a-table-summary-cell :index="5">
+                <span class="filter-summary-val">共{{ filterSummary.totalQty }}单</span>
+              </a-table-summary-cell>
+              <a-table-summary-cell :index="6" />
+              <a-table-summary-cell :index="7">
+                <span class="filter-summary-val filter-summary-commission">&yen;{{ filterSummary.totalCommission.toFixed(2) }}</span>
+              </a-table-summary-cell>
+              <a-table-summary-cell :index="8">
+                <span class="filter-summary-val">&yen;{{ filterSummary.totalReceivable.toFixed(2) }}</span>
+              </a-table-summary-cell>
+              <a-table-summary-cell :index="9">
+                <span class="filter-summary-val filter-summary-received">&yen;{{ filterSummary.totalReceived.toFixed(2) }}</span>
+              </a-table-summary-cell>
+              <a-table-summary-cell :index="10">
+                <span
+                  class="filter-summary-val"
+                  :class="{
+                    'filter-summary-billing-neg': filterSummary.totalBillingBalance < -0.005,
+                    'filter-summary-billing-pos': filterSummary.totalBillingBalance > 0.005,
+                  }"
+                >
+                  <template v-if="filterSummary.totalBillingBalance > 0.005">+&yen;{{ filterSummary.totalBillingBalance.toFixed(2) }}</template>
+                  <template v-else-if="filterSummary.totalBillingBalance < -0.005">-&yen;{{ Math.abs(filterSummary.totalBillingBalance).toFixed(2) }}</template>
+                  <template v-else>&yen;0.00</template>
+                </span>
+              </a-table-summary-cell>
+              <a-table-summary-cell :index="11" />
+              <a-table-summary-cell :index="12" />
+              <a-table-summary-cell :index="13" />
+              <a-table-summary-cell :index="14" />
+              <a-table-summary-cell :index="15" />
+              <a-table-summary-cell :index="16" />
+            </a-table-summary-row>
+          </a-table-summary>
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'order_number'">
             <div class="order-number-cell">
@@ -457,29 +504,19 @@
             <div class="billing-summary-item">
               <span class="billing-summary-label">实际应收</span>
               <span class="billing-summary-val">&yen;{{ actualReceivable.toFixed(2) }}</span>
-              <span class="billing-summary-hint">已含商务手动差价</span>
+              <span class="billing-summary-hint">系统根据实际做单情况计算的最终应收</span>
             </div>
             <div class="billing-summary-divider"></div>
             <div class="billing-summary-item">
-              <span class="billing-summary-label">累计收款</span>
+              <span class="billing-summary-label">累计实收</span>
               <span class="billing-summary-val" :style="{ color: collectedTotal > 0 ? '#16a34a' : '#9ca3af' }">&yen;{{ collectedTotal.toFixed(2) }}</span>
-              <span class="billing-summary-hint">
-                <template v-if="paymentsByType.base > 0">首款¥{{ paymentsByType.base.toFixed(0) }}</template>
-                <template v-if="paymentsByType.supplement > 0"> + 补¥{{ paymentsByType.supplement.toFixed(0) }}</template>
-                <template v-if="collectedTotal === 0">暂无收款</template>
-              </span>
+              <span class="billing-summary-hint">此任务实际收到的客户款项和</span>
             </div>
             <div class="billing-summary-divider"></div>
             <div class="billing-summary-item">
               <span class="billing-summary-label">账面抵消</span>
               <span class="billing-summary-val" style="color:#2563eb">&yen;{{ paymentsByType.offset.toFixed(2) }}</span>
-              <span class="billing-summary-hint">用于核销应收</span>
-            </div>
-            <div class="billing-summary-divider"></div>
-            <div class="billing-summary-item">
-              <span class="billing-summary-label">累计退款</span>
-              <span class="billing-summary-val" style="color:#dc2626">&yen;{{ paymentsByType.refund.toFixed(2) }}</span>
-              <span class="billing-summary-hint">退款流水合计</span>
+              <span class="billing-summary-hint">客户历史余款转入此任务</span>
             </div>
             <div class="billing-summary-divider"></div>
             <div class="billing-summary-item">
@@ -489,12 +526,16 @@
                 <template v-else-if="settlementDiff < -0.005">-&yen;{{ Math.abs(settlementDiff).toFixed(2) }}</template>
                 <template v-else>&yen;0.00</template>
               </span>
-              <span class="billing-summary-hint">
-                <template v-if="settlementDiff > 0.005">需退客户 / 溢收</template>
-                <template v-else-if="settlementDiff < -0.005">客户还需补款</template>
-                <template v-else>已结清</template>
-              </span>
+              <span class="billing-summary-hint">累计入账-实际应收</span>
             </div>
+            <template v-if="showRefundSummary">
+              <div class="billing-summary-divider"></div>
+              <div class="billing-summary-item">
+                <span class="billing-summary-label">累计退款</span>
+                <span class="billing-summary-val" style="color:#dc2626">&yen;{{ paymentsByType.refund.toFixed(2) }}</span>
+                <span class="billing-summary-hint">此任务实际退给客户的款项和</span>
+              </div>
+            </template>
           </div>
           <div class="billing-status-row">
             <div class="billing-info-row">
@@ -904,11 +945,19 @@ const groupAllocations = reactive<Record<string, number | null>>({})
 
 const mockBatchPayments = computed(() => {
   const order = currentOrder.value || {}
-  const baseAmount = Number(order.total_amount || 7751.4)
-  const supplementAmount = Number(order.debt_status === 'owed' ? order.debt_amount : 35) || 35
-  const refundAmount = Number(order.debt_status === 'surplus' ? order.debt_amount : 28) || 28
+  const receivable = Number(order.actual_receivable ?? order.total_amount ?? 7751.4)
   const today = dayjs().format('YYYY-MM-DD')
-  return [
+  // 仅溢收场景给退款 mock：待结算差额为正时才有退客户可能
+  const withRefundMock = order.debt_status === 'surplus'
+  const offsetAmount = withRefundMock ? 80 : 120
+  const baseAmount = withRefundMock
+    ? Number((receivable + 260).toFixed(2))
+    : Number(Math.max(receivable - offsetAmount - 180, 0).toFixed(2))
+  const refundAmount = withRefundMock
+    ? Number((order.debt_amount || 120).toFixed(2))
+    : 0
+
+  const list: any[] = [
     {
       id: 'mock-base-payment',
       _isMock: true,
@@ -917,19 +966,22 @@ const mockBatchPayments = computed(() => {
       payment_date: today,
       payment_method: '银行转账',
       payer_name: order.customer_name || '客户',
-      notes: '客户基础入账示例',
+      notes: withRefundMock ? '客户溢收基础入账示例' : '客户基础入账示例',
     },
     {
-      id: 'mock-supplement-payment',
+      id: 'mock-offset-payment',
       _isMock: true,
-      payment_type: '补款',
-      amount_cny: supplementAmount,
+      payment_type: '账面抵消',
+      amount_cny: offsetAmount,
       payment_date: today,
-      payment_method: '账务确认',
+      payment_method: '账面抵消',
       payer_name: order.customer_name || '客户',
-      notes: '客户需补款示例',
+      notes: '客户历史余款转入示例',
     },
-    {
+  ]
+
+  if (withRefundMock && refundAmount > 0) {
+    list.push({
       id: 'mock-refund-payment',
       _isMock: true,
       payment_type: '退款',
@@ -937,30 +989,37 @@ const mockBatchPayments = computed(() => {
       payment_date: today,
       payment_method: '银行转账',
       payer_name: order.customer_name || '客户',
-      notes: '我方退款示例',
-    },
-  ]
+      notes: '退款审批通过示例',
+    })
+  }
+
+  return list
 })
 
 const displayBatchPayments = computed(() => batchPayments.value.length ? batchPayments.value : mockBatchPayments.value)
 
+const summaryPayments = computed(() => displayBatchPayments.value)
+
 const paymentsByType = computed(() => {
-  const base = batchPayments.value
+  const list = summaryPayments.value
+  const base = list
     .filter(p => !p.payment_type || p.payment_type === '基础收款')
     .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
-  const supplement = batchPayments.value
+  const supplement = list
     .filter(p => p.payment_type === '补款')
     .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
-  const refund = batchPayments.value
+  const refund = list
     .filter(p => p.payment_type === '退款')
     .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
-  const offset = batchPayments.value
+  const offset = list
     .filter(p => p.payment_type === '账面抵消')
     .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
   return { base, supplement, refund, offset }
 })
 
 const collectedTotal = computed(() => paymentsByType.value.base + paymentsByType.value.supplement)
+
+const showRefundSummary = computed(() => paymentsByType.value.refund > 0)
 
 const manualDebtAdjustment = computed(() => {
   const amount = Number(currentOrder.value?.debt_amount || 0)
@@ -969,13 +1028,21 @@ const manualDebtAdjustment = computed(() => {
   return 0
 })
 
-const actualReceivable = computed(() => Number(currentOrder.value?.total_amount || 0) + manualDebtAdjustment.value)
+const actualReceivable = computed(() => {
+  const stored = currentOrder.value?.actual_receivable
+  if (stored !== undefined && stored !== null && stored !== '') {
+    return Number(stored)
+  }
+  return Number(currentOrder.value?.total_amount || 0) + manualDebtAdjustment.value
+})
 
+// 累计入账 = 累计实收 + 账面抵消 - 累计退款
 const settledTotal = computed(() =>
   collectedTotal.value + paymentsByType.value.offset - paymentsByType.value.refund
 )
 
 const settlementDiff = computed(() => {
+  if (currentOrder.value?.debt_status === 'cleared') return 0
   return settledTotal.value - actualReceivable.value
 })
 
@@ -1169,6 +1236,125 @@ function getCommissionUnitPrice(order: any): number {
   return derived > 0 ? derived : 0
 }
 
+function getOrderCommissionTotal(order: any): number {
+  if (hasMultipleTypes(order)) {
+    return (order.order_types || []).reduce((sum: number, type: string) => {
+      return sum + getTypeQty(order, type) * getTypeUnitPrice(order, type)
+    }, 0)
+  }
+  return getCommissionUnitPrice(order) * Number(order.order_quantity || 0)
+}
+
+const filterSummary = ref({
+  count: 0,
+  totalQty: 0,
+  totalCommission: 0,
+  totalReceivable: 0,
+  totalReceived: 0,
+  totalBillingBalance: 0,
+})
+
+/** 账款状态合计：欠款为负，需退/溢款为正 */
+function getBillingSignedAmount(record: any): number {
+  const amount = Number(record?.debt_amount || 0)
+  if (amount <= 0) return 0
+  if (record?.debt_status === 'owed') return -amount
+  if (record?.debt_status === 'surplus') return amount
+  return 0
+}
+
+const hasActiveFilters = computed(() => {
+  return !!(
+    String(searchText.value || '').trim()
+    || filterStatus.value
+    || filterCountry.value
+    || filterOrderType.value
+    || filterBilling.value
+  )
+})
+
+const tableScroll = computed(() => ({
+  x: 1900,
+  y: 'calc(100vh - 280px)',
+}))
+
+function applyErpOrderFilters(query: any) {
+  if (searchText.value) {
+    query = query.or(`order_number.ilike.%${searchText.value}%,asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%,product_name.ilike.%${searchText.value}%`)
+  }
+  if (filterStatus.value) query = query.eq('status', filterStatus.value)
+  if (filterCountry.value) query = query.eq('country', filterCountry.value)
+  if (filterOrderType.value) query = query.or(`order_type.eq.${filterOrderType.value},order_types.cs.{${filterOrderType.value}}`)
+  if (filterBilling.value === 'billing_incomplete') query = query.eq('billing_status', '未完成')
+  if (filterBilling.value === 'debt') query = query.eq('debt_status', 'owed')
+  return query
+}
+
+async function loadFilterSummary() {
+  if (!hasActiveFilters.value) {
+    filterSummary.value = {
+      count: 0,
+      totalQty: 0,
+      totalCommission: 0,
+      totalReceivable: 0,
+      totalReceived: 0,
+      totalBillingBalance: 0,
+    }
+    return
+  }
+  const pageSize = 1000
+  let from = 0
+  const allRows: any[] = []
+  while (true) {
+    let query = supabase
+      .from('erp_orders')
+      .select('id, commission_fee, order_quantity, total_amount, unit_price, product_price, exchange_rate, order_type, order_types, type_quantities, price_no_review, price_text, price_image, price_video, price_feedback, debt_status, debt_amount')
+      .order('created_at', { ascending: true })
+    query = applyErpOrderFilters(query).range(from, from + pageSize - 1)
+    const { data, error } = await query
+    if (error) throw error
+    const chunk = data || []
+    allRows.push(...chunk)
+    if (chunk.length < pageSize) break
+    from += pageSize
+  }
+
+  let totalQty = 0
+  let totalCommission = 0
+  let totalReceivable = 0
+  let totalBillingBalance = 0
+  for (const row of allRows) {
+    totalQty += Number(row.order_quantity || 0)
+    totalCommission += getOrderCommissionTotal(row)
+    totalReceivable += Number(row.total_amount || 0)
+    totalBillingBalance += getBillingSignedAmount(row)
+  }
+
+  let totalReceived = 0
+  const allIds = allRows.map(r => r.id).filter(Boolean)
+  for (let i = 0; i < allIds.length; i += 200) {
+    const idChunk = allIds.slice(i, i + 200)
+    const { data: payments, error: payError } = await supabase
+      .from('batch_payments')
+      .select('batch_id, amount_cny, payment_type')
+      .in('batch_id', idChunk)
+    if (payError) throw payError
+    for (const p of payments || []) {
+      const amt = Number(p.amount_cny || 0)
+      totalReceived += p.payment_type === '退款' ? -amt : amt
+    }
+  }
+
+  filterSummary.value = {
+    count: allRows.length,
+    totalQty,
+    totalCommission,
+    totalReceivable,
+    totalReceived,
+    totalBillingBalance,
+  }
+}
+
 function hasRealDebt(record: any): boolean {
   return record.debt_status === 'owed' && Number(record.debt_amount || 0) > 0
 }
@@ -1234,21 +1420,37 @@ async function loadOrders() {
     let query = supabase.from('erp_orders').select('*', { count: 'exact' })
       .order('batch_number', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: true })
-    if (searchText.value) {
-      query = query.or(`order_number.ilike.%${searchText.value}%,asin.ilike.%${searchText.value}%,store_name.ilike.%${searchText.value}%,product_name.ilike.%${searchText.value}%`)
-    }
-    if (filterStatus.value) query = query.eq('status', filterStatus.value)
-    if (filterCountry.value) query = query.eq('country', filterCountry.value)
-    if (filterOrderType.value) query = query.or(`order_type.eq.${filterOrderType.value},order_types.cs.{${filterOrderType.value}}`)
-    if (filterBilling.value === 'billing_incomplete') query = query.eq('billing_status', '未完成')
-    if (filterBilling.value === 'debt') query = query.eq('debt_status', 'owed')
+    query = applyErpOrderFilters(query)
 
     const from = (pagination.value.current - 1) * pagination.value.pageSize
     const to = from + pagination.value.pageSize - 1
     query = query.range(from, to)
 
-    const { data, count, error } = await query
+    const pageResult = await query
+    const { data, count, error } = pageResult
     if (error) throw error
+    if (hasActiveFilters.value) {
+      await loadFilterSummary().catch((e) => {
+        console.error(e)
+        filterSummary.value = {
+          count: 0,
+          totalQty: 0,
+          totalCommission: 0,
+          totalReceivable: 0,
+          totalReceived: 0,
+          totalBillingBalance: 0,
+        }
+      })
+    } else {
+      filterSummary.value = {
+        count: 0,
+        totalQty: 0,
+        totalCommission: 0,
+        totalReceivable: 0,
+        totalReceived: 0,
+        totalBillingBalance: 0,
+      }
+    }
     const rows = data || []
     const batchGroups: Record<string, any[]> = {}
     for (const row of rows) {
@@ -1859,6 +2061,16 @@ onMounted(() => {
 
 <style scoped>
 .page-content { padding: 24px; }
+
+:deep(.ant-table-header) {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+:deep(.ant-table-thead > tr > th) {
+  background: #fafafa !important;
+}
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
 .card-panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
@@ -1937,6 +2149,36 @@ onMounted(() => {
 .amount-rate-hint { font-size: 10px; color: #9ca3af; }
 .amount-cny-main { font-size: 13px; font-weight: 600; color: #16a34a; }
 .amount-received { color: #2563eb; }
+
+.filter-summary-row td {
+  background: #f8fafc !important;
+  border-top: 1px solid #e5e7eb;
+}
+
+.filter-summary-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.filter-summary-hint {
+  font-size: 11px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.filter-summary-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+}
+
+.filter-summary-commission { color: #d97706; }
+.filter-summary-received { color: #2563eb; }
+.filter-summary-billing-neg { color: #dc2626; }
+.filter-summary-billing-pos { color: #2563eb; }
 .price-cell { display: inline-block; }
 .price-usd { font-size: 12px; color: #1d4ed8; font-weight: 600; }
 .commission-text { font-size: 12px; color: #d97706; font-weight: 600; }
@@ -2344,7 +2586,13 @@ onMounted(() => {
 .billing-summary-divider { width: 1px; background: #e5e7eb; flex-shrink: 0; }
 .billing-summary-label { font-size: 11px; color: #6b7280; font-weight: 500; letter-spacing: 0.3px; }
 .billing-summary-val { font-size: 16px; font-weight: 700; color: #111827; }
-.billing-summary-hint { font-size: 11px; color: #9ca3af; }
+.billing-summary-hint {
+  font-size: 10px;
+  color: #9ca3af;
+  line-height: 1.25;
+  max-width: 118px;
+  white-space: normal;
+}
 .billing-status-row { display: flex; flex-wrap: wrap; gap: 0; }
 .billing-status-row .billing-info-row { margin-right: 20px; }
 .payment-records-title {

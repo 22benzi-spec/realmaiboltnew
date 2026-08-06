@@ -2,7 +2,7 @@
   <a-drawer
     :open="open"
     :title="`任务组账款：${groupData?.label || groupData?.batch_number || ''}`"
-    width="820"
+    width="1100"
     placement="right"
     :body-style="{ padding: '0', background: '#f8f9fb' }"
     @close="emit('close')"
@@ -20,13 +20,13 @@
           </div>
         </div>
         <div class="gbh-right">
-          <div class="gbh-trio gbh-fund-grid">
+          <div class="gbh-trio gbh-fund-grid" :class="showGroupRefundSummary ? 'gbh-fund-cols-5' : 'gbh-fund-cols-4'">
             <div class="trio-item">
-              <div class="trio-label">实际应收（合计）</div>
+              <div class="trio-label">实际应收</div>
               <div class="trio-val">¥{{ groupTotalActualReceivable.toFixed(2) }}</div>
             </div>
             <div class="trio-item">
-              <div class="trio-label">累计收款</div>
+              <div class="trio-label">累计实收</div>
               <div class="trio-val" :style="{ color: groupCollectedTotal > 0 ? '#16a34a' : '#9ca3af' }">
                 ¥{{ groupCollectedTotal.toFixed(2) }}
               </div>
@@ -36,10 +36,6 @@
               <div class="trio-val" style="color:#2563eb">¥{{ groupOffsetTotal.toFixed(2) }}</div>
             </div>
             <div class="trio-item">
-              <div class="trio-label">累计退款</div>
-              <div class="trio-val" style="color:#dc2626">¥{{ groupRefundTotal.toFixed(2) }}</div>
-            </div>
-            <div class="trio-item">
               <div class="trio-label">待结算差额</div>
               <div class="trio-val" :style="{ color: groupSettlementDiff < 0 ? '#dc2626' : groupSettlementDiff > 0 ? '#059669' : '#16a34a' }">
                 <template v-if="groupSettlementDiff > 0.005">+¥{{ groupSettlementDiff.toFixed(2) }}</template>
@@ -47,32 +43,46 @@
                 <template v-else>¥0.00</template>
               </div>
             </div>
+            <div v-if="showGroupRefundSummary" class="trio-item">
+              <div class="trio-label">累计退款</div>
+              <div class="trio-val" style="color:#dc2626">¥{{ groupRefundTotal.toFixed(2) }}</div>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- 警示栏 -->
-      <div v-if="pendingOrders.length > 0" class="gbh-alert">
-        <span class="alert-icon">!</span>
-        <span>有 {{ pendingOrders.length }} 个订单存在欠款或应退款项，请及时处理</span>
+      <div v-if="pendingDiffOrderCount > 0" class="gbh-alert-wrap">
+        <div class="gbh-alert">
+          <span class="alert-icon">!</span>
+          <span>含{{ pendingDiffOrderCount }}个任务存在差价，请及时处理</span>
+        </div>
       </div>
 
       <div class="gb-body">
-        <!-- 区块一：账款一览 -->
+        <!-- 区块一：账款核对与处理 -->
         <div class="gb-section">
           <div class="section-header">
-            <span class="section-title">账款一览</span>
-            <a-tag color="blue" size="small">{{ orders.length }} 个订单</a-tag>
+            <span class="section-title">账款核对与处理</span>
+            <a-tag color="blue" size="small">{{ orders.length }} 个任务</a-tag>
             <div class="section-actions">
-              <a-select v-model:value="batchStatusField" size="small" style="width: 96px">
-                <a-select-option value="billing">入账状态</a-select-option>
-                <a-select-option value="debt">账款情况</a-select-option>
-              </a-select>
-              <a-select v-if="batchStatusField === 'billing'" v-model:value="batchBillingTarget" size="small" style="width: 96px">
+              <a-select
+                v-model:value="batchBillingTarget"
+                size="small"
+                style="width: 120px"
+                placeholder="基础入账状态"
+                allow-clear
+              >
                 <a-select-option value="已完成">已完成</a-select-option>
                 <a-select-option value="未完成">未完成</a-select-option>
               </a-select>
-              <a-select v-else v-model:value="batchDebtTarget" size="small" style="width: 112px">
+              <a-select
+                v-model:value="batchDebtTarget"
+                size="small"
+                style="width: 112px"
+                placeholder="账款情况"
+                allow-clear
+              >
                 <a-select-option value="none">无异常</a-select-option>
                 <a-select-option value="owed">客户需补款</a-select-option>
                 <a-select-option value="surplus">需退客户</a-select-option>
@@ -84,12 +94,13 @@
           <div class="orders-table">
             <div class="orders-table-head">
               <span class="col-created">创建时间</span>
-              <span class="col-num">订单号</span>
-              <span class="col-asin">ASIN</span>
-              <span class="col-amt">基础应收</span>
+              <span class="col-num">任务编号</span>
+              <span class="col-asin">Asin</span>
               <span class="col-paid">实际应收</span>
-              <span class="col-status">入账状态</span>
+              <span class="col-credited">累计入账</span>
+              <span class="col-status">基础入账状态</span>
               <span class="col-debt">账款情况</span>
+              <span class="col-diff">差价金额</span>
             </div>
             <div
               v-for="row in orderRows"
@@ -102,10 +113,8 @@
                 <span class="order-num-text">{{ row.order.order_number }}</span>
               </span>
               <span class="col-asin">{{ row.order.asin || '-' }}</span>
-              <span class="col-amt">¥{{ row.baseReceivable.toFixed(2) }}</span>
-              <span class="col-paid">
-                ¥{{ row.actualReceivable.toFixed(2) }}
-              </span>
+              <span class="col-paid">¥{{ row.actualReceivable.toFixed(2) }}</span>
+              <span class="col-credited">¥{{ row.creditedIn.toFixed(2) }}</span>
               <span class="col-status">
                 <a-select
                   v-model:value="row.order.billing_status"
@@ -132,56 +141,28 @@
                   <a-select-option value="cleared">已结清</a-select-option>
                 </a-select>
               </span>
+              <span class="col-diff">
+                <a-input-number
+                  v-model:value="row.order.debt_amount"
+                  size="small"
+                  :min="0"
+                  :precision="2"
+                  style="width: 110px"
+                  :disabled="statusSaving"
+                  @change="updateOrderDebtAmount(row.order)"
+                />
+              </span>
             </div>
-          </div>
-        </div>
-
-        <!-- 区块二：合并款项录入（正数=补款，负数=退款） -->
-        <div class="gb-section">
-          <div class="section-header">
-            <span class="section-title">合并款项录入</span>
-            <span class="section-hint">正数为补款，负数为退款；同一批次可混合录入</span>
           </div>
 
           <div class="batch-form">
-            <!-- 每个订单逐行录入 -->
-            <div class="bf-alloc-header">
-              <span class="bf-label">各订单款项填写</span>
-              <span class="alloc-hint">正数=补款 / 负数=退款，留空则不记录</span>
-            </div>
-            <div class="bf-alloc-list">
-              <div v-for="row in allocRows" :key="row.orderId" class="bf-alloc-row">
-                <span class="alloc-order-num">{{ row.orderNumber }}</span>
-                <div class="alloc-debt-info">
-                  <span class="alloc-debt-tag" :class="row.debtHintType || 'hint-none'">
-                    {{ row.debtHint || '欠款/溢款：无' }}
-                  </span>
-                </div>
-                <div class="alloc-input-wrap">
-                  <a-input-number
-                    v-model:value="row.allocated"
-                    :precision="2"
-                    style="width: 150px"
-                    :placeholder="row.allocPlaceholder"
-                    :class="{ 'input-negative': (row.allocated || 0) < 0 }"
-                  />
-                  <span class="alloc-type-hint" v-if="row.allocated !== undefined && row.allocated !== null">
-                    <span v-if="(row.allocated || 0) > 0.005" class="hint-supplement">补款</span>
-                    <span v-else-if="(row.allocated || 0) < -0.005" class="hint-refund">退款</span>
-                  </span>
-                </div>
-              </div>
-              <div class="bf-alloc-total">
-                <span>本次合计：</span>
-                <span :style="{ color: allocNetTotal >= 0 ? '#16a34a' : '#dc2626' }">
-                  {{ allocNetTotal >= 0 ? '+' : '' }}¥{{ allocNetTotal.toFixed(2) }}
-                </span>
-                <span class="alloc-total-breakdown" v-if="allocSupplementTotal > 0 || allocRefundTotal > 0">
-                  （补款 +¥{{ allocSupplementTotal.toFixed(2) }}
-                  <template v-if="allocRefundTotal > 0">，退款 -¥{{ allocRefundTotal.toFixed(2) }}</template>
-                  ）
-                </span>
-              </div>
+            <div class="bf-alloc-total">
+              <span>总实际应收：<b>¥{{ groupTotalActualReceivable.toFixed(2) }}</b></span>
+              <span>总累计到账：<b>¥{{ groupTotalCreditedIn.toFixed(2) }}</b></span>
+              <span>
+                总差价：<b>¥{{ groupTotalDiffAmount.toFixed(2) }}</b>
+                <span class="group-diff-status" :class="groupTotalDiffStatusClass">{{ groupTotalDiffStatus }}</span>
+              </span>
             </div>
 
             <div class="bf-submit">
@@ -205,7 +186,6 @@
               >
                 提交退款
               </a-button>
-              <span class="bf-submit-hint" v-if="allocRefundTotal > 0">含退款将生成待审批流水</span>
             </div>
           </div>
         </div>
@@ -479,11 +459,12 @@ const { currentUser } = useCurrentUser()
 const orders = ref<any[]>([])
 const allPayments = ref<any[]>([])
 const statusSaving = ref(false)
-const batchStatusField = ref<'billing' | 'debt'>('billing')
-const batchBillingTarget = ref('已完成')
-const batchDebtTarget = ref('cleared')
+const batchBillingTarget = ref<string | undefined>(undefined)
+const batchDebtTarget = ref<string | undefined>(undefined)
 
 const orderPaymentMap = ref<Record<string, number>>({})
+const orderCollectedMap = ref<Record<string, number>>({})
+const orderOffsetMap = ref<Record<string, number>>({})
 
 function getOrderBaseReceivable(order: any) {
   return Number(order?.total_amount || 0)
@@ -497,6 +478,20 @@ function getOrderActualReceivable(order: any) {
   return base
 }
 
+function getOrderCreditedIn(orderId: string) {
+  return Number(orderCollectedMap.value[orderId] || 0) + Number(orderOffsetMap.value[orderId] || 0)
+}
+
+function getOrderEffectiveDiffAmount(order: any) {
+  const debtAmt = Number(order?.debt_amount || 0)
+  if (debtAmt > 0.005) return debtAmt
+  if (order?.debt_status !== 'owed' && order?.debt_status !== 'surplus') return 0
+  const need = getOrderActualReceivable(order) - getOrderCreditedIn(order.id)
+  if (order.debt_status === 'owed' && need > 0.005) return need
+  if (order.debt_status === 'surplus' && need < -0.005) return Math.abs(need)
+  return 0
+}
+
 const orderRows = computed(() => {
   return orders.value.map(o => {
     const paid = orderPaymentMap.value[o.id] || 0
@@ -507,12 +502,20 @@ const orderRows = computed(() => {
       hasIssue,
       baseReceivable: getOrderBaseReceivable(o),
       actualReceivable: getOrderActualReceivable(o),
+      creditedIn: getOrderCreditedIn(o.id),
     }
   })
 })
 
 const pendingOrders = computed(() =>
   orders.value.filter(o => o.debt_status === 'owed' || o.debt_status === 'surplus')
+)
+
+const pendingDiffOrderCount = computed(() =>
+  orders.value.filter((o) => {
+    if (o.debt_status !== 'owed' && o.debt_status !== 'surplus') return false
+    return getOrderEffectiveDiffAmount(o) > 0.005
+  }).length
 )
 
 const groupTotalActualReceivable = computed(() =>
@@ -531,11 +534,38 @@ const groupOffsetTotal = computed(() =>
     .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
 )
 
+const groupTotalCreditedIn = computed(() => groupCollectedTotal.value + groupOffsetTotal.value)
+
+const groupTotalDiffMeta = computed(() => {
+  let owedSum = 0
+  let surplusSum = 0
+  for (const o of orders.value) {
+    const amount = Number(o.debt_amount || 0)
+    if (amount <= 0) continue
+    if (o.debt_status === 'owed') owedSum += amount
+    if (o.debt_status === 'surplus') surplusSum += amount
+  }
+  const net = owedSum - surplusSum
+  if (net > 0.005) {
+    return { amount: Math.abs(net), status: '客户需补款', statusClass: 'diff-owed' }
+  }
+  if (net < -0.005) {
+    return { amount: Math.abs(net), status: '需退客户', statusClass: 'diff-surplus' }
+  }
+  return { amount: 0, status: '无异常', statusClass: 'diff-none' }
+})
+
+const groupTotalDiffAmount = computed(() => groupTotalDiffMeta.value.amount)
+const groupTotalDiffStatus = computed(() => groupTotalDiffMeta.value.status)
+const groupTotalDiffStatusClass = computed(() => groupTotalDiffMeta.value.statusClass)
+
 const groupRefundTotal = computed(() =>
   allPayments.value
     .filter(p => p.payment_type === '退款')
     .reduce((s, p) => s + Number(p.amount_cny || 0), 0)
 )
+
+const showGroupRefundSummary = computed(() => groupRefundTotal.value > 0)
 
 const groupSettledTotal = computed(() => groupCollectedTotal.value + groupOffsetTotal.value - groupRefundTotal.value)
 
@@ -575,20 +605,33 @@ function updateOrderDebtStatus(order: any) {
   const payload: any = { debt_status: order.debt_status || 'none' }
   if (payload.debt_status === 'none' || payload.debt_status === 'cleared') {
     payload.debt_amount = 0
+    order.debt_amount = 0
   }
   updateOrdersStatus([order.id], payload, '账款情况已更新')
 }
 
+function updateOrderDebtAmount(order: any) {
+  const amount = Number(order.debt_amount || 0)
+  order.debt_amount = amount
+  updateOrdersStatus([order.id], { debt_amount: amount }, '差价金额已更新')
+}
+
 function applyBatchStatus() {
-  if (batchStatusField.value === 'billing') {
-    updateOrdersStatus(orders.value.map(o => o.id), { billing_status: batchBillingTarget.value }, '整组入账状态已更新')
+  const payload: any = {}
+  if (batchBillingTarget.value) {
+    payload.billing_status = batchBillingTarget.value
+  }
+  if (batchDebtTarget.value) {
+    payload.debt_status = batchDebtTarget.value
+    if (batchDebtTarget.value === 'none' || batchDebtTarget.value === 'cleared') {
+      payload.debt_amount = 0
+    }
+  }
+  if (!payload.billing_status && !payload.debt_status) {
+    message.warning('请先选择基础入账状态或账款情况')
     return
   }
-  const payload: any = { debt_status: batchDebtTarget.value }
-  if (batchDebtTarget.value === 'none' || batchDebtTarget.value === 'cleared') {
-    payload.debt_amount = 0
-  }
-  updateOrdersStatus(orders.value.map(o => o.id), payload, '整组账款情况已更新')
+  updateOrdersStatus(orders.value.map(o => o.id), payload, '整组状态已更新')
 }
 
 async function loadOrders() {
@@ -613,6 +656,7 @@ function normalizeOrderBillingFields(order: any) {
     ...order,
     billing_status: order.billing_status || '已完成',
     debt_status: order.debt_status || 'none',
+    debt_amount: Number(order.debt_amount || 0),
   }
 }
 
@@ -620,6 +664,8 @@ async function loadAllPayments() {
   if (orders.value.length === 0) {
     allPayments.value = []
     orderPaymentMap.value = {}
+    orderCollectedMap.value = {}
+    orderOffsetMap.value = {}
     return
   }
   const orderIds = orders.value.map(o => o.id)
@@ -639,14 +685,26 @@ async function loadAllPayments() {
   }))
 
   const map: Record<string, number> = {}
-  orders.value.forEach(o => { map[o.id] = 0 })
+  const collectedMap: Record<string, number> = {}
+  const offsetMap: Record<string, number> = {}
+  orders.value.forEach(o => {
+    map[o.id] = 0
+    collectedMap[o.id] = 0
+    offsetMap[o.id] = 0
+  })
   for (const p of payments) {
-    if (map[p.batch_id] !== undefined) {
-      const amount = Number(p.amount_cny || 0)
-      map[p.batch_id] += p.payment_type === '退款' ? -Math.abs(amount) : amount
+    if (map[p.batch_id] === undefined) continue
+    const amount = Number(p.amount_cny || 0)
+    map[p.batch_id] += p.payment_type === '退款' ? -Math.abs(amount) : amount
+    if (!p.payment_type || p.payment_type === '基础收款' || p.payment_type === '补款') {
+      collectedMap[p.batch_id] += amount
+    } else if (p.payment_type === '账面抵消') {
+      offsetMap[p.batch_id] += amount
     }
   }
   orderPaymentMap.value = map
+  orderCollectedMap.value = collectedMap
+  orderOffsetMap.value = offsetMap
 }
 
 const mockGroupPayments = computed(() => {
@@ -723,10 +781,11 @@ watch(() => props.open, async (val) => {
   }
 })
 
-watch(() => props.groupOrders, (val) => {
+watch(() => props.groupOrders, async (val) => {
   if (val && val.length > 0 && props.open) {
     orders.value = val.map(normalizeOrderBillingFields)
-    loadAllPayments()
+    await loadAllPayments()
+    resetBatchForm()
   }
 }, { immediate: true })
 
@@ -757,27 +816,24 @@ const allocRows = ref<AllocRow[]>([])
 function buildAllocRows(orderList: any[]): AllocRow[] {
   return orderList.map(o => {
     const debtStatus = o.debt_status
-    const debtAmt = Number(o.debt_amount || 0)
     const expected = Number(o.total_amount || 0)
-    const paid = Number(orderPaymentMap.value[o.id] || 0)
-    const diff = expected - paid
+    const effectiveDiff = getOrderEffectiveDiffAmount(o)
     let debtHint = ''
     let debtHintType = ''
     let autoFill: number | undefined = undefined
     let allocPlaceholder = '金额（正=补款 负=退款）'
 
-    if (debtStatus === 'owed' && (debtAmt > 0 || diff > 0.005)) {
-      const amount = debtAmt > 0 ? debtAmt : diff
-      debtHint = `欠款 +¥${amount.toFixed(2)}`
+    // 方案A：按账款情况 + 差价金额驱动补款/退款合计与按钮
+    if (debtStatus === 'owed' && effectiveDiff > 0.005) {
+      debtHint = `欠款 +¥${effectiveDiff.toFixed(2)}`
       debtHintType = 'hint-owed'
-      autoFill = amount
-      allocPlaceholder = `+${amount.toFixed(2)}（欠款）`
-    } else if (debtStatus === 'surplus' && (debtAmt > 0 || diff < -0.005)) {
-      const amount = debtAmt > 0 ? debtAmt : Math.abs(diff)
-      debtHint = `溢收 -¥${amount.toFixed(2)}`
+      autoFill = effectiveDiff
+      allocPlaceholder = `+${effectiveDiff.toFixed(2)}（欠款）`
+    } else if (debtStatus === 'surplus' && effectiveDiff > 0.005) {
+      debtHint = `溢收 -¥${effectiveDiff.toFixed(2)}`
       debtHintType = 'hint-surplus'
-      autoFill = -amount
-      allocPlaceholder = `-${amount.toFixed(2)}（溢收应退）`
+      autoFill = -effectiveDiff
+      allocPlaceholder = `-${effectiveDiff.toFixed(2)}（溢收应退）`
     }
 
     return {
@@ -794,18 +850,24 @@ function buildAllocRows(orderList: any[]): AllocRow[] {
 
 watch(orders, (val) => {
   allocRows.value = buildAllocRows(val)
-})
+}, { deep: true })
 
 const allocNetTotal = computed(() =>
   allocRows.value.reduce((s, r) => s + Number(r.allocated || 0), 0)
 )
 
 const allocSupplementTotal = computed(() =>
-  allocRows.value.filter(r => Number(r.allocated || 0) > 0).reduce((s, r) => s + Number(r.allocated), 0)
+  orders.value.reduce((s, o) => {
+    if (o.debt_status !== 'owed') return s
+    return s + getOrderEffectiveDiffAmount(o)
+  }, 0)
 )
 
 const allocRefundTotal = computed(() =>
-  allocRows.value.filter(r => Number(r.allocated || 0) < 0).reduce((s, r) => s + Math.abs(Number(r.allocated)), 0)
+  orders.value.reduce((s, o) => {
+    if (o.debt_status !== 'surplus') return s
+    return s + getOrderEffectiveDiffAmount(o)
+  }, 0)
 )
 
 function resetBatchForm() {
@@ -1428,8 +1490,15 @@ async function saveBatchRecord() {
 
 .gbh-fund-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(82px, 1fr));
   gap: 10px;
+}
+
+.gbh-fund-cols-4 {
+  grid-template-columns: repeat(4, minmax(82px, 1fr));
+}
+
+.gbh-fund-cols-5 {
+  grid-template-columns: repeat(5, minmax(82px, 1fr));
 }
 
 .trio-item {
@@ -1457,15 +1526,22 @@ async function saveBatchRecord() {
   background: #e5e7eb;
 }
 
+.gbh-alert-wrap {
+  padding: 10px 24px 0;
+}
+
 .gbh-alert {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 24px;
+  padding: 6px 12px;
   background: #fffbeb;
-  border-bottom: 1px solid #fde68a;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
   font-size: 13px;
   color: #92400e;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .alert-icon {
@@ -1521,26 +1597,37 @@ async function saveBatchRecord() {
   gap: 8px;
 }
 
+.orders-table {
+  overflow-x: auto;
+  width: 100%;
+}
+
 .orders-table-head {
   display: grid;
-  grid-template-columns: 78px 160px 90px 90px 90px 100px 124px;
-  padding: 6px 8px;
+  grid-template-columns: 78px minmax(120px, 1.3fr) 84px 96px 96px 120px 130px 120px;
+  column-gap: 12px;
+  padding: 6px 10px;
   background: #f9fafb;
   border-radius: 6px;
   font-size: 12px;
   color: #6b7280;
   font-weight: 500;
   margin-bottom: 4px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .orders-table-row {
   display: grid;
-  grid-template-columns: 78px 160px 90px 90px 90px 100px 124px;
-  padding: 8px 8px;
+  grid-template-columns: 78px minmax(120px, 1.3fr) 84px 96px 96px 120px 130px 120px;
+  column-gap: 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid #f9fafb;
   font-size: 13px;
   align-items: center;
   transition: background 0.15s;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .orders-table-row:hover {
@@ -1559,17 +1646,23 @@ async function saveBatchRecord() {
   font-size: 12px;
   font-family: 'Courier New', monospace;
   color: #1a1a2e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
-.col-created, .col-num, .col-asin, .col-amt, .col-paid, .col-status, .col-debt {
+.col-created, .col-num, .col-asin, .col-paid, .col-credited, .col-status, .col-debt, .col-diff {
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .col-created {
   color: #6b7280;
   font-size: 12px;
   font-family: 'Courier New', monospace;
+  white-space: nowrap;
 }
 
 .records-empty {
@@ -1595,17 +1688,20 @@ async function saveBatchRecord() {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   background: #fff;
+  width: 100%;
 }
 
 .payment-line {
   display: grid;
-  grid-template-columns: 92px 118px 86px 120px 120px 1fr;
-  gap: 10px;
+  grid-template-columns: 110px 1.2fr 100px 120px 110px 1.8fr;
+  column-gap: 20px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 10px 14px;
   border-bottom: 1px solid #f3f4f6;
   font-size: 12px;
   color: #374151;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .payment-line:last-child { border-bottom: none; }
@@ -1780,20 +1876,29 @@ async function saveBatchRecord() {
 .bf-alloc-total {
   font-size: 13px;
   color: #374151;
-  font-weight: 600;
   border-top: 1px solid #e5e7eb;
   padding-top: 10px;
-  margin-top: 2px;
+  margin-top: 12px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 20px;
 }
 
-.alloc-total-breakdown {
-  font-size: 12px;
-  color: #6b7280;
-  font-weight: 400;
+.bf-alloc-total b {
+  font-weight: 700;
+  margin-left: 2px;
 }
+
+.group-diff-status {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.group-diff-status.diff-owed { color: #d97706; }
+.group-diff-status.diff-surplus { color: #2563eb; }
+.group-diff-status.diff-none { color: #9ca3af; }
 
 .bf-submit {
   display: flex;
