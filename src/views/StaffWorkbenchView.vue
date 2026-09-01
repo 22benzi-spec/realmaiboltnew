@@ -1358,14 +1358,14 @@
               <a-form-item label="实付金额">
                 <a-input-number v-model:value="replaceProductForm.targetActualPaid" :min="0" :precision="2" prefix="$" style="width:100%" />
               </a-form-item>
+              <a-form-item v-if="replaceProductForm.targetRefundMethod === 'PayPal'" label="需返金额">
+                <a-input-number v-model:value="replaceProductForm.targetRefundAmount" :min="0" :precision="2" prefix="$" style="width:100%" />
+              </a-form-item>
               <a-form-item label="返款方式">
                 <a-radio-group v-model:value="replaceProductForm.targetRefundMethod">
                   <a-radio value="礼品卡">礼品卡</a-radio>
                   <a-radio value="PayPal">PayPal</a-radio>
                 </a-radio-group>
-              </a-form-item>
-              <a-form-item v-if="replaceProductForm.targetRefundMethod === '礼品卡'" label="需返金额">
-                <a-input-number v-model:value="replaceProductForm.targetRefundAmount" :min="0" :precision="2" prefix="$" style="width:100%" />
               </a-form-item>
               <template v-if="replaceProductForm.targetRefundMethod === 'PayPal'">
                 <a-form-item label="贝宝手续费">
@@ -1375,10 +1375,13 @@
                   <a-input v-model:value="replaceProductForm.targetPaypalEmail" placeholder="buyer@example.com" />
                 </a-form-item>
                 <div class="replace-refund-total">
-                  <span>合计返款</span>
+                  <span>申请金额</span>
                   <strong>${{ replaceProductPaypalTotal.toFixed(2) }}</strong>
                 </div>
               </template>
+              <a-form-item v-else label="申请金额">
+                <a-input-number v-model:value="replaceProductForm.targetRefundAmount" :min="0" :precision="2" prefix="$" style="width:100%" />
+              </a-form-item>
             </div>
             <a-alert
               v-if="!replaceProductTargetInfo.validation.ok"
@@ -1725,7 +1728,7 @@ const pendingListSearchSnapshot = ref('')
 
 const isAllStaffSelected = computed(() => selectedStaffId.value === ALL_STAFF_KEY)
 const replaceProductSourceNeedsDecision = computed(() => needsSourceContinueDecision(replaceProductTarget.value?._order_status))
-const replaceProductPaypalTotal = computed(() => Number((Number(replaceProductForm.value.targetActualPaid || 0) + Number(replaceProductForm.value.targetPaypalFee || 0)).toFixed(2)))
+const replaceProductPaypalTotal = computed(() => Number((Number(replaceProductForm.value.targetRefundAmount || 0) + Number(replaceProductForm.value.targetPaypalFee || 0)).toFixed(2)))
 
 const filterTabs = computed(() => {
   if (wbNav.value === 'pending') {
@@ -2628,6 +2631,14 @@ function inferActualPaidUsd(req: any) {
   return Math.max(0, Number((total - fee).toFixed(2)))
 }
 
+function inferRefundDueAmountUsd(req: any) {
+  if (!req) return 0
+  if (req.refund_due_amount_usd != null) return Number(req.refund_due_amount_usd || 0)
+  const total = Number(req.refund_amount_usd || req.refund_amount || 0)
+  const fee = req.refund_method === 'PayPal' ? Number(req.paypal_fee_usd || 0) : 0
+  return Math.max(0, Number((total - fee).toFixed(2)))
+}
+
 function refundRequestTypeLabel(req: any) {
   if (!req?.request_type || req.request_type === 'initial') return '首笔'
   if (req.request_type === 'supplement') return '追加'
@@ -2666,6 +2677,7 @@ function processedRefundsForDisplay(task: any) {
       refund_amount_usd: Number(task.refund_amount || 0),
       actual_paid_usd: Number(task.actual_paid_usd || 0),
       paypal_fee_usd: Number(task.paypal_fee_usd || 0),
+      refund_due_amount_usd: Math.max(0, Number((Number(task.refund_amount || 0) - Number(task.paypal_fee_usd || 0)).toFixed(2))),
       request_type: 'initial',
       product_price: task.product_price,
       buyer_paypal_email: task.buyer_paypal_email,
@@ -2716,8 +2728,9 @@ function formatAuditEdit(e: any) {
   const labels: Record<string, string> = {
     buyer_paypal_email: '买手 PayPal 邮箱',
     actual_paid_usd: '实付金额 (USD)',
+    refund_due_amount_usd: '需返金额 (USD)',
     paypal_fee_usd: '贝宝手续费 (USD)',
-    refund_amount_usd: '合计返款 (USD)',
+    refund_amount_usd: '申请金额 (USD)',
     refund_method: '返款方式',
     refund_sequence: '返款节点',
   }
@@ -2733,6 +2746,7 @@ function hydrateRefundFormFromRequest(task: any, req: any) {
   task._sel_refund_sequence = req.refund_sequence || task._sel_refund_sequence || task.refund_sequence
   task._buyer_paypal_email = req.buyer_paypal_email || task._buyer_paypal_email || ''
   const method = req.refund_method || task._sel_refund_method
+  task._refund_due_amount_usd = inferRefundDueAmountUsd(req)
   if (method === 'PayPal') {
     const fee = Number(req.paypal_fee_usd || 0)
     const total = Number(req.refund_amount_usd || 0)
@@ -2748,7 +2762,10 @@ function hydrateRefundFormFromRequest(task: any, req: any) {
     const actual = Number(req.actual_paid_usd || 0)
     task._refund_amount_usd = actual > 0 ? actual : Number(req.product_price || task.product_price || 0)
     const face = Number(req.refund_amount_usd || req.gift_card_face_value_usd || 0)
-    task._refund_final_amount_usd = face > 0 ? face : Number(task._refund_amount_usd || 0)
+    if (req.refund_due_amount_usd == null) {
+      task._refund_due_amount_usd = face > 0 ? face : Number(task._refund_amount_usd || 0)
+    }
+    task._refund_final_amount_usd = Number(task._refund_due_amount_usd || 0)
   }
   const rawNotes = req.notes || ''
   task._need_finance_screenshot = /\[需财务返款截图\]|\[需财务水单\]/.test(rawNotes)
@@ -2765,6 +2782,7 @@ function startSupplementalRefund(task: any) {
   task._refund_correction_mode = false
   task._refund_correction_target_id = null
   task._refund_fee_usd = 0
+  task._refund_due_amount_usd = Number(task._extra_refund_amount)
   let method = task._refund_request_latest_processed?.refund_method || task.refund_method || '礼品卡'
   if (task._extra_refund_method === '礼品卡') method = '礼品卡'
   else if (task._extra_refund_method === 'PayPal') method = 'PayPal'
@@ -2802,7 +2820,11 @@ function cancelRefundSpecialModes(task: any) {
     task._sel_refund_method = task.refund_method || '礼品卡'
     task._refund_amount_usd = task.product_price ? Number(task.product_price) : 0
     task._refund_fee_usd = task.__mock_refund_fee_usd || 0
-    task._refund_final_amount_usd = task.product_price ? Number(task.product_price) : 0
+    const storedTotal = Number(task.refund_amount || task.product_price || 0)
+    task._refund_due_amount_usd = task._sel_refund_method === 'PayPal'
+      ? Math.max(0, Number((storedTotal - task._refund_fee_usd).toFixed(2)))
+      : storedTotal
+    task._refund_final_amount_usd = getRefundFinalAmount(task)
     task._buyer_paypal_email = task.__mock_paypal_email || task.buyer?.paypal_email || ''
     syncRefundComputed(task)
   }
@@ -2825,16 +2847,11 @@ function isPrepayMode(task: any) {
 }
 
 function getRefundFinalAmount(task: any) {
-  if (!task._refund_supplement_mode && task._refund_request_pending?.request_type === 'supplement') {
-    return Number(task._refund_request_pending.refund_amount_usd || task._refund_request_pending.refund_amount || 0)
-  }
-  const base = task._refund_supplement_mode
-    ? Number(task._extra_refund_amount || 0)
-    : Number(task._refund_amount_usd || 0)
+  const base = Number(task._refund_due_amount_usd || 0)
   if (task._sel_refund_method === 'PayPal') {
     return Number((base + Number(task._refund_fee_usd || 0)).toFixed(2))
   }
-  return Number(task._refund_final_amount_usd ?? base)
+  return base
 }
 
 function syncRefundComputed(task: any) {
@@ -2848,9 +2865,8 @@ function syncRefundComputed(task: any) {
       task._buyer_paypal_email = buyer?.paypal_email || ''
     }
     task._refund_final_amount_usd = getRefundFinalAmount(task)
-  } else if (!task._refund_final_amount_usd) {
-    task._refund_final_amount_usd = Number(task._refund_amount_usd || 0)
   }
+  task._refund_final_amount_usd = getRefundFinalAmount(task)
 }
 
 function fmtShortTime(t: string | null) {
@@ -3896,7 +3912,13 @@ function initTaskFields(task: any) {
   task._editing_refund_method = false
   task._refund_amount_usd = task.product_price ? Number(task.product_price) : 0
   task._refund_fee_usd = task.__mock_refund_fee_usd || 0
-  task._refund_final_amount_usd = task.product_price ? Number(task.product_price) : 0
+  const storedRefundTotal = Number(task.refund_amount || task.product_price || 0)
+  task._refund_due_amount_usd = task.refund_due_amount_usd != null
+    ? Number(task.refund_due_amount_usd || 0)
+    : task._sel_refund_method === 'PayPal' && Number(task.refund_amount || 0) > 0
+      ? Math.max(0, Number((storedRefundTotal - task._refund_fee_usd).toFixed(2)))
+      : storedRefundTotal
+  task._refund_final_amount_usd = getRefundFinalAmount(task)
   task._buyer_paypal_email = task.__mock_paypal_email || task.buyer?.paypal_email || ''
   task._need_finance_screenshot = false
   task._extra_refund_amount = null
@@ -4197,6 +4219,7 @@ function captureTaskEditorDraft(task: any) {
     _sel_refund_method: task._sel_refund_method || '',
     _buyer_paypal_email: task._buyer_paypal_email || '',
     _refund_amount_usd: Number(task._refund_amount_usd || 0),
+    _refund_due_amount_usd: Number(task._refund_due_amount_usd || 0),
     _refund_fee_usd: Number(task._refund_fee_usd || 0),
     _refund_final_amount_usd: Number(task._refund_final_amount_usd || 0),
     _refund_apply_notes: task._refund_apply_notes || '',
@@ -4224,6 +4247,7 @@ function restoreTaskEditorDraft(task: any, snapshot: any) {
   task._sel_refund_method = snapshot._sel_refund_method
   task._buyer_paypal_email = snapshot._buyer_paypal_email
   task._refund_amount_usd = snapshot._refund_amount_usd
+  task._refund_due_amount_usd = snapshot._refund_due_amount_usd
   task._refund_fee_usd = snapshot._refund_fee_usd
   task._refund_final_amount_usd = snapshot._refund_final_amount_usd
   task._refund_apply_notes = snapshot._refund_apply_notes
@@ -4346,8 +4370,8 @@ async function saveReplaceProduct() {
     if (replaceProductSourceNeedsDecision.value && typeof replaceProductForm.value.sourceContinue !== 'boolean') {
       throw new Error('请选择原产品处理方式')
     }
-    if (replaceProductForm.value.targetRefundMethod === '礼品卡' && !Number(replaceProductForm.value.targetRefundAmount || 0)) {
-      throw new Error('请填写礼品卡需返金额')
+    if (!Number(replaceProductForm.value.targetRefundAmount || 0)) {
+      throw new Error('请填写需返金额')
     }
     if (replaceProductForm.value.targetRefundMethod === 'PayPal' && !String(replaceProductForm.value.targetPaypalEmail || '').trim()) {
       throw new Error('请填写贝宝邮箱')
@@ -4497,6 +4521,7 @@ function hasRefundDraftChanged(task: any, snapshot: any) {
     String(task._sel_refund_method || ''),
     String(task._buyer_paypal_email || ''),
     Number(task._refund_amount_usd || 0),
+    Number(task._refund_due_amount_usd || 0),
     Number(task._refund_fee_usd || 0),
     Number(task._refund_final_amount_usd || 0),
     String(task._refund_apply_notes || ''),
@@ -4512,6 +4537,7 @@ function hasRefundDraftChanged(task: any, snapshot: any) {
     String(snapshot._sel_refund_method || ''),
     String(snapshot._buyer_paypal_email || ''),
     Number(snapshot._refund_amount_usd || 0),
+    Number(snapshot._refund_due_amount_usd || 0),
     Number(snapshot._refund_fee_usd || 0),
     Number(snapshot._refund_final_amount_usd || 0),
     String(snapshot._refund_apply_notes || ''),
@@ -4577,6 +4603,7 @@ async function submitWorkbenchTaskEditor(task: any) {
       String(task._sel_refund_method || '') !== String(snapshot._sel_refund_method || '')
       || String(task._buyer_paypal_email || '') !== String(snapshot._buyer_paypal_email || '')
       || Number(task._refund_amount_usd || 0) !== Number(snapshot._refund_amount_usd || 0)
+      || Number(task._refund_due_amount_usd || 0) !== Number(snapshot._refund_due_amount_usd || 0)
       || Number(task._refund_final_amount_usd || 0) !== Number(snapshot._refund_final_amount_usd || 0)
     if (isRefundStepReadonly(task)) {
       if (extraRefundChanged && Number(task._extra_refund_amount || 0) > 0) {
@@ -4773,6 +4800,9 @@ function submitMockRefundRequest(task: any, options: {
     if (Number(pending.actual_paid_usd ?? 0) !== Number(commonFields.actual_paid_usd ?? 0)) {
       edits.push({ field: 'actual_paid_usd', from: Number(pending.actual_paid_usd ?? 0), to: Number(commonFields.actual_paid_usd ?? 0) })
     }
+    if (inferRefundDueAmountUsd(pending) !== Number(commonFields.refund_due_amount_usd ?? 0)) {
+      edits.push({ field: 'refund_due_amount_usd', from: inferRefundDueAmountUsd(pending), to: Number(commonFields.refund_due_amount_usd ?? 0) })
+    }
     if (Number(pending.paypal_fee_usd ?? 0) !== Number(commonFields.paypal_fee_usd ?? 0)) {
       edits.push({ field: 'paypal_fee_usd', from: Number(pending.paypal_fee_usd ?? 0), to: Number(commonFields.paypal_fee_usd ?? 0) })
     }
@@ -4844,6 +4874,7 @@ async function submitRefundRequest(task: any) {
   const isUpdatePending = !!(pending && !task._refund_supplement_mode && !task._refund_correction_mode)
 
   const actualPaid = Number(task._refund_amount_usd || 0)
+  const refundDueAmount = Number(task._refund_due_amount_usd || 0)
   const feeUsd = selectedMethod === 'PayPal' ? Number(task._refund_fee_usd || 0) : 0
   const notes = `${task._refund_apply_notes || ''}${task._need_finance_screenshot ? ' [需财务水单]' : ''}`.trim()
   const supplementReason = task._refund_supplement_mode
@@ -4875,6 +4906,7 @@ async function submitRefundRequest(task: any) {
       refund_amount_usd: finalAmount,
       refund_amount: finalAmount,
       actual_paid_usd: actualPaid,
+      refund_due_amount_usd: refundDueAmount,
       paypal_fee_usd: feeUsd,
       refund_method: selectedMethod,
       refund_sequence: task._sel_refund_sequence || task.refund_sequence,
@@ -4939,6 +4971,9 @@ async function submitRefundRequest(task: any) {
       }
       if (Number(pending.actual_paid_usd ?? 0) !== actualPaid) {
         edits.push({ field: 'actual_paid_usd', from: Number(pending.actual_paid_usd ?? 0), to: actualPaid })
+      }
+      if (inferRefundDueAmountUsd(pending) !== refundDueAmount) {
+        edits.push({ field: 'refund_due_amount_usd', from: inferRefundDueAmountUsd(pending), to: refundDueAmount })
       }
       if (Number(pending.paypal_fee_usd ?? 0) !== feeUsd) {
         edits.push({ field: 'paypal_fee_usd', from: Number(pending.paypal_fee_usd ?? 0), to: feeUsd })

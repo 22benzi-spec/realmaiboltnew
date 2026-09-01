@@ -247,11 +247,15 @@
                   <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
                 </div>
                 <div class="raf-line">
+                  <span class="raf-label">需返金额</span>
+                  <a-input-number v-model:value="task._refund_due_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                </div>
+                <div class="raf-line">
                   <span class="raf-label">Paypal手续费</span>
                   <a-input-number v-model:value="task._refund_fee_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
                 </div>
                 <div class="raf-line raf-total">
-                  <span class="raf-label">合计返款</span>
+                  <span class="raf-label">申请金额</span>
                   <span class="raf-total-val">${{ getRefundFinalAmount(task).toFixed(2) }}</span>
                 </div>
               </div>
@@ -261,8 +265,8 @@
                   <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
                 </div>
                 <div class="raf-line">
-                  <span class="raf-label">应返礼品卡面额</span>
-                  <a-input-number v-model:value="task._refund_final_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" />
+                  <span class="raf-label">申请金额</span>
+                  <a-input-number v-model:value="task._refund_due_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
                 </div>
               </div>
             </div>

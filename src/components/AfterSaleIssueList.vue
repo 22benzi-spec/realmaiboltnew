@@ -1778,8 +1778,14 @@ function buildReorderEditorTask(record: any) {
   task._sel_refund_method = task.refund_method || '礼品卡'
   task._editing_refund_method = false
   task._refund_amount_usd = getIssueActualPaidAmount(record)
-  task._refund_fee_usd = 0
-  task._refund_final_amount_usd = getIssueActualPaidAmount(record)
+  task._refund_fee_usd = Number(record.paypal_fee_usd || 0)
+  const storedRefundTotal = Number(record.refund_amount_usd ?? record.refund_amount ?? getIssueActualPaidAmount(record))
+  task._refund_due_amount_usd = record.refund_due_amount_usd != null
+    ? Number(record.refund_due_amount_usd || 0)
+    : task._sel_refund_method === 'PayPal'
+      ? Math.max(0, Number((storedRefundTotal - task._refund_fee_usd).toFixed(2)))
+      : storedRefundTotal
+  task._refund_final_amount_usd = task._refund_due_amount_usd
   task._buyer_paypal_email = ''
   task._need_finance_screenshot = false
   task._extra_refund_amount = null
@@ -2082,6 +2088,14 @@ function inferReorderActualPaidUsd(req: any) {
   return Number(req.product_price || req.refund_amount_usd || 0)
 }
 
+function inferReorderRefundDueAmountUsd(req: any) {
+  if (!req) return 0
+  if (req.refund_due_amount_usd != null) return Number(req.refund_due_amount_usd || 0)
+  const total = Number(req.refund_amount_usd || req.refund_amount || 0)
+  const fee = req.refund_method === 'PayPal' ? Number(req.paypal_fee_usd || 0) : 0
+  return Math.max(0, Number((total - fee).toFixed(2)))
+}
+
 function getReorderRefundRequestTypeLabel(req: any) {
   if (req?.correction_for_request_id) return '更正返款'
   if (req?.notes?.includes('追加')) return '追加返款'
@@ -2098,6 +2112,7 @@ function hydrateReorderRefundFormFromRequest(task: any, req: any) {
   task._sel_refund_sequence = req.refund_sequence || task._sel_refund_sequence || task.refund_sequence
   task._buyer_paypal_email = req.buyer_paypal_email || task._buyer_paypal_email || ''
   const method = req.refund_method || task._sel_refund_method
+  task._refund_due_amount_usd = inferReorderRefundDueAmountUsd(req)
   if (method === 'PayPal') {
     const fee = Number(req.paypal_fee_usd || 0)
     const total = Number(req.refund_amount_usd || 0)
@@ -2113,7 +2128,10 @@ function hydrateReorderRefundFormFromRequest(task: any, req: any) {
     const actual = Number(req.actual_paid_usd || 0)
     task._refund_amount_usd = actual > 0 ? actual : Number(req.product_price || task.product_price || 0)
     const face = Number(req.refund_amount_usd || req.gift_card_face_value_usd || 0)
-    task._refund_final_amount_usd = face > 0 ? face : Number(task._refund_amount_usd || 0)
+    if (req.refund_due_amount_usd == null) {
+      task._refund_due_amount_usd = face > 0 ? face : Number(task._refund_amount_usd || 0)
+    }
+    task._refund_final_amount_usd = Number(task._refund_due_amount_usd || 0)
   }
   const rawNotes = req.notes || ''
   task._need_finance_screenshot = /\[需财务返款截图\]|\[需财务水单\]/.test(rawNotes)
@@ -2130,6 +2148,7 @@ function startReorderSupplementalRefund(task: any) {
   task._refund_correction_mode = false
   task._refund_correction_target_id = null
   task._refund_fee_usd = 0
+  task._refund_due_amount_usd = Number(task._extra_refund_amount)
   let method = task._refund_request_latest_processed?.refund_method || task.refund_method || '礼品卡'
   if (task._extra_refund_method === '礼品卡') method = '礼品卡'
   else if (task._extra_refund_method === 'PayPal') method = 'PayPal'
@@ -2164,7 +2183,11 @@ function cancelReorderRefundSpecialModes(task: any) {
     task._sel_refund_method = task.refund_method || '礼品卡'
     task._refund_amount_usd = task.product_price ? Number(task.product_price) : 0
     task._refund_fee_usd = 0
-    task._refund_final_amount_usd = task.product_price ? Number(task.product_price) : 0
+    const storedTotal = Number(task.refund_amount || task.product_price || 0)
+    task._refund_due_amount_usd = task._sel_refund_method === 'PayPal'
+      ? Math.max(0, Number((storedTotal - task._refund_fee_usd).toFixed(2)))
+      : storedTotal
+    task._refund_final_amount_usd = getReorderRefundFinalAmount(task)
     task._buyer_paypal_email = task.buyer?.paypal_email || ''
     syncReorderRefundComputed(task)
   }
@@ -2187,13 +2210,11 @@ function isReorderPrepayMode(task: any) {
 }
 
 function getReorderRefundFinalAmount(task: any) {
-  const base = task._refund_supplement_mode
-    ? Number(task._extra_refund_amount || 0)
-    : Number(task._refund_amount_usd || 0)
+  const base = Number(task._refund_due_amount_usd || 0)
   if (task._sel_refund_method === 'PayPal') {
     return Number((base + Number(task._refund_fee_usd || 0)).toFixed(2))
   }
-  return Number(task._refund_final_amount_usd ?? base)
+  return base
 }
 
 function syncReorderRefundComputed(task: any) {
@@ -2210,9 +2231,8 @@ function syncReorderRefundComputed(task: any) {
       task._buyer_paypal_email = buyer?.paypal_email || ''
     }
     task._refund_final_amount_usd = getReorderRefundFinalAmount(task)
-  } else if (!task._refund_final_amount_usd) {
-    task._refund_final_amount_usd = Number(task._refund_amount_usd || 0)
   }
+  task._refund_final_amount_usd = getReorderRefundFinalAmount(task)
   if (actionModalType.value === 'reorder' && editForm.principal_status === '已损失') {
     editForm.principal_amount = Number(task._refund_amount_usd || task.product_price || 0)
   }
@@ -2289,7 +2309,8 @@ async function submitReorderRefundRequest(task: any) {
       refund_amount_usd: getReorderRefundFinalAmount(task),
       refund_amount: getReorderRefundFinalAmount(task),
       actual_paid_usd: Number(task._refund_amount_usd || 0),
-      paypal_fee_usd: Number(task._refund_fee_usd || 0),
+      refund_due_amount_usd: Number(task._refund_due_amount_usd || 0),
+      paypal_fee_usd: task._sel_refund_method === 'PayPal' ? Number(task._refund_fee_usd || 0) : 0,
       product_name: task.product_name || '',
       product_price: Number(task.product_price || 0),
       store_name: task.store_name || '',

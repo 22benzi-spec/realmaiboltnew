@@ -210,10 +210,11 @@ async function insertTargetRefundDeltaRequest(params: {
     note,
   } = params
   const actualPaid = Number(targetActualPaid || 0)
+  const refundDueAmount = Number(targetRefundAmount || 0)
   const paypalFee = targetRefundMethod === 'PayPal' ? Number(targetPaypalFee || 0) : 0
   const desiredRefundAmount = targetRefundMethod === 'PayPal'
-    ? Number((actualPaid + paypalFee).toFixed(2))
-    : Number(targetRefundAmount || actualPaid || 0)
+    ? Number((refundDueAmount + paypalFee).toFixed(2))
+    : Number(refundDueAmount || actualPaid || 0)
   const processedTotal = sumProcessedRefundAmount(sourceRefundRequests)
   if (desiredRefundAmount <= 0 || desiredRefundAmount <= processedTotal) return null
 
@@ -234,6 +235,9 @@ async function insertTargetRefundDeltaRequest(params: {
       refund_sequence: sourceSubOrder.refund_sequence || '预付',
       refund_amount_usd: delta,
       refund_amount: delta,
+      refund_due_amount_usd: targetRefundMethod === 'PayPal'
+        ? Math.max(0, Number((delta - paypalFee).toFixed(2)))
+        : delta,
       gift_card_face_value_usd: targetRefundMethod === '礼品卡' ? delta : 0,
       actual_paid_usd: actualPaid,
       paypal_fee_usd: targetRefundMethod === 'PayPal' ? paypalFee : 0,
@@ -242,7 +246,7 @@ async function insertTargetRefundDeltaRequest(params: {
       asin: targetSubOrder.asin || '',
       store_name: targetSubOrder.store_name || '',
       staff_name: operatorName,
-      notes: [`更换产品后目标子单合计应返 $${desiredRefundAmount.toFixed(2)}，已返 $${processedTotal.toFixed(2)}，申请差额 $${delta.toFixed(2)}`, note].filter(Boolean).join('；'),
+      notes: [`更换产品后目标子单申请金额 $${desiredRefundAmount.toFixed(2)}，已返 $${processedTotal.toFixed(2)}，申请差额 $${delta.toFixed(2)}`, note].filter(Boolean).join('；'),
     })
     .select()
     .maybeSingle()
@@ -281,9 +285,7 @@ export async function migrateSubOrderToReplacement(options: ReplaceProductMigrat
   const targetRefundMethod = text(options.targetRefundMethod) || sourceSubOrder.refund_method || '礼品卡'
   const targetPaypalFee = Number(options.targetPaypalFee || 0)
   const targetPaypalEmail = text(options.targetPaypalEmail || sourceSubOrder.buyer_paypal_email || '')
-  const targetRefundAmount = targetRefundMethod === 'PayPal'
-    ? Number((targetActualPaid + targetPaypalFee).toFixed(2))
-    : Number(options.targetRefundAmount || targetActualPaid || 0)
+  const targetRefundAmount = Number(options.targetRefundAmount || targetActualPaid || 0)
   const { data: sourceRefundRequests, error: refundLoadError } = await supabase
     .from('refund_requests')
     .select('*')
