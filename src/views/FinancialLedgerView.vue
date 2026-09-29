@@ -156,11 +156,11 @@
         <template v-if="column.key === 'action'">
           <a-space v-if="canModify(record)">
             <a-button type="link" size="small" @click="openDetail(record)">详情</a-button>
-            <a-popconfirm v-if="canApprove(record)" title="确认审批通过？" @confirm="approveRow(record)">
+            <a-popconfirm v-if="canApprove(record)" :title="record._split_group ? '确认审批通过这组分笔流水？' : '确认审批通过？'" @confirm="approveRow(record)">
               <a-button type="link" size="small" style="color:#059669">审批</a-button>
             </a-popconfirm>
             <a-button type="link" size="small" :disabled="record.status === '已确认'" @click="openEdit(record)">编辑</a-button>
-            <a-popconfirm title="确认作废这条流水？" @confirm="voidRow(record.id)">
+            <a-popconfirm :title="record._split_group ? '确认作废这组分笔流水？' : '确认作废这条流水？'" @confirm="voidSplitRow(record)">
               <a-button type="link" size="small" danger>作废</a-button>
             </a-popconfirm>
           </a-space>
@@ -282,7 +282,20 @@
         <div class="detail-hero">
           <div class="detail-hero-top">
             <div>
-              <template v-if="getMixedAmountLines(detailRecord)">
+              <template v-if="detailRecord._split_receipts?.length">
+                <div v-for="line in detailRecord._split_receipts" :key="line.id" class="detail-split-receipt">
+                  <div class="detail-amount-line">
+                    <span class="detail-amount amount-in">+¥{{ formatNum(line.amount) }}</span>
+                    <span class="detail-amount-name">{{ line.no }}</span>
+                  </div>
+                  <div v-if="detailRecord._split_accounts_differ" class="detail-split-account">{{ line.account || '-' }}</div>
+                </div>
+                <div v-if="Number(detailRecord._group_offset_amount || 0) > 0" class="detail-amount-line">
+                  <span class="detail-amount amount-offset">¥{{ formatNum(detailRecord._group_offset_amount) }}</span>
+                  <span class="detail-amount-name">抵消</span>
+                </div>
+              </template>
+              <template v-else-if="getMixedAmountLines(detailRecord)">
                 <div v-for="line in getMixedAmountLines(detailRecord)" :key="line.label" class="detail-amount-line">
                   <span class="detail-amount" :class="line.className">{{ line.prefix }}¥{{ formatNum(line.amount) }}</span>
                   <span class="detail-amount-name">{{ line.label }}</span>
@@ -308,7 +321,7 @@
               <span>对象</span>
               <strong>{{ detailRecord.customer_name || '-' }}</strong>
             </div>
-            <div v-if="getLandingAccountLabel(detailRecord)" class="detail-info-item">
+            <div v-if="getLandingAccountLabel(detailRecord) && !detailRecord._split_accounts_differ" class="detail-info-item">
               <span>{{ getLandingAccountLabel(detailRecord) }}</span>
               <strong class="mono">{{ getLandingAccount(detailRecord) || '-' }}</strong>
             </div>
@@ -430,6 +443,7 @@ const editId = ref<string | null>(null)
 const detailOpen = ref(false)
 const detailRecord = ref<any | null>(null)
 const detailDrawerTitle = computed(() => {
+  if (detailRecord.value?._split_receipts?.length) return '流水详情'
   const no = String(detailRecord.value?.transaction_no || '').trim()
   return no ? `流水详情 - ${no}` : '流水详情'
 })
@@ -549,7 +563,7 @@ const form = reactive(emptyForm())
 const splitMergedColumnKeys = new Set([
   'transaction_date', 'countries', 'transaction_type', 'direction',
   'customer_name', 'business_summary', 'order_number', 'staff_name', 'handler_name',
-  'status', 'notes', 'receipt',
+  'status', 'notes', 'receipt', 'action',
 ])
 
 function splitReceiptCell(record: any, key: string) {
@@ -851,7 +865,7 @@ function getPaymentAccount(record: any) {
 
 function getLandingAccountLabel(record: any) {
   const parts = getDirectionParts(record)
-  if (parts.includes('收入') && !parts.includes('支出')) return '到账账号'
+  if (parts.includes('收入') && !parts.includes('支出')) return '收款账号'
   if (parts.includes('支出') && !parts.includes('收入')) return '对方账号'
   return ''
 }
@@ -863,7 +877,7 @@ function getLandingAccount(record: any) {
   if (getLandingAccountLabel(record) === '对方账号') {
     return notes.match(/(?:对方账号|收款账号|退款账号):([^|]+)/)?.[1]?.trim() || ''
   }
-  return notes.match(/到账账号:([^|]+)/)?.[1]?.trim() || ''
+  return notes.match(/(?:收款账号|到账账号):([^|]+)/)?.[1]?.trim() || ''
 }
 
 function getBusinessTaskRows(record: any) {
@@ -927,11 +941,8 @@ function getBusinessSummary(record: any) {
 function getBusinessSubSummary(record: any) {
   if (!showDetailTypeColumns(record)) return ''
   const count = getBusinessOrderCount(record)
-  const ids = getOrderIds(record)
-  const parts = []
-  if (count > 0) parts.push(`共${count}单`)
-  if (ids.length > 1) parts.push(`${ids.length}个任务ID`)
-  return parts.join(' / ')
+  if (count <= 0) return ''
+  return `共${count}单`
 }
 
 function hasBusinessInfo(record: any) {
@@ -977,6 +988,7 @@ function buildLedgerPreviewRows() {
       ...splitShared,
       id: 'mock-ledger-split-800',
       transaction_no: 'FT-MOCK-SPLIT-0002',
+      landing_account: '公司支付宝 · 8802',
       amount_cny: 800,
       business_breakdown: [
         { direction: '收入', target_order_number: 'TASK-SPLIT-1200', country: '美国', business_type: '文字', order_count: 4, amount_cny: 800 },
@@ -1992,16 +2004,59 @@ async function handleSave() {
   } finally { saving.value = false }
 }
 
+function getSplitGroupRows(record: any) {
+  const key = String(record?._split_group || '')
+  if (!key) return [record]
+  const rows = ledgerRows.value.filter(item => String(item?._split_group || '') === key)
+  return rows.length ? rows : [record]
+}
+
+function buildSplitDetailRecord(group: any[]) {
+  const first = normalizeFinancialRow(group[0])
+  const receipts = group.map(item => ({
+    id: item.id,
+    no: String(item.transaction_no || ''),
+    amount: Number(item.amount_cny || 0),
+    account: String(item.landing_account || '').trim(),
+  }))
+  const accounts = [...new Set(receipts.map(item => item.account))]
+  const cash = receipts.reduce((sum, item) => sum + item.amount, 0)
+  const offset = Number(first._group_offset_amount || 0)
+  const source = getBusinessBreakdown(first)[0] || {}
+  return {
+    ...first,
+    transaction_no: receipts.map(item => item.no).filter(Boolean).join(' / '),
+    _split_receipts: receipts,
+    _split_accounts_differ: accounts.length > 1,
+    _group_offset_amount: offset,
+    amount_cny: cash,
+    direction: offset > 0 ? '收入+账面抵消' : '收入',
+    settlement_directions: offset > 0 ? ['收入', '账面抵消'] : ['收入'],
+    business_breakdown: [{
+      direction: '收入',
+      target_order_number: getBreakdownOrderId(source) || first.order_number,
+      country: source.country || getCountries(first)[0] || '',
+      business_type: source.business_type || getBusinessTypes(first)[0] || '',
+      order_count: Number(source.order_count || first.business_order_count || 0),
+      amount_cny: cash,
+    }],
+  }
+}
+
 function openDetail(row: any) {
-  detailRecord.value = normalizeFinancialRow(row)
+  const group = getSplitGroupRows(row)
+  detailRecord.value = group.length > 1 ? buildSplitDetailRecord(group) : normalizeFinancialRow(row)
   detailOpen.value = true
 }
 
 async function approveRow(row: any) {
-  if (!row?.id || !canApprove(row)) return
-  if (String(row.id).startsWith('mock-ledger-')) {
+  const ids = getSplitGroupRows(row).map(item => item.id).filter(Boolean)
+  if (!ids.length || !canApprove(row)) return
+  const mockIds = ids.filter(id => String(id).startsWith('mock-ledger-'))
+  const realIds = ids.filter(id => !String(id).startsWith('mock-ledger-'))
+  if (mockIds.length) {
     mockRows.value = mockRows.value.map(item =>
-      item.id === row.id
+      mockIds.includes(item.id)
         ? {
             ...item,
             status: '已确认',
@@ -2010,21 +2065,19 @@ async function approveRow(row: any) {
           }
         : item,
     )
-    message.success('已审批')
-    selectedRowKeys.value = selectedRowKeys.value.filter(id => id !== row.id)
-    loadData(); loadStats()
-    return
   }
-  await supabase
-    .from('financial_transactions')
-    .update({
-      status: '已确认',
-      handler_name: currentUser.value?.name || row.handler_name || '',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', row.id)
+  if (realIds.length) {
+    await supabase
+      .from('financial_transactions')
+      .update({
+        status: '已确认',
+        handler_name: currentUser.value?.name || row.handler_name || '',
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', realIds)
+  }
   message.success('已审批')
-  selectedRowKeys.value = selectedRowKeys.value.filter(id => id !== row.id)
+  selectedRowKeys.value = selectedRowKeys.value.filter(id => !ids.includes(id))
   loadData(); loadStats()
 }
 
@@ -2063,10 +2116,14 @@ async function approveSelectedRows() {
   loadData(); loadStats()
 }
 
-async function voidRow(id: string) {
-  if (String(id).startsWith('mock-ledger-')) {
+async function voidSplitRow(row: any) {
+  const ids = getSplitGroupRows(row).map(item => item.id).filter(Boolean)
+  if (!ids.length) return
+  const mockIds = ids.filter(id => String(id).startsWith('mock-ledger-'))
+  const realIds = ids.filter(id => !String(id).startsWith('mock-ledger-'))
+  if (mockIds.length) {
     mockRows.value = mockRows.value.map(item =>
-      item.id === id
+      mockIds.includes(item.id)
         ? {
             ...item,
             status: '已作废',
@@ -2075,21 +2132,25 @@ async function voidRow(id: string) {
           }
         : item,
     )
-    message.success('已作废')
-    selectedRowKeys.value = selectedRowKeys.value.filter(key => key !== id)
-    loadData(); loadStats()
-    return
   }
-  await supabase
-    .from('financial_transactions')
-    .update({
-      status: '已作废',
-      handler_name: currentUser.value?.name || '',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
+  if (realIds.length) {
+    await supabase
+      .from('financial_transactions')
+      .update({
+        status: '已作废',
+        handler_name: currentUser.value?.name || '',
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', realIds)
+  }
   message.success('已作废')
+  selectedRowKeys.value = selectedRowKeys.value.filter(key => !ids.includes(key))
   loadData(); loadStats()
+}
+
+async function voidRow(id: string) {
+  const row = ledgerRows.value.find(item => item.id === id) || { id }
+  await voidSplitRow(row)
 }
 
 onMounted(() => {
@@ -2158,8 +2219,8 @@ onMounted(() => {
 .split-amount-with-offset {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 12px;
 }
 .split-amount-lines {
   display: flex;
@@ -2169,8 +2230,7 @@ onMounted(() => {
 .split-offset-side {
   display: flex;
   align-items: baseline;
-  margin-left: 8px;
-  padding-left: 10px;
+  padding-left: 12px;
   border-left: 1px solid #e5e7eb;
   white-space: nowrap;
 }
@@ -2198,6 +2258,9 @@ onMounted(() => {
 .detail-meta-line { margin-top: 8px; color: #6b7280; font-size: 12px; }
 .detail-amount-line { display: flex; align-items: baseline; gap: 8px; }
 .detail-amount-line + .detail-amount-line { margin-top: 6px; }
+.detail-split-receipt + .detail-split-receipt,
+.detail-split-receipt + .detail-amount-line { margin-top: 8px; }
+.detail-split-account { margin-top: 2px; color: #6b7280; font-size: 12px; }
 .detail-amount-name { color: #6b7280; font-size: 12px; }
 .detail-amount { font-size: 26px; line-height: 1.1; }
 .detail-merge-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
