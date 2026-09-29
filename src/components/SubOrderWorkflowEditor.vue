@@ -55,16 +55,10 @@
             <span v-if="task.buyer_name" class="wf-panel-status done">已匹配</span>
             <span v-else class="wf-panel-status todo">待处理</span>
           </div>
-          <a class="re-edit" @click.stop="task._editing_buyer = true; task._buyer_validation = null">更换买手</a>
+          <a v-if="task.buyer_id" class="re-edit" style="color: #ff4d4f;" @click.stop="handleUnbindBuyer(task)">解绑买手</a>
         </div>
         <div class="wf-panel-body">
-          <div v-if="task.buyer_id && !task._editing_buyer" class="buyer-brief-row">
-            <span class="buyer-name-text">{{ task.buyer_name }}</span>
-          </div>
-          <div v-if="task.buyer_id && !task._editing_buyer && getBuyerBriefMeta(task)" class="buyer-brief-desc">
-            {{ getBuyerBriefMeta(task) }}
-          </div>
-          <div v-if="!task.buyer_id || task._editing_buyer" class="buyer-assign-area">
+          <div class="buyer-assign-area">
             <div class="step-input-row">
               <a-select
                 v-model:value="task._sel_buyer_id"
@@ -74,7 +68,7 @@
                 placeholder="选择买手"
                 size="small"
                 allow-clear
-                @change="(val: string) => onBuyerSelect(task, val)"
+                @change="(val: string) => handleBuyerChange(task, val)"
               >
                 <a-select-option
                   v-for="b in buyerList"
@@ -90,16 +84,14 @@
                   </div>
                 </a-select-option>
               </a-select>
-              <a-button
-                v-if="!effectiveShowUnifiedSubmitButton"
-                type="primary"
-                size="small"
-                :loading="task._saving_buyer || task._validating_buyer"
-                :disabled="!task._sel_buyer_id || task._buyer_validation?.blocked"
-                @click="assignBuyer(task)"
-              >
-                确认分配
-              </a-button>
+              <a-tooltip title="复制买手姓名">
+                <a-button v-if="task._sel_buyer_id" type="text" size="small" @click="copyBuyerName(task)">
+                  <template #icon><CopyOutlined /></template>
+                </a-button>
+              </a-tooltip>
+            </div>
+            <div v-if="task._sel_buyer_id && getBuyerBriefMeta(task)" class="buyer-brief-desc">
+              {{ getBuyerBriefMeta(task) }}
             </div>
             <div v-if="task._validating_buyer" class="buyer-validation-hint checking">验证买手资格...</div>
             <div v-else-if="task._buyer_validation?.blocked" class="buyer-validation-hint blocked">{{ task._buyer_validation.reason }}</div>
@@ -175,6 +167,10 @@
                     <a-radio value="产品额外佣金">产品额外佣金</a-radio>
                   </a-radio-group>
                 </div>
+                <div class="refund-readonly-item">
+                  <label>账单备注</label>
+                  <a-input v-model:value="task._refund_apply_notes" size="small" style="width:160px" />
+                </div>
               </div>
             </div>
           </template>
@@ -239,36 +235,50 @@
               <label>买手 PayPal 邮箱</label>
               <a-input v-model:value="task._buyer_paypal_email" size="small" style="width:240px" placeholder="amanda@example.com" />
             </div>
-            <div v-if="!isNoRefundSelection(task)" class="refund-amount-box">
-              <div class="refund-amount-title">金额明细</div>
-              <div v-if="task._sel_refund_method === 'PayPal'" class="refund-amount-fields">
-                <div class="raf-line">
-                  <span class="raf-label">实付金额</span>
-                  <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+            <div v-if="!isNoRefundSelection(task)" class="refund-amount-layout">
+            <div class="refund-amount-box">
+              <div class="refund-amount-main">
+                <div class="refund-amount-title-row">
+                  <div class="refund-amount-title">金额明细</div>
+                  <slot name="amount-side" :task="task"></slot>
                 </div>
-                <div class="raf-line">
-                  <span class="raf-label">需返金额</span>
-                  <a-input-number v-model:value="task._refund_due_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                <div v-if="task._sel_refund_method === 'PayPal'" class="refund-amount-fields">
+                  <div class="raf-line">
+                    <span class="raf-label">实付金额</span>
+                    <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                  </div>
+                  <div class="raf-line">
+                    <span class="raf-label">需返金额</span>
+                    <a-input-number v-model:value="task._refund_due_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                  </div>
+                  <slot name="amount-offset" :task="task"></slot>
+                  <div class="raf-line">
+                    <span class="raf-label">Paypal手续费</span>
+                    <a-input-number v-model:value="task._refund_fee_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                  </div>
+                  <div class="raf-line raf-total">
+                    <span class="raf-label">申请金额</span>
+                    <span class="raf-total-val">${{ getRefundFinalAmount(task).toFixed(2) }}</span>
+                  </div>
                 </div>
-                <div class="raf-line">
-                  <span class="raf-label">Paypal手续费</span>
-                  <a-input-number v-model:value="task._refund_fee_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                <div v-else class="refund-amount-fields">
+                  <div class="raf-line">
+                    <span class="raf-label">实付金额</span>
+                    <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                  </div>
+                  <slot name="amount-offset" :task="task"></slot>
+                  <div class="raf-line">
+                    <span class="raf-label">申请金额</span>
+                    <span v-if="isGiftApplyComputed(task)" class="raf-total-val">${{ getRefundFinalAmount(task).toFixed(2) }}</span>
+                    <a-input-number v-else v-model:value="task._refund_due_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
+                  </div>
                 </div>
-                <div class="raf-line raf-total">
-                  <span class="raf-label">申请金额</span>
-                  <span class="raf-total-val">${{ getRefundFinalAmount(task).toFixed(2) }}</span>
+                <div class="raf-line refund-billing-note">
+                  <span class="raf-label">账单备注</span>
+                  <a-input v-model:value="task._refund_apply_notes" size="small" style="width:140px" />
                 </div>
               </div>
-              <div v-else class="refund-amount-fields">
-                <div class="raf-line">
-                  <span class="raf-label">实付金额</span>
-                  <a-input-number v-model:value="task._refund_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
-                </div>
-                <div class="raf-line">
-                  <span class="raf-label">申请金额</span>
-                  <a-input-number v-model:value="task._refund_due_amount_usd" size="small" :min="0" :precision="2" style="width:140px" prefix="$" @change="syncRefundComputed(task)" />
-                </div>
-              </div>
+            </div>
             </div>
             <div v-if="!isNoRefundSelection(task) && task._sel_refund_method === 'PayPal'" class="refund-row">
               <a-checkbox v-model:checked="task._need_finance_screenshot">需财务提供水单</a-checkbox>
@@ -415,6 +425,7 @@
 
 <script setup lang="ts">
 import { computed, ref, toRef } from 'vue'
+import { CopyOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 
 type Fn<T extends any[] = any[], R = any> = (...args: T) => R
@@ -456,6 +467,7 @@ const props = withDefaults(defineProps<{
   syncRefundComputed?: Fn<[any], void>
   isNoRefundSelection?: Fn<[any], boolean>
   getRefundFinalAmount?: Fn<[any], number>
+  isGiftApplyComputed?: Fn<[any], boolean>
   refundSubmitButtonText?: Fn<[any], string>
   submitRefundRequest?: Fn<[any], void>
   isPrepayMode?: Fn<[any], boolean>
@@ -501,6 +513,7 @@ const props = withDefaults(defineProps<{
   syncRefundComputed: () => undefined,
   isNoRefundSelection: () => false,
   getRefundFinalAmount: () => 0,
+  isGiftApplyComputed: () => false,
   refundSubmitButtonText: () => '提交返款申请',
   submitRefundRequest: () => undefined,
   isPrepayMode: () => false,
@@ -547,6 +560,7 @@ const {
   syncRefundComputed,
   isNoRefundSelection,
   getRefundFinalAmount,
+  isGiftApplyComputed,
   refundSubmitButtonText,
   submitRefundRequest,
   isPrepayMode,
@@ -603,6 +617,34 @@ function getKeywordDisplay(currentTask: any) {
 function shouldShowVariantInfo(value: any) {
   const raw = String(value || '').trim()
   return !!raw && raw !== '无变体'
+}
+
+function handleBuyerChange(currentTask: any, val: string) {
+  onBuyerSelect(currentTask, val)
+  if (val && !effectiveShowUnifiedSubmitButton.value) {
+    assignBuyer(currentTask)
+  }
+}
+
+function handleUnbindBuyer(currentTask: any) {
+  currentTask._sel_buyer_id = undefined
+  onBuyerSelect(currentTask, '')
+  if (!effectiveShowUnifiedSubmitButton.value) {
+    assignBuyer(currentTask)
+  }
+}
+
+async function copyBuyerName(currentTask: any) {
+  const buyerId = currentTask._sel_buyer_id
+  if (!buyerId) return
+  const buyer = props.buyerList.find(b => b.id === buyerId)
+  if (!buyer?.name) return
+  try {
+    await navigator.clipboard.writeText(buyer.name)
+    message.success('买手姓名已复制')
+  } catch (err) {
+    message.error('复制失败，请手动复制')
+  }
 }
 
 function getBuyerBriefMeta(currentTask: any) {
@@ -1273,18 +1315,34 @@ async function handleUnifiedSubmit() {
   padding: 8px 10px;
 }
 
+.refund-amount-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
 .refund-amount-box {
+  flex: 1;
+  min-width: 0;
   border: 1px dashed #bfdbfe;
   border-radius: 8px;
   background: #eff6ff;
   padding: 10px 12px;
+}
+.refund-amount-main {
+  min-width: 0;
+}
+
+.refund-amount-title-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
 }
 
 .refund-amount-title {
   font-size: 12px;
   color: #1a1a2e;
   font-weight: 600;
-  margin-bottom: 8px;
 }
 
 .refund-product-ref {
@@ -1310,6 +1368,10 @@ async function handleUnifiedSubmit() {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.refund-billing-note {
+  margin-top: 8px;
 }
 
 .raf-label {

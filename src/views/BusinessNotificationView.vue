@@ -2770,7 +2770,7 @@ function fmtTime(value: string | null) {
 }
 
 .notification-tabs :deep(.notification-row-marked td) {
-  background: rgba(5, 150, 105, 0.08) !important;
+  background: rgba(5, 150, 105, 0.2) !important;
 }
 
 .product-image {

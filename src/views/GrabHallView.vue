@@ -125,19 +125,23 @@
 
               <div class="task-stats hall-task-stats">
                 <div class="stat-item stat-item-main">
-                  <span class="stat-label">总待抢单</span>
-                  <span class="stat-val stat-total">{{ group.subCount }}</span>
+                  <span class="stat-label">任务当前余量</span>
+                  <span class="hall-quota-nums">
+                    <span class="hall-quota-remain">{{ Number(group.todayRemaining || 0) }}</span>
+                    <span class="hall-quota-sep">/</span>
+                    <span class="hall-quota-total">{{ Number(group.todayQuota || 0) }}</span>
+                  </span>
                   <span class="stat-sub-metrics">
-                    <span>今日待抢 <span class="stat-sub-danger">{{ group.updatedTodayCount }}</span></span>
+                    <span>当前可抢 <span class="stat-sub-grabable">{{ Number(group.todayGrabable || 0) }}</span></span>
                     <span class="stat-sub-divider"></span>
-                    <span>今日已抢 {{ group.grabbedTodayCount }}</span>
+                    <span>今日已抢 {{ Number(group.grabbedTodayCount || 0) }}</span>
                   </span>
                 </div>
                 <div class="stat-divider"></div>
                 <div class="stat-item">
                   <span class="stat-label">最长逾期</span>
-                  <span class="stat-val stat-total">
-                    {{ getGroupMaxExpiredDays(group) }}<span class="stat-unit">天</span>
+                  <span class="stat-overdue-days">
+                    {{ getGroupMaxExpiredDays(group) }}天
                   </span>
                 </div>
               </div>
@@ -193,7 +197,8 @@
                       type="primary"
                       size="small"
                       :loading="grabbingId === order.id"
-                      :disabled="!!grabbingId && grabbingId !== order.id"
+                      :disabled="isGrabButtonDisabled(order, group)"
+                      :title="getGrabDisabledReason(order, group)"
                       @click="grabOne(order)"
                       class="grab-btn hall-inline-btn"
                     >
@@ -250,7 +255,8 @@
                   type="primary"
                   size="small"
                   :loading="grabbingId === order.id"
-                  :disabled="!!grabbingId && grabbingId !== order.id"
+                  :disabled="isGrabButtonDisabled(order)"
+                  :title="getGrabDisabledReason(order)"
                   @click="grabOne(order)"
                   class="grab-btn hall-inline-btn"
                 >
@@ -517,6 +523,13 @@ const logs = ref<any[]>([])
 const todayGrabbedOrders = ref<any[]>([])
 const staffList = ref<any[]>([])
 const grabbingId = ref('')
+/** 页面预览用的当日放单/已下单，真实计入规则由技术接入 */
+const HALL_UI_DAILY_QUOTA: Record<string, { quota: number; placed: number }> = {
+  // 演示：可抢2（2张排期已到可点），另2张明日排期按钮置灰
+  'preview-order-001': { quota: 5, placed: 3 },
+  'preview-order-002': { quota: 2, placed: 2 },
+  'preview-order-003': { quota: 4, placed: 1 },
+}
 const grabbedEditSubOrderId = ref('')
 const grabbedEditRecord = ref<any>(null)
 const expandedGroupKeys = ref<string[]>([])
@@ -716,6 +729,39 @@ function getTodayGrabbedCountForOrder(orderKey: string) {
 function isExpired(dateStr: string) {
   if (!dateStr) return false
   return dayjs(dateStr).isBefore(dayjs(), 'day')
+}
+
+function isFutureSchedule(dateStr: string | null | undefined) {
+  if (!dateStr) return false
+  return dayjs(dateStr).isAfter(dayjs(), 'day')
+}
+
+function isHallTicketDueToday(dateStr: string | null | undefined) {
+  return !isFutureSchedule(dateStr)
+}
+
+function getHallGroupByOrder(order: any) {
+  const orderKey = String(order?.order_id || order?.order_number || '').trim()
+  return hallOrderGroups.value.find((group: any) => String(group.order_id || '') === orderKey) || null
+}
+
+function getGrabDisabledReason(order: any, group?: any) {
+  if (grabbingId.value && grabbingId.value !== order.id) return '正在抢其他订单'
+  if (isFutureSchedule(order.scheduled_date)) return '排期未到，今日不可抢'
+  const target = group || getHallGroupByOrder(order)
+  if ((target?.todayGrabable || 0) <= 0) return '今日可抢为 0，不可抢单'
+  return ''
+}
+
+function isGrabButtonDisabled(order: any, group?: any) {
+  return !!getGrabDisabledReason(order, group)
+}
+
+function getUiDailyQuota(group: any) {
+  const preview = HALL_UI_DAILY_QUOTA[String(group.order_id || '')]
+  if (preview) return preview
+  const dueCount = (group.subs || []).filter((sub: any) => isHallTicketDueToday(sub.scheduled_date)).length
+  return { quota: Math.max(dueCount, 1), placed: 0 }
 }
 
 function isExpiringSoon(dateStr: string) {
@@ -941,14 +987,29 @@ function buildHallGroups(sourceOrders: any[]) {
   }
 
   return Array.from(groupMap.values())
-    .map(group => ({
-      ...group,
-      subCount: group.subs.length,
-      grabbedTodayCount: getTodayGrabbedCountForOrder(group.order_id),
-      updatedTodayCount: group.subs.filter((sub: any) => isTodayActivity(sub.released_at || sub.updated_at || sub.created_at)).length,
-    }))
+    .map(group => {
+      const grabbedTodayCount = getTodayGrabbedCountForOrder(group.order_id)
+      const dueHallCount = group.subs.filter((sub: any) => isHallTicketDueToday(sub.scheduled_date)).length
+      const { quota, placed } = getUiDailyQuota(group)
+      const todayQuota = Math.max(0, Number(quota || 0))
+      const todayRemaining = Math.max(0, todayQuota - Math.max(0, Number(placed || 0)))
+      const todayGrabable = Math.max(0, Math.min(dueHallCount, todayRemaining))
+      return {
+        ...group,
+        subCount: group.subs.length,
+        grabbedTodayCount,
+        updatedTodayCount: group.subs.filter((sub: any) => isTodayActivity(sub.released_at || sub.updated_at || sub.created_at)).length,
+        todayQuota,
+        todayRemaining,
+        todayGrabable,
+      }
+    })
     .sort((a, b) => {
-      if (b.updatedTodayCount !== a.updatedTodayCount) return b.updatedTodayCount - a.updatedTodayCount
+      // 演示主任务置顶：库存>可抢且按钮置灰
+      const aDemo = String(a.order_id || '') === 'preview-order-001' ? 0 : 1
+      const bDemo = String(b.order_id || '') === 'preview-order-001' ? 0 : 1
+      if (aDemo !== bDemo) return aDemo - bDemo
+      if (b.todayGrabable !== a.todayGrabable) return b.todayGrabable - a.todayGrabable
       if (b.subCount !== a.subCount) return b.subCount - a.subCount
       return (a.order_number || '').localeCompare(b.order_number || '')
     })
@@ -962,34 +1023,32 @@ function buildHallPreviewRows() {
       order_id: 'preview-order-001',
       order_number: 'ORD-PREVIEW-001',
       sub_order_number: 'SUB-PREVIEW-001',
-      asin: 'B0C8PX21LM',
-      product_name: 'Portable Blender Personal Size',
+      asin: 'B0JUICE001',
+      product_name: '便携式榨汁机 Juicer Demo',
       product_image: '',
       store_name: 'US-Preview-Store',
       brand_name: 'BlendNova',
       category: 'Kitchen',
       variant_info: '粉色便携款',
-      keyword: 'portable blender',
+      keyword: 'portable juicer',
       customer_name: '杭州云海贸易',
-      task_notes: '预览数据：优先匹配北美买手',
+      task_notes: '演示：今日可抢2；2张排期已到可抢，2张明日/后日按钮置灰',
       country: '美国',
       order_type: '图片',
       review_type: '图片',
       review_level: '高等',
       sales_person: 'Luna',
-      buyer_name: 'Emma',
-      buyer_id: 'preview-buyer-001',
-      buyer_chat_id: 'CHAT-90217',
-      buyer_paypal_email: 'emma-preview@example.com',
+      buyer_name: '',
+      buyer_id: '',
       product_price: 39.99,
-      scheduled_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
+      scheduled_date: now.subtract(3, 'day').format('YYYY-MM-DD'),
       refund_sequence: '预付',
       refund_method: '',
       refund_status: '未返款',
       status: '待分配',
       amazon_order_id: '',
-      notes: '预览交互：待下单场景',
-      created_at: now.subtract(1, 'day').toISOString(),
+      notes: '演示可抢：超期漏单1',
+      created_at: now.subtract(3, 'day').toISOString(),
       released_at: now.subtract(2, 'hour').toISOString(),
     },
     {
@@ -997,24 +1056,23 @@ function buildHallPreviewRows() {
       order_id: 'preview-order-001',
       order_number: 'ORD-PREVIEW-001',
       sub_order_number: 'SUB-PREVIEW-002',
-      asin: 'B0C8PX21LM',
-      product_name: 'Portable Blender Personal Size',
+      asin: 'B0JUICE001',
+      product_name: '便携式榨汁机 Juicer Demo',
       product_image: '',
       store_name: 'US-Preview-Store',
       brand_name: 'BlendNova',
       category: 'Kitchen',
       variant_info: '蓝色便携款',
-      keyword: 'personal blender',
+      keyword: 'personal juicer',
       customer_name: '杭州云海贸易',
-      task_notes: '预览数据：同一个主订单的第二个子单',
+      task_notes: '演示：今日可抢2；2张排期已到可抢，2张明日/后日按钮置灰',
       country: '美国',
       order_type: '文字',
       review_type: '文字',
       review_level: '普通',
       sales_person: 'Luna',
-      buyer_name: 'Sophia',
-      buyer_id: 'preview-buyer-002',
-      buyer_chat_id: 'TG-11802',
+      buyer_name: '',
+      buyer_id: '',
       product_price: 39.99,
       scheduled_date: now.format('YYYY-MM-DD'),
       refund_sequence: '出单后返',
@@ -1022,9 +1080,75 @@ function buildHallPreviewRows() {
       refund_status: '未返款',
       status: '待分配',
       amazon_order_id: '',
-      notes: '预览交互：同主订单分组测试',
-      created_at: now.subtract(1, 'day').toISOString(),
+      notes: '演示可抢：今日排期2',
+      created_at: now.subtract(2, 'day').toISOString(),
       released_at: now.subtract(90, 'minute').toISOString(),
+    },
+    {
+      id: 'preview-sub-order-001b',
+      order_id: 'preview-order-001',
+      order_number: 'ORD-PREVIEW-001',
+      sub_order_number: 'SUB-PREVIEW-001B',
+      asin: 'B0JUICE001',
+      product_name: '便携式榨汁机 Juicer Demo',
+      product_image: '',
+      store_name: 'US-Preview-Store',
+      brand_name: 'BlendNova',
+      category: 'Kitchen',
+      variant_info: '白色便携款',
+      keyword: 'juicer cup',
+      customer_name: '杭州云海贸易',
+      task_notes: '演示：今日可抢2；2张排期已到可抢，2张明日/后日按钮置灰',
+      country: '美国',
+      order_type: '文字',
+      review_type: '文字',
+      review_level: '普通',
+      sales_person: 'Luna',
+      buyer_name: '',
+      buyer_id: '',
+      product_price: 39.99,
+      scheduled_date: now.add(1, 'day').format('YYYY-MM-DD'),
+      refund_sequence: '出单后返',
+      refund_method: '礼品卡',
+      refund_status: '未返款',
+      status: '待分配',
+      amazon_order_id: '',
+      notes: '演示置灰：明日排期不可抢',
+      created_at: now.subtract(1, 'day').toISOString(),
+      released_at: now.subtract(50, 'minute').toISOString(),
+    },
+    {
+      id: 'preview-sub-order-001c',
+      order_id: 'preview-order-001',
+      order_number: 'ORD-PREVIEW-001',
+      sub_order_number: 'SUB-PREVIEW-001C',
+      asin: 'B0JUICE001',
+      product_name: '便携式榨汁机 Juicer Demo',
+      product_image: '',
+      store_name: 'US-Preview-Store',
+      brand_name: 'BlendNova',
+      category: 'Kitchen',
+      variant_info: '黑色便携款',
+      keyword: 'usb juicer',
+      customer_name: '杭州云海贸易',
+      task_notes: '演示：今日可抢2；2张排期已到可抢，2张明日/后日按钮置灰',
+      country: '美国',
+      order_type: '图片',
+      review_type: '图片',
+      review_level: '高等',
+      sales_person: 'Luna',
+      buyer_name: '',
+      buyer_id: '',
+      product_price: 39.99,
+      scheduled_date: now.add(2, 'day').format('YYYY-MM-DD'),
+      refund_sequence: '预付',
+      refund_method: '',
+      refund_status: '未返款',
+      status: '待分配',
+      amazon_order_id: '',
+      notes: '演示置灰：后日排期不可抢',
+      created_at: now.subtract(5, 'hour').toISOString(),
+      released_at: now.subtract(20, 'minute').toISOString(),
     },
     {
       id: 'preview-sub-order-003',
@@ -1056,7 +1180,7 @@ function buildHallPreviewRows() {
       refund_status: '未返款',
       status: '待分配',
       amazon_order_id: '',
-      notes: '预览交互：子订单平铺测试',
+      notes: '预览交互：明日排期不可抢',
       created_at: now.subtract(2, 'day').toISOString(),
       released_at: now.subtract(1, 'hour').toISOString(),
     },
@@ -1084,13 +1208,13 @@ function buildHallPreviewRows() {
       buyer_id: 'preview-buyer-004',
       buyer_chat_id: 'LINE-44902',
       product_price: 54.2,
-      scheduled_date: now.add(2, 'day').format('YYYY-MM-DD'),
+      scheduled_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
       refund_sequence: '预付',
       refund_method: 'PayPal',
       refund_status: '未返款',
       status: '待分配',
       amazon_order_id: '',
-      notes: '预览交互：高等级视频评',
+      notes: '预览：余量还有、可抢1',
       created_at: now.subtract(3, 'day').toISOString(),
       released_at: now.subtract(30, 'minute').toISOString(),
     },
@@ -1131,13 +1255,17 @@ async function loadHall() {
       .eq('status', '待分配')
       .order('released_at', { ascending: false })
     if (error) throw error
-    const rows = data?.length ? data : buildHallPreviewRows()
+    // 演示数据始终前置，保证能看到「库存>可抢、按钮置灰」
+    const previewRows = buildHallPreviewRows()
+    const realRows = data || []
+    const rows = [...previewRows, ...realRows]
     hallOrders.value = rows
-    expandedGroupKeys.value = Array.from(new Set(rows.map((item: any) => item.order_id || item.order_number || item.id)))
+    // 默认展开演示主任务，方便看置灰抢单按钮
+    expandedGroupKeys.value = ['preview-order-001']
   } catch {
     const rows = buildHallPreviewRows()
     hallOrders.value = rows
-    expandedGroupKeys.value = Array.from(new Set(rows.map((item: any) => item.order_id || item.order_number || item.id)))
+    expandedGroupKeys.value = ['preview-order-001']
   } finally {
     loading.value = false
   }
@@ -1204,6 +1332,11 @@ async function loadStaff() {
 
 async function grabOne(record: any) {
   if (grabbingId.value) return
+  const disabledReason = getGrabDisabledReason(record)
+  if (disabledReason) {
+    message.warning(disabledReason)
+    return
+  }
   grabbingId.value = record.id
   try {
     const staff = resolveGrabStaff()
@@ -1507,11 +1640,39 @@ onMounted(() => {
 }
 .hall-task-stats { min-width: 220px; }
 .stat-item { display: flex; flex-direction: column; align-items: center; min-width: 52px; gap: 2px; }
-.stat-item-main { min-width: 86px; }
-.stat-label { font-size: 11px; color: #9ca3af; line-height: 1; }
-.stat-val { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.stat-item-main { min-width: 110px; }
+.stat-label { font-size: 11px; color: #9ca3af; line-height: 1; white-space: nowrap; }
+.stat-val { font-size: 20px; font-weight: 700; line-height: 1.2; color: #1a1a2e; }
 .stat-unit { font-size: 12px; font-weight: 400; color: #9ca3af; margin-left: 1px; }
-.stat-total { color: #1a1a2e; }
+.hall-quota-nums {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  line-height: 1.2;
+}
+.hall-quota-remain {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #1a1a2e;
+}
+.hall-quota-sep {
+  font-size: 14px;
+  font-weight: 600;
+  color: #9ca3af;
+  margin: 0 1px;
+}
+.hall-quota-total {
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.stat-overdue-days {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #6b7280;
+}
 .stat-schedule { color: #f59e0b; }
 .stat-overdue { color: #dc2626; }
 .stat-sub-metrics {
@@ -1525,7 +1686,12 @@ onMounted(() => {
   color: #6b7280;
   font-weight: 500;
 }
-.stat-sub-danger { color: #dc2626; font-weight: 700; }
+.stat-sub-grabable {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  color: #dc2626;
+}
 .stat-sub-divider {
   width: 1px;
   height: 10px;

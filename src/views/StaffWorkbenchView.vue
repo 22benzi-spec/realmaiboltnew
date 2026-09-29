@@ -66,8 +66,6 @@
               </span>
             </div>
             <div class="filter-right">
-              <a-checkbox v-if="wbNav === 'pending'" v-model:checked="filterTomorrow" @change="filterTaskList">明日</a-checkbox>
-              <a-checkbox v-if="wbNav === 'pending'" v-model:checked="filterDayAfterTomorrow" @change="filterTaskList">后日</a-checkbox>
               <a-input-search
                 v-model:value="taskSearch"
                 :placeholder="taskSearchPlaceholder"
@@ -172,24 +170,31 @@
                       </div>
 
                       <div class="main-order-stats">
-                        <div class="main-order-stat-item">
-                          <span class="main-order-stat-label">待操作</span>
-                          <span class="main-order-stat-value">{{ group.actionableSubCount }}<span class="main-order-stat-unit">单</span></span>
+                        <div class="main-order-quota">
+                          <div class="main-order-quota-head">
+                            <span class="main-order-stat-label">任务当前余量</span>
+                            <span class="main-order-quota-nums">
+                              <span
+                                :class="[
+                                  'main-order-quota-remain',
+                                  group.todayRemaining > 0 ? 'is-available' : 'is-empty',
+                                ]"
+                              >{{ group.todayRemaining }}</span>
+                              <span class="main-order-quota-sep">/</span>
+                              <span class="main-order-quota-total">{{ group.todayQuota }}</span>
+                            </span>
+                          </div>
                         </div>
-                        <div class="main-order-stat-divider"></div>
-                        <div class="main-order-stat-item">
-                          <span class="main-order-stat-label">今日</span>
-                          <span class="main-order-stat-value">{{ group.todayCount }}<span class="main-order-stat-unit">单</span></span>
-                        </div>
-                        <div class="main-order-stat-divider"></div>
-                        <div class="main-order-stat-item">
-                          <span class="main-order-stat-label">明日</span>
-                          <span class="main-order-stat-value">{{ group.tomorrowCount }}<span class="main-order-stat-unit">单</span></span>
-                        </div>
-                        <div class="main-order-stat-divider"></div>
-                        <div class="main-order-stat-item">
-                          <span class="main-order-stat-label">后日</span>
-                          <span class="main-order-stat-value">{{ group.dayAfterTomorrowCount }}<span class="main-order-stat-unit">单</span></span>
+                        <div class="main-order-stat-row">
+                          <div class="main-order-stat-item">
+                            <span class="main-order-stat-label">我的当前余量</span>
+                            <span class="main-order-stat-value is-today">{{ group.myCurrentRemaining }}<span class="main-order-stat-unit">单</span></span>
+                          </div>
+                          <div class="main-order-stat-divider"></div>
+                          <div class="main-order-stat-item">
+                            <span class="main-order-stat-label">剩余已分配</span>
+                            <span class="main-order-stat-value is-remaining">{{ group.remainingAssignedCount }}<span class="main-order-stat-unit">单</span></span>
+                          </div>
                         </div>
                       </div>
 
@@ -213,7 +218,8 @@
                         <div>店铺</div>
                         <div>操作</div>
                       </div>
-                      <div v-for="sub in group.subs" :key="sub.id" class="inline-sub-grid inline-sub-row">
+                      <div v-if="group.currentWindowSubs.length === 0" class="inline-sub-empty">当前窗口暂无待分配子订单</div>
+                      <div v-for="sub in group.currentWindowSubs" :key="sub.id" class="inline-sub-grid inline-sub-row">
                         <div class="inline-sub-no">{{ sub.sub_order_number }}</div>
                         <div class="inline-sub-product">
                           <div class="inline-sub-product-name">{{ sub.product_name || '—' }}</div>
@@ -250,6 +256,61 @@
                           <a-button size="small" type="primary" ghost @click.stop="openTaskEditor(sub)">编辑</a-button>
                         </div>
                       </div>
+                      <button
+                        v-if="group.remainingAssignedSubs.length > 0"
+                        type="button"
+                        class="remaining-assign-toggle"
+                        :aria-expanded="expandedRemainingOrderIds.includes(group.order_id)"
+                        @click.stop="toggleRemainingExpand(group.order_id)"
+                      >
+                        <span class="remaining-assign-toggle-main">
+                          <span class="remaining-assign-title">剩余已分配</span>
+                          <span class="remaining-assign-count">{{ group.remainingAssignedCount }} 单</span>
+                          <span class="remaining-assign-toggle-action">
+                            {{ expandedRemainingOrderIds.includes(group.order_id) ? '收起' : '展开' }}
+                            <RightOutlined :class="['remaining-assign-icon', { expanded: expandedRemainingOrderIds.includes(group.order_id) }]" />
+                          </span>
+                        </span>
+                      </button>
+                      <template v-if="expandedRemainingOrderIds.includes(group.order_id)">
+                        <div v-for="sub in group.remainingAssignedSubs" :key="sub.id" class="inline-sub-grid inline-sub-row">
+                          <div class="inline-sub-no">{{ sub.sub_order_number }}</div>
+                          <div class="inline-sub-product">
+                            <div class="inline-sub-product-name">{{ sub.product_name || '—' }}</div>
+                            <div class="inline-sub-asin">{{ sub.asin || '—' }}</div>
+                          </div>
+                          <div>
+                            <span v-if="sub.scheduled_date" :class="isOverdue(sub.scheduled_date) ? 'inline-date-overdue' : 'inline-date-normal'">{{ sub.scheduled_date }}</span>
+                            <span v-else class="text-gray">—</span>
+                          </div>
+                          <div>
+                            <a-tag v-if="sub.review_level" color="gold" size="small">{{ getReviewLevelLabel(sub.review_level) }}</a-tag>
+                            <span v-else class="text-gray">—</span>
+                          </div>
+                          <div>
+                            <a-tag
+                              v-if="formatReviewType(sub.review_type || sub.order_type)"
+                              :color="getWorkbenchOrderTypeColor(sub.review_type || sub.order_type)"
+                              size="small"
+                            >
+                              {{ formatReviewType(sub.review_type || sub.order_type) }}
+                            </a-tag>
+                            <span v-else class="text-gray">—</span>
+                          </div>
+                          <div class="inline-sub-price">${{ Number(sub.product_price || 0).toFixed(2) }}</div>
+                          <div>
+                            <span v-if="sub.keyword" class="inline-keyword">{{ sub.keyword }}</span>
+                            <span v-else class="text-gray">—</span>
+                          </div>
+                          <div>
+                            <span>{{ sub.store_name || '—' }}</span>
+                          </div>
+                          <div class="inline-sub-actions">
+                            <a-button size="small" @click.stop="openTaskOpsDetail(sub)">详情</a-button>
+                            <a-button size="small" type="primary" ghost @click.stop="openTaskEditor(sub)">编辑</a-button>
+                          </div>
+                        </div>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -682,6 +743,7 @@
                   :sync-refund-computed="syncRefundComputed"
                   :is-no-refund-selection="isNoRefundSelection"
                   :get-refund-final-amount="getRefundFinalAmount"
+                  :is-gift-apply-computed="isGiftApplyComputed"
                   :refund-submit-button-text="refundSubmitButtonText"
                   :submit-refund-request="submitRefundRequest"
                   :is-prepay-mode="isPrepayMode"
@@ -690,7 +752,58 @@
                   :save-order-notes="saveWorkbenchOrderNotes"
                   :on-open-replace-product="openReplaceProductModal"
                   :format-audit-edit="formatAuditEdit"
-                />
+                >
+                  <template #amount-side="{ task: carryTask }">
+                    <div v-if="showWorkbenchCarry(carryTask)" class="wb-carry-block">
+                      <span class="wb-carry-label">挂账金额</span>
+                      <span class="wb-carry-amount">${{ getWorkbenchCarryDisplay(carryTask).toFixed(2) }}</span>
+                      <a-button
+                        v-if="getWorkbenchCarryRemaining(carryTask) > 0 || isCarryOffsetEditing(carryTask)"
+                        type="link"
+                        size="small"
+                        class="wb-carry-action"
+                        @click="toggleCarryOffset(carryTask)"
+                      >
+                        {{ isCarryOffsetEditing(carryTask) ? '收起' : '抵消' }}
+                      </a-button>
+                    </div>
+                  </template>
+                  <template #amount-offset="{ task: carryTask }">
+                    <div v-if="isCarryOffsetEditing(carryTask) || getWorkbenchOffsetDisplay(carryTask) > 0" class="wb-carry-offset-line">
+                      <template v-if="isCarryOffsetEditing(carryTask)">
+                        <span class="wb-offset-label">抵消金额</span>
+                        <a-input-number
+                          v-model:value="carryOffsetForm.amount"
+                          size="small"
+                          :min="0"
+                          :precision="2"
+                          :controls="false"
+                          placeholder="金额"
+                          style="width:140px"
+                          prefix="$"
+                        />
+                        <span class="wb-offset-label wb-offset-inline-label">流水号</span>
+                        <a-select
+                          v-model:value="carryOffsetForm.flowNo"
+                          size="small"
+                          show-search
+                          allow-clear
+                          placeholder="输入流水号"
+                          style="width:140px"
+                          :options="getCarryFlowOptions(carryTask)"
+                          :filter-option="filterCarryFlowNo"
+                        />
+                        <a-button type="link" size="small" class="wb-carry-action" @click="submitCarryOffset">确认</a-button>
+                      </template>
+                      <template v-else>
+                        <span class="wb-offset-label">抵消金额</span>
+                        <span class="wb-offset-value">${{ getWorkbenchOffsetDisplay(carryTask).toFixed(2) }}</span>
+                        <span class="wb-offset-label wb-offset-inline-label">流水号</span>
+                        <span class="wb-offset-value">{{ carryTask._carry_offset_flow_no || '—' }}</span>
+                      </template>
+                    </div>
+                  </template>
+                </SubOrderWorkflowEditor>
                 <div class="workflow-footer">
                   <a-button size="small" ghost style="color:#f59e0b;border-color:#f59e0b" @click="releaseToHall(task)">↗️ 放到抢单大厅</a-button>
                   <span class="wf-footer-divider">|</span>
@@ -728,17 +841,10 @@
                         <span v-if="task.buyer_name" class="wf-panel-status done">已匹配</span>
                         <span v-else class="wf-panel-status todo">待处理</span>
                       </div>
-                      <a class="re-edit" @click.stop="task._editing_buyer = true; task._buyer_validation = null">更换买手</a>
+                      <a v-if="task.buyer_id" class="re-edit" style="color: #ff4d4f;" @click.stop="handleUnbindBuyer(task)">解绑买手</a>
                     </div>
                     <div class="wf-panel-body">
-                        <div v-if="task.buyer_id && !task._editing_buyer" class="buyer-brief-row">
-                          <UserOutlined />
-                          <span class="buyer-name-text">{{ task.buyer_name }}</span>
-                        </div>
-                        <div v-if="task.buyer_id && !task._editing_buyer" class="buyer-brief-desc">
-                          {{ task.buyer?.country || '—' }} · {{ task.buyer?.level || '—' }}
-                        </div>
-                        <div v-if="!task.buyer_id || task._editing_buyer" class="buyer-assign-area">
+                        <div class="buyer-assign-area">
                           <div class="step-input-row">
                             <a-select
                               v-model:value="task._sel_buyer_id"
@@ -748,7 +854,7 @@
                               placeholder="选择买手"
                               size="small"
                               allow-clear
-                              @change="(val: string) => onBuyerSelect(task, val)"
+                              @change="(val: string) => handleBuyerChange(task, val)"
                             >
                               <a-select-option v-for="b in buyerList" :key="b.id" :value="b.id" :label="b.name" :disabled="!!getBuyerBlockReason(task, b.id)">
                                 <div class="buyer-opt-row">
@@ -758,12 +864,14 @@
                                 </div>
                               </a-select-option>
                             </a-select>
-                            <a-button
-                              type="primary" size="small"
-                              :loading="task._saving_buyer || task._validating_buyer"
-                              :disabled="!task._sel_buyer_id || task._buyer_validation?.blocked"
-                              @click="assignBuyer(task)"
-                            >确认分配</a-button>
+                            <a-tooltip title="复制买手姓名">
+                              <a-button v-if="task._sel_buyer_id" type="text" size="small" @click="copyBuyerName(task)">
+                                <template #icon><CopyOutlined /></template>
+                              </a-button>
+                            </a-tooltip>
+                          </div>
+                          <div v-if="task._sel_buyer_id" class="buyer-brief-desc">
+                            {{ task.buyer?.country || '—' }} · {{ task.buyer?.level || '—' }}
                           </div>
                           <div v-if="task._validating_buyer" class="buyer-validation-hint checking">
                             <LoadingOutlined /> 验证买手资格...
@@ -1270,6 +1378,7 @@
         :sync-refund-computed="syncRefundComputed"
         :is-no-refund-selection="isNoRefundSelection"
         :get-refund-final-amount="getRefundFinalAmount"
+        :is-gift-apply-computed="isGiftApplyComputed"
         :refund-submit-button-text="refundSubmitButtonText"
         :submit-refund-request="submitRefundRequest"
         :is-prepay-mode="isPrepayMode"
@@ -1281,7 +1390,58 @@
         :transfer-to-other="openTransferModal"
         :on-open-replace-product="openReplaceProductModal"
         :format-audit-edit="formatAuditEdit"
-      />
+      >
+        <template #amount-side="{ task: carryTask }">
+          <div v-if="showWorkbenchCarry(carryTask)" class="wb-carry-block">
+            <span class="wb-carry-label">挂账金额</span>
+            <span class="wb-carry-amount">${{ getWorkbenchCarryDisplay(carryTask).toFixed(2) }}</span>
+            <a-button
+              v-if="getWorkbenchCarryRemaining(carryTask) > 0 || isCarryOffsetEditing(carryTask)"
+              type="link"
+              size="small"
+              class="wb-carry-action"
+              @click="toggleCarryOffset(carryTask)"
+            >
+              {{ isCarryOffsetEditing(carryTask) ? '收起' : '抵消' }}
+            </a-button>
+          </div>
+        </template>
+        <template #amount-offset="{ task: carryTask }">
+          <div v-if="isCarryOffsetEditing(carryTask) || getWorkbenchOffsetDisplay(carryTask) > 0" class="wb-carry-offset-line">
+            <template v-if="isCarryOffsetEditing(carryTask)">
+              <span class="wb-offset-label">抵消金额</span>
+              <a-input-number
+                v-model:value="carryOffsetForm.amount"
+                size="small"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                placeholder="金额"
+                style="width:140px"
+                prefix="$"
+              />
+              <span class="wb-offset-label wb-offset-inline-label">流水号</span>
+              <a-select
+                v-model:value="carryOffsetForm.flowNo"
+                size="small"
+                show-search
+                allow-clear
+                placeholder="输入流水号"
+                style="width:140px"
+                :options="getCarryFlowOptions(carryTask)"
+                :filter-option="filterCarryFlowNo"
+              />
+              <a-button type="link" size="small" class="wb-carry-action" @click="submitCarryOffset">确认</a-button>
+            </template>
+            <template v-else>
+              <span class="wb-offset-label">抵消金额</span>
+              <span class="wb-offset-value">${{ getWorkbenchOffsetDisplay(carryTask).toFixed(2) }}</span>
+              <span class="wb-offset-label wb-offset-inline-label">流水号</span>
+              <span class="wb-offset-value">{{ carryTask._carry_offset_flow_no || '—' }}</span>
+            </template>
+          </div>
+        </template>
+      </SubOrderWorkflowEditor>
     </a-modal>
 
     <a-modal
@@ -1381,6 +1541,9 @@
               </template>
               <a-form-item v-else label="申请金额">
                 <a-input-number v-model:value="replaceProductForm.targetRefundAmount" :min="0" :precision="2" prefix="$" style="width:100%" />
+              </a-form-item>
+              <a-form-item label="账单备注">
+                <a-input v-model:value="replaceProductForm.billingNote" />
               </a-form-item>
             </div>
             <a-alert
@@ -1597,16 +1760,18 @@
         </template>
       </a-spin>
     </a-drawer>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
+import { applyCarryOffset, getCarryItemsForBuyer, getCarryRemainingForBuyer } from '../utils/buyerCarryBalance'
 import {
   TeamOutlined, UserOutlined, CheckCircleFilled,
   SwapOutlined, LoadingOutlined, ExclamationCircleOutlined,
-  ArrowRightOutlined, ClockCircleOutlined, RightOutlined
+  ArrowRightOutlined, ClockCircleOutlined, RightOutlined, CopyOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -1651,11 +1816,11 @@ const staffList = ref<any[]>([])
 const selectedStaffId = ref('')
 const allTasks = ref<any[]>([])
 const filteredTasks = ref<any[]>([])
+/** 主订单维度：当日排期放单量与今日已出单量 */
+const orderDailyQuotaMap = ref<Record<string, { quota: number; used: number }>>({})
 const tasksLoading = ref(false)
 const taskFilter = ref('')
 const taskSearch = ref('')
-const filterTomorrow = ref(false)
-const filterDayAfterTomorrow = ref(false)
 const filterSoon = ref(false)
 const buyerList = ref<any[]>([])
 const buyerMonthlyCountMap = ref<Record<string, number>>({})
@@ -1677,6 +1842,10 @@ const returnModalOpen = ref(false)
 const returnSaving = ref(false)
 const returnForm = ref<any>({ reason: '', clearBuyer: true })
 const returnTarget = ref<any>(null)
+
+const carryTick = ref(0)
+const carryOffsetTask = ref<any>(null)
+const carryOffsetForm = ref<{ flowNo: string | undefined; amount: number | null }>({ flowNo: undefined, amount: null })
 
 const incomingRequests = ref<any[]>([])
 const outgoingRequests = ref<any[]>([])
@@ -1707,6 +1876,7 @@ const replaceProductForm = ref<any>({
   targetRefundMethod: '礼品卡',
   targetPaypalFee: 0,
   targetPaypalEmail: '',
+  billingNote: '',
   note: '',
 })
 const replaceProductLookupLoading = ref(false)
@@ -1723,6 +1893,7 @@ const workflowSteps = [0, 1, 2, 3, 4]
 const wbViewMode = ref<'order' | 'sub'>('order')
 const wbNav = ref<WorkbenchNavKey>('pending')
 const expandedOrderIds = ref<string[]>([])
+const expandedRemainingOrderIds = ref<string[]>([])
 const enableMockPreview = ref(true)
 const pendingListSearchSnapshot = ref('')
 
@@ -1783,9 +1954,35 @@ const afterSaleTasks = computed(() =>
   filteredTasks.value.filter(task => !!task._after_sale_issue)
 )
 const today = computed(() => dayjs().format('YYYY-MM-DD'))
-const tomorrow = computed(() => dayjs().add(1, 'day').format('YYYY-MM-DD'))
-const dayAfterTomorrow = computed(() => dayjs().add(2, 'day').format('YYYY-MM-DD'))
 const nowTick = ref(dayjs())
+
+function getCountryTimeZone(country: string) {
+  const key = String(country || '').trim()
+  if (key === '美国' || key === 'US' || key === 'USA') return 'America/Los_Angeles'
+  if (key === '英国' || key === 'UK' || key === 'GB') return 'Europe/London'
+  if (key === '德国' || key === 'DE' || key === 'Germany') return 'Europe/Berlin'
+  if (key === '加拿大' || key === 'CA' || key === 'Canada') return 'America/Toronto'
+  return 'Asia/Shanghai'
+}
+
+function getSiteDateStr(country: string, date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: getCountryTimeZone(country),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+function toSiteDateStr(value: string, country: string) {
+  if (!value) return ''
+  return getSiteDateStr(country, new Date(value))
+}
+
+function isCurrentWindowTask(task: any) {
+  return !!task?.scheduled_date && task.scheduled_date === getSiteDateStr(task.country)
+}
+
 const todayRelevantTasks = computed(() =>
   filteredTasks.value.filter(task => task.scheduled_date === today.value)
 )
@@ -1793,12 +1990,12 @@ const todayPendingBuyerMatchTasks = computed(() =>
   todayRelevantTasks.value.filter(task => !isDone(task.status) && !task.buyer_id)
 )
 const pendingListTasks = computed(() => {
-  if (filterTomorrow.value || filterDayAfterTomorrow.value || filterSoon.value || !!taskSearch.value || !!taskFilter.value) {
+  if (filterSoon.value || !!taskSearch.value || !!taskFilter.value) {
     return pendingBuyerMatchTasks.value
   }
-  return todayPendingBuyerMatchTasks.value
+  return pendingBuyerMatchTasks.value.filter(task => isCurrentWindowTask(task))
 })
-const pendingOrderGroups = computed(() => buildWorkbenchGroups(pendingListTasks.value).filter(group => group.actionableSubCount > 0))
+const pendingOrderGroups = computed(() => buildWorkbenchGroups(pendingBuyerMatchTasks.value).filter(group => group.actionableSubCount > 0))
 const improvingOrderGroups = computed(() => buildWorkbenchGroups(improvingTasks.value).filter(group => group.actionableSubCount > 0))
 const todayActionableTasks = computed(() => todayRelevantTasks.value.filter(task => !isDone(task.status)))
 const todayImprovingRelevantTasks = computed(() => todayRelevantTasks.value.filter(task => !!task.buyer_id))
@@ -1945,6 +2142,12 @@ function buildWorkbenchGroups(sourceTasks: any[]) {
         .map((sub: any) => sub.scheduled_date)
         .sort()[0] || ''
       const startedCount = actionableSubs.filter((sub: any) => !!sub.buyer_id).length
+      const quotaInfo = orderDailyQuotaMap.value[group.order_id] || { quota: 0, used: 0 }
+      const todayQuota = Math.max(0, Number(quotaInfo.quota || 0))
+      const todayUsed = Math.max(0, Number(quotaInfo.used || 0))
+      const todayRemaining = Math.max(0, todayQuota - todayUsed)
+      const currentWindowSubs = actionableSubs.filter((sub: any) => isCurrentWindowTask(sub))
+      const remainingAssignedSubs = actionableSubs.filter((sub: any) => !isCurrentWindowTask(sub))
 
       return {
         ...group,
@@ -1953,9 +2156,14 @@ function buildWorkbenchGroups(sourceTasks: any[]) {
         overdueCount: actionableSubs.filter((sub: any) => isOverdue(sub.scheduled_date)).length,
         startedCount,
         hasStarted: startedCount > 0,
-        todayCount: actionableSubs.filter((sub: any) => sub.scheduled_date === today.value).length,
-        tomorrowCount: actionableSubs.filter((sub: any) => sub.scheduled_date === tomorrow.value).length,
-        dayAfterTomorrowCount: actionableSubs.filter((sub: any) => sub.scheduled_date === dayAfterTomorrow.value).length,
+        todayCount: currentWindowSubs.length,
+        currentWindowSubs,
+        remainingAssignedSubs,
+        myCurrentRemaining: currentWindowSubs.length,
+        remainingAssignedCount: remainingAssignedSubs.length,
+        todayQuota,
+        todayUsed,
+        todayRemaining,
         nextDate,
       }
     })
@@ -2847,11 +3055,86 @@ function isPrepayMode(task: any) {
 }
 
 function getRefundFinalAmount(task: any) {
-  const base = Number(task._refund_due_amount_usd || 0)
+  const offset = getWorkbenchOffsetDisplay(task)
   if (task._sel_refund_method === 'PayPal') {
-    return Number((base + Number(task._refund_fee_usd || 0)).toFixed(2))
+    const dueAfterOffset = Math.max(0, Number(task._refund_due_amount_usd || 0) - offset)
+    return Number((dueAfterOffset + Number(task._refund_fee_usd || 0)).toFixed(2))
   }
-  return base
+  if (offset > 0) {
+    return Math.max(0, Number((Number(task._refund_amount_usd || 0) - offset).toFixed(2)))
+  }
+  return Number(task._refund_due_amount_usd || 0)
+}
+
+function isGiftApplyComputed(task: any) {
+  return getWorkbenchOffsetDisplay(task) > 0
+}
+
+function getWorkbenchCarryRemaining(task: any) {
+  carryTick.value
+  return getCarryRemainingForBuyer(task)
+}
+
+function getWorkbenchCarryDisplay(task: any) {
+  return getWorkbenchCarryRemaining(task)
+}
+
+function getWorkbenchOffsetDisplay(task: any) {
+  return Number(Number(task?._carry_offset_usd || 0).toFixed(2))
+}
+
+function showWorkbenchCarry(task: any) {
+  return getWorkbenchCarryRemaining(task) > 0 || Number(task?._carry_offset_usd || 0) > 0
+}
+
+function getWorkbenchActualRefund(task: any) {
+  return getRefundFinalAmount(task)
+}
+
+function getCarryFlowOptions(task: any) {
+  carryTick.value
+  return getCarryItemsForBuyer(task).map(item => ({
+    value: item.flowNo,
+    label: item.flowNo,
+  }))
+}
+
+function filterCarryFlowNo(input: string, option: any) {
+  return String(option?.value || option?.label || '').toLowerCase().includes(String(input || '').trim().toLowerCase())
+}
+
+function isCarryOffsetEditing(task: any) {
+  return !!task && carryOffsetTask.value?.id === task.id
+}
+
+function toggleCarryOffset(task: any) {
+  if (isCarryOffsetEditing(task)) {
+    carryOffsetTask.value = null
+    carryOffsetForm.value = { flowNo: undefined, amount: null }
+    return
+  }
+  carryOffsetTask.value = task
+  carryOffsetForm.value = { flowNo: undefined, amount: null }
+}
+
+function submitCarryOffset() {
+  const task = carryOffsetTask.value
+  if (!task) return
+  const result = applyCarryOffset(task, carryOffsetForm.value.flowNo || '', Number(carryOffsetForm.value.amount || 0))
+  if (!result.ok) {
+    message.warning(result.message)
+    return
+  }
+  task._carry_offset_usd = Number(((Number(task._carry_offset_usd || 0) + Number(carryOffsetForm.value.amount || 0))).toFixed(2))
+  task._carry_offset_flow_no = carryOffsetForm.value.flowNo
+  carryOffsetTask.value = null
+  carryOffsetForm.value = { flowNo: undefined, amount: null }
+  if (task._sel_refund_method !== 'PayPal') {
+    task._refund_due_amount_usd = getRefundFinalAmount(task)
+  }
+  task._refund_final_amount_usd = getRefundFinalAmount(task)
+  carryTick.value += 1
+  message.success(`已抵消，本单申请金额 $${getRefundFinalAmount(task).toFixed(2)}`)
 }
 
 function syncRefundComputed(task: any) {
@@ -2945,6 +3228,7 @@ async function submitReviewFailure() {
 function buildMockTasks() {
   const now = dayjs()
   const today = now.format('YYYY-MM-DD')
+  const siteTodayUS = getSiteDateStr('US')
   const yesterday = now.subtract(1, 'day').format('YYYY-MM-DD')
   const twoDaysAgo = now.subtract(2, 'day').format('YYYY-MM-DD')
   const tomorrow = now.add(1, 'day').format('YYYY-MM-DD')
@@ -2967,7 +3251,7 @@ function buildMockTasks() {
       store_name: 'US-Store-05',
       country: 'US',
       product_price: 18.99,
-      scheduled_date: today,
+      scheduled_date: siteTodayUS,
       keyword: 'car phone mount',
       order_type: '免评',
       review_type: '文字评',
@@ -3023,7 +3307,7 @@ function buildMockTasks() {
       store_name: 'US-Store-07',
       country: 'US',
       product_price: 14.80,
-      scheduled_date: today,
+      scheduled_date: siteTodayUS,
       keyword: 'pet grooming glove',
       order_type: '免评',
       review_type: '文字评',
@@ -3079,7 +3363,7 @@ function buildMockTasks() {
       store_name: 'US-Store-09',
       country: 'US',
       product_price: 17.30,
-      scheduled_date: today,
+      scheduled_date: siteTodayUS,
       keyword: 'kids watercolor pens',
       order_type: '免评',
       review_type: '文字评',
@@ -3504,7 +3788,7 @@ function buildMockTasks() {
       status: '进行中',
       staff_name: '李倩',
       buyer_id: 'mock_buyer_emily',
-      buyer_name: 'Emily Smith',
+      buyer_name: '买手-GC追加',
       refund_status: '待退款',
       refund_method: 'PayPal',
       refund_sequence: '预付',
@@ -3855,8 +4139,6 @@ function getBuyerBlockReason(task: any, buyerId: string): string {
 async function selectStaff(id: string) {
   selectedStaffId.value = id
   taskFilter.value = ''
-  filterTomorrow.value = false
-  filterDayAfterTomorrow.value = false
   filterSoon.value = false
   taskSearch.value = ''
   await Promise.all([loadTasks(), loadTransferRequests()])
@@ -4003,6 +4285,8 @@ async function loadTasks() {
       })
     }
 
+    await refreshOrderDailyQuotaMap(orderIds, tasks)
+
     const subOrderIds = tasks.map(t => t.id)
     if (subOrderIds.length > 0) {
       const { data: refundReqs } = await supabase
@@ -4045,11 +4329,96 @@ async function loadTasks() {
     if (enableMockPreview.value) {
       const mockTasks = buildMockTasks().map(initTaskFields)
       mergedTasks = [...mockTasks, ...tasks]
+      seedMockOrderDailyQuotas(mockTasks)
     }
     allTasks.value = mergedTasks
     filterTaskList()
   } finally {
     tasksLoading.value = false
+  }
+}
+
+function buildMockOrderDailyQuotas(mockTasks: any[]) {
+  const map: Record<string, { quota: number; used: number }> = {}
+  const mockOrderIds = [...new Set(mockTasks.map(task => task.order_id).filter(Boolean))]
+  mockOrderIds.forEach(orderId => {
+    const orderTasks = mockTasks.filter(task => task.order_id === orderId)
+    const currentSubs = orderTasks.filter(task => isCurrentWindowTask(task))
+    const quota = Math.max(currentSubs.length, 1)
+    const used = orderId === 'mock_order_pending_a' ? Math.min(1, quota) : 0
+    map[orderId] = { quota, used }
+  })
+  return map
+}
+
+function seedMockOrderDailyQuotas(mockTasks: any[]) {
+  orderDailyQuotaMap.value = {
+    ...orderDailyQuotaMap.value,
+    ...buildMockOrderDailyQuotas(mockTasks),
+  }
+}
+
+async function refreshOrderDailyQuotaMap(orderIds: string[], sourceTasks: any[] = []) {
+  const realOrderIds = [...new Set(orderIds.filter(id => id && !String(id).startsWith('mock_')))]
+  if (realOrderIds.length === 0) {
+    if (!enableMockPreview.value) orderDailyQuotaMap.value = {}
+    return
+  }
+
+  const countryByOrder: Record<string, string> = {}
+  sourceTasks.forEach((task: any) => {
+    const orderId = String(task.order_id || '')
+    if (orderId && countryByOrder[orderId] == null) countryByOrder[orderId] = task.country || ''
+  })
+  const siteDateByOrder: Record<string, string> = {}
+  realOrderIds.forEach(id => {
+    siteDateByOrder[id] = getSiteDateStr(countryByOrder[id] || '')
+  })
+  const siteDates = [...new Set(Object.values(siteDateByOrder).filter(Boolean))]
+  const nextMap: Record<string, { quota: number; used: number }> = {}
+  realOrderIds.forEach(id => { nextMap[id] = { quota: 0, used: 0 } })
+
+  try {
+    const [{ data: schedules }, { data: placedRows }] = await Promise.all([
+      supabase
+        .from('order_schedules')
+        .select('order_id, schedule_date, quantity')
+        .in('order_id', realOrderIds)
+        .in('schedule_date', siteDates.length ? siteDates : [getSiteDateStr('')]),
+      supabase
+        .from('sub_orders')
+        .select('order_id, amazon_order_id, amazon_order_placed_at')
+        .in('order_id', realOrderIds)
+        .not('amazon_order_id', 'is', null),
+    ])
+
+    ;(schedules || []).forEach((row: any) => {
+      const orderId = String(row.order_id || '')
+      if (!orderId) return
+      if (String(row.schedule_date || '') !== siteDateByOrder[orderId]) return
+      if (!nextMap[orderId]) nextMap[orderId] = { quota: 0, used: 0 }
+      nextMap[orderId].quota += Math.max(0, Number(row.quantity || 0))
+    })
+
+    ;(placedRows || []).forEach((row: any) => {
+      const orderId = String(row.order_id || '')
+      if (!orderId) return
+      const country = countryByOrder[orderId] || ''
+      const placedSiteDate = toSiteDateStr(row.amazon_order_placed_at, country)
+      if (placedSiteDate !== siteDateByOrder[orderId]) return
+      if (!nextMap[orderId]) nextMap[orderId] = { quota: 0, used: 0 }
+      nextMap[orderId].used += 1
+    })
+  } catch (e: any) {
+    console.warn('加载任务当前余量失败：', e?.message || e)
+  }
+
+  const keepMockEntries = Object.fromEntries(
+    Object.entries(orderDailyQuotaMap.value).filter(([orderId]) => String(orderId).startsWith('mock_')),
+  )
+  orderDailyQuotaMap.value = {
+    ...keepMockEntries,
+    ...nextMap,
   }
 }
 
@@ -4137,23 +4506,18 @@ function setWorkbenchNav(next: WorkbenchNavKey) {
   taskFilter.value = ''
   taskSearch.value = ''
   expandedOrderIds.value = []
+  expandedRemainingOrderIds.value = []
   allTasks.value.forEach(t => { t._expanded = false })
   if (next === 'pending') wbViewMode.value = 'order'
   if (next === 'reviewFollow') {
     wbViewMode.value = 'sub'
-    filterTomorrow.value = false
-    filterDayAfterTomorrow.value = false
     filterSoon.value = false
   }
   if (next === 'improving') {
     wbViewMode.value = 'sub'
-    filterTomorrow.value = false
-    filterDayAfterTomorrow.value = false
     filterSoon.value = false
   }
   if (next === 'afterSale') {
-    filterTomorrow.value = false
-    filterDayAfterTomorrow.value = false
     filterSoon.value = false
   }
   filterTaskList()
@@ -4174,10 +4538,6 @@ function filterTaskList() {
     }
     else if (wbNav.value === 'reviewFollow') list = list.filter(t => getReviewFollowFilterCategory(t) === taskFilter.value)
     else list = list.filter(t => t.status === taskFilter.value)
-  }
-  if (wbNav.value === 'pending') {
-    if (filterTomorrow.value) list = list.filter(t => t.scheduled_date === tomorrow.value)
-    if (filterDayAfterTomorrow.value) list = list.filter(t => t.scheduled_date === dayAfterTomorrow.value)
   }
   if (taskSearch.value) {
     const kw = taskSearch.value.toLowerCase()
@@ -4206,8 +4566,17 @@ function toggleExpand(task: any) {
 function toggleOrderExpand(orderId: string) {
   if (expandedOrderIds.value.includes(orderId)) {
     expandedOrderIds.value = expandedOrderIds.value.filter(id => id !== orderId)
+    expandedRemainingOrderIds.value = expandedRemainingOrderIds.value.filter(id => id !== orderId)
   } else {
     expandedOrderIds.value = [...expandedOrderIds.value, orderId]
+  }
+}
+
+function toggleRemainingExpand(orderId: string) {
+  if (expandedRemainingOrderIds.value.includes(orderId)) {
+    expandedRemainingOrderIds.value = expandedRemainingOrderIds.value.filter(id => id !== orderId)
+  } else {
+    expandedRemainingOrderIds.value = [...expandedRemainingOrderIds.value, orderId]
   }
 }
 
@@ -4324,6 +4693,7 @@ async function openReplaceProductModal(task: any) {
     targetRefundMethod: task.refund_method || '礼品卡',
     targetPaypalFee: 0,
     targetPaypalEmail: task.buyer_paypal_email || task._buyer_paypal_email || '',
+    billingNote: '',
     note: '',
   }
   replaceProductTargetInfo.value = null
@@ -4388,6 +4758,7 @@ async function saveReplaceProduct() {
       targetRefundAmount: Number(replaceProductForm.value.targetRefundAmount || 0),
       targetPaypalFee: Number(replaceProductForm.value.targetPaypalFee || 0),
       targetPaypalEmail: replaceProductForm.value.targetPaypalEmail,
+      billingNote: replaceProductForm.value.billingNote,
     })
     Object.assign(replaceProductTarget.value, result.sourceSubOrder)
     allTasks.value = allTasks.value.filter(task => task.id !== replaceProductTarget.value.id)
@@ -4652,6 +5023,32 @@ async function submitWorkbenchTaskEditor(task: any) {
   taskEditorDraftSnapshot.value = captureTaskEditorDraft(task)
 }
 
+function handleBuyerChange(task: any, val: string) {
+  onBuyerSelect(task, val)
+  if (val) {
+    assignBuyer(task)
+  }
+}
+
+function handleUnbindBuyer(task: any) {
+  task._sel_buyer_id = undefined
+  onBuyerSelect(task, '')
+  assignBuyer(task)
+}
+
+async function copyBuyerName(task: any) {
+  const buyerId = task._sel_buyer_id
+  if (!buyerId) return
+  const buyer = buyerList.value.find(b => b.id === buyerId)
+  if (!buyer?.name) return
+  try {
+    await navigator.clipboard.writeText(buyer.name)
+    message.success('买手姓名已复制')
+  } catch (err) {
+    message.error('复制失败，请手动复制')
+  }
+}
+
 async function onBuyerSelect(task: any, buyerId: string) {
   if (!buyerId) { task._buyer_validation = null; return }
   task._validating_buyer = true
@@ -4704,19 +5101,19 @@ async function onBuyerSelect(task: any, buyerId: string) {
 }
 
 async function assignBuyer(task: any) {
-  if (!task._sel_buyer_id) return
   if (task._buyer_validation?.blocked) {
     message.error(task._buyer_validation.reason)
     return
   }
   task._saving_buyer = true
   try {
-    const buyer = buyerList.value.find(b => b.id === task._sel_buyer_id)
+    const isUnbind = !task._sel_buyer_id
+    const buyer = isUnbind ? null : buyerList.value.find(b => b.id === task._sel_buyer_id)
     const payload = {
-      buyer_id: task._sel_buyer_id,
+      buyer_id: isUnbind ? null : task._sel_buyer_id,
       buyer_name: buyer?.name || '',
-      status: task.status === '待分配' ? '已分配' : task.status,
-      buyer_assigned_at: new Date().toISOString(),
+      status: isUnbind ? (task.status === '已分配' ? '待分配' : task.status) : (task.status === '待分配' ? '已分配' : task.status),
+      buyer_assigned_at: isUnbind ? null : new Date().toISOString(),
     }
     if (task._is_mock || String(task.id || '').startsWith('mock_')) {
       Object.assign(task, payload)
@@ -4727,16 +5124,18 @@ async function assignBuyer(task: any) {
     }
     task._editing_buyer = false
     task._buyer_validation = null
-    message.success('买手已分配')
-    buyerMonthlyCountMap.value[task._sel_buyer_id] = (buyerMonthlyCountMap.value[task._sel_buyer_id] || 0) + 1
-    if (task.asin && buyerAsinMap.value[task._sel_buyer_id]) {
-      if (!buyerAsinMap.value[task._sel_buyer_id].includes(task.asin)) {
-        buyerAsinMap.value[task._sel_buyer_id].push(task.asin)
+    message.success(isUnbind ? '买手已解绑' : '买手已分配')
+    if (!isUnbind) {
+      buyerMonthlyCountMap.value[task._sel_buyer_id] = (buyerMonthlyCountMap.value[task._sel_buyer_id] || 0) + 1
+      if (task.asin && buyerAsinMap.value[task._sel_buyer_id]) {
+        if (!buyerAsinMap.value[task._sel_buyer_id].includes(task.asin)) {
+          buyerAsinMap.value[task._sel_buyer_id].push(task.asin)
+        }
       }
     }
     await loadStaff()
   } catch (e: any) {
-    message.error('分配失败：' + e.message)
+    message.error((!task._sel_buyer_id ? '解绑失败：' : '分配失败：') + e.message)
   } finally {
     task._saving_buyer = false
   }
@@ -5720,24 +6119,135 @@ onUnmounted(() => {
 }
 .main-order-stats {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
   flex-shrink: 0;
   margin: 0 20px;
   background: #f8fafc;
   border-radius: 8px;
   padding: 8px 12px;
   border: 1px solid #e5e7eb;
+  min-width: 268px;
 }
-.main-order-stat-item { display: flex; flex-direction: column; align-items: center; min-width: 50px; gap: 2px; }
-.main-order-stat-label { font-size: 11px; color: #9ca3af; line-height: 1; }
-.main-order-stat-value { font-size: 20px; font-weight: 700; line-height: 1.2; color: #1a1a2e; }
+.main-order-quota {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.main-order-quota-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.main-order-quota-nums {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  line-height: 1;
+}
+.main-order-quota-remain {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+.main-order-quota-remain.is-available { color: #2563eb; }
+.main-order-quota-remain.is-empty { color: #dc2626; }
+.main-order-quota-sep {
+  font-size: 13px;
+  font-weight: 600;
+  color: #9ca3af;
+  margin: 0 1px;
+}
+.main-order-quota-total {
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.main-order-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.main-order-stat-item { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 84px; gap: 2px; }
+.main-order-stat-label { font-size: 11px; color: #9ca3af; line-height: 1; white-space: nowrap; }
+.main-order-stat-value { font-size: 16px; font-weight: 600; line-height: 1.2; color: #6b7280; }
+.main-order-stat-value.is-split { font-size: 16px; font-weight: 600; color: #6b7280; }
+.main-order-stat-value.is-today { font-size: 20px; font-weight: 700; color: #1a1a2e; }
+.main-order-stat-value.is-remaining { font-size: 16px; font-weight: 700; color: #1a1a2e; }
 .main-order-stat-unit { font-size: 12px; font-weight: 400; color: #9ca3af; margin-left: 1px; }
-.main-order-stat-divider { width: 1px; height: 32px; background: #e5e7eb; margin: 0 10px; }
+.main-order-stat-divider { width: 1px; height: 32px; background: #e5e7eb; margin: 0 4px; }
 .main-order-actions { display: flex; align-items: center; gap: 8px; padding-left: 8px; flex-shrink: 0; align-self: center; }
 .inline-sub-list {
   background: #f8fafc;
   border-top: 1px dashed #e5e7eb;
   padding: 12px 16px 16px 32px;
+}
+.inline-sub-empty {
+  padding: 10px 4px 8px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+.remaining-assign-toggle {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 10px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.remaining-assign-toggle:hover {
+  background: #f3f4f6;
+}
+.remaining-assign-toggle-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.remaining-assign-title {
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 600;
+}
+.remaining-assign-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f5f7fa;
+  color: #1a1a2e;
+  font-size: 11px;
+  font-weight: 600;
+}
+.remaining-assign-toggle-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 3px;
+  padding-left: 10px;
+  border-left: 1px solid #e5e7eb;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 600;
+}
+.remaining-assign-toggle:hover .remaining-assign-toggle-action {
+  color: #1d4ed8;
+}
+.remaining-assign-icon {
+  margin-left: 1px;
+  font-size: 9px;
+  transition: transform 0.2s ease;
+}
+.remaining-assign-icon.expanded {
+  transform: rotate(90deg);
 }
 .inline-sub-grid {
   display: grid;
@@ -7023,6 +7533,57 @@ onUnmounted(() => {
 .outgoing-to { font-weight: 600; color: #374151; }
 .outgoing-reason { color: #9ca3af; font-size: 11px; flex: 1; }
 .outgoing-time { font-size: 11px; color: #9ca3af; white-space: nowrap; margin-left: auto; }
+.wb-carry-block {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.wb-carry-offset-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.wb-carry-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+.wb-carry-amount {
+  font-size: 14px;
+  font-weight: 700;
+  color: #2563eb;
+  margin-right: 6px;
+}
+.wb-offset-label {
+  min-width: 100px;
+  font-size: 12px;
+  color: #374151;
+  font-weight: 500;
+}
+.wb-offset-inline-label {
+  min-width: 48px;
+}
+.wb-offset-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+.wb-carry-action {
+  padding: 0 4px;
+  height: auto;
+  font-size: 12px;
+  color: #1a1a2e;
+}
+.wb-carry-action:hover,
+.wb-carry-action:focus {
+  color: #1a1a2e;
+}
+:deep(.wb-carry-action.ant-btn-link),
+:deep(.wb-carry-action.ant-btn-link:hover),
+:deep(.wb-carry-action.ant-btn-link:focus) {
+  color: #1a1a2e;
+}
 
 @media (max-width: 1280px) {
   .workbench-priority { grid-template-columns: 1fr; }

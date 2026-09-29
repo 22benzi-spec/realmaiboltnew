@@ -189,7 +189,7 @@
               <!-- 左侧：子订单 / 已下单 / 排期 -->
               <div class="stat-item">
                 <span class="stat-label">子订单</span>
-                <span class="stat-val stat-total">{{ record._sub_total || 0 }}</span>
+                <span class="stat-val stat-total">{{ getEffectiveSubOrderCount(record) }}</span>
               </div>
               <div class="stat-divider"></div>
               <div class="stat-item">
@@ -198,7 +198,13 @@
               </div>
               <div class="stat-divider"></div>
               <div class="stat-item stat-item-clickable" @click.stop="openScheduleModal(record)">
-                <span class="stat-label">排期</span>
+                <span class="stat-label">
+                  排期
+                  <span
+                    v-if="record.order_number === 'TASK-GRP-20260322-001-001'"
+                    class="stat-overdue-badge"
+                  >逾期{{ getDemoOverdueDays(record) }}天</span>
+                </span>
                 <span class="stat-val stat-schedule">{{ record._schedule_days || 0 }}<span class="stat-unit">天</span></span>
                 <span class="stat-daily">
                   <template v-if="(record.fixed_daily_orders || 0) > 0">固定 {{ record.fixed_daily_orders }} 单/天</template>
@@ -247,9 +253,42 @@
                 <a-button size="small" class="copy-sub-btn" @click.stop="openCopyModal(record)">
                   <CopyOutlined /> 复制
                 </a-button>
-                <a-button size="small" @click.stop="() => openAppendModal(record)">
-                  追加订单
-                </a-button>
+                <a-dropdown
+                  :trigger="['click']"
+                  :open="taskOpsOpenId === record.id"
+                  :disabled="taskFlagSavingId === record.id"
+                  @openChange="(open: boolean) => onTaskOpsOpenChange(record.id, open)"
+                >
+                  <a-button size="small" :loading="taskFlagSavingId === record.id" @click.stop>
+                    操作 <DownOutlined />
+                  </a-button>
+                  <template #overlay>
+                    <div class="task-ops-panel" @click.stop>
+                      <button
+                        type="button"
+                        class="task-ops-append-btn"
+                        @click="openAppendFromOps(record)"
+                      >追加订单</button>
+                      <div class="task-ops-divider" />
+                      <div
+                        v-for="item in taskFlagOptions"
+                        :key="item.field"
+                        class="task-ops-row"
+                      >
+                        <span class="task-ops-label">{{ item.label }}</span>
+                        <a-switch
+                          size="small"
+                          checked-children="是"
+                          un-checked-children="否"
+                          :checked="!!record[item.field]"
+                          :loading="taskFlagSavingId === record.id"
+                          :disabled="taskFlagSavingId === record.id"
+                          @change="(checked: boolean | string | number) => setTaskFlag(record, item.field, !!checked)"
+                        />
+                      </div>
+                    </div>
+                  </template>
+                </a-dropdown>
                 <a-popconfirm v-if="canDeleteTask(record)" title="确定删除此任务吗?" @confirm="deleteTask(record.id)">
                   <a-button size="small" type="text" class="icon-btn danger-btn"><DeleteOutlined /></a-button>
                 </a-popconfirm>
@@ -274,7 +313,7 @@
 
           <div v-if="expandedRowKeys.includes(record.id)" class="sub-orders-panel">
             <div class="sub-orders-header">
-              <span class="sub-orders-title">子订单列表（{{ subOrdersMap[record.id]?.length || 0 }} / {{ record.order_quantity }} 单）</span>
+              <span class="sub-orders-title">子订单列表（有效 {{ getActiveSubOrderCount(record.id) }} 单 / 总量 {{ record.order_quantity }} 单）</span>
               <div v-if="subOrdersMap[record.id]?.length" class="sub-orders-header-actions">
                 <a-checkbox
                   :checked="isAllSubSelected(record.id)"
@@ -324,17 +363,35 @@
             <a-table
               v-if="subOrdersMap[record.id]?.length"
               :columns="subColumns"
-              :data-source="subOrdersMap[record.id]"
+              :data-source="getDisplayedSubOrders(record.id)"
               :row-selection="getSubRowSelection(record.id)"
               :pagination="false"
               row-key="id"
               size="small"
-              :scroll="{ x: 1990 }"
+              :scroll="{ x: 2060 }"
+              :custom-row="getSubOrderRowProps"
               style="margin-top:10px"
             >
               <template #bodyCell="{ column, record: sub }">
                 <template v-if="column.key === 'sub_no'">
-                  <span class="sub-no">{{ sub.sub_order_number }}</span>
+                  <button
+                    v-if="isCutoffDividerRow(sub)"
+                    type="button"
+                    class="cutoff-sub-toggle"
+                    :aria-expanded="isCutoffSubExpanded(record.id)"
+                    @click="toggleCutoffSubOrders(record.id)"
+                  >
+                    <span class="cutoff-sub-toggle-main">
+                      <span class="cutoff-sub-status-dot" />
+                      <span class="cutoff-sub-title">已截单</span>
+                      <span class="cutoff-sub-count">{{ getCutoffSubOrderCount(record.id) }} 单</span>
+                      <span class="cutoff-sub-toggle-action">
+                        {{ isCutoffSubExpanded(record.id) ? '收起' : '展开' }}
+                        <RightOutlined :class="['cutoff-sub-icon', { expanded: isCutoffSubExpanded(record.id) }]" />
+                      </span>
+                    </span>
+                  </button>
+                  <span v-else class="sub-no">{{ sub.sub_order_number }}</span>
                 </template>
                 <template v-if="column.key === 'sub_asin'">
                   <div class="editable-cell editable-cell-stack" @click="openQuickEdit(sub, 'asin')">
@@ -452,7 +509,21 @@
                   <span v-else class="text-gray">—</span>
                 </template>
                 <template v-if="column.key === 'sub_action'">
-                  <a-space>
+                  <div v-if="isCutoffSubOrder(sub)" class="cutoff-sub-actions">
+                    <a-popconfirm
+                      title="直接恢复后，该子订单将进入待分配"
+                      ok-text="确认恢复"
+                      cancel-text="取消"
+                      @confirm="restoreCutoffSubOrder(sub, record)"
+                    >
+                      <a-button type="link" size="small" class="restore-sub-btn">直接恢复</a-button>
+                    </a-popconfirm>
+                    <span class="cutoff-sub-action-divider" />
+                    <a-button type="link" size="small" class="modify-restore-sub-btn" @click="openCutoffBatchEdit(sub, record)">
+                      修改并恢复
+                    </a-button>
+                  </div>
+                  <a-space v-else>
                     <a-button type="link" size="small" @click="openDetail(sub, record.id)">详情</a-button>
                     <a-popconfirm title="确定删除这条子订单吗?" @confirm="deleteSubOrder(sub.id, record.id)">
                       <a-button type="link" size="small" danger>删除</a-button>
@@ -731,15 +802,21 @@
     <!-- 关键词/链接编辑弹窗 -->
     <a-modal
       v-model:open="kwEditOpen"
-      title="修改关键词 / 链接"
+      :title="isKwEditRestoreMode ? '修改关键词 / 链接并恢复' : '修改关键词 / 链接'"
       @ok="saveKwEdit"
       :confirm-loading="kwEditSaving"
-      ok-text="保存"
+      :ok-text="isKwEditRestoreMode ? '保存并恢复' : '保存'"
       cancel-text="取消"
       width="460px"
     >
       <div class="kw-edit-modal-body">
         <div class="kw-edit-sub-no" v-if="kwEditRecord">子单号：{{ kwEditRecord.sub_order_number }}</div>
+        <a-alert
+          v-if="isKwEditRestoreMode"
+          type="info"
+          show-icon
+          message="保存成功后，该子订单将恢复至待分配"
+        />
         <div class="kw-edit-mode-row">
           <span class="kw-edit-label">类型：</span>
           <div class="kw-mode-toggle">
@@ -765,15 +842,21 @@
     <!-- 单字段快捷编辑弹窗 -->
     <a-modal
       v-model:open="quickEditOpen"
-      :title="`修改${quickEditMeta?.label || ''}`"
+      :title="`${quickEditRestoreMode ? '修改并恢复 · ' : '修改'}${quickEditMeta?.label || ''}`"
       @ok="saveQuickEdit"
       :confirm-loading="quickEditSaving"
-      ok-text="保存"
+      :ok-text="quickEditRestoreMode ? '保存并恢复' : '保存'"
       cancel-text="取消"
       width="420px"
     >
       <div class="kw-edit-modal-body">
         <div class="kw-edit-sub-no" v-if="quickEditRecord">子单号：{{ quickEditRecord.sub_order_number }}</div>
+        <a-alert
+          v-if="quickEditRestoreMode"
+          type="info"
+          show-icon
+          message="保存成功后，该子订单将恢复至待分配"
+        />
         <div class="kw-edit-input-row" v-if="quickEditMeta">
           <span class="kw-edit-label">{{ quickEditMeta.label }}：</span>
           <a-input
@@ -1263,17 +1346,19 @@
     <!-- 批量修改子订单弹窗 -->
     <a-modal
       v-model:open="editSubModalOpen"
-      title="批量修改子订单"
+      :title="batchEditRestoreMode ? '修改并恢复子订单' : '批量修改子订单'"
       @ok="saveBatchEdit"
+      @cancel="cancelBatchEdit"
       :confirm-loading="editSubSaving"
       :ok-button-props="{ disabled: activeBatchEditFields.length === 0 }"
-      ok-text="确认修改"
+      :ok-text="batchEditRestoreMode ? '确认修改并恢复' : '确认修改'"
       cancel-text="取消"
       width="760px"
     >
       <div class="bme-wrap">
         <div class="bme-count-bar">
-          已选 <strong>{{ currentBatchSelectedIds.length }}</strong> 条子订单，填写的内容会统一应用到本次选中的记录
+          已选 <strong>{{ currentBatchSelectedIds.length }}</strong> 条子订单，
+          {{ batchEditRestoreMode ? '修改成功后将恢复至待分配' : '填写的内容会统一应用到本次选中的记录' }}
         </div>
         <div class="bme-picker">
           <span class="bme-picker-label">选择要修改的字段：</span>
@@ -1397,7 +1482,7 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined, RightOutlined, ThunderboltOutlined,
-  DeleteOutlined, EditOutlined, SaveOutlined, LinkOutlined, PictureOutlined, CopyOutlined
+  DeleteOutlined, EditOutlined, SaveOutlined, LinkOutlined, PictureOutlined, CopyOutlined, DownOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -1513,8 +1598,26 @@ const filterCountry = ref('')
 const pagination = ref({ current: 1, pageSize: 20, total: 0 })
 const expandedRowKeys = ref<string[]>([])
 const subOrdersMap = ref<Record<string, any[]>>({})
+const cutoffSubExpandedMap = ref<Record<string, boolean>>({})
 const genLoadingId = ref<string | null>(null)
 const taskStatusSavingId = ref<string | null>(null)
+const taskFlagSavingId = ref<string | null>(null)
+const taskOpsOpenId = ref<string | null>(null)
+
+const taskFlagOptions = [
+  { field: 'daily_feedback', label: '每日反馈' },
+  { field: 'comprehensive_label', label: '金额图片' },
+  { field: 'delivery_label', label: '单号图片' },
+] as const
+
+function onTaskOpsOpenChange(recordId: string, open: boolean) {
+  taskOpsOpenId.value = open ? recordId : null
+}
+
+function openAppendFromOps(record: any) {
+  taskOpsOpenId.value = null
+  openAppendModal(record)
+}
 const detailOpen = ref(false)
 const detailRecord = ref<any>(null)
 const detailOrderId = ref<string>('')
@@ -1536,7 +1639,7 @@ const pauseStatusReasons = ['库存不足', '链接问题', '店铺问题', '计
 const cutoffStatusReasons = ['未按计划做单', '库存不足', '链接问题', '店铺问题', '计划调整', '目标达成', '风控预警', '不知原因']
 const manualTaskStatuses = [TASK_RUNNING_STATUS, '已截单', TASK_PAUSED_STATUS]
 
-const subColumns = [
+const baseSubColumns = [
   { title: '子订单ID', key: 'sub_no', width: 165 },
   { title: 'ASIN', key: 'sub_asin', width: 145 },
   { title: '排单日期', key: 'sub_scheduled', width: 110 },
@@ -1550,8 +1653,14 @@ const subColumns = [
   { title: '评论/FB', key: 'sub_review_fb', width: 130 },
   { title: '订单状态', key: 'sub_order_status', width: 100 },
   { title: '订单备注', key: 'sub_notes', width: 160 },
-  { title: '操作', key: 'sub_action', width: 80, fixed: 'right' as const },
+  { title: '操作', key: 'sub_action', width: 150, fixed: 'right' as const },
 ]
+const subColumns = baseSubColumns.map((column, index) => ({
+  ...column,
+  customCell: (record: any) => isCutoffDividerRow(record)
+    ? { colSpan: index === 0 ? baseSubColumns.length : 0 }
+    : {},
+}))
 
 const schedulesMap = ref<Record<string, any[]>>({})
 const defaultVisibleTaskStatuses = ['待分配', '进行中', '已截单', TASK_PAUSED_STATUS, LEGACY_TASK_PAUSED_STATUS]
@@ -1602,13 +1711,92 @@ function getTaskStatusSelectOptions(record: any) {
     .map(status => ({ label: status, value: status }))
 }
 
+function isCutoffSubOrder(sub: any) {
+  return !isCutoffDividerRow(sub)
+    && (['已取消', '已截单'].includes(sub?.status) || ['取消', '已截单'].includes(sub?.order_status) || sub?._cutoff_preview === true)
+}
+
+function isCutoffDividerRow(sub: any) {
+  return sub?._row_type === 'cutoff-divider'
+}
+
+function getActiveSubOrders(orderId: string) {
+  return (subOrdersMap.value[orderId] || []).filter((sub: any) => !isCutoffSubOrder(sub))
+}
+
+function getCutoffSubOrders(orderId: string) {
+  return (subOrdersMap.value[orderId] || []).filter((sub: any) => isCutoffSubOrder(sub))
+}
+
+function getActiveSubOrderCount(orderId: string) {
+  return getActiveSubOrders(orderId).length
+}
+
+function getCutoffSubOrderCount(orderId: string) {
+  return getCutoffSubOrders(orderId).length
+}
+
+function getEffectiveSubOrderCount(record: any) {
+  if (Array.isArray(subOrdersMap.value[record?.id])) return getActiveSubOrderCount(record.id)
+  return Number(record?._active_sub_total ?? record?._sub_total ?? 0)
+}
+
+function isCutoffSubExpanded(orderId: string) {
+  return !!cutoffSubExpandedMap.value[orderId]
+}
+
+function toggleCutoffSubOrders(orderId: string) {
+  cutoffSubExpandedMap.value[orderId] = !cutoffSubExpandedMap.value[orderId]
+}
+
+function getDisplayedSubOrders(orderId: string) {
+  const activeRows = getActiveSubOrders(orderId)
+  const cutoffRows = getCutoffSubOrders(orderId)
+  if (!cutoffRows.length) return activeRows
+  const dividerRow = {
+    id: `cutoff-divider-${orderId}`,
+    order_id: orderId,
+    _row_type: 'cutoff-divider',
+  }
+  return isCutoffSubExpanded(orderId)
+    ? [...activeRows, dividerRow, ...cutoffRows]
+    : [...activeRows, dividerRow]
+}
+
+function getSubOrderRowProps(sub: any) {
+  return {
+    class: isCutoffDividerRow(sub)
+      ? 'cutoff-divider-row'
+      : isCutoffSubOrder(sub)
+        ? 'cutoff-sub-row'
+        : '',
+  }
+}
+
+function applyRestoredSubOrderState(sub: any, taskRecord: any) {
+  sub.status = '待分配'
+  sub.order_status = '正常'
+  sub.staff_id = null
+  sub.staff_name = ''
+  sub._cutoff_preview = false
+  taskRecord._active_sub_total = getActiveSubOrderCount(taskRecord.id)
+  if (getCutoffSubOrderCount(taskRecord.id) === 0) {
+    cutoffSubExpandedMap.value[taskRecord.id] = false
+  }
+}
+
+function restoreCutoffSubOrder(sub: any, taskRecord: any) {
+  applyRestoredSubOrderState(sub, taskRecord)
+  message.success(`${sub.sub_order_number || '子订单'} 已恢复，等待主管重新分配`)
+}
+
 function getSubStatusColor(status: string) {
-  const map: Record<string, string> = { '待分配': 'default', '已分配': 'cyan', '进行中': 'blue', '已下单': 'orange', '已留评': 'geekblue', '已完成': 'green', '已取消': 'red' }
+  const map: Record<string, string> = { '待分配': 'default', '已分配': 'cyan', '进行中': 'blue', '已下单': 'orange', '已留评': 'geekblue', '已完成': 'green', '已取消': 'red', '已截单': 'red' }
   return map[status] || 'default'
 }
 
 function getSubOrderStatusColor(status: string) {
-  const map: Record<string, string> = { '正常': 'green', '不下单': 'orange', '无此订单': 'red', '取消': 'red', '退款': 'gold' }
+  const map: Record<string, string> = { '正常': 'green', '不下单': 'orange', '无此订单': 'red', '取消': 'red', '已截单': 'red', '退款': 'gold' }
   return map[status] || 'default'
 }
 
@@ -1694,10 +1882,17 @@ function decorateSubOrdersForDisplay(orderId: string, rows: any[]) {
     _mock_principal_loss: false,
     _display_index: index,
   }))
+  normalized.forEach((sub: any) => {
+    if (!isCutoffSubOrder(sub)) return
+    sub._cutoff_released_staff_id = sub.staff_id || null
+    sub._cutoff_released_staff_name = sub.staff_name || ''
+    sub.staff_id = null
+    sub.staff_name = ''
+  })
   if (!shouldInjectPrincipalLossMock(orderId)) return normalized
   let injected = 0
   return normalized.map((row) => {
-    if (injected >= 3 || row.status === '已取消') return row
+    if (injected >= 3 || isCutoffSubOrder(row)) return row
     injected += 1
     return {
       ...row,
@@ -1745,6 +1940,11 @@ function onImgError(e: Event) {
 
 function isOverdue(dateStr: string) {
   return dayjs(dateStr).isBefore(dayjs(), 'day')
+}
+
+function getDemoOverdueDays(record: any) {
+  if (record?.order_number !== 'TASK-GRP-20260322-001-001') return 0
+  return Math.max(1, dayjs().startOf('day').diff(dayjs('2026-03-22'), 'day'))
 }
 
 function fmtTime(t: string | null) {
@@ -2774,7 +2974,7 @@ async function load() {
 
     const orderIds = (data || []).map((o: any) => o.id)
     const asins = [...new Set((data || []).map((o: any) => String(o?.asin || '').trim()).filter(Boolean))]
-    let statsMap: Record<string, { scheduled: number; ordered: number; reviewed: number; refunded: number; dropped: number; total: number }> = {}
+    let statsMap: Record<string, { scheduled: number; ordered: number; reviewed: number; refunded: number; dropped: number; total: number; activeTotal: number }> = {}
     let scheduleDaysMap: Record<string, number> = {}
     let scheduleQtyMap: Record<string, number> = {}
     let asinOrderTotalMap: Record<string, number> = {}
@@ -2782,7 +2982,7 @@ async function load() {
     if (orderIds.length > 0) {
       const { data: subData } = await supabase
         .from('sub_orders')
-        .select('order_id, status, buyer_name, amazon_order_id, refund_status')
+        .select('order_id, status, order_status, buyer_name, amazon_order_id, refund_status')
         .in('order_id', orderIds)
 
       const { data: schedData } = await supabase
@@ -2791,8 +2991,9 @@ async function load() {
         .in('order_id', orderIds)
 
       ;(subData || []).forEach((s: any) => {
-        if (!statsMap[s.order_id]) statsMap[s.order_id] = { scheduled: 0, ordered: 0, reviewed: 0, refunded: 0, dropped: 0, total: 0 }
+        if (!statsMap[s.order_id]) statsMap[s.order_id] = { scheduled: 0, ordered: 0, reviewed: 0, refunded: 0, dropped: 0, total: 0, activeTotal: 0 }
         statsMap[s.order_id].total++
+        if (!isCutoffSubOrder(s)) statsMap[s.order_id].activeTotal++
         if (s.buyer_name) statsMap[s.order_id].scheduled++
         if (s.amazon_order_id) statsMap[s.order_id].ordered++
         if (['已完成', '已留评'].includes(s.status)) statsMap[s.order_id].reviewed++
@@ -2831,6 +3032,7 @@ async function load() {
       _refunded_count: statsMap[o.id]?.refunded || 0,
       _dropped_count: statsMap[o.id]?.dropped || 0,
       _sub_total: statsMap[o.id]?.total || 0,
+      _active_sub_total: statsMap[o.id]?.activeTotal || 0,
       _schedule_count: scheduleQtyMap[o.id] || 0,
       _schedule_days: scheduleDaysMap[o.id] || 0,
       _asin_total_orders: asinOrderTotalMap[String(o?.asin || '').trim()] || Number(o?.order_quantity || 0),
@@ -2897,6 +3099,61 @@ function isMissingTaskStatusTrackingColumnError(error: any) {
     && ['status_reason', 'status_changed_at', 'status_change_log'].some(column => text.includes(column))
 }
 
+function canPreviewCutoffSubOrder(sub: any) {
+  if (isCutoffSubOrder(sub) || sub?.amazon_order_id) return false
+  return !['已下单', '已留评', '已完成'].includes(String(sub?.status || ''))
+}
+
+async function applyCutoffInteractionPreview(record: any) {
+  if (!Array.isArray(subOrdersMap.value[record.id])) {
+    await loadSubOrders(record.id)
+  }
+  const rows = subOrdersMap.value[record.id] || []
+  rows.forEach((sub: any) => {
+    if (!canPreviewCutoffSubOrder(sub)) return
+    sub._cutoff_preview = true
+    sub._cutoff_preview_original_status = sub.status || '待分配'
+    sub._cutoff_preview_original_order_status = sub.order_status || '正常'
+    sub._cutoff_released_staff_id = sub.staff_id || null
+    sub._cutoff_released_staff_name = sub.staff_name || ''
+    sub.status = '已取消'
+    sub.order_status = '取消'
+    sub.staff_id = null
+    sub.staff_name = ''
+  })
+  cutoffSubExpandedMap.value[record.id] = false
+  record._active_sub_total = getActiveSubOrderCount(record.id)
+}
+
+async function setTaskFlag(record: any, field: string, next: boolean) {
+  const option = taskFlagOptions.find((item) => item.field === field)
+  if (!record?.id || !option) return
+  if (taskFlagSavingId.value === record.id) return
+
+  const listRecord = tasks.value.find((item: any) => item.id === record.id) || record
+  const previous = !!listRecord[field]
+  if (previous === next) return
+
+  taskFlagSavingId.value = record.id
+  listRecord[field] = next
+  if (record !== listRecord) record[field] = next
+
+  try {
+    const { error } = await supabase
+      .from('erp_orders')
+      .update({ [field]: next })
+      .eq('id', record.id)
+    if (error) throw error
+    message.success(`${option.label}已改为${next ? '是' : '否'}`)
+  } catch (e: any) {
+    listRecord[field] = previous
+    if (record !== listRecord) record[field] = previous
+    message.error(`${option.label}修改失败：` + e.message)
+  } finally {
+    taskFlagSavingId.value = null
+  }
+}
+
 async function updateTaskStatus(record: any, nextStatus: string, reason: string | null) {
   const normalizedNextStatus = normalizeTaskStatus(nextStatus)
   if (!record?.id || !normalizedNextStatus || normalizedNextStatus === normalizeTaskStatus(record.status)) return false
@@ -2938,6 +3195,10 @@ async function updateTaskStatus(record: any, nextStatus: string, reason: string 
       listRecord.status_change_log = record.status_change_log
     }
 
+    if (normalizedNextStatus === '已截单') {
+      await applyCutoffInteractionPreview(listRecord || record)
+    }
+
     const shouldKeepInList = filterStatus.value
       ? getTaskStatusQueryValues(filterStatus.value).includes(normalizedNextStatus)
       : defaultVisibleTaskStatuses.includes(normalizedNextStatus)
@@ -2974,6 +3235,9 @@ async function loadSubOrders(orderId: string) {
   if (error) { message.error('加载子订单失败'); return }
   const displayRows = decorateSubOrdersForDisplay(orderId, data || [])
   subOrdersMap.value[orderId] = displayRows
+  if (!(orderId in cutoffSubExpandedMap.value)) cutoffSubExpandedMap.value[orderId] = false
+  const taskRecord = tasks.value.find((item: any) => item.id === orderId)
+  if (taskRecord) taskRecord._active_sub_total = getActiveSubOrderCount(orderId)
   const validIds = new Set(displayRows.filter((sub: any) => canBatchEditSub(sub)).map((sub: any) => sub.id))
   selectedSubIdsMap.value[orderId] = getSelectedSubIds(orderId).filter(id => validIds.has(id))
 }
@@ -3115,11 +3379,13 @@ const kwEditRecord = ref<any>(null)
 const kwEditMode = ref<'keyword' | 'link'>('keyword')
 const kwEditValue = ref('')
 const kwEditSaving = ref(false)
+const isKwEditRestoreMode = computed(() => isCutoffSubOrder(kwEditRecord.value))
 const quickEditOpen = ref(false)
 const quickEditRecord = ref<any>(null)
 const quickEditField = ref<'asin' | 'scheduled_date' | 'review_type' | 'review_level' | 'product_price' | ''>('')
 const quickEditValue = ref<any>('')
 const quickEditSaving = ref(false)
+const quickEditRestoreMode = computed(() => isCutoffSubOrder(quickEditRecord.value))
 const quickEditConfigs: Record<string, { label: string; type: 'text' | 'select' | 'date' | 'number'; options?: string[] }> = {
   asin: { label: 'ASIN', type: 'text' },
   scheduled_date: { label: '排单日期', type: 'date' },
@@ -3149,10 +3415,21 @@ async function saveKwEdit() {
   if (!kwEditRecord.value) return
   kwEditSaving.value = true
   try {
+    const shouldRestore = isCutoffSubOrder(kwEditRecord.value)
+    const beforeValues = {
+      keyword_type: kwEditRecord.value.keyword_type || 'keyword',
+      keyword: kwEditRecord.value.keyword || '',
+      search_link: kwEditRecord.value.search_link || '',
+    }
     const updates: Record<string, any> = {
       keyword_type: kwEditMode.value,
       keyword: kwEditMode.value === 'keyword' ? kwEditValue.value.trim() : '',
       search_link: kwEditMode.value === 'link' ? kwEditValue.value.trim() : '',
+    }
+    const hasEffectiveChange = Object.keys(updates).some(key => beforeValues[key as keyof typeof beforeValues] !== updates[key])
+    if (shouldRestore && !hasEffectiveChange) {
+      message.warning('请先修改关键词或链接，再保存并恢复')
+      return
     }
     const { error } = await supabase.from('sub_orders').update(updates).eq('id', kwEditRecord.value.id)
     if (error) throw error
@@ -3162,7 +3439,11 @@ async function saveKwEdit() {
       const sub = subOrdersMap.value[orderId].find((s: any) => s.id === kwEditRecord.value.id)
       if (sub) Object.assign(sub, updates)
     }
-    message.success('关键词/链接已更新')
+    if (shouldRestore) {
+      const taskRecord = tasks.value.find((item: any) => item.id === orderId)
+      if (taskRecord) applyRestoredSubOrderState(kwEditRecord.value, taskRecord)
+    }
+    message.success(shouldRestore ? '关键词/链接已更新，子订单已恢复至待分配' : '关键词/链接已更新')
     kwEditOpen.value = false
   } catch (e: any) {
     message.error('保存失败：' + e.message)
@@ -3175,14 +3456,22 @@ async function saveQuickEdit() {
   if (!quickEditRecord.value || !quickEditField.value) return
   quickEditSaving.value = true
   try {
+    const shouldRestore = isCutoffSubOrder(quickEditRecord.value)
     const field = quickEditField.value
-    const beforeValue = field === 'review_type'
+    const rawBeforeValue = field === 'review_type'
       ? formatReviewType(quickEditRecord.value.review_type || quickEditRecord.value.order_type)
       : quickEditRecord.value[field]
+    const beforeValue = field === 'product_price'
+      ? (rawBeforeValue == null || rawBeforeValue === '' ? null : Number(rawBeforeValue))
+      : (typeof rawBeforeValue === 'string' ? rawBeforeValue.trim() : rawBeforeValue) || null
     const value = field === 'product_price'
       ? (quickEditValue.value == null || quickEditValue.value === '' ? null : Number(quickEditValue.value))
       : (typeof quickEditValue.value === 'string' ? quickEditValue.value.trim() : quickEditValue.value) || null
     const normalizedValue = field === 'review_type' && value ? formatReviewType(String(value)) : value
+    if (shouldRestore && beforeValue === normalizedValue) {
+      message.warning(`请先修改${quickEditMeta.value?.label || '字段'}，再保存并恢复`)
+      return
+    }
     const updates = { [field]: normalizedValue }
     const { error } = await supabase.from('sub_orders').update(updates).eq('id', quickEditRecord.value.id)
     if (error) throw error
@@ -3201,7 +3490,13 @@ async function saveQuickEdit() {
         changes: [{ field, from: beforeValue, to: normalizedValue }],
       })
     }
-    message.success(`${quickEditMeta.value?.label || '字段'}已更新`)
+    if (shouldRestore) {
+      const taskRecord = tasks.value.find((item: any) => item.id === orderId)
+      if (taskRecord) applyRestoredSubOrderState(quickEditRecord.value, taskRecord)
+    }
+    message.success(shouldRestore
+      ? `${quickEditMeta.value?.label || '字段'}已更新，子订单已恢复至待分配`
+      : `${quickEditMeta.value?.label || '字段'}已更新`)
     quickEditOpen.value = false
   } catch (e: any) {
     message.error('保存失败：' + e.message)
@@ -3215,6 +3510,7 @@ const editSubModalOpen = ref(false)
 const editSubSaving = ref(false)
 const selectedSubIdsMap = ref<Record<string, string[]>>({})
 const batchEditOrderId = ref<string>('')
+const batchEditRestoreMode = ref(false)
 const batchEditFieldOptions = [
   { key: 'keyword', label: '关键词', type: 'text', options: [] as string[] },
   { key: 'review_type', label: '测评类型', type: 'select', options: reviewTypeOptions },
@@ -3264,7 +3560,7 @@ function getSelectedSubCount(orderId: string) {
 }
 
 function canBatchEditSub(sub: any) {
-  return !sub?.buyer_id && !sub?.buyer_name
+  return !isCutoffDividerRow(sub) && !isCutoffSubOrder(sub) && !sub?.buyer_id && !sub?.buyer_name
 }
 
 function getSelectableSubOrders(orderId: string) {
@@ -3312,8 +3608,25 @@ async function openBatchEdit(record: any) {
     return
   }
   batchEditOrderId.value = record.id
+  batchEditRestoreMode.value = false
   resetBatchEditForm()
   editSubModalOpen.value = true
+}
+
+function openCutoffBatchEdit(sub: any, taskRecord: any) {
+  batchEditOrderId.value = taskRecord.id
+  selectedSubIdsMap.value[taskRecord.id] = [sub.id]
+  batchEditRestoreMode.value = true
+  resetBatchEditForm()
+  editSubModalOpen.value = true
+}
+
+function cancelBatchEdit() {
+  if (batchEditRestoreMode.value && batchEditOrderId.value) {
+    selectedSubIdsMap.value[batchEditOrderId.value] = []
+  }
+  batchEditRestoreMode.value = false
+  resetBatchEditForm()
 }
 
 async function saveBatchEdit() {
@@ -3322,10 +3635,12 @@ async function saveBatchEdit() {
   try {
     if (activeBatchEditFields.value.length === 0) { message.warning('请先选择至少一个修改字段'); return }
 
+    const shouldRestore = batchEditRestoreMode.value
     const selectedCount = currentBatchSelectedIds.value.length
+    const selectedIds = [...currentBatchSelectedIds.value]
     const payload: Record<string, any> = {}
     const orderId = batchEditOrderId.value
-    const targetSubs = (subOrdersMap.value[orderId] || []).filter((sub: any) => currentBatchSelectedIds.value.includes(sub.id))
+    const targetSubs = (subOrdersMap.value[orderId] || []).filter((sub: any) => selectedIds.includes(sub.id))
     const changeList: any[] = []
     for (const field of activeBatchEditFields.value) {
       const value = batchEditForm.value[field.key]
@@ -3334,11 +3649,14 @@ async function saveBatchEdit() {
         : field.key === 'review_type'
           ? ((value ? formatReviewType(String(value)) : null))
           : (value ?? '') || null
-      const beforeValue = targetSubs[0]
+      const rawBeforeValue = targetSubs[0]
         ? (field.key === 'review_type'
           ? formatReviewType(targetSubs[0].review_type || targetSubs[0].order_type)
           : targetSubs[0][field.key])
         : null
+      const beforeValue = field.key === 'product_price'
+        ? (rawBeforeValue == null || rawBeforeValue === '' ? null : Number(rawBeforeValue))
+        : (rawBeforeValue ?? '') || null
       changeList.push({
         field: field.key,
         from: beforeValue,
@@ -3346,10 +3664,22 @@ async function saveBatchEdit() {
       })
     }
     const effectiveChanges = changeList.filter(item => item.from !== item.to)
+    if (shouldRestore && effectiveChanges.length === 0) {
+      message.warning('请至少修改一个字段，再确认修改并恢复')
+      return
+    }
 
-    const { error } = await supabase.from('sub_orders').update(payload).in('id', currentBatchSelectedIds.value)
+    const { error } = await supabase.from('sub_orders').update(payload).in('id', selectedIds)
     if (error) throw error
-    await loadSubOrders(orderId)
+    if (shouldRestore) {
+      const taskRecord = tasks.value.find((item: any) => item.id === orderId)
+      targetSubs.forEach((sub: any) => {
+        Object.assign(sub, payload, { updated_at: new Date().toISOString() })
+        if (taskRecord) applyRestoredSubOrderState(sub, taskRecord)
+      })
+    } else {
+      await loadSubOrders(orderId)
+    }
     selectedSubIdsMap.value[orderId] = []
     if (orderId && effectiveChanges.length) {
       appendTaskEditHistory(orderId, {
@@ -3360,7 +3690,10 @@ async function saveBatchEdit() {
       })
     }
     resetBatchEditForm()
-    message.success(`已批量修改 ${selectedCount} 条子订单`)
+    message.success(shouldRestore
+      ? `已修改并恢复 ${selectedCount} 条子订单，等待主管重新分配`
+      : `已批量修改 ${selectedCount} 条子订单`)
+    batchEditRestoreMode.value = false
     editSubModalOpen.value = false
   } catch (e: any) {
     message.error('保存失败：' + e.message)
@@ -3640,7 +3973,13 @@ onMounted(() => {
 .stat-item { display: flex; flex-direction: column; align-items: center; min-width: 48px; gap: 2px; }
 .stat-item-clickable { cursor: pointer; border-radius: 6px; padding: 4px 6px; margin: -4px -6px; transition: background 0.15s; }
 .stat-item-clickable:hover { background: #eff6ff; }
-.stat-label { font-size: 11px; color: #9ca3af; line-height: 1; }
+.stat-label { font-size: 11px; color: #9ca3af; line-height: 1; display: inline-flex; align-items: center; gap: 4px; }
+.stat-overdue-badge {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: #dc2626;
+}
 .stat-val { font-size: 20px; font-weight: 700; line-height: 1.2; }
 .stat-unit { font-size: 12px; font-weight: 400; color: #9ca3af; margin-left: 1px; }
 .stat-daily { font-size: 11px; color: #6b7280; white-space: nowrap; margin-top: 1px; }
@@ -3999,11 +4338,126 @@ onMounted(() => {
   padding: 12px 16px 16px 32px;
 }
 .sub-orders-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.sub-orders-title { font-size: 12px; font-weight: 600; color: #374151; }
+.sub-orders-title { padding-left: 12px; font-size: 12px; font-weight: 600; color: #374151; }
 .sub-orders-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sub-orders-selected { font-size: 12px; color: #2563eb; font-weight: 600; }
 .sub-orders-eligible { font-size: 12px; color: #6b7280; }
 .no-sub-orders { margin-top: 10px; color: #9ca3af; font-size: 13px; text-align: center; padding: 12px 0; }
+.cutoff-sub-toggle {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.cutoff-sub-toggle:hover {
+  background: #f3f4f6;
+}
+.cutoff-sub-toggle-main {
+  position: sticky;
+  left: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.cutoff-sub-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08);
+}
+.cutoff-sub-icon {
+  margin-left: 1px;
+  font-size: 9px;
+  transition: transform 0.2s ease;
+}
+.cutoff-sub-icon.expanded { transform: rotate(90deg); }
+.cutoff-sub-title {
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cutoff-sub-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.07);
+  color: #dc2626;
+  font-size: 11px;
+  font-weight: 600;
+}
+.cutoff-sub-toggle-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 3px;
+  padding-left: 10px;
+  border-left: 1px solid #e5e7eb;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 600;
+}
+.cutoff-sub-toggle:hover .cutoff-sub-toggle-action { color: #1d4ed8; }
+.restore-sub-btn {
+  padding-inline: 2px;
+  color: #2563eb;
+  font-weight: 600;
+}
+.modify-restore-sub-btn {
+  padding-inline: 2px;
+  color: #7c3aed;
+  font-weight: 600;
+}
+.cutoff-sub-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.cutoff-sub-action-divider {
+  width: 1px;
+  height: 12px;
+  background: #e5e7eb;
+}
+:deep(.cutoff-divider-row > td) {
+  padding: 0 !important;
+  border-top: 1px solid #e5e7eb !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  background: #f8fafc !important;
+}
+:deep(.cutoff-divider-row .ant-table-selection-column .ant-checkbox-wrapper) {
+  visibility: hidden;
+}
+:deep(.cutoff-divider-row:hover > td) {
+  background: #f8fafc !important;
+}
+:deep(.cutoff-sub-row > td) {
+  background: #f9fafb !important;
+  color: #6b7280;
+  border-bottom-color: #f0f0f0 !important;
+}
+:deep(.cutoff-sub-row:hover > td) {
+  background: #f3f4f6 !important;
+}
+:deep(.cutoff-sub-row .ant-tag) {
+  filter: grayscale(0.65);
+  opacity: 0.72;
+}
+:deep(.cutoff-sub-row .editable-cell),
+:deep(.cutoff-sub-row .kw-cell) {
+  cursor: pointer;
+}
+:deep(.cutoff-sub-row .kw-edit-icon) {
+  display: inline-flex;
+  opacity: 0.55;
+}
 .task-status-history {
   margin-top: 12px;
   margin-bottom: 12px;
@@ -4761,5 +5215,47 @@ onMounted(() => {
 <style>
 .main-field-change-popover .ant-popover-inner-content {
   padding: 8px 10px;
+}
+.task-ops-panel {
+  min-width: 200px;
+  padding: 6px 8px 8px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e5e7eb;
+}
+.task-ops-append-btn {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 6px;
+  border-radius: 6px;
+  color: #1a1a2e;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.task-ops-append-btn:hover {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.task-ops-divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 2px 0 4px;
+}
+.task-ops-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 6px;
+}
+.task-ops-label {
+  color: #1a1a2e;
+  font-size: 13px;
+  white-space: nowrap;
 }
 </style>

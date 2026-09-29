@@ -10,6 +10,7 @@ export type ReplaceProductMigrationOptions = {
   targetRefundAmount?: number
   targetPaypalFee?: number
   targetPaypalEmail?: string
+  billingNote?: string
 }
 
 export type ReplaceProductLookupResult = {
@@ -193,6 +194,7 @@ async function insertTargetRefundDeltaRequest(params: {
   targetPaypalFee: number
   targetPaypalEmail: string
   operatorName: string
+  billingNote: string
   note: string
 }) {
   const {
@@ -207,6 +209,7 @@ async function insertTargetRefundDeltaRequest(params: {
     targetPaypalFee,
     targetPaypalEmail,
     operatorName,
+    billingNote,
     note,
   } = params
   const actualPaid = Number(targetActualPaid || 0)
@@ -246,7 +249,7 @@ async function insertTargetRefundDeltaRequest(params: {
       asin: targetSubOrder.asin || '',
       store_name: targetSubOrder.store_name || '',
       staff_name: operatorName,
-      notes: [`更换产品后目标子单申请金额 $${desiredRefundAmount.toFixed(2)}，已返 $${processedTotal.toFixed(2)}，申请差额 $${delta.toFixed(2)}`, note].filter(Boolean).join('；'),
+      notes: [`更换产品后目标子单申请金额 $${desiredRefundAmount.toFixed(2)}，已返 $${processedTotal.toFixed(2)}，申请差额 $${delta.toFixed(2)}`, billingNote, note].filter(Boolean).join('；'),
     })
     .select()
     .maybeSingle()
@@ -280,6 +283,7 @@ export async function migrateSubOrderToReplacement(options: ReplaceProductMigrat
 
   const operatorName = text(options.operatorName) || '业务员'
   const note = text(options.note)
+  const billingNote = text(options.billingNote)
   const nowIso = new Date().toISOString()
   const targetActualPaid = Number(options.targetActualPaid || 0)
   const targetRefundMethod = text(options.targetRefundMethod) || sourceSubOrder.refund_method || '礼品卡'
@@ -335,6 +339,7 @@ export async function migrateSubOrderToReplacement(options: ReplaceProductMigrat
     targetPaypalFee,
     targetPaypalEmail,
     operatorName,
+    billingNote,
     note,
   })
 

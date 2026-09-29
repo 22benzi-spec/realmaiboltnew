@@ -2407,8 +2407,13 @@ async function submitReorderEditorChanges(task: any) {
     message.error(task._buyer_validation.reason)
     return
   }
-  if (task?._sel_buyer_id && task._sel_buyer_id !== task.buyer_id) {
-    assignReorderBuyer(task)
+  if (task?._sel_buyer_id !== task.buyer_id) {
+    if (!task._sel_buyer_id) {
+      task.buyer_id = null
+      task.buyer_name = ''
+    } else {
+      assignReorderBuyer(task)
+    }
   }
   if (!task?.buyer_id) {
     message.warning('请选择补单买手')

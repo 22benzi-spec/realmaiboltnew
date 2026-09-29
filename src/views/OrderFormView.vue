@@ -48,21 +48,22 @@
                 <a-row :gutter="10" style="flex:1">
                   <a-col :span="10">
                     <a-select
-                      v-model:value="form.company_id"
+                      v-model:value="selectedCompanyKey"
                       placeholder="选择客户公司（选填）"
                       show-search
                       :filter-option="(input: string, option: any) => option.label?.toLowerCase().includes(input.toLowerCase())"
                       :loading="loadingCompanies"
                       allow-clear
                       style="width:100%"
-                      @change="onCompanyChange"
+                      @change="onCompanySelectChange"
                       @focus="!companyOptions.length && loadCompanies()"
                     >
                       <a-select-option
-                        v-for="c in companyOptions" :key="c.id" :value="c.id"
-                        :label="c.company_name"
+                        v-for="c in companySelectOptions" :key="c.key" :value="c.key"
+                        :label="c.label"
                       >
                         <span>{{ c.company_name }}</span>
+                        <span v-if="c.displayGroupName" style="color:#2563eb;font-size:12px;margin-left:6px">· {{ c.displayGroupName }}</span>
                         <span v-if="c.org_id" style="color:#9ca3af;font-size:11px;margin-left:6px">{{ c.org_id }}</span>
                       </a-select-option>
                     </a-select>
@@ -279,6 +280,37 @@
                   </span>
                   <strong class="total-amount">¥{{ form.total_amount.toFixed(2) }}</strong>
                 </div>
+              </div>
+              <div class="received-block">
+                <div class="received-head">
+                  <span class="received-title">实收款项</span>
+                  <a-button type="link" size="small" class="received-add" @click="addReceivedAmount">
+                    <PlusOutlined />
+                  </a-button>
+                </div>
+                <div v-for="(row, index) in receivedAmounts" :key="row.key" class="received-amount-row">
+                  <a-input-number
+                    v-model:value="row.amount"
+                    :min="0"
+                    :precision="2"
+                    :placeholder="index === 0 ? '例如 400' : '例如 800'"
+                    prefix="¥"
+                    style="width:160px"
+                  />
+                  <a-button
+                    v-if="receivedAmounts.length > 1"
+                    type="text"
+                    danger
+                    @click="removeReceivedAmount(index)"
+                  >
+                    <DeleteOutlined />
+                  </a-button>
+                </div>
+                <div class="received-foot">
+                  <span>实收合计</span>
+                  <strong>¥{{ receivedTotal.toFixed(2) }}</strong>
+                </div>
+                <p class="received-hint">分笔到账只加金额，不用填日期。保存后每笔金额各有一个流水号；客户、任务、日期这些相同信息合并显示。</p>
               </div>
             </div>
           </div>
@@ -735,6 +767,51 @@
         </a-col>
       </a-row>
     </a-form>
+
+    <a-modal
+      v-model:open="confirmOpen"
+      title="总任务确认"
+      ok-text="确认提交"
+      cancel-text="取消"
+      :confirm-loading="submitting"
+      :width="680"
+      :mask-closable="false"
+      @ok="onConfirmSubmit"
+    >
+      <div v-if="confirmSummary" class="task-confirm">
+        <div class="task-confirm-summary">
+          <span class="task-confirm-item">共 {{ confirmSummary.countryCount }} 个国家</span>
+          <span class="task-confirm-sep">|</span>
+          <span class="task-confirm-item">{{ confirmSummary.asinCount }} 个Asin</span>
+          <span class="task-confirm-sep">|</span>
+          <span class="task-confirm-item">总量{{ confirmSummary.totalQty }}单</span>
+          <template v-for="item in confirmSummary.typeItems" :key="item.type">
+            <span class="task-confirm-sep">|</span>
+            <span class="task-confirm-item">{{ item.type }}{{ item.qty }}单</span>
+          </template>
+        </div>
+        <div class="task-confirm-table-wrap">
+          <table class="task-confirm-table">
+            <thead>
+              <tr>
+                <th>ASIN</th>
+                <th>首日任务量</th>
+                <th>首日可操作时段</th>
+                <th>距截止</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in confirmSummary.asins" :key="row.asin">
+                <td class="task-confirm-asin">{{ row.asin }}</td>
+                <td>{{ row.firstDayQty }}单</td>
+                <td>{{ row.operateWindow }}</td>
+                <td :class="row.deadlineOverdue ? 'is-overdue' : 'is-countdown'">{{ row.deadlineText }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -747,16 +824,82 @@ import dayjs, { type Dayjs } from 'dayjs'
 
 const formRef = ref()
 const submitting = ref(false)
+const confirmOpen = ref(false)
+type ConfirmTypeItem = { type: string; qty: number }
+type ConfirmAsinRow = {
+  asin: string
+  firstDayQty: number
+  operateWindow: string
+  deadlineText: string
+  deadlineOverdue: boolean
+}
+type ConfirmSummary = {
+  countryCount: number
+  asinCount: number
+  totalQty: number
+  typeItems: ConfirmTypeItem[]
+  asins: ConfirmAsinRow[]
+}
+const confirmSummary = ref<ConfirmSummary | null>(null)
 const keywords = ref<string[]>([''])
 const kwGroups = ref<KwGroup[]>([])
 const currentOrderNumber = ref('')
 const customerLocked = ref(false)
 
 const companyOptions = ref<any[]>([])
+const selectedCompanyKey = ref('')
 const storeRecords = ref<any[]>([])
 const allAsinRecords = ref<any[]>([])
 const currentStoreAsins = ref<any[]>([])
 const loadingCompanies = ref(false)
+
+type CompanySelectOption = {
+  key: string
+  companyId: string
+  company_name: string
+  org_id: string
+  group_name: string
+  displayGroupName: string
+  label: string
+  feedback_type: string
+}
+
+const companySelectOptions = computed<CompanySelectOption[]>(() => {
+  const opts: CompanySelectOption[] = []
+  for (const c of companyOptions.value) {
+    const names = ((c.group_names || []) as string[]).map((n) => String(n || '').trim()).filter(Boolean)
+    const feedbackType = c.feedback_type || '私聊'
+    const isGroupChat = feedbackType === '群聊'
+
+    if (isGroupChat && names.length >= 2) {
+      for (const gn of names) {
+        opts.push({
+          key: `${c.id}::${gn}`,
+          companyId: c.id,
+          company_name: c.company_name,
+          org_id: c.org_id || '',
+          group_name: gn,
+          displayGroupName: gn,
+          label: `${c.company_name} ${gn} ${c.org_id || ''}`,
+          feedback_type: feedbackType,
+        })
+      }
+      continue
+    }
+
+    opts.push({
+      key: c.id,
+      companyId: c.id,
+      company_name: c.company_name,
+      org_id: c.org_id || '',
+      group_name: isGroupChat && names.length === 1 ? names[0] : '',
+      displayGroupName: '',
+      label: `${c.company_name} ${c.org_id || ''}`,
+      feedback_type: feedbackType,
+    })
+  }
+  return opts
+})
 
 const storeSuggestions = computed(() =>
   storeRecords.value.map(s => ({ value: s.store_name, storeId: s.id, country: s.country }))
@@ -778,18 +921,25 @@ const brandSuggestions = computed(() => {
   return [...brands].map(b => ({ value: b }))
 })
 
+/** 演示用客户：仅用于关联客户下拉预览多群聊拆行效果 (已移除，避免提交报错) */
+const MOCK_COMPANY_OPTIONS: any[] = []
+
 async function loadCompanies() {
   loadingCompanies.value = true
-  const { data } = await supabase
-    .from('client_companies')
-    .select('id, company_name, org_id')
-    .eq('status', '活跃')
-    .order('company_name')
-  companyOptions.value = data || []
-  loadingCompanies.value = false
+  try {
+    const { data, error } = await supabase
+      .from('client_companies')
+      .select('id, company_name, org_id, feedback_type')
+      .eq('status', '活跃')
+      .order('company_name')
+    const list = (!error && data) ? data : []
+    companyOptions.value = list
+  } finally {
+    loadingCompanies.value = false
+  }
 }
 
-async function onCompanyChange(companyId: string) {
+async function onCompanySelectChange(key: string) {
   form.store_id = ''
   form.asin = ''
   form.store_name = ''
@@ -801,21 +951,34 @@ async function onCompanyChange(companyId: string) {
   allAsinRecords.value = []
   currentStoreAsins.value = []
 
-  if (!companyId) {
+  if (!key) {
+    selectedCompanyKey.value = ''
+    form.company_id = ''
     form.customer_name = ''
     form.customer_id_str = ''
+    form.group_name = ''
+    form.feedback_channel = ''
     return
   }
-  const company = companyOptions.value.find(c => c.id === companyId)
-  if (company) {
-    form.customer_name = company.company_name
-    form.customer_id_str = company.org_id || ''
+
+  const opt = companySelectOptions.value.find((o) => o.key === key)
+  if (!opt) return
+
+  form.company_id = opt.companyId
+  form.customer_name = opt.company_name
+  form.customer_id_str = opt.org_id || ''
+  if (opt.feedback_type === '群聊') {
+    form.feedback_channel = '群组'
+    form.group_name = opt.group_name || ''
+  } else {
+    form.feedback_channel = '私聊'
+    form.group_name = ''
   }
 
   const { data: storeData } = await supabase
     .from('client_stores')
     .select('id, store_name, country, platform')
-    .eq('company_id', companyId)
+    .eq('company_id', opt.companyId)
     .order('store_name')
   storeRecords.value = storeData || []
 
@@ -1351,6 +1514,8 @@ const defaultForm = () => ({
   customer_name: '',
   customer_id_str: '',
   sales_person: '',
+  group_name: '',
+  feedback_channel: '' as string,
   status: '待处理',
   product_cost_cny: 0,
   company_id: '' as string,
@@ -1358,6 +1523,32 @@ const defaultForm = () => ({
 })
 
 const form = reactive(defaultForm())
+
+type ReceivedAmountRow = { key: number; amount: number | null }
+let receivedAmountKey = 2
+const receivedAmounts = ref<ReceivedAmountRow[]>([
+  { key: 1, amount: null },
+  { key: 2, amount: null },
+])
+const receivedTotal = computed(() => receivedAmounts.value.reduce((sum, row) => {
+  const amount = Number(row.amount || 0)
+  return sum + (amount > 0 ? amount : 0)
+}, 0))
+
+function addReceivedAmount() {
+  receivedAmountKey += 1
+  receivedAmounts.value.push({ key: receivedAmountKey, amount: null })
+}
+
+function removeReceivedAmount(index: number) {
+  if (receivedAmounts.value.length <= 1) return
+  receivedAmounts.value.splice(index, 1)
+}
+
+function resetReceivedAmounts() {
+  receivedAmountKey = 1
+  receivedAmounts.value = [{ key: receivedAmountKey, amount: null }]
+}
 
 const rules = {
   asin: [{ required: true, message: '请输入ASIN' }],
@@ -1393,6 +1584,97 @@ function removeKeyword(i: number) {
   keywords.value.splice(i, 1)
 }
 
+function getUSPacificOffset(dateStr: string) {
+  try {
+    const d = new Date(dateStr + 'T12:00:00Z')
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      hour: 'numeric',
+      hourCycle: 'h23'
+    })
+    const hour = parseInt(formatter.format(d), 10)
+    return hour - 12
+  } catch {
+    return -7
+  }
+}
+
+function buildFirstDayRow(asin: string, firstDateStr: string, firstDayQty: number): ConfirmAsinRow {
+  const offset = getUSPacificOffset(firstDateStr)
+  const startUTC = new Date(`${firstDateStr}T00:00:00.000${offset === -7 ? '-07:00' : '-08:00'}`)
+  const endUTC = new Date(startUTC.getTime() + 24 * 60 * 60 * 1000 - 1000)
+
+  const formatBJ = (d: Date) => {
+    const bjTime = new Date(d.getTime() + 8 * 60 * 60 * 1000)
+    const m = bjTime.getUTCMonth() + 1
+    const day = bjTime.getUTCDate()
+    const h = String(bjTime.getUTCHours()).padStart(2, '0')
+    const min = String(bjTime.getUTCMinutes()).padStart(2, '0')
+    return `${m}.${day}日 ${h}:${min}`
+  }
+
+  const now = new Date()
+  const diffMs = endUTC.getTime() - now.getTime()
+  if (diffMs > 0) {
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+    const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+    return {
+      asin,
+      firstDayQty,
+      operateWindow: `${formatBJ(startUTC)} - ${formatBJ(endUTC)}`,
+      deadlineText: [diffDays > 0 ? `${diffDays}天` : '', `${diffHours}小时`, `${diffMins}分`].filter(Boolean).join(' '),
+      deadlineOverdue: false,
+    }
+  }
+  return {
+    asin,
+    firstDayQty,
+    operateWindow: `${formatBJ(startUTC)} - ${formatBJ(endUTC)}`,
+    deadlineText: '已截止',
+    deadlineOverdue: true,
+  }
+}
+
+function showConfirmDialog() {
+  const typeTotals: Record<string, number> = {}
+  if (scheduleEntries.value.length > 0) {
+    scheduleEntries.value.forEach(e => {
+      (e.typeDetails || []).forEach(td => {
+        typeTotals[td.type] = (typeTotals[td.type] || 0) + td.qty
+      })
+    })
+  } else {
+    form.order_types.forEach(t => {
+      typeTotals[t] = form.order_quantity
+    })
+  }
+
+  let firstDateStr = dayjs().format('YYYY-MM-DD')
+  let firstDayQty = form.order_quantity
+  if (scheduleEntries.value.length > 0) {
+    const sorted = [...scheduleEntries.value].sort((a, b) => a.date.localeCompare(b.date))
+    firstDateStr = sorted[0].date
+    firstDayQty = sorted[0].quantity
+  }
+
+  const asins = [buildFirstDayRow(form.asin || '未填写', firstDateStr, firstDayQty)]
+
+  confirmSummary.value = {
+    countryCount: 1,
+    asinCount: asins.length,
+    totalQty: form.order_quantity,
+    typeItems: Object.entries(typeTotals).map(([type, qty]) => ({ type, qty })),
+    asins,
+  }
+  confirmOpen.value = true
+}
+
+async function onConfirmSubmit() {
+  const ok = await doSubmit()
+  if (!ok) return Promise.reject()
+}
+
 async function handleSubmit() {
   if (form.order_types.length === 0) {
     message.warning('请至少选择一种下单类型')
@@ -1404,11 +1686,11 @@ async function handleSubmit() {
       content: `任务总订单量为 ${form.order_quantity} 单，当前仅排期了 ${scheduledTotal.value} 单，还有 ${form.order_quantity - scheduledTotal.value} 单未排期。是否仍要提交？`,
       okText: '继续提交',
       cancelText: '返回补充',
-      onOk: () => doSubmit(),
+      onOk: () => showConfirmDialog(),
     })
     return
   }
-  await doSubmit()
+  showConfirmDialog()
 }
 
 async function doSubmit() {
@@ -1451,7 +1733,16 @@ async function doSubmit() {
       )
     }
 
+    if (data) {
+      try {
+        await insertReceivedTransactions(data)
+      } catch (payErr: any) {
+        message.warning('任务已创建，实收流水未写入：' + (payErr?.message || '未知错误'))
+      }
+    }
+
     await syncToClientLibrary()
+    confirmOpen.value = false
     message.success(`任务 ${orderNumber} 创建成功！`)
     if (customerLocked.value) {
       const savedCustomer = {
@@ -1460,6 +1751,9 @@ async function doSubmit() {
         sales_person: form.sales_person,
         company_id: form.company_id,
         store_id: form.store_id,
+        group_name: form.group_name,
+        feedback_channel: form.feedback_channel,
+        company_select_key: selectedCompanyKey.value,
       }
       Modal.confirm({
         title: '继续为同一客户创建任务？',
@@ -1479,15 +1773,60 @@ async function doSubmit() {
       resetForm()
       currentOrderNumber.value = generateOrderNumber()
     }
+    return true
   } catch (e: any) {
     message.error('创建失败：' + e.message)
+    return false
   } finally {
     submitting.value = false
   }
 }
 
+async function insertReceivedTransactions(order: { id: string; order_number: string }) {
+  const amounts = receivedAmounts.value
+    .map(row => Number(row.amount || 0))
+    .filter(amount => amount > 0)
+  if (!amounts.length) return
+  const splitGroup = amounts.length > 1 ? `SPLIT-${order.order_number}-${Date.now()}` : ''
+  const orderTypes = Array.isArray(form.order_types) ? form.order_types : []
+  for (let index = 0; index < amounts.length; index += 1) {
+    const amount = amounts[index]
+    const { data: txNo } = await supabase.rpc('generate_transaction_no')
+    const transactionNo = txNo || `FT-${Date.now()}-${index + 1}`
+    const { error } = await supabase.from('financial_transactions').insert({
+      transaction_no: transactionNo,
+      transaction_type: '任务收入',
+      direction: '收入',
+      amount_cny: amount,
+      exchange_rate: form.exchange_rate || 7.25,
+      customer_name: form.customer_name || '',
+      customer_id_str: form.customer_id_str || '',
+      order_id: order.id,
+      order_number: order.order_number,
+      staff_name: form.sales_person || '',
+      status: '待确认',
+      business_countries: form.country ? [form.country] : [],
+      business_types: orderTypes,
+      business_order_count: form.order_quantity || 0,
+      business_breakdown: [{
+        direction: '收入',
+        target_order_number: order.order_number,
+        country: form.country || '',
+        business_type: orderTypes[0] || '',
+        order_count: form.order_quantity || 0,
+        amount_cny: amount,
+      }],
+      notes: splitGroup ? `分笔实收|split:${splitGroup}` : '',
+      transaction_date: dayjs().format('YYYY-MM-DD'),
+    })
+    if (error) throw error
+  }
+}
+
 function resetForm() {
   customerLocked.value = false
+  selectedCompanyKey.value = ''
+  resetReceivedAmounts()
   Object.assign(form, defaultForm())
   priceNoReview.value = 25
   priceText.value = 88
@@ -1515,9 +1854,13 @@ function continueNextAsin(savedCustomer: {
   sales_person: string
   company_id: string
   store_id: string
+  group_name: string
+  feedback_channel: string
+  company_select_key: string
 }) {
   const savedStoreRecords = [...storeRecords.value]
   const savedAllAsinRecords = [...allAsinRecords.value]
+  resetReceivedAmounts()
   Object.assign(form, defaultForm())
   priceNoReview.value = 25
   priceText.value = 88
@@ -1540,6 +1883,9 @@ function continueNextAsin(savedCustomer: {
   form.sales_person = savedCustomer.sales_person
   form.company_id = savedCustomer.company_id
   form.store_id = savedCustomer.store_id
+  form.group_name = savedCustomer.group_name
+  form.feedback_channel = savedCustomer.feedback_channel
+  selectedCompanyKey.value = savedCustomer.company_select_key
   storeRecords.value = savedStoreRecords
   allAsinRecords.value = savedAllAsinRecords
   customerLocked.value = true
@@ -2424,6 +2770,49 @@ onMounted(() => {
 }
 
 /* 账单明细增强 */
+.received-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+.received-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.received-title {
+  color: #1a1a2e;
+  font-size: 13px;
+  font-weight: 600;
+}
+.received-add {
+  padding-inline: 4px;
+}
+.received-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.received-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+.received-foot strong {
+  color: #059669;
+  font-size: 14px;
+}
+.received-hint {
+  margin: 8px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .bill-section-label {
   font-size: 11px;
   font-weight: 600;
@@ -2509,5 +2898,71 @@ onMounted(() => {
 .type-total-qty {
   font-weight: 700;
   color: #2563eb;
+}
+
+.task-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-confirm-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #1a1a2e;
+}
+.task-confirm-item {
+  padding: 0 2px;
+}
+.task-confirm-sep {
+  margin: 0 10px;
+  color: #9ca3af;
+}
+.task-confirm-table-wrap {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.task-confirm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.task-confirm-table th,
+.task-confirm-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+  white-space: nowrap;
+}
+.task-confirm-table th {
+  position: sticky;
+  top: 0;
+  background: #f5f7fa;
+  color: #6b7280;
+  font-weight: 600;
+}
+.task-confirm-table td {
+  color: #1a1a2e;
+}
+.task-confirm-table tr:last-child td {
+  border-bottom: none;
+}
+.task-confirm-asin {
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  color: #2563eb;
+}
+.task-confirm-table .is-countdown {
+  color: #d97706;
+  font-weight: 600;
+}
+.task-confirm-table .is-overdue {
+  color: #dc2626;
+  font-weight: 600;
 }
 </style>

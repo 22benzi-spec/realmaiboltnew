@@ -34,7 +34,7 @@
           <div class="kpi-split-divider"></div>
           <div class="kpi-split-item">
             <div class="kpi-val blue">{{ stats.customerCount }}</div>
-            <div class="kpi-label">交易客户</div>
+            <div class="kpi-label">交易对象</div>
           </div>
         </div>
       </div>
@@ -42,7 +42,7 @@
 
     <!-- 筛选栏 -->
     <div class="filter-bar">
-      <a-input v-model:value="search" placeholder="搜索客户 / 订单ID / 流水号 / 备注" style="width:220px" allow-clear @change="loadData" />
+      <a-input v-model:value="search" placeholder="搜索对象 / 任务号 / 流水号 / 备注" style="width:240px" allow-clear @change="loadData" />
       <a-select v-model:value="filterPrimaryCategory" placeholder="一级分类" style="width:140px" allow-clear @change="onPrimaryFilterChange">
         <a-select-option v-for="item in primaryCategoryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
       </a-select>
@@ -78,7 +78,7 @@
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'direction'">
           <div class="direction-tags">
-            <a-tag v-for="direction in getDirectionParts(record)" :key="direction" :color="getDirectionColor(direction)">{{ direction }}</a-tag>
+            <a-tag v-for="direction in getListDirectionParts(record)" :key="direction" :color="getDirectionColor(direction)">{{ direction }}</a-tag>
           </div>
         </template>
         <template v-if="column.key === 'transaction_type'">
@@ -88,8 +88,24 @@
           </div>
         </template>
         <template v-if="column.key === 'amount'">
-          <div class="amount-stack">
-            <template v-if="hasAmount(record)">
+          <div v-if="showSplitOffsetAmount(record)" class="split-amount-with-offset">
+            <div class="split-amount-lines">
+              <span v-for="line in getSplitCashAmountLines(record)" :key="line.id" class="amount-in">
+                +¥{{ formatNum(line.amount) }}
+              </span>
+            </div>
+            <div class="split-offset-side">
+              <span class="amount-name">抵消</span>
+              <span class="amount-offset">¥{{ formatNum(record._group_offset_amount) }}</span>
+            </div>
+          </div>
+          <div v-else class="amount-stack">
+            <template v-if="getMixedAmountLines(record)">
+              <span v-for="line in getMixedAmountLines(record)" :key="line.label" :class="line.className">
+                <span class="amount-name">{{ line.label }}</span>{{ line.prefix }}¥{{ formatNum(line.amount) }}
+              </span>
+            </template>
+            <template v-else-if="hasAmount(record)">
               <span v-if="Number(record.amount_cny || 0) > 0" :class="getAmountClass(record)">
                 {{ getAmountPrefix(record) }}¥{{ formatNum(record.amount_cny) }}
               </span>
@@ -101,10 +117,17 @@
           </div>
         </template>
         <template v-if="column.key === 'countries'">
-          <a-tooltip v-if="getCountries(record).length > 1" :title="getCountries(record).join('、')">
-            <a-tag color="default">{{ getCountrySummary(record) }}</a-tag>
-          </a-tooltip>
-          <a-tag v-else-if="getCountries(record).length" color="default">{{ getCountrySummary(record) }}</a-tag>
+          <template v-if="showListCountry(record)">
+            <a-tooltip v-if="getCountries(record).length > 1" :title="getCountries(record).join('、')">
+              <a-tag color="default">{{ getCountrySummary(record) }}</a-tag>
+            </a-tooltip>
+            <a-tag v-else-if="getCountries(record).length" color="default">{{ getCountrySummary(record) }}</a-tag>
+            <span v-else class="text-muted">-</span>
+          </template>
+          <span v-else class="text-muted">-</span>
+        </template>
+        <template v-if="column.key === 'order_number'">
+          <span v-if="showListTask(record) && getOrderIdSummary(record)">{{ getOrderIdSummary(record) }}</span>
           <span v-else class="text-muted">-</span>
         </template>
         <template v-if="column.key === 'business_summary'">
@@ -172,7 +195,7 @@
           </a-col>
           <a-col :span="24">
             <div class="form-tip">
-              {{ isAdministrativeEntry ? '行政办公不设二级分类，请在用途或备注里写清楚具体事项。' : '业务记账可按类型补充往来对象、客户或订单信息。' }}
+              {{ isAdministrativeEntry ? '行政办公不设二级分类，请在用途或备注里写清楚具体事项。' : '业务记账可按类型补充对象或任务信息。' }}
             </div>
           </a-col>
           <a-col :span="12">
@@ -251,28 +274,26 @@
 
     <a-drawer
       v-model:open="detailOpen"
-      title="流水详情"
+      :title="detailDrawerTitle"
       width="680px"
       :body-style="{ background: '#f5f7fa', padding: '20px' }"
     >
       <div v-if="detailRecord" class="detail-panel">
         <div class="detail-hero">
-          <div class="detail-title-row">
-            <div class="detail-title-left">
-              <div class="detail-no">{{ detailRecord.transaction_no || '-' }}</div>
-              <div class="detail-meta-line">
-                <span>{{ detailRecord.transaction_date || '-' }}</span>
-              </div>
-            </div>
-            <a-tag :color="getDirectionColor(getDirection(detailRecord))">{{ getDirection(detailRecord) }}</a-tag>
-          </div>
-          <div class="detail-hero-bottom">
+          <div class="detail-hero-top">
             <div>
-              <div class="detail-amount-label">金额</div>
-              <div class="detail-amount" :class="getAmountClass(detailRecord)">
+              <template v-if="getMixedAmountLines(detailRecord)">
+                <div v-for="line in getMixedAmountLines(detailRecord)" :key="line.label" class="detail-amount-line">
+                  <span class="detail-amount" :class="line.className">{{ line.prefix }}¥{{ formatNum(line.amount) }}</span>
+                  <span class="detail-amount-name">{{ line.label }}</span>
+                </div>
+              </template>
+              <div v-else class="detail-amount" :class="getAmountClass(detailRecord)">
                 {{ getAmountPrefix(detailRecord) }}¥{{ formatNum(detailRecord.amount_cny) }}
               </div>
+              <div class="detail-meta-line">{{ detailRecord.transaction_date || '-' }}</div>
             </div>
+            <a-tag :color="getDirectionColor(getDirection(detailRecord))">{{ getDirection(detailRecord) }}</a-tag>
           </div>
         </div>
 
@@ -281,15 +302,31 @@
           <div class="detail-info-grid">
             <div class="detail-info-item">
               <span>交易类型</span>
-              <strong>{{ getPrimaryCategoryLabel(detailRecord) }} / {{ getTransactionTypeLabel(detailRecord) }}</strong>
+              <strong>{{ getPrimaryCategoryLabel(detailRecord) }}<template v-if="normalizeTransactionCategories(detailRecord).secondary"> / {{ getTransactionTypeLabel(detailRecord) }}</template></strong>
             </div>
             <div class="detail-info-item">
-              <span>客户</span>
+              <span>对象</span>
               <strong>{{ detailRecord.customer_name || '-' }}</strong>
             </div>
-            <div class="detail-info-item">
-              <span>订单ID</span>
-              <strong>{{ getOrderIdSummary(detailRecord) || '-' }}</strong>
+            <div v-if="getLandingAccountLabel(detailRecord)" class="detail-info-item">
+              <span>{{ getLandingAccountLabel(detailRecord) }}</span>
+              <strong class="mono">{{ getLandingAccount(detailRecord) || '-' }}</strong>
+            </div>
+            <div v-if="showDetailPaymentAccount(detailRecord)" class="detail-info-item">
+              <span>付款账号</span>
+              <strong class="mono">{{ getPaymentAccount(detailRecord) || '-' }}</strong>
+            </div>
+            <div v-if="showDetailTask(detailRecord)" class="detail-info-item">
+              <span>任务号</span>
+              <strong class="mono">{{ getOrderIdSummary(detailRecord) || '-' }}</strong>
+            </div>
+            <div v-if="showDetailCountry(detailRecord)" class="detail-info-item">
+              <span>国家</span>
+              <strong>{{ getCountries(detailRecord).join('、') || '-' }}</strong>
+            </div>
+            <div v-if="showDetailUsd(detailRecord)" class="detail-info-item">
+              <span>外币 / 汇率</span>
+              <strong>{{ Number(detailRecord.amount_usd || 0) > 0 ? `$${formatNum(detailRecord.amount_usd)} / ${Number(detailRecord.exchange_rate || 0).toFixed(4)}` : '-' }}</strong>
             </div>
             <div class="detail-info-item">
               <span>申请人</span>
@@ -306,59 +343,54 @@
           </div>
         </div>
 
-        <div v-if="shouldShowBusinessSection(detailRecord)" class="detail-card">
-          <div class="detail-section-head">
-            <div class="detail-section-title">业务明细</div>
-            <div v-if="detailRecord.offset_source_type" class="detail-section-summary">{{ detailRecord.offset_source_type }}</div>
-          </div>
-          <div v-if="detailRecord.offset_source_note" class="detail-source-note">
-            {{ detailRecord.offset_source_note }}
-          </div>
-          <div v-if="getDetailBreakdownRows(detailRecord).length && !hasOffsetPart(detailRecord)" class="breakdown-table" :class="{ 'breakdown-table-settlement': hasSettlementPart(detailRecord) }">
+        <div v-if="showDetailTask(detailRecord)" class="detail-card">
+          <div class="detail-section-title">业务明细</div>
+          <table v-if="getBusinessTaskRows(detailRecord).length" class="detail-merge-table">
+            <thead>
+              <tr>
+                <th>任务号</th>
+                <th>国家</th>
+                <th v-if="showDetailTypeColumns(detailRecord)">类型</th>
+                <th v-if="showDetailTypeColumns(detailRecord)">单量</th>
+                <th class="amount">金额</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item, index) in getBusinessTaskRows(detailRecord)" :key="index">
+                <td v-if="item.showTaskId" class="mono task-cell" :rowspan="item.taskRowSpan">{{ item.taskId || '-' }}</td>
+                <td>{{ item.country || '-' }}</td>
+                <td v-if="showDetailTypeColumns(detailRecord)">{{ item.type || '-' }}</td>
+                <td v-if="showDetailTypeColumns(detailRecord)">{{ item.count }} 单</td>
+                <td class="amount"><strong>¥{{ formatNum(item.amount) }}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="detail-empty">暂无业务明细</div>
+        </div>
+
+        <div v-if="showDetailTask(detailRecord) && hasOffsetPart(detailRecord)" class="detail-card">
+          <div class="detail-section-title">抵消明细</div>
+          <div v-if="getOffsetDetailRows(detailRecord).length" class="breakdown-table">
             <div class="breakdown-table-head">
-              <span>新任务ID</span>
-              <span v-if="hasSettlementPart(detailRecord)">结算方向</span>
+              <span>抵消来源任务号</span>
               <span>国家</span>
               <span>类型</span>
               <span>单量</span>
+              <span>金额</span>
             </div>
-            <div v-for="(item, index) in getDetailBreakdownRows(detailRecord)" :key="index" class="breakdown-table-row">
-              <span class="mono">{{ getBreakdownOrderId(item) || '-' }}</span>
-              <span v-if="hasSettlementPart(detailRecord)">
-                <a-tag :color="getDirectionColor(getBreakdownDirection(item, detailRecord))" size="small">{{ getBreakdownDirection(item, detailRecord) }}</a-tag>
-              </span>
+            <div v-for="(item, index) in getOffsetDetailRows(detailRecord)" :key="index" class="breakdown-table-row">
+              <span class="mono">{{ item.showSourceTaskId ? (item.sourceTaskId || '-') : '' }}</span>
               <span>{{ item.country || '-' }}</span>
-              <span>{{ normalizeBusinessType(item.business_type) || '-' }}</span>
-              <span>{{ Number(item.order_count || 0) }} 单</span>
+              <span>{{ item.type || '-' }}</span>
+              <span>{{ item.count }} 单</span>
+              <strong>¥{{ formatNum(item.amount) }}</strong>
             </div>
           </div>
-          <div v-if="hasOffsetPart(detailRecord)" class="offset-source-table">
-            <div class="offset-source-title">抵消来源明细</div>
-            <div class="offset-source-head offset-source-head-simple">
-              <span>抵消任务ID</span>
-              <span>抵消金额</span>
-            </div>
-            <div v-for="(row, index) in getOffsetSourceRows(detailRecord)" :key="index" class="offset-source-row offset-source-row-simple">
-              <span class="mono">{{ row.sourceOrderId || '-' }}</span>
-              <strong>¥{{ formatNum(row.amountCny) }}</strong>
-            </div>
-          </div>
-          <div v-if="hasOffsetPart(detailRecord)" class="offset-source-table">
-            <div class="offset-source-title">抵消业务明细</div>
-            <div class="offset-source-head offset-source-head-simple">
-              <span>类型</span>
-              <span>单量</span>
-            </div>
-            <div v-for="(row, index) in getOffsetBusinessPairRows(detailRecord)" :key="index" class="offset-source-row offset-source-row-simple">
-              <span>{{ row.businessType || '-' }}</span>
-              <strong>{{ row.orderCount }} 单</strong>
-            </div>
-          </div>
-          <div v-if="!getDetailBreakdownRows(detailRecord).length && !hasOffsetPart(detailRecord)" class="detail-empty">暂无拆分明细</div>
+          <div v-else class="detail-empty">暂无抵消明细</div>
         </div>
 
         <div v-if="detailRecord.notes" class="detail-card">
-          <div class="detail-section-title">备注</div>
+          <div class="detail-section-title">账单备注</div>
           <div class="detail-notes">{{ detailRecord.notes }}</div>
         </div>
       </div>
@@ -397,6 +429,10 @@ const modalOpen = ref(false)
 const editId = ref<string | null>(null)
 const detailOpen = ref(false)
 const detailRecord = ref<any | null>(null)
+const detailDrawerTitle = computed(() => {
+  const no = String(detailRecord.value?.transaction_no || '').trim()
+  return no ? `流水详情 - ${no}` : '流水详情'
+})
 
 const { currentUser, loadFromStorage } = useCurrentUser()
 
@@ -510,23 +546,41 @@ const emptyForm = () => ({
 })
 const form = reactive(emptyForm())
 
+const splitMergedColumnKeys = new Set([
+  'transaction_date', 'countries', 'transaction_type', 'direction',
+  'customer_name', 'business_summary', 'order_number', 'staff_name', 'handler_name',
+  'status', 'notes', 'receipt',
+])
+
+function splitReceiptCell(record: any, key: string) {
+  const span = Number(record?._split_row_span ?? 1)
+  const mergeAmount = key === 'amount' && Number(record?._group_offset_amount || 0) > 0 && !!record?._split_group
+  if (!splitMergedColumnKeys.has(key) && !mergeAmount) return {}
+  if (span === 0) return { rowSpan: 0 }
+  if (span > 1) return { rowSpan: span }
+  return {}
+}
+
 const columns = [
   { title: '流水号', dataIndex: 'transaction_no', key: 'transaction_no', width: 160 },
   { title: '日期', dataIndex: 'transaction_date', key: 'transaction_date', width: 100 },
   { title: '国家', key: 'countries', width: 100 },
   { title: '交易类型', key: 'transaction_type', width: 170 },
   { title: '收支方向', key: 'direction', width: 90 },
-  { title: '金额', key: 'amount', width: 140 },
-  { title: '客户', dataIndex: 'customer_name', key: 'customer_name', width: 110, ellipsis: true },
+  { title: '金额', key: 'amount', width: 230 },
+  { title: '对象', dataIndex: 'customer_name', key: 'customer_name', width: 140, ellipsis: true },
   { title: '业务摘要', key: 'business_summary', width: 150 },
-  { title: '订单ID', dataIndex: 'order_number', key: 'order_number', width: 150, ellipsis: true },
+  { title: '任务号', key: 'order_number', width: 170, ellipsis: true },
   { title: '申请人', dataIndex: 'staff_name', key: 'staff_name', width: 100 },
   { title: '操作人', dataIndex: 'handler_name', key: 'handler_name', width: 100 },
   { title: '状态', key: 'status', width: 90 },
   { title: '备注', dataIndex: 'notes', key: 'notes', width: 140, ellipsis: true },
   { title: '水单', key: 'receipt', width: 110 },
   { title: '操作', key: 'action', width: 180, fixed: 'right' as const },
-]
+].map(column => ({
+  ...column,
+  customCell: (record: any) => splitReceiptCell(record, String(column.key)),
+}))
 
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
@@ -752,7 +806,109 @@ function getCountrySummary(record: any) {
   return countries.length === 1 ? countries[0] : `${countries[0]} +${countries.length - 1}`
 }
 
+function getLedgerDetailGroup(record: any) {
+  const primary = normalizeTransactionCategories(record).primary
+  if (primary === '运营支出' || primary === '行政办公') return 'operation'
+  if (primary === '其他收入' || primary === '其他支出') return 'other'
+  return 'business'
+}
+
+function showListTask(record: any) {
+  return getLedgerDetailGroup(record) === 'business'
+}
+
+function showListCountry(record: any) {
+  const primary = normalizeTransactionCategories(record).primary
+  return getLedgerDetailGroup(record) === 'business' || primary === '运营支出'
+}
+
+function showDetailTask(record: any) {
+  return showListTask(record)
+}
+
+function showDetailCountry(record: any) {
+  return showListCountry(record)
+}
+
+function showDetailUsd(record: any) {
+  return normalizeTransactionCategories(record).primary === '运营支出' || Number(record?.amount_usd || 0) > 0
+}
+
+function showDetailTypeColumns(record: any) {
+  const secondary = normalizeTransactionCategories(record).secondary
+  return !['退差价', '补款收入'].includes(secondary)
+}
+
+function showDetailPaymentAccount(record: any) {
+  return ['业务支出', '运营支出', '行政办公', '其他支出'].includes(normalizeTransactionCategories(record).primary)
+}
+
+function getPaymentAccount(record: any) {
+  const direct = String(record?.payment_account || '').trim()
+  if (direct) return direct
+  return String(record?.notes || '').match(/付款账号:([^|]+)/)?.[1]?.trim() || ''
+}
+
+function getLandingAccountLabel(record: any) {
+  const parts = getDirectionParts(record)
+  if (parts.includes('收入') && !parts.includes('支出')) return '到账账号'
+  if (parts.includes('支出') && !parts.includes('收入')) return '对方账号'
+  return ''
+}
+
+function getLandingAccount(record: any) {
+  const direct = String(record?.landing_account || '').trim()
+  if (direct) return direct
+  const notes = String(record?.notes || '')
+  if (getLandingAccountLabel(record) === '对方账号') {
+    return notes.match(/(?:对方账号|收款账号|退款账号):([^|]+)/)?.[1]?.trim() || ''
+  }
+  return notes.match(/到账账号:([^|]+)/)?.[1]?.trim() || ''
+}
+
+function getBusinessTaskRows(record: any) {
+  const rows = getDetailBreakdownRows(record).map((item: any) => ({
+    taskId: getBreakdownOrderId(item),
+    country: String(item?.country || '').trim(),
+    type: normalizeBusinessType(item?.business_type),
+    count: Number(item?.order_count || 0),
+    amount: Number(item?.amount_cny || 0),
+  }))
+  const spanByTask = rows.reduce((acc: Record<string, number>, item) => {
+    acc[item.taskId] = (acc[item.taskId] || 0) + 1
+    return acc
+  }, {})
+  let lastTaskId = '\0'
+  return rows.map((item) => {
+    const showTaskId = item.taskId !== lastTaskId
+    lastTaskId = item.taskId
+    return {
+      ...item,
+      showTaskId,
+      taskRowSpan: showTaskId ? spanByTask[item.taskId] : 0,
+    }
+  })
+}
+
+function getOffsetDetailRows(record: any) {
+  let lastSourceTaskId = '\0'
+  return getOffsetRows(record).map((item: any) => {
+    const sourceTaskId = getBreakdownSourceOrderId(item)
+    const showSourceTaskId = sourceTaskId !== lastSourceTaskId
+    lastSourceTaskId = sourceTaskId
+    return {
+      sourceTaskId,
+      showSourceTaskId,
+      country: String(item?.source_country || item?.country || '').trim(),
+      type: normalizeBusinessType(item?.source_business_type || item?.offset_business_type || item?.business_type),
+      count: Number(item?.source_order_count || item?.offset_order_count || item?.order_count || 0),
+      amount: Number(item?.amount_cny || 0),
+    }
+  })
+}
+
 function getBusinessSummary(record: any) {
+  if (!showDetailTypeColumns(record)) return '-'
   const breakdown = getBusinessBreakdown(record)
   if (breakdown.length) {
     const countByType = breakdown.reduce((acc: Record<string, number>, item: any) => {
@@ -769,6 +925,7 @@ function getBusinessSummary(record: any) {
 }
 
 function getBusinessSubSummary(record: any) {
+  if (!showDetailTypeColumns(record)) return ''
   const count = getBusinessOrderCount(record)
   const ids = getOrderIds(record)
   const parts = []
@@ -783,7 +940,50 @@ function hasBusinessInfo(record: any) {
 
 function buildLedgerPreviewRows() {
   const now = dayjs()
+  const splitShared = {
+    _is_preview_mock: true,
+    _split_group: 'SPLIT-DEMO-1200',
+    entry_scope: '业务收入',
+    transaction_type: '任务收入',
+    direction: '收入',
+    amount_usd: null,
+    exchange_rate: 7.25,
+    customer_name: '示例客户-分笔实收',
+    landing_account: '公司对公 · 8801',
+    order_number: 'TASK-SPLIT-1200',
+    staff_name: '商务-李婷',
+    business_countries: ['美国'],
+    business_types: ['文字'],
+    business_order_count: 4,
+    handler_name: '财务-陈岚',
+    status: '待确认',
+    notes: '分笔实收',
+    _group_offset_amount: 200,
+    transaction_date: now.format('YYYY-MM-DD'),
+  }
   return [
+    {
+      ...splitShared,
+      id: 'mock-ledger-split-400',
+      transaction_no: 'FT-MOCK-SPLIT-0001',
+      amount_cny: 400,
+      business_breakdown: [
+        { direction: '收入', target_order_number: 'TASK-SPLIT-1200', country: '美国', business_type: '文字', order_count: 4, amount_cny: 400 },
+      ],
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    },
+    {
+      ...splitShared,
+      id: 'mock-ledger-split-800',
+      transaction_no: 'FT-MOCK-SPLIT-0002',
+      amount_cny: 800,
+      business_breakdown: [
+        { direction: '收入', target_order_number: 'TASK-SPLIT-1200', country: '美国', business_type: '文字', order_count: 4, amount_cny: 800 },
+      ],
+      created_at: now.subtract(1, 'minute').toISOString(),
+      updated_at: now.subtract(1, 'minute').toISOString(),
+    },
     {
       id: 'mock-ledger-pending-1',
       _is_preview_mock: true,
@@ -795,6 +995,8 @@ function buildLedgerPreviewRows() {
       amount_usd: null,
       exchange_rate: null,
       customer_name: '深圳星河科技',
+      landing_account: '星河支付宝 · starhe-01',
+      payment_account: 'alipay · finance-01',
       order_number: 'ORD-20260507-001',
       staff_name: '商务-李婷',
       business_countries: ['美国'],
@@ -818,12 +1020,15 @@ function buildLedgerPreviewRows() {
       amount_cny: 1450,
       amount_usd: 200,
       exchange_rate: 7.25,
-      customer_name: 'Amazon Gift Card Supplier',
+      customer_name: '礼品卡供应商',
+      landing_account: '礼品卡供应商 · card-8899',
+      payment_account: 'alipay · finance-01',
       order_number: '',
       staff_name: '财务-陈岚',
-      handler_name: '',
+      business_countries: ['美国'],
+      handler_name: '财务-陈岚',
       status: '待确认',
-      notes: '礼品卡采购待审批',
+      notes: '运营支出 | 礼品卡采购，国家可不填，这里示例填了美国',
       transaction_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
       created_at: now.subtract(1, 'day').hour(15).toISOString(),
       updated_at: now.subtract(1, 'day').hour(15).toISOString(),
@@ -839,6 +1044,8 @@ function buildLedgerPreviewRows() {
       amount_usd: null,
       exchange_rate: null,
       customer_name: '办公室供应商',
+      landing_account: '办公室供应商 · office-1024',
+      payment_account: 'alipay · finance-01',
       order_number: '',
       staff_name: '行政-周宁',
       handler_name: '管理员',
@@ -852,24 +1059,23 @@ function buildLedgerPreviewRows() {
       id: 'mock-ledger-offset-1',
       _is_preview_mock: true,
       transaction_no: 'FT-MOCK-20260507-0004',
-      entry_scope: '业务结算',
-      transaction_type: '账面抵消',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
       direction: '账面抵消',
-      amount_cny: 560,
+      amount_cny: 360,
       amount_usd: null,
       exchange_rate: null,
       customer_name: '杭州云海贸易',
       order_number: 'TASK-20260507-021',
       staff_name: '商务-王晨',
-      business_countries: ['美国', '英国'],
-      business_types: ['文字', '免评'],
-      business_order_count: 5,
+      business_countries: ['美国'],
+      business_types: ['文字'],
+      business_order_count: 3,
       business_breakdown: [
-        { target_order_number: 'TASK-20260507-021', source_order_number: 'TASK-20260428-008', source_business_type: '文字', source_order_count: 3, country: '美国', business_type: '文字', order_count: 3, amount_cny: 360 },
-        { target_order_number: 'TASK-20260507-022', source_order_number: 'TASK-20260428-008', source_business_type: '免评', source_order_count: 2, country: '英国', business_type: '免评', order_count: 2, amount_cny: 200 },
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-021', source_order_number: 'TASK-20260428-008', source_business_type: '文字', source_order_count: 3, country: '美国', business_type: '文字', order_count: 3, amount_cny: 360 },
       ],
       offset_source_type: '客户余款抵消',
-      offset_source_note: '客户上一批任务余款抵消本次 2 个新任务ID。',
+      offset_source_note: '上一批任务余款抵消本次这 1 个任务。',
       handler_name: '',
       status: '待确认',
       notes: '账面抵消 | 客户余款抵消',
@@ -881,8 +1087,8 @@ function buildLedgerPreviewRows() {
       id: 'mock-ledger-offset-2',
       _is_preview_mock: true,
       transaction_no: 'FT-MOCK-20260507-0005',
-      entry_scope: '业务结算',
-      transaction_type: '账面抵消',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
       direction: '账面抵消',
       amount_cny: 310,
       amount_usd: null,
@@ -890,18 +1096,18 @@ function buildLedgerPreviewRows() {
       customer_name: '深圳森语家居',
       order_number: 'TASK-20260506-118',
       staff_name: '商务-林夕',
-      business_countries: ['德国', '加拿大'],
+      business_countries: ['德国'],
       business_types: ['图片', '文字'],
       business_order_count: 3,
       business_breakdown: [
-        { target_order_number: 'TASK-20260506-118', source_order_number: 'TASK-20260418-031', source_business_type: '图片', source_order_count: 1, country: '德国', business_type: '图片', order_count: 1, amount_cny: 120 },
-        { target_order_number: 'TASK-20260506-119', source_order_number: 'TASK-20260418-031', source_business_type: '文字', source_order_count: 2, country: '加拿大', business_type: '文字', order_count: 2, amount_cny: 190 },
+        { direction: '账面抵消', target_order_number: 'TASK-20260506-118', source_order_number: 'TASK-20260418-031', source_country: '德国', source_business_type: '图片', source_order_count: 1, country: '德国', business_type: '图片', order_count: 1, amount_cny: 120 },
+        { direction: '账面抵消', target_order_number: 'TASK-20260506-118', source_order_number: 'TASK-20260418-031', source_country: '德国', source_business_type: '文字', source_order_count: 2, country: '德国', business_type: '文字', order_count: 2, amount_cny: 190 },
       ],
       offset_source_type: '同事余款抵消',
       offset_source_note: '同客户同事历史任务余款抵消本次部分款项。',
       handler_name: '财务-陈岚',
       status: '已修改',
-      notes: '账面抵消 | 同事余款抵消',
+      notes: '账面抵消',
       transaction_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
       created_at: now.subtract(1, 'day').hour(10).toISOString(),
       updated_at: now.subtract(1, 'day').hour(14).toISOString(),
@@ -918,6 +1124,7 @@ function buildLedgerPreviewRows() {
       amount_usd: null,
       exchange_rate: null,
       customer_name: '宁波朗行科技',
+      landing_account: '公司对公 · 8801',
       order_number: 'TASK-20260507-060',
       staff_name: '商务-Aiden',
       business_countries: ['美国', '德国'],
@@ -935,6 +1142,273 @@ function buildLedgerPreviewRows() {
       transaction_date: now.subtract(2, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(2, 'hour').toISOString(),
       updated_at: now.subtract(2, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-income-task',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0009',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
+      direction: '收入',
+      amount_cny: 520,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '深圳星河科技',
+      landing_account: '公司对公 · 8801',
+      order_number: 'TASK-20260507-090',
+      staff_name: '商务-李婷',
+      business_countries: ['美国'],
+      business_types: ['文字'],
+      business_order_count: 4,
+      business_breakdown: [
+        { direction: '收入', target_order_number: 'TASK-20260507-090', country: '美国', business_type: '文字', order_count: 4, amount_cny: 520 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '已确认',
+      notes: '业务收入 | 单任务文字评收款',
+      transaction_date: now.subtract(4, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(4, 'hour').toISOString(),
+      updated_at: now.subtract(4, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-income-topup',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0010',
+      entry_scope: '业务收入',
+      transaction_type: '补款收入',
+      direction: '收入',
+      amount_cny: 180,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '广州优品贸易',
+      landing_account: '公司对公 · 8801',
+      order_number: 'TASK-20260507-091',
+      staff_name: '商务-王晨',
+      business_countries: ['英国'],
+      business_types: [],
+      business_order_count: 0,
+      business_breakdown: [
+        { direction: '收入', target_order_number: 'TASK-20260507-091', country: '英国', amount_cny: 180 },
+      ],
+      handler_name: '',
+      status: '待确认',
+      notes: '业务收入 | 图片评补款',
+      transaction_date: now.subtract(5, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(5, 'hour').toISOString(),
+      updated_at: now.subtract(5, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-expense-commission',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0007',
+      entry_scope: '业务支出',
+      transaction_type: '赔付佣金',
+      direction: '支出',
+      amount_cny: 96,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '杭州远帆品牌',
+      landing_account: '远帆支付宝 · yuanfan-01',
+      payment_account: 'alipay · finance-01',
+      order_number: 'TASK-20260507-070',
+      staff_name: '商务-周敏',
+      business_countries: ['德国'],
+      business_types: ['免评'],
+      business_order_count: 1,
+      business_breakdown: [
+        { direction: '支出', target_order_number: 'TASK-20260507-070', country: '德国', business_type: '免评', order_count: 1, amount_cny: 96 },
+      ],
+      handler_name: '',
+      status: '待确认',
+      notes: '业务支出 | 佣金差额付给对象',
+      transaction_date: now.subtract(6, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(6, 'hour').toISOString(),
+      updated_at: now.subtract(6, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-expense-diff',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0008',
+      entry_scope: '业务支出',
+      transaction_type: '退差价',
+      direction: '支出',
+      amount_cny: 45,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '宁波优品贸易',
+      landing_account: '优品支付宝 · youpin-01',
+      payment_account: 'alipay · finance-01',
+      order_number: 'TASK-20260507-080',
+      staff_name: '商务-王晨',
+      business_countries: ['英国'],
+      business_types: [],
+      business_order_count: 0,
+      business_breakdown: [
+        { direction: '支出', target_order_number: 'TASK-20260507-080', country: '英国', amount_cny: 45 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '已确认',
+      notes: '业务支出 | 退差价',
+      transaction_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(1, 'day').hour(9).toISOString(),
+      updated_at: now.subtract(1, 'day').hour(9).toISOString(),
+    },
+    {
+      id: 'mock-ledger-ops-ip',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0011',
+      entry_scope: '运营支出',
+      transaction_type: 'IP采购',
+      direction: '支出',
+      amount_cny: 860,
+      amount_usd: 120,
+      exchange_rate: 7.1667,
+      customer_name: 'IP供应商',
+      landing_account: 'IP供应商 · ip-2201',
+      payment_account: 'alipay · finance-01',
+      order_number: '',
+      staff_name: '运营-陈静',
+      business_countries: ['美国'],
+      handler_name: '',
+      status: '待确认',
+      notes: '运营支出 | IP采购，无任务号',
+      transaction_date: now.subtract(2, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(2, 'day').hour(16).toISOString(),
+      updated_at: now.subtract(2, 'day').hour(16).toISOString(),
+    },
+    {
+      id: 'mock-ledger-ops-server',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0012',
+      entry_scope: '运营支出',
+      transaction_type: '服务器',
+      direction: '支出',
+      amount_cny: 2400,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '云服务器供应商',
+      landing_account: '云服务器 · cloud-3302',
+      payment_account: 'alipay · finance-01',
+      order_number: '',
+      staff_name: '运营-陈静',
+      business_countries: [],
+      handler_name: '财务-陈岚',
+      status: '已确认',
+      notes: '运营支出 | 服务器续费，国家留空',
+      transaction_date: now.subtract(3, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(3, 'day').hour(11).toISOString(),
+      updated_at: now.subtract(3, 'day').hour(11).toISOString(),
+    },
+    {
+      id: 'mock-ledger-ops-account',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0013',
+      entry_scope: '运营支出',
+      transaction_type: '账号购买',
+      direction: '支出',
+      amount_cny: 300,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '账号供应商',
+      landing_account: '账号供应商 · acct-4410',
+      payment_account: 'alipay · finance-01',
+      order_number: '',
+      staff_name: '运营-赵磊',
+      business_countries: ['德国'],
+      handler_name: '',
+      status: '待确认',
+      notes: '运营支出 | 账号购买',
+      transaction_date: now.subtract(3, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(3, 'day').hour(15).toISOString(),
+      updated_at: now.subtract(3, 'day').hour(15).toISOString(),
+    },
+    {
+      id: 'mock-ledger-ops-card',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0014',
+      entry_scope: '运营支出',
+      transaction_type: '信用卡',
+      direction: '支出',
+      amount_cny: 725,
+      amount_usd: 100,
+      exchange_rate: 7.25,
+      customer_name: '信用卡服务商',
+      landing_account: '信用卡服务商 · card-5508',
+      payment_account: 'alipay · finance-01',
+      order_number: '',
+      staff_name: '财务-陈岚',
+      business_countries: ['英国'],
+      handler_name: '',
+      status: '待确认',
+      notes: '运营支出 | 信用卡费用',
+      transaction_date: now.subtract(4, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(4, 'day').hour(10).toISOString(),
+      updated_at: now.subtract(4, 'day').hour(10).toISOString(),
+    },
+    {
+      id: 'mock-ledger-other-income',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0015',
+      entry_scope: '其他收入',
+      transaction_type: '开箱视频',
+      direction: '收入',
+      amount_cny: 600,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '开箱视频服务商',
+      landing_account: '公司对公 · 8801',
+      order_number: '',
+      staff_name: '商务-林夕',
+      handler_name: '',
+      status: '待确认',
+      notes: '其他收入 | 开箱视频，无任务号无国家',
+      transaction_date: now.subtract(5, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(5, 'day').hour(13).toISOString(),
+      updated_at: now.subtract(5, 'day').hour(13).toISOString(),
+    },
+    {
+      id: 'mock-ledger-other-expense',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0016',
+      entry_scope: '其他支出',
+      transaction_type: '删差评',
+      direction: '支出',
+      amount_cny: 260,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '删评供应商',
+      landing_account: '删评供应商 · review-6601',
+      payment_account: 'alipay · finance-01',
+      order_number: '',
+      staff_name: '商务-周敏',
+      handler_name: '财务-陈岚',
+      status: '已确认',
+      notes: '其他支出 | 删差评',
+      transaction_date: now.subtract(5, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(5, 'day').hour(17).toISOString(),
+      updated_at: now.subtract(5, 'day').hour(17).toISOString(),
+    },
+    {
+      id: 'mock-ledger-other-misc',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0017',
+      entry_scope: '其他支出',
+      transaction_type: '其他',
+      direction: '支出',
+      amount_cny: 80,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '临时供应商',
+      landing_account: '临时供应商 · temp-7702',
+      payment_account: 'alipay · finance-01',
+      order_number: '',
+      staff_name: '行政-周宁',
+      handler_name: '',
+      status: '待确认',
+      notes: '其他支出 | 其他',
+      transaction_date: now.subtract(6, 'day').format('YYYY-MM-DD'),
+      created_at: now.subtract(6, 'day').hour(12).toISOString(),
+      updated_at: now.subtract(6, 'day').hour(12).toISOString(),
     },
   ]
 }
@@ -958,16 +1432,8 @@ const filterSecondaryOptions = computed(() => {
 })
 const showUsdFields = computed(() => usdCapableTypeValues.has(form.transaction_type))
 const showOrderNumberField = computed(() => ['业务收入', '业务支出'].includes(form.entry_scope))
-const counterpartyLabel = computed(() => {
-  if (isAdministrativeEntry.value) return '收款方 / 商户'
-  if (showOrderNumberField.value) return '关联客户'
-  return '往来对象'
-})
-const counterpartyPlaceholder = computed(() => {
-  if (isAdministrativeEntry.value) return '例如：超市、办公室、供应商'
-  if (showOrderNumberField.value) return '关联客户(可选)'
-  return '往来对象(可选)'
-})
+const counterpartyLabel = computed(() => '对象')
+const counterpartyPlaceholder = computed(() => '客户、供应商或其他对象')
 const ownerLabel = computed(() => '申请人')
 
 function isSecondaryInScope(scope: string, type: string) {
@@ -1062,6 +1528,61 @@ function normalizeTransactionCategories(record: any) {
     : { primary: '其他支出', secondary: '其他' }
 }
 
+function extractSplitGroup(row: any) {
+  const existing = String(row?._split_group || '').trim()
+  if (existing) return existing
+  const matched = String(row?.notes || '').match(/split:([A-Za-z0-9_-]+)/)
+  return matched?.[1] || ''
+}
+
+function stripSplitMarker(notes: any) {
+  return String(notes || '').replace(/\s*\|?\s*split:[A-Za-z0-9_-]+/g, '').trim()
+}
+
+function clusterSplitGroups(rows: any[]) {
+  const seen = new Set<string>()
+  const result: any[] = []
+  rows.forEach(row => {
+    const id = String(row?.id || '')
+    if (!id || seen.has(id)) return
+    const key = String(row?._split_group || '')
+    if (!key) {
+      result.push(row)
+      seen.add(id)
+      return
+    }
+    rows.forEach(item => {
+      if (String(item?._split_group || '') !== key) return
+      const itemId = String(item?.id || '')
+      if (!itemId || seen.has(itemId)) return
+      result.push(item)
+      seen.add(itemId)
+    })
+  })
+  return result
+}
+
+function markVisibleSplitSpans(rows: any[]) {
+  rows.forEach(row => { row._split_row_span = 1 })
+  let index = 0
+  while (index < rows.length) {
+    const key = String(rows[index]?._split_group || '')
+    if (!key) {
+      index += 1
+      continue
+    }
+    let end = index + 1
+    while (end < rows.length && String(rows[end]?._split_group || '') === key) end += 1
+    const count = end - index
+    if (count > 1) {
+      rows[index]._split_row_span = count
+      for (let cursor = index + 1; cursor < end; cursor += 1) rows[cursor]._split_row_span = 0
+    }
+    index = end
+  }
+  return rows
+}
+
 function normalizeFinancialRow(row: any) {
   const { primary, secondary } = normalizeTransactionCategories(row)
   const direction = getDirection({ ...row, entry_scope: primary, transaction_type: secondary })
@@ -1076,6 +1597,8 @@ function normalizeFinancialRow(row: any) {
     business_breakdown: getBusinessBreakdown(row),
     status: normalizeTransactionStatus(row?.status),
     handler_name: row?.handler_name || '',
+    notes: stripSplitMarker(row?.notes),
+    _split_group: extractSplitGroup(row),
   }
 }
 
@@ -1087,6 +1610,31 @@ function getDirection(record: any) {
   const { secondary } = normalizeTransactionCategories(record)
   if (offsetTypeValues.has(secondary)) return '账面抵消'
   return incomeTypeValues.has(secondary) ? '收入' : '支出'
+}
+
+function getListDirectionParts(record: any) {
+  const span = Number(record?._split_row_span || 1)
+  const key = String(record?._split_group || '')
+  const group = span > 1 && key
+    ? ledgerRows.value.filter(item => String(item?._split_group || '') === key)
+    : [record]
+  const parts = group.flatMap(item => getDirectionParts(item))
+  if (group.some(item => Number(item?._group_offset_amount || 0) > 0)) parts.push('账面抵消')
+  const ordered = ['收入', '支出', '账面抵消'].filter(item => parts.includes(item))
+  return ordered.length ? ordered : getDirectionParts(record)
+}
+
+function getSplitCashAmountLines(record: any) {
+  const key = String(record?._split_group || '')
+  const rows = key
+    ? ledgerRows.value.filter(item => String(item?._split_group || '') === key)
+    : [record]
+  const source = rows.length ? rows : [record]
+  return source.map(item => ({ id: item.id, amount: Number(item.amount_cny || 0) }))
+}
+
+function showSplitOffsetAmount(record: any) {
+  return Number(record?._group_offset_amount || 0) > 0 && Number(record?._split_row_span || 0) !== 0
 }
 
 function getDirectionParts(record: any) {
@@ -1132,6 +1680,16 @@ function getAmountPrefix(record: any) {
   if (direction === '收入') return '+'
   if (direction === '账面抵消') return '抵 '
   return '-'
+}
+
+function getMixedAmountLines(record: any) {
+  const parts = getDirectionParts(record)
+  if (!parts.includes('收入') || !parts.includes('账面抵消')) return null
+  const lines = [
+    { label: '补款', amount: getAmountByDirection(record, '收入', 'amount_cny'), className: 'amount-in', prefix: '+' },
+    { label: '抵消', amount: getAmountByDirection(record, '账面抵消', 'amount_cny'), className: 'amount-offset', prefix: '' },
+  ]
+  return lines.some(line => line.amount > 0) ? lines : null
 }
 
 function getPrimaryCategoryLabel(record: any) {
@@ -1221,20 +1779,20 @@ async function loadData() {
       q = q.lte('transaction_date', dateRange.value[1].format('YYYY-MM-DD'))
     }
     const { data } = await q
-    const rows = [...mockRows.value, ...(data || [])]
+    const rows = clusterSplitGroups([...mockRows.value, ...(data || [])]
       .map(normalizeFinancialRow)
       .filter((row: any) => !filterPrimaryCategory.value || row.entry_scope === filterPrimaryCategory.value)
       .filter((row: any) => !filterType.value || row.transaction_type === filterType.value)
       .filter((row: any) => !filterDirection.value || getDirectionParts(row).includes(filterDirection.value))
       .filter((row: any) => !filterCountry.value || getCountries(row).includes(filterCountry.value))
-      .filter((row: any) => !filterStatus.value || row.status === filterStatus.value)
+      .filter((row: any) => !filterStatus.value || row.status === filterStatus.value))
     ledgerRows.value = rows
     total.value = rows.length
     if ((page.value - 1) * pageSize.value >= rows.length && page.value > 1) {
       page.value = 1
     }
     const start = (page.value - 1) * pageSize.value
-    list.value = rows.slice(start, start + pageSize.value)
+    list.value = markVisibleSplitSpans(rows.slice(start, start + pageSize.value))
     selectedRowKeys.value = selectedRowKeys.value.filter(id => list.value.some(row => row.id === id && canApprove(row)))
   } finally { loading.value = false }
 }
@@ -1260,7 +1818,7 @@ function exportLedger() {
     message.warning('暂无可导出的流水')
     return
   }
-  const headers = ['流水号', '日期', '国家', '交易类型', '收支方向', '金额CNY', '金额USD', '客户', '业务摘要', '订单ID', '申请人', '操作人', '状态', '备注']
+  const headers = ['流水号', '日期', '国家', '交易类型', '收支方向', '金额CNY', '金额USD', '对象', '业务摘要', '任务号', '申请人', '操作人', '状态', '备注']
   const dataRows = rows.map((row: any) => [
     row.transaction_no || '',
     row.transaction_date || '',
@@ -1294,7 +1852,15 @@ async function loadStats() {
   stats.totalIncome = rows.reduce((s, r) => s + getAmountByDirection(r, '收入', 'amount_cny'), 0)
   stats.totalIncomeUsd = rows.reduce((s, r) => s + getAmountByDirection(r, '收入', 'amount_usd'), 0)
   stats.totalExpense = rows.reduce((s, r) => s + getAmountByDirection(r, '支出', 'amount_cny'), 0)
-  stats.totalOffset = rows.reduce((s, r) => s + getAmountByDirection(r, '账面抵消', 'amount_cny'), 0)
+  const seenOffsetGroups = new Set<string>()
+  const groupOffset = rows.reduce((sum, row) => {
+    const amount = Number(row?._group_offset_amount || 0)
+    const key = String(row?._split_group || '')
+    if (!amount || !key || seenOffsetGroups.has(key)) return sum
+    seenOffsetGroups.add(key)
+    return sum + amount
+  }, 0)
+  stats.totalOffset = rows.reduce((s, r) => s + getAmountByDirection(r, '账面抵消', 'amount_cny'), 0) + groupOffset
   stats.offsetOrderCount = rows.filter(r => getDirectionParts(r).includes('账面抵消')).reduce((s, r) => s + getBusinessOrderCount(r), 0)
 }
 
@@ -1349,7 +1915,7 @@ function openEdit(row: any) {
     offset_source_note: row.offset_source_note || '',
     handler_name: currentUser.value?.name || row.handler_name || '',
     status: normalized.status === '已确认' ? '已修改' : normalized.status,
-    notes: row.notes || '',
+    notes: stripSplitMarker(normalized.notes || row.notes || ''),
     transaction_date: row.transaction_date || dayjs().format('YYYY-MM-DD'),
   })
   onScopeChange(form.entry_scope)
@@ -1391,7 +1957,11 @@ async function handleSave() {
       payload.order_number = null
     }
     if (editId.value) {
-      const target = list.value.find(item => item.id === editId.value)
+      const target = ledgerRows.value.find(item => item.id === editId.value) || list.value.find(item => item.id === editId.value)
+      if (target?._split_group) {
+        const note = stripSplitMarker(payload.notes)
+        payload.notes = note ? `${note}|split:${target._split_group}` : `分笔实收|split:${target._split_group}`
+      }
       if (target && !canModify(target)) {
         message.warning('已审批或已作废的流水不支持修改')
         return
@@ -1585,6 +2155,26 @@ onMounted(() => {
   font-size: 12px;
 }
 .amount-stack { display: flex; flex-direction: column; gap: 2px; }
+.split-amount-with-offset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.split-amount-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.split-offset-side {
+  display: flex;
+  align-items: baseline;
+  margin-left: 8px;
+  padding-left: 10px;
+  border-left: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+.amount-name { margin-right: 4px; color: #6b7280; font-weight: 400; }
 .amount-in { color: #059669; font-weight: 600; }
 .amount-out { color: #dc2626; font-weight: 600; }
 .amount-offset { color: #2563eb; font-weight: 600; }
@@ -1604,16 +2194,22 @@ onMounted(() => {
 }
 .detail-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
 .detail-card-compact { padding-bottom: 14px; }
-.detail-title-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-.detail-title-left { min-width: 0; }
-.detail-no { font-size: 16px; font-weight: 700; color: #1a1a2e; font-family: 'Courier New', monospace; }
-.detail-meta-line { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; color: #6b7280; font-size: 12px; }
-.detail-meta-line span:not(:first-child)::before { content: '·'; margin-right: 8px; color: #d1d5db; }
-.detail-hero-bottom { margin-top: 18px; display: flex; gap: 16px; align-items: flex-end; }
-.detail-amount-label { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+.detail-hero-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.detail-meta-line { margin-top: 8px; color: #6b7280; font-size: 12px; }
+.detail-amount-line { display: flex; align-items: baseline; gap: 8px; }
+.detail-amount-line + .detail-amount-line { margin-top: 6px; }
+.detail-amount-name { color: #6b7280; font-size: 12px; }
 .detail-amount { font-size: 26px; line-height: 1.1; }
-.detail-section-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
-.detail-section-title { font-weight: 700; color: #1a1a2e; }
+.detail-merge-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+.detail-merge-table th,
+.detail-merge-table td { padding: 9px 10px; font-size: 12px; text-align: left; vertical-align: middle; color: #374151; border-top: 1px solid #f0f0f0; }
+.detail-merge-table th { background: #f8f9fb; color: #6b7280; font-weight: 600; border-top: none; }
+.detail-merge-table .amount { text-align: right; }
+.detail-merge-table .task-cell { border-right: 1px solid #f0f0f0; }
+.detail-merge-table strong { color: #1a1a2e; font-weight: 600; }
+.detail-section-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 20px; }
+.detail-section-title { display: block; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+.detail-section-head .detail-section-title { margin-bottom: 0; }
 .detail-section-summary { color: #6b7280; font-size: 12px; text-align: right; }
 .detail-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .detail-info-item { background: #f8f9fb; border: 1px solid #f0f0f0; border-radius: 10px; padding: 10px; min-width: 0; }
@@ -1622,9 +2218,9 @@ onMounted(() => {
 .detail-source-note { margin-bottom: 12px; padding: 10px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; color: #1d4ed8; font-size: 13px; line-height: 1.5; }
 .breakdown-table { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
 .breakdown-table-head,
-.breakdown-table-row { display: grid; grid-template-columns: 1.5fr .85fr .85fr 58px; gap: 8px; align-items: center; padding: 9px 10px; }
-.breakdown-table-settlement .breakdown-table-head,
-.breakdown-table-settlement .breakdown-table-row { grid-template-columns: 1.25fr 88px .75fr .75fr 58px; }
+.breakdown-table-row { display: grid; grid-template-columns: 1.4fr .7fr .7fr 52px 80px; gap: 8px; align-items: center; padding: 9px 10px; }
+.breakdown-table-plain .breakdown-table-head,
+.breakdown-table-plain .breakdown-table-row { grid-template-columns: 1.6fr 1fr 90px; }
 .breakdown-table-head { background: #f8f9fb; color: #6b7280; font-size: 12px; font-weight: 600; }
 .breakdown-table-row { color: #374151; font-size: 12px; border-top: 1px solid #f0f0f0; }
 .breakdown-table-row strong { color: #1a1a2e; text-align: right; }

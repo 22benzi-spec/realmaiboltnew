@@ -98,7 +98,7 @@
             <div>{{ record.buyer_name || '—' }}</div>
           </template>
           <template v-if="column.key === 'country'">
-            <a-tag v-if="record.country" color="default">{{ record.country }}</a-tag>
+            <a-tag v-if="recordCountryText(record)" color="default">{{ recordCountryText(record) }}</a-tag>
             <span v-else class="text-gray">—</span>
           </template>
           <template v-if="column.key === 'paypal_email'">
@@ -473,40 +473,27 @@
       :confirm-loading="submittingOther"
       @ok="handleOtherSubmit"
     >
-      <a-form layout="vertical">
+      <a-form layout="vertical" @paste="handleOtherSubmitQrPaste">
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="一级分类" required>
-              <a-select v-model:value="otherSubmitForm.primaryCategory" @change="onOtherSubmitPrimaryChange">
+              <a-select v-model:value="otherSubmitForm.primaryCategory" placeholder="请选择" @change="onOtherSubmitPrimaryChange">
                 <a-select-option v-for="item in otherSubmitPrimaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col v-if="otherSubmitForm.primaryCategory !== '行政办公'" :span="12">
+          <a-col v-if="showOtherSubmitSecondary" :span="12">
             <a-form-item label="二级分类" required>
-              <a-select v-model:value="otherSubmitForm.category" mode="multiple">
+              <a-select v-model:value="otherSubmitForm.category" mode="multiple" placeholder="请选择">
                 <a-select-option v-for="item in otherSubmitSecondaryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="申请人" required>
-              <a-input v-model:value="otherSubmitForm.applicantName" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="收款对象" required>
-              <a-input v-model:value="otherSubmitForm.customerName" placeholder="例如：供应商、服务商、客户公司" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="收款账号" required>
-              <a-input v-model:value="otherSubmitForm.payoutAccount" placeholder="银行卡 / 支付宝 / 对公账户等" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="收款二维码">
-              <a-input v-model:value="otherSubmitForm.payoutQrCode" placeholder="粘贴收款二维码图片 URL（可选）" />
+          <a-col v-if="showOtherSubmitCountry" :span="12">
+            <a-form-item label="国家">
+              <a-select v-model:value="otherSubmitForm.country" allow-clear placeholder="请选择">
+                <a-select-option v-for="item in otherSubmitCountryOptions" :key="item" :value="item">{{ item }}</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -525,15 +512,47 @@
             </a-form-item>
           </a-col>
           <a-col :span="24">
-            <a-alert
-              type="info"
-              show-icon
-              message="提交阶段仅填写申请信息；付款方式、付款账号由财务在“处理付款”时补录。未关联订单的申请在审批列表里会显示为 --。"
-              style="margin-bottom: 12px"
-            />
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="收款对象" required>
+                  <a-input v-model:value="otherSubmitForm.customerName" placeholder="例如：供应商、服务商、客户公司" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="收款账号">
+                  <a-input v-model:value="otherSubmitForm.payoutAccount" placeholder="银行卡 / 支付宝 / 对公账户等" />
+                </a-form-item>
+              </a-col>
+            </a-row>
           </a-col>
           <a-col :span="24">
-            <a-form-item label="备注">
+            <a-form-item label="收款二维码">
+              <div
+                class="qr-paste-box"
+                tabindex="0"
+                @click="openOtherSubmitQrPicker"
+                @dragover.prevent
+                @drop.prevent="handleOtherSubmitQrDrop"
+              >
+                <input
+                  ref="otherSubmitQrInput"
+                  class="qr-file-input"
+                  type="file"
+                  accept="image/*"
+                  @click.stop
+                  @change="handleOtherSubmitQrFile"
+                />
+                <img v-if="otherSubmitQrPreview" :src="otherSubmitQrPreview" alt="收款二维码" class="qr-preview" />
+                <template v-else>
+                  <span class="qr-paste-mark">＋</span>
+                  <span class="qr-paste-text">上传/粘贴</span>
+                </template>
+                <button v-if="otherSubmitQrPreview" type="button" class="qr-clear" @click.stop="clearOtherSubmitQr">移除</button>
+              </div>
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="账单备注">
               <a-textarea v-model:value="otherSubmitForm.notes" :rows="3" placeholder="可选" />
             </a-form-item>
           </a-col>
@@ -1043,6 +1062,28 @@ const mockOtherRequests = ref<any[]>([
     created_at: dayjs().subtract(2, 'day').hour(11).minute(12).toISOString(),
     handled_at: null,
   },
+  {
+    id: 'mock-other-ops-country',
+    order_id: 'ORD-OPS-COUNTRY-001',
+    sub_order_id: 'SUB-OPS-COUNTRY-001',
+    asin: 'B0OPSCOUNTRY',
+    country: '美国',
+    review_type: '文字',
+    customer_name: '运营供应商',
+    refund_reason: 'IP采购付款',
+    applicant_name: '运营-陈静',
+    payout_account: 'ops-ip@alipay.com',
+    payout_method: '支付宝',
+    refund_category: 'IP采购',
+    refund_method: '其他付款',
+    refund_amount_cny: 120,
+    status: '待处理',
+    notes: '运营支出演示',
+    finance_notes: '',
+    paypal_receipt_screenshot: '',
+    created_at: dayjs().subtract(30, 'minute').toISOString(),
+    handled_at: null,
+  },
 ])
 
 const paypalProcessForm = reactive({
@@ -1064,10 +1105,11 @@ const otherProcessForm = reactive({
   receipt: '',
   notes: '',
 })
+const otherSubmitCountryOptions = ['美国', '德国', '英国', '加拿大']
 const otherSubmitForm = reactive({
-  primaryCategory: '行政办公',
+  primaryCategory: undefined as string | undefined,
   category: [] as string[],
-  applicantName: '',
+  country: undefined as string | undefined,
   customerName: '',
   payoutAccount: '',
   payoutQrCode: '',
@@ -1076,6 +1118,7 @@ const otherSubmitForm = reactive({
   exchangeRate: 7.25,
   notes: '',
 })
+const otherSubmitQrInput = ref<HTMLInputElement | null>(null)
 
 const giftFaceOptions = computed(() =>
   Array.from(new Set(availableGiftCards.value.map(card => Number(card.face_value_usd || 0))))
@@ -1106,7 +1149,15 @@ const otherProcessSecondaryOptions = computed(() =>
 const otherSubmitSecondaryOptions = computed(() =>
   otherPaymentCategoryOptions.find(item => item.value === otherSubmitForm.primaryCategory)?.children || []
 )
+const showOtherSubmitSecondary = computed(() => Boolean(otherSubmitForm.primaryCategory) && otherSubmitForm.primaryCategory !== '行政办公')
+const showOtherSubmitCountry = computed(() => otherSubmitForm.primaryCategory === '运营支出')
 const showOtherSubmitUsdFields = computed(() => otherPaymentNeedsUsdFields(otherSubmitForm.category))
+const otherSubmitQrPreview = computed(() => {
+  const value = otherSubmitForm.payoutQrCode.trim()
+  if (!value) return ''
+  if (value.startsWith('data:image/') || /^https?:\/\//i.test(value)) return value
+  return ''
+})
 const showOtherProcessUsdFields = computed(() => otherPaymentNeedsUsdFields(otherProcessForm.category))
 
 const giftInventorySpecs = computed(() => {
@@ -1283,6 +1334,71 @@ const rowSelection = computed(() => ({
   },
 }))
 
+function otherPaymentShowsCountryColumn() {
+  const selected = filterOtherPrimaryCategory.value
+  if (selected) return selected === '运营支出'
+  return requests.value.some(record => getOtherPaymentPrimaryLabel(record) === '运营支出')
+}
+
+function recordCountryText(record: any) {
+  if (activeTab.value === 'other' && getOtherPaymentPrimaryLabel(record) !== '运营支出') return ''
+  return String(record?.country || '').trim()
+}
+
+function getClipboardImage(event: ClipboardEvent) {
+  const items = Array.from(event.clipboardData?.items || [])
+  const imageItem = items.find(item => item.type.startsWith('image/'))
+  const fromItem = imageItem?.getAsFile()
+  if (fromItem) return fromItem
+  return Array.from(event.clipboardData?.files || []).find(file => file.type.startsWith('image/')) || null
+}
+
+function applyOtherSubmitQrFile(file: File) {
+  if (!file.type.startsWith('image/')) {
+    message.warning('请选择图片')
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    otherSubmitForm.payoutQrCode = String(reader.result || '')
+  }
+  reader.readAsDataURL(file)
+}
+
+function openOtherSubmitQrPicker() {
+  otherSubmitQrInput.value?.click()
+}
+
+function handleOtherSubmitQrFile(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (file) applyOtherSubmitQrFile(file)
+}
+
+function handleOtherSubmitQrPaste(event: ClipboardEvent) {
+  const imageFile = getClipboardImage(event)
+  if (imageFile) {
+    event.preventDefault()
+    applyOtherSubmitQrFile(imageFile)
+    return
+  }
+  const target = event.target as HTMLElement | null
+  if (!target?.closest('.qr-paste-box')) return
+  const text = event.clipboardData?.getData('text')?.trim() || ''
+  if (!/^https?:\/\//i.test(text)) return
+  event.preventDefault()
+  otherSubmitForm.payoutQrCode = text
+}
+
+function handleOtherSubmitQrDrop(event: DragEvent) {
+  const file = Array.from(event.dataTransfer?.files || []).find(item => item.type.startsWith('image/'))
+  if (file) applyOtherSubmitQrFile(file)
+}
+
+function clearOtherSubmitQr() {
+  otherSubmitForm.payoutQrCode = ''
+  if (otherSubmitQrInput.value) otherSubmitQrInput.value.value = ''
+}
+
 const tableColumns = computed(() => {
   if (activeTab.value === 'paypal') {
     return [
@@ -1325,7 +1441,9 @@ const tableColumns = computed(() => {
   }
   return [
     { title: '任务信息', key: 'task_info', width: 170 },
-    { title: '国家', key: 'country', width: 90, align: 'center' as const },
+    ...(otherPaymentShowsCountryColumn()
+      ? [{ title: '国家', key: 'country', width: 90, align: 'center' as const }]
+      : []),
     { title: '收款对象', dataIndex: 'customer_name', key: 'customer_name', width: 140 },
     { title: '收款账号', key: 'payout_account', width: 180 },
     { title: '付款金额', key: 'refund_amount', width: 130 },
@@ -1782,12 +1900,14 @@ function onOtherProcessPrimaryChange() {
 }
 
 function onOtherSubmitPrimaryChange() {
-  if (otherSubmitForm.primaryCategory === '行政办公') {
+  if (otherSubmitForm.primaryCategory !== '运营支出') {
+    otherSubmitForm.country = undefined
+  }
+  if (!otherSubmitForm.primaryCategory || otherSubmitForm.primaryCategory === '行政办公') {
     otherSubmitForm.category = []
     return
   }
-  const nextValues = otherSubmitForm.category.filter(value => otherSubmitSecondaryOptions.value.some(item => item.value === value))
-  otherSubmitForm.category = nextValues.length ? nextValues : (otherSubmitSecondaryOptions.value.length ? [otherSubmitSecondaryOptions.value[0].value] : ['其他'])
+  otherSubmitForm.category = otherSubmitForm.category.filter(value => otherSubmitSecondaryOptions.value.some(item => item.value === value))
 }
 
 function buildStoredOtherCategory(values: string[], primaryCategory = '') {
@@ -1873,9 +1993,9 @@ function openOtherReceipt(record: any) {
 }
 
 function resetOtherSubmitForm() {
-  otherSubmitForm.primaryCategory = '行政办公'
+  otherSubmitForm.primaryCategory = undefined
   otherSubmitForm.category = []
-  otherSubmitForm.applicantName = currentUser.value?.name || ''
+  otherSubmitForm.country = undefined
   otherSubmitForm.customerName = ''
   otherSubmitForm.payoutAccount = ''
   otherSubmitForm.payoutQrCode = ''
@@ -1883,6 +2003,7 @@ function resetOtherSubmitForm() {
   otherSubmitForm.amountUsd = 0
   otherSubmitForm.exchangeRate = 7.25
   otherSubmitForm.notes = ''
+  if (otherSubmitQrInput.value) otherSubmitQrInput.value.value = ''
 }
 
 function reloadFromFirstPage() {
@@ -2125,20 +2246,20 @@ function openOtherSubmitModal() {
 }
 
 async function handleOtherSubmit() {
-  if (otherSubmitForm.primaryCategory !== '行政办公' && !otherSubmitForm.category.length) {
-    message.warning('请选择二级分类')
+  if (!otherSubmitForm.primaryCategory) {
+    message.warning('请选择一级分类')
     return
   }
-  if (!otherSubmitForm.applicantName.trim()) {
-    message.warning('请填写申请人')
+  if (otherSubmitForm.primaryCategory !== '行政办公' && !otherSubmitForm.category.length) {
+    message.warning('请选择二级分类')
     return
   }
   if (!otherSubmitForm.customerName.trim()) {
     message.warning('请填写收款对象')
     return
   }
-  if (!otherSubmitForm.payoutAccount.trim()) {
-    message.warning('请填写收款账号')
+  if (!otherSubmitForm.payoutAccount.trim() && !otherSubmitForm.payoutQrCode.trim()) {
+    message.warning('请填写收款账号或上传收款二维码')
     return
   }
   if (Number(otherSubmitForm.amountCny || 0) <= 0) {
@@ -2163,7 +2284,10 @@ async function handleOtherSubmit() {
       refund_amount_usd: showOtherSubmitUsdFields.value ? Number(otherSubmitForm.amountUsd || 0) : 0,
       exchange_rate: showOtherSubmitUsdFields.value ? Number(otherSubmitForm.exchangeRate || 0) : null,
       refund_category: buildStoredOtherCategory(otherSubmitForm.category, otherSubmitForm.primaryCategory),
-      applicant_name: otherSubmitForm.applicantName.trim(),
+      ...(otherSubmitForm.primaryCategory === '运营支出'
+        ? { country: String(otherSubmitForm.country || '').trim() }
+        : {}),
+      applicant_name: '',
       customer_name: otherSubmitForm.customerName.trim(),
       payout_account: otherSubmitForm.payoutAccount.trim(),
       payout_qr_code: otherSubmitForm.payoutQrCode.trim(),
@@ -2652,6 +2776,55 @@ onMounted(async () => {
 .recommend-summary { font-size: 12px; color: #374151; }
 
 .drawer-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+
+.qr-paste-box {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  border: 1px dashed #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  outline: none;
+  overflow: hidden;
+}
+.qr-paste-box:focus {
+  border-color: #2563eb;
+}
+.qr-paste-box input.qr-file-input[type="file"] {
+  display: none;
+}
+.qr-paste-mark {
+  font-size: 22px;
+  line-height: 1;
+  color: #9ca3af;
+}
+.qr-paste-text {
+  font-size: 12px;
+  line-height: 1;
+  color: #6b7280;
+}
+.qr-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.qr-clear {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
 
 @media (max-width: 900px) {
   .detail-grid,

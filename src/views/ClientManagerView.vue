@@ -215,10 +215,24 @@
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="反馈方式">
-                <a-select v-model:value="form.feedback_type" placeholder="选择反馈方式">
+                <a-select v-model:value="form.feedback_type" placeholder="选择反馈方式" @change="onFeedbackTypeChange">
                   <a-select-option value="私聊">私聊</a-select-option>
                   <a-select-option value="群聊">群聊</a-select-option>
                 </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col v-if="form.feedback_type === '群聊'" :span="12">
+              <a-form-item label="群聊名称">
+                <div
+                  v-for="(_, idx) in form.group_names"
+                  :key="'add-gn-' + idx"
+                  class="group-name-row"
+                  :style="idx > 0 ? 'margin-top:8px' : undefined"
+                >
+                  <a-input v-model:value="form.group_names[idx]" placeholder="请输入群聊名称" />
+                  <a-button v-if="idx === 0" type="dashed" @click="addGroupName"><PlusOutlined /></a-button>
+                  <a-button v-else type="text" danger @click="removeGroupName(idx)"><DeleteOutlined /></a-button>
+                </div>
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -330,8 +344,30 @@
             </a-col>
           </a-row>
 
-          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">对接员工</span></a-divider>
+          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">对接信息</span></a-divider>
           <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="反馈方式">
+                <a-select v-model:value="form.feedback_type" placeholder="选择反馈方式" @change="onFeedbackTypeChange">
+                  <a-select-option value="私聊">私聊</a-select-option>
+                  <a-select-option value="群聊">群聊</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col v-if="form.feedback_type === '群聊'" :span="12">
+              <a-form-item label="群聊名称">
+                <div
+                  v-for="(_, idx) in form.group_names"
+                  :key="'edit-gn-' + idx"
+                  class="group-name-row"
+                  :style="idx > 0 ? 'margin-top:8px' : undefined"
+                >
+                  <a-input v-model:value="form.group_names[idx]" placeholder="请输入群聊名称" />
+                  <a-button v-if="idx === 0" type="dashed" @click="addGroupName"><PlusOutlined /></a-button>
+                  <a-button v-else type="text" danger @click="removeGroupName(idx)"><DeleteOutlined /></a-button>
+                </div>
+              </a-form-item>
+            </a-col>
             <a-col :span="12">
               <a-form-item label="员工姓名">
                 <a-input v-model:value="form.contact_name" placeholder="对接员工姓名" />
@@ -551,6 +587,13 @@
               <div class="info-item"><span class="info-lbl">首次下单时间</span><span class="info-val">{{ companyFirstOrderDate || '—' }}</span></div>
               <div class="info-item"><span class="info-lbl">最近下单</span><span class="info-val">{{ currentCompany.last_order_date || '—' }}</span></div>
               <div class="info-item"><span class="info-lbl">国家/地区</span><span class="info-val">{{ currentCompany.country || '—' }}</span></div>
+              <div class="info-item"><span class="info-lbl">反馈方式</span><span class="info-val">{{ currentCompany.feedback_type || '私聊' }}</span></div>
+            </div>
+            <div v-if="currentCompany.feedback_type === '群聊' && currentCompany.group_names?.length" style="margin-top:10px">
+              <div class="info-lbl" style="margin-bottom:6px">群聊名称</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <a-tag v-for="(g, gi) in currentCompany.group_names" :key="'detail-gn-' + gi">{{ g }}</a-tag>
+              </div>
             </div>
             <div v-if="currentCompany.brand_names?.length" style="margin-top:10px">
               <div class="info-lbl" style="margin-bottom:6px">品牌</div>
@@ -1181,8 +1224,34 @@ const defaultForm = () => ({
   contact_wechat: '',
   feedback_type: '私聊',
   business_wechat_name: '',
+  group_names: [''],
 })
 const form = reactive(defaultForm())
+
+function onFeedbackTypeChange(val: string) {
+  if (val === '群聊') {
+    if (!form.group_names.length) form.group_names = ['']
+  } else {
+    form.group_names = ['']
+  }
+}
+
+function addGroupName() {
+  form.group_names.push('')
+}
+
+function removeGroupName(idx: number) {
+  if (form.group_names.length <= 1) {
+    form.group_names[0] = ''
+    return
+  }
+  form.group_names.splice(idx, 1)
+}
+
+function normalizedGroupNames() {
+  if (form.feedback_type !== '群聊') return [] as string[]
+  return form.group_names.map((n) => n.trim()).filter(Boolean)
+}
 
 const defaultContactForm = () => ({
   name: '',
@@ -1309,6 +1378,9 @@ function openEditModal(record: any) {
     source_channel_name: record.source_channel_name || '',
     contact_name: record.contact_name || '',
     contact_wechat: record.contact_wechat || '',
+    feedback_type: record.feedback_type || '私聊',
+    business_wechat_name: record.business_wechat_name || '',
+    group_names: (record.group_names?.length ? [...record.group_names] : ['']),
   })
   modalOpen.value = true
 }
@@ -1521,6 +1593,8 @@ async function handleSubmit() {
       source_channel_name: form.source_channel_name,
       contact_name: form.contact_name,
       contact_wechat: form.contact_wechat,
+      feedback_type: form.feedback_type || '私聊',
+      group_names: normalizedGroupNames(),
     }
     if (editingId.value) {
       const { error } = await supabase.from('client_companies').update(payload).eq('id', editingId.value)
@@ -1938,6 +2012,15 @@ onMounted(() => {
 
 /* 分页 */
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 20px; }
+
+.group-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.group-name-row .ant-input {
+  flex: 1;
+}
 
 /* 来源渠道选择 */
 .source-channel-options {

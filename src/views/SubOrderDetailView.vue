@@ -651,6 +651,9 @@
               <a-form-item v-else label="申请金额">
                 <a-input-number v-model:value="replaceProductForm.targetRefundAmount" :min="0" :precision="2" prefix="$" style="width:100%" />
               </a-form-item>
+              <a-form-item label="账单备注">
+                <a-input v-model:value="replaceProductForm.billingNote" />
+              </a-form-item>
             </div>
             <a-alert
               v-if="!replaceProductTargetInfo.validation.ok"
@@ -1183,6 +1186,7 @@ const replaceProductForm = ref<any>({
   targetRefundMethod: '礼品卡',
   targetPaypalFee: 0,
   targetPaypalEmail: '',
+  billingNote: '',
   note: '',
 })
 const replaceProductLookupLoading = ref(false)
@@ -1955,25 +1959,25 @@ async function onBuyerSelect(task: any, buyerId: string) {
 }
 
 async function assignBuyer(task: any) {
-  if (!task._sel_buyer_id) return
   if (task._buyer_validation?.blocked) {
     message.error(task._buyer_validation.reason)
     return
   }
   task._saving_buyer = true
   try {
-    const buyer = buyerList.value.find(b => b.id === task._sel_buyer_id)
+    const isUnbind = !task._sel_buyer_id
+    const buyer = isUnbind ? null : buyerList.value.find(b => b.id === task._sel_buyer_id)
     const payload = {
-      buyer_id: task._sel_buyer_id,
+      buyer_id: isUnbind ? null : task._sel_buyer_id,
       buyer_name: buyer?.name || '',
-      buyer_assigned_at: new Date().toISOString(),
-      status: task.status === '待分配' ? '已分配' : task.status,
+      buyer_assigned_at: isUnbind ? null : new Date().toISOString(),
+      status: isUnbind ? (task.status === '已分配' ? '待分配' : task.status) : (task.status === '待分配' ? '已分配' : task.status),
     }
     if (isPreviewTask(task)) {
       Object.assign(task, payload)
       task._editing_buyer = false
       task._buyer_validation = null
-      message.success('预览数据：买手已分配')
+      message.success(isUnbind ? '预览数据：买手已解绑' : '预览数据：买手已分配')
       return
     }
     const { error } = await supabase.from('sub_orders').update(payload).eq('id', task.id)
@@ -1984,12 +1988,14 @@ async function assignBuyer(task: any) {
     task._buyer_validation = null
     task._buyer_country = buyer?.country || ''
     task._buyer_level = buyer?.level || ''
-    buyerMonthlyCountMap.value[task._sel_buyer_id] = (buyerMonthlyCountMap.value[task._sel_buyer_id] || 0) + 1
-    if (!buyerAsinMap.value[task._sel_buyer_id]) buyerAsinMap.value[task._sel_buyer_id] = []
-    if (task.asin && !buyerAsinMap.value[task._sel_buyer_id].includes(task.asin)) buyerAsinMap.value[task._sel_buyer_id].push(task.asin)
-    message.success('买手已分配')
+    if (!isUnbind) {
+      buyerMonthlyCountMap.value[task._sel_buyer_id] = (buyerMonthlyCountMap.value[task._sel_buyer_id] || 0) + 1
+      if (!buyerAsinMap.value[task._sel_buyer_id]) buyerAsinMap.value[task._sel_buyer_id] = []
+      if (task.asin && !buyerAsinMap.value[task._sel_buyer_id].includes(task.asin)) buyerAsinMap.value[task._sel_buyer_id].push(task.asin)
+    }
+    message.success(isUnbind ? '买手已解绑' : '买手已分配')
   } catch (e: any) {
-    message.error('分配失败：' + e.message)
+    message.error((!task._sel_buyer_id ? '解绑失败：' : '分配失败：') + e.message)
   } finally {
     task._saving_buyer = false
   }
@@ -2318,7 +2324,7 @@ async function submitEditTaskChanges(task: any) {
 
   let didSubmit = false
 
-  if (String(task._sel_buyer_id || '') !== String(snapshot._sel_buyer_id || '') && task._sel_buyer_id) {
+  if (String(task._sel_buyer_id || '') !== String(snapshot._sel_buyer_id || '')) {
     await assignBuyer(task)
     didSubmit = true
   }
@@ -2391,6 +2397,7 @@ async function openReplaceProduct() {
     targetRefundMethod: editTask.value.refund_method || '礼品卡',
     targetPaypalFee: 0,
     targetPaypalEmail: editTask.value.buyer_paypal_email || editTask.value._buyer_paypal_email || '',
+    billingNote: '',
     note: '',
   }
   replaceProductTargetInfo.value = null
@@ -2465,6 +2472,7 @@ async function saveReplaceProduct() {
       targetRefundAmount: Number(replaceProductForm.value.targetRefundAmount || 0),
       targetPaypalFee: Number(replaceProductForm.value.targetPaypalFee || 0),
       targetPaypalEmail: replaceProductForm.value.targetPaypalEmail,
+      billingNote: replaceProductForm.value.billingNote,
     })
     updateOrderRow(editTask.value.id, result.sourceSubOrder)
     allData.value = allData.value.filter(item => item.id !== editTask.value.id)
