@@ -100,7 +100,7 @@
                 <div class="wb-section-header">
                   <div>
                     <div class="wb-section-title">待操作订单</div>
-                    <div class="wb-section-desc">按当前主订单分组展示待分配子订单，展开后可逐条分配买手</div>
+                    <div class="wb-section-desc">排期逾期的订单，会即刻释放到抢单大厅</div>
                   </div>
                   <span class="wb-section-count">{{ pendingOrderGroups.length }} 个主订单</span>
                 </div>
@@ -322,7 +322,7 @@
                 <div class="wb-section-header">
                   <div>
                     <div class="wb-section-title">待完善订单</div>
-                    <div class="wb-section-desc">已分配买手后进入这里，重点看待返款、待下单和待留评等具体环节</div>
+                    <div class="wb-section-desc">排期逾期、未返款且买手匹配超过 2 小时，自动释放到抢单大厅</div>
                   </div>
                   <span class="wb-section-count">{{ improvingOrderGroups.length }} 个主订单</span>
                 </div>
@@ -468,8 +468,8 @@
                     <div class="wb-section-title">{{ taskFilter === '异常订单' ? '异常订单' : '待完善订单' }}</div>
                     <div class="wb-section-desc">
                       {{ taskFilter === '异常订单'
-                        ? '仅展示预付已返款后超过 24 小时仍未回传 Amazon 订单号的子订单'
-                        : '按子订单平铺展示，方便业务员逐条处理返款、订单号和留评流程' }}
+                        ? '待下单、已返款，且返款超过 2 个自然日的订单流入此页'
+                        : '排期逾期、未返款且买手匹配超过 2 小时，自动释放到抢单大厅' }}
                     </div>
                   </div>
                   <span class="wb-section-count">{{ displayedImprovingListTasks.length }} 个子订单</span>
@@ -559,7 +559,7 @@
                 <div class="wb-section-header">
                   <div>
                     <div class="wb-section-title">评论跟进</div>
-                    <div class="wb-section-desc">集中跟进已下单但未完成留评回传的子订单，便于业务员单独催评</div>
+                    <div class="wb-section-desc">{{ reviewFollowSectionDesc }}</div>
                   </div>
                   <span class="wb-section-count">{{ reviewFollowupTasks.length }} 个子订单</span>
                 </div>
@@ -2027,6 +2027,17 @@ const workflowPanelTasks = computed(() => {
   if (wbNav.value === 'improving') return displayedImprovingListTasks.value.filter(task => task._expanded)
   return []
 })
+const reviewFollowSectionDesc = computed(() => {
+  const map: Record<string, string> = {
+    '待催评': '下单超过 7 个自然日，且催评超过 3 个自然日仍未上评的订单',
+    '已催评': '催评满 3 次仍未上评的订单，流入超时跟进',
+    '已上评待显示': '上评超过 7 个自然日的订单，流入待传评',
+    '待传评': '进入本页超过 2 个自然日的订单，流入超时跟进',
+    '超时跟进': '集中处理评论进度已超时的订单',
+  }
+  return map[taskFilter.value] || '集中跟进已下单但未完成留评回传的订单'
+})
+
 const wbNavItems = computed<Array<{ key: WorkbenchNavKey; label: string; count: number }>>(() => ([
   { key: 'pending', label: '待操作订单', count: todayPendingBuyerMatchTasks.value.length },
   { key: 'improving', label: '待完善订单', count: improvingTasks.value.length },
@@ -6032,7 +6043,8 @@ onUnmounted(() => {
   gap: 12px;
 }
 .wb-section-title { font-size: 16px; font-weight: 700; color: #1a1a2e; }
-.wb-section-desc { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.wb-section-desc { font-size: 12px; color: #6b7280; margin-top: 4px; line-height: 1.6; }
+.wb-section-desc > div + div { margin-top: 2px; }
 .wb-section-count {
   font-size: 12px;
   color: #2563eb;

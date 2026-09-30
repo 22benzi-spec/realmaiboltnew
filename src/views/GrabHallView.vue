@@ -1,6 +1,7 @@
 <template>
   <div class="page-content">
     <h1 class="page-title">抢单大厅</h1>
+    <p class="hall-rule-desc">抢单超过 2 小时，订单进度为待匹配或待下单且未返款的订单，自动回流到本页</p>
 
     <a-tabs v-model:activeKey="activeTab">
       <a-tab-pane key="hall" tab="抢单大厅">
@@ -1447,7 +1448,8 @@ onMounted(() => {
 
 <style scoped>
 .page-content { padding: 24px; }
-.page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+.page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
+.hall-rule-desc { margin: 0 0 16px; font-size: 12px; color: #6b7280; line-height: 1.5; }
 
 .hall-stats {
   display: grid;
