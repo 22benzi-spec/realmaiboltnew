@@ -43,36 +43,6 @@
             <div class="wb-section-desc">{{ reviewFollowSectionDesc }}</div>
           </div>
 
-          <div v-else-if="wbNav !== 'afterSale'" class="workbench-priority">
-            <div class="today-focus-card">
-              <div class="today-focus-head">
-                <div>
-                  <div class="today-focus-title">今日待办</div>
-                  <div class="today-focus-desc">优先处理今天到期的订单，只有待匹配的超期任务会自动回流到抢单大厅</div>
-                </div>
-                <span class="today-focus-result">{{ workbenchSummary.resultCount }} 条结果</span>
-              </div>
-              <div class="today-focus-stats">
-                <div class="today-stat">
-                  <span class="today-stat-label">主订单</span>
-                  <strong class="today-stat-value">{{ workbenchSummary.todayOrderCount }}</strong>
-                  <span class="today-stat-meta">今日完成 {{ workbenchSummary.todayCompletedOrderCount }}</span>
-                  <span class="today-stat-sub">{{ workbenchSummary.todayOrderProgressPct }}%</span>
-                </div>
-                <div class="today-stat">
-                  <span class="today-stat-label">子订单</span>
-                  <strong class="today-stat-value">{{ wbNav === 'improving' ? workbenchSummary.todayImprovingSubOrderCount : (workbenchSummary.todayTotalCount || 0) }}</strong>
-                  <span class="today-stat-meta">今日完成 {{ wbNav === 'improving' ? workbenchSummary.todayImprovingDoneCount : workbenchSummary.todayDoneCount }}</span>
-                  <span v-if="wbNav === 'improving'" class="today-stat-breakdown">
-                    <span>已下单 {{ workbenchSummary.todayImprovingOrderedDoneCount }}</span>
-                    <span>已返款 {{ workbenchSummary.todayImprovingRefundDoneCount }}</span>
-                  </span>
-                  <span class="today-stat-sub">{{ wbNav === 'improving' ? workbenchSummary.todayImprovingProgressPct : workbenchSummary.todayProgressPct }}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- 统计栏 + 筛选 -->
           <div v-if="wbNav !== 'afterSale'" class="top-bar">
             <div class="filter-tabs">
@@ -128,12 +98,7 @@
                 <div v-if="pendingOrderGroups.length === 0" class="empty-list compact-empty">
                   <a-empty description="暂无待分配买手数据" />
                 </div>
-                <div v-else class="pending-summary-bar">
-                  <span class="detail-sep">今日待分配 {{ todayPendingBuyerMatchTasks.length }}</span>
-                  <span class="detail-sep">当前列表 {{ pendingListTasks.length }}</span>
-                  <span class="detail-sep">主订单 {{ pendingOrderGroups.length }}</span>
-                </div>
-                <div class="main-order-list">
+                <div v-else class="main-order-list">
                   <div
                     v-for="group in pendingOrderGroups"
                     :key="group.order_id"

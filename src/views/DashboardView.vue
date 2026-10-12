@@ -57,7 +57,7 @@
               size="middle"
               row-key="name"
               class="overview-table compact-table"
-              :scroll="{ x: 860 }"
+              :scroll="{ x: 1110 }"
             >
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'name'">
@@ -96,6 +96,9 @@
                 </template>
                 <template v-else-if="column.key === 'asins'">{{ record.asins }}</template>
                 <template v-else-if="column.key === 'buyerCount'">{{ record.buyerCount }}</template>
+                <template v-else-if="column.key === 'urgedCount'">{{ record.urgedCount }}</template>
+                <template v-else-if="column.key === 'submittedCount'">{{ record.submittedCount }}</template>
+                <template v-else-if="column.key === 'blockedCount'">{{ record.blockedCount }}</template>
               </template>
             </a-table>
           </div>
@@ -334,6 +337,9 @@ type StaffWorkRow = {
   total: number
   asins: number
   buyerCount: number
+  urgedCount: number
+  submittedCount: number
+  blockedCount: number
   review: number
   free: number
   feedback: number
@@ -393,9 +399,13 @@ const greeting = computed(() => {
 
 const targetCountries = ['美国', '德国', '英国', '加拿大']
 const REVIEW_TYPES = new Set(['文字评', '图片评', '视频评', '文字', '图片', '视频'])
+const REVIEW_FOLLOW_FAILURE_REASONS = ['传前掉评', '评论被拒', '评论不显示', '买手失联', '买手拒绝上评', '链接无法上评', '卖家要求不上评']
 
 const dailyOrders = ref<any[]>([])
 const dailySubOrders = ref<any[]>([])
+const reviewFollowOrders = ref<any[]>([])
+const reviewSubmitOrders = ref<any[]>([])
+const reviewBlockedOrders = ref<any[]>([])
 const monthOrders = ref<any[]>([])
 const monthSubOrders = ref<any[]>([])
 const monthFunds = ref<TodayFunds>({
@@ -432,9 +442,14 @@ function buildMockDashboardData(day: Dayjs) {
     mockOrder('mock-order-006', '德国', 'B0MOCKDE06', 2, 'Ivy', '深圳星河科技', ['文字评'], { '文字评': 2 }, dayIso),
   ]
   const dailyMockSubs = [
-    ...expandMockSubOrders('王浩', '美国', 'Luna', ['文字评'], 5, '已完成', dayIso, '', ['Emma', 'Noah', 'Mia']),
+    ...expandMockSubOrders('王浩', '美国', 'Luna', ['文字评'], 5, '已完成', dayIso, '', ['Emma', 'Noah', 'Mia']).map((order, index) => (
+      index < 2 ? { ...order, review_followed_at: dayIso } : order
+    )),
+    { ...mockSubOrder('mock-review-fail-wang', '美国', 'Luna', '王浩', ['文字评'], '传前掉评', '', dayIso, 0, 'Emma') },
+    ...expandMockSubOrders('李娜', '德国', 'Ivy', ['图片评'], 4, '已留评', dayIso, '', ['Sophia', 'Liam']).map((order, index) => (
+      index === 0 ? { ...order, review_submitted_at: dayIso } : order
+    )),
     ...expandMockSubOrders('王浩', '英国', 'Luna', ['免评'], 2, '已完成', dayIso, '', ['Olivia']),
-    ...expandMockSubOrders('李娜', '德国', 'Ivy', ['图片评'], 4, '已留评', dayIso, '', ['Sophia', 'Liam']),
     ...expandMockSubOrders('李娜', '美国', 'Ivy', ['免评'], 2, '已完成', dayIso, '', ['Ava']),
     ...expandMockSubOrders('李娜', '加拿大', 'Ivy', ['Feedback'], 1, '已完成', dayIso, '', ['Lucas']),
     ...expandMockSubOrders('周敏', '英国', 'Luna', ['Feedback'], 3, '已完成', dayIso, '', ['Amelia', 'Ethan']),
@@ -560,6 +575,8 @@ function mockSubOrder(id: string, country: string, sales: string, staff: string,
     created_at: updatedAt,
     refund_amount: refundAmount,
     total_amount: 128,
+    review_followed_at: null,
+    review_submitted_at: null,
   }
 }
 
@@ -593,12 +610,15 @@ const refundDetailColumns = [
   { title: '客户', dataIndex: 'customerCount', key: 'customerCount', width: 70, align: 'center' as const },
 ]
 
-const staffWorkColumns = [
+  const staffWorkColumns = [
   { title: '业务员', dataIndex: 'name', key: 'name', width: 120, fixed: 'left' as const, align: 'center' as const },
   { title: '单量', dataIndex: 'total', key: 'total', width: 96, align: 'center' as const },
   ...buildTypeColumns(260),
   { title: 'ASIN', dataIndex: 'asins', key: 'asins', width: 70, align: 'center' as const },
   { title: '买手', dataIndex: 'buyerCount', key: 'buyerCount', width: 70, align: 'center' as const },
+  { title: '已催评', dataIndex: 'urgedCount', key: 'urgedCount', width: 80, align: 'center' as const },
+  { title: '已上评', dataIndex: 'submittedCount', key: 'submittedCount', width: 80, align: 'center' as const },
+  { title: '无法完成', dataIndex: 'blockedCount', key: 'blockedCount', width: 90, align: 'center' as const },
 ]
 
 const dailyWorkRows = computed(() => dailySubOrders.value.filter(isCompletedWork))
@@ -669,11 +689,24 @@ const focusCards = computed(() => [
   },
 ])
 
+function isOnSelectedDay(value: string | null | undefined) {
+  return !!value && dayjs(value).isSame(selectedDay.value, 'day')
+}
+
+function countStaffReviewActions(staffName: string) {
+  const matchStaff = (order: any) => (normalizeText(order.staff_name) || '未分配业务员') === staffName
+  return {
+    urgedCount: reviewFollowOrders.value.filter(matchStaff).length,
+    submittedCount: reviewSubmitOrders.value.filter(matchStaff).length,
+    blockedCount: reviewBlockedOrders.value.filter(matchStaff).length,
+  }
+}
+
 const dailyStaffRows = computed<StaffWorkRow[]>(() => {
   const map = new Map<string, StaffWorkRow & { _orders: any[] }>()
   dailyWorkRows.value.forEach(order => {
     const name = normalizeText(order.staff_name) || '未分配业务员'
-    const row = map.get(name) || { name, total: 0, asins: 0, buyerCount: 0, review: 0, free: 0, feedback: 0, countryTypes: [], typeGroups: [], _orders: [] }
+    const row = map.get(name) || { name, total: 0, asins: 0, buyerCount: 0, urgedCount: 0, submittedCount: 0, blockedCount: 0, review: 0, free: 0, feedback: 0, countryTypes: [], typeGroups: [], _orders: [] }
     row.total += 1
     row._orders.push(order)
     const types = getOrderTypes(order)
@@ -688,6 +721,7 @@ const dailyStaffRows = computed<StaffWorkRow[]>(() => {
       total: row.total,
       asins: uniqueCount(row._orders.map(order => normalizeText(order.asin))),
       buyerCount: uniqueCount(row._orders.map(order => normalizeText(order.buyer_name || order.buyer_id))),
+      ...countStaffReviewActions(row.name),
       review: row.review,
       free: row.free,
       feedback: row.feedback,
@@ -715,7 +749,7 @@ async function loadStats() {
     const monthStart = selectedDay.value.startOf('month').toISOString()
     const monthEnd = selectedDay.value.endOf('month').toISOString()
 
-    const [dailyOrdersRes, monthOrdersRes, dailySubRes, monthSubRes, ledgerRes, refundReqRes, monthLedgerRes, monthRefundReqRes] = await Promise.all([
+    const [dailyOrdersRes, monthOrdersRes, dailySubRes, reviewFollowRes, reviewSubmitRes, reviewBlockedRes, monthSubRes, ledgerRes, refundReqRes, monthLedgerRes, monthRefundReqRes] = await Promise.all([
       supabase
         .from('erp_orders')
         .select('id, order_number, asin, country, order_quantity, order_type, order_types, type_quantities, review_type, sales_person, customer_name, group_name, feedback_channel, total_amount, created_at, status')
@@ -730,6 +764,22 @@ async function loadStats() {
       supabase
         .from('sub_orders')
         .select('id, asin, country, status, order_status, order_type, review_type, order_types, staff_id, staff_name, sales_person, buyer_id, buyer_name, customer_name, total_amount, updated_at, created_at, refund_amount')
+        .gte('updated_at', dayStart)
+        .lte('updated_at', dayEnd),
+      supabase
+        .from('sub_orders')
+        .select('id, staff_name, review_followed_at')
+        .gte('review_followed_at', dayStart)
+        .lte('review_followed_at', dayEnd),
+      supabase
+        .from('sub_orders')
+        .select('id, staff_name, review_submitted_at')
+        .gte('review_submitted_at', dayStart)
+        .lte('review_submitted_at', dayEnd),
+      supabase
+        .from('sub_orders')
+        .select('id, staff_name, status, updated_at')
+        .in('status', REVIEW_FOLLOW_FAILURE_REASONS)
         .gte('updated_at', dayStart)
         .lte('updated_at', dayEnd),
       supabase
@@ -767,6 +817,15 @@ async function loadStats() {
 
     dailyOrders.value = shouldUseMockDaily ? mock.dailyOrders : nextDailyOrders
     dailySubOrders.value = shouldUseMockDaily ? mock.dailySubOrders : nextDailySubOrders
+    reviewFollowOrders.value = shouldUseMockDaily
+      ? mock.dailySubOrders.filter(order => isOnSelectedDay(order.review_followed_at))
+      : (reviewFollowRes.data || [])
+    reviewSubmitOrders.value = shouldUseMockDaily
+      ? mock.dailySubOrders.filter(order => isOnSelectedDay(order.review_submitted_at))
+      : (reviewSubmitRes.data || [])
+    reviewBlockedOrders.value = shouldUseMockDaily
+      ? mock.dailySubOrders.filter(order => REVIEW_FOLLOW_FAILURE_REASONS.includes(normalizeText(order.status)) && isOnSelectedDay(order.updated_at))
+      : (reviewBlockedRes.data || [])
     monthOrders.value = (monthOrdersRes.data || []).length ? (monthOrdersRes.data || []) : mock.monthOrders
     monthSubOrders.value = (monthSubRes.data || []).length ? (monthSubRes.data || []) : mock.monthSubOrders
     todayFunds.value = shouldUseMockDaily
