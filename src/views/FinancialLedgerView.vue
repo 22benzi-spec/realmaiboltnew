@@ -331,7 +331,7 @@
             </div>
             <div v-if="showDetailTask(detailRecord)" class="detail-info-item">
               <span>任务号</span>
-              <strong class="mono">{{ getOrderIdSummary(detailRecord) || '-' }}</strong>
+              <strong class="mono">{{ getDetailOrderIdText(detailRecord) || '-' }}</strong>
             </div>
             <div v-if="showDetailCountry(detailRecord)" class="detail-info-item">
               <span>国家</span>
@@ -771,10 +771,22 @@ function getOrderIds(record: any) {
   return [...new Set([...fromBreakdown, ownOrder].filter(Boolean))]
 }
 
+function getGroupTaskNumber(orderId: string) {
+  const match = String(orderId || '').trim().match(/^TASK-GRP-(\d{8}-\d+)-\d+$/)
+  return match ? `GRP-${match[1]}` : ''
+}
+
 function getOrderIdSummary(record: any) {
   const ids = getOrderIds(record)
   if (!ids.length) return ''
-  return ids.length === 1 ? ids[0] : `${ids[0]} +${ids.length - 1}`
+  if (ids.length === 1) return ids[0]
+  const groupNumbers = [...new Set(ids.map(getGroupTaskNumber).filter(Boolean))]
+  if (groupNumbers.length === 1 && ids.every(id => getGroupTaskNumber(id) === groupNumbers[0])) return groupNumbers[0]
+  return `${ids[0]} +${ids.length - 1}`
+}
+
+function getDetailOrderIdText(record: any) {
+  return getOrderIds(record).join('、')
 }
 
 function getDetailBreakdownRows(record: any) {
@@ -940,9 +952,13 @@ function getBusinessSummary(record: any) {
 
 function getBusinessSubSummary(record: any) {
   if (!showDetailTypeColumns(record)) return ''
-  const count = getBusinessOrderCount(record)
-  if (count <= 0) return ''
-  return `共${count}单`
+  const orderCount = getBusinessOrderCount(record)
+  const taskCount = getOrderIds(record).length
+  if (orderCount <= 0 && taskCount <= 0) return ''
+  const parts: string[] = []
+  if (taskCount > 0) parts.push(`共${taskCount}个任务`)
+  if (orderCount > 0) parts.push(`共${orderCount}单`)
+  return parts.join(' · ')
 }
 
 function hasBusinessInfo(record: any) {
@@ -1181,6 +1197,34 @@ function buildLedgerPreviewRows() {
       transaction_date: now.subtract(4, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(4, 'hour').toISOString(),
       updated_at: now.subtract(4, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-group-task',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260326-001',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
+      direction: '收入',
+      amount_cny: 860,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '杭州组任务示例',
+      landing_account: '公司对公 · 8801',
+      order_number: 'TASK-GRP-20260326-001-001',
+      staff_name: '商务-李婷',
+      business_countries: ['美国'],
+      business_types: ['文字', '图片'],
+      business_order_count: 5,
+      business_breakdown: [
+        { direction: '收入', target_order_number: 'TASK-GRP-20260326-001-001', country: '美国', business_type: '文字', order_count: 3, amount_cny: 480 },
+        { direction: '收入', target_order_number: 'TASK-GRP-20260326-001-002', country: '美国', business_type: '图片', order_count: 2, amount_cny: 380 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '已确认',
+      notes: '业务收入 | 同一组任务合并入账',
+      transaction_date: '2026-03-26',
+      created_at: now.subtract(3, 'hour').toISOString(),
+      updated_at: now.subtract(3, 'hour').toISOString(),
     },
     {
       id: 'mock-ledger-income-topup',

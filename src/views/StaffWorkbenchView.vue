@@ -22,7 +22,28 @@
       <!-- 右侧主内容 -->
       <div class="workbench-main">
         <template v-if="selectedStaffId">
-          <div v-if="wbNav !== 'afterSale'" class="workbench-priority">
+          <div v-if="wbNav === 'reviewFollow'" class="review-follow-head">
+            <div class="review-follow-head-main">
+              <div class="review-follow-head-title">评论跟进</div>
+              <div class="review-follow-capsules">
+                <span class="review-follow-capsule is-followed">
+                  <span>当日已催评</span>
+                  <strong>{{ reviewFollowCapsuleStats.followedToday }}</strong>
+                </span>
+                <span class="review-follow-capsule is-submitted">
+                  <span>当日已上评</span>
+                  <strong>{{ reviewFollowCapsuleStats.submittedToday }}</strong>
+                </span>
+                <span class="review-follow-capsule is-blocked">
+                  <span>当日无法完成</span>
+                  <strong>{{ reviewFollowCapsuleStats.blockedToday }}</strong>
+                </span>
+              </div>
+            </div>
+            <div class="wb-section-desc">{{ reviewFollowSectionDesc }}</div>
+          </div>
+
+          <div v-else-if="wbNav !== 'afterSale'" class="workbench-priority">
             <div class="today-focus-card">
               <div class="today-focus-head">
                 <div>
@@ -322,7 +343,7 @@
                 <div class="wb-section-header">
                   <div>
                     <div class="wb-section-title">待完善订单</div>
-                    <div class="wb-section-desc">排期逾期、未返款且买手匹配超过 2 小时，自动释放到抢单大厅</div>
+                    <div class="wb-section-desc">{{ improvingSectionDesc }}</div>
                   </div>
                   <span class="wb-section-count">{{ improvingOrderGroups.length }} 个主订单</span>
                 </div>
@@ -466,11 +487,7 @@
                 <div class="wb-section-header">
                   <div>
                     <div class="wb-section-title">{{ taskFilter === '异常订单' ? '异常订单' : '待完善订单' }}</div>
-                    <div class="wb-section-desc">
-                      {{ taskFilter === '异常订单'
-                        ? '待下单、已返款，且返款超过 2 个自然日的订单流入此页'
-                        : '排期逾期、未返款且买手匹配超过 2 小时，自动释放到抢单大厅' }}
-                    </div>
+                    <div class="wb-section-desc">{{ improvingSectionDesc }}</div>
                   </div>
                   <span class="wb-section-count">{{ displayedImprovingListTasks.length }} 个子订单</span>
                 </div>
@@ -556,13 +573,6 @@
             </div>
             <div v-if="wbNav === 'reviewFollow'" class="workbench-sections">
               <div class="wb-section">
-                <div class="wb-section-header">
-                  <div>
-                    <div class="wb-section-title">评论跟进</div>
-                    <div class="wb-section-desc">{{ reviewFollowSectionDesc }}</div>
-                  </div>
-                  <span class="wb-section-count">{{ reviewFollowupTasks.length }} 个子订单</span>
-                </div>
                 <div v-if="displayedReviewFollowTasks.length === 0" class="empty-list compact-empty">
                   <a-empty description="暂无评论跟进订单" />
                 </div>
@@ -1920,7 +1930,7 @@ const filterTabs = computed(() => {
       { label: '全部', value: '', count: reviewFollowupTasks.value.length },
       { label: '待催评', value: '待催评', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '待催评').length },
       { label: '已催评', value: '已催评', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '已催评').length },
-      { label: '已上评待显示', value: '已上评待显示', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '已上评待显示').length },
+      { label: '已上评', value: '已上评待显示', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '已上评待显示').length },
       { label: '待传评', value: '待传评', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '待传评').length },
       { label: '超时跟进', value: '超时跟进', count: reviewFollowupTasks.value.filter(t => getReviewFollowFilterCategory(t) === '超时跟进').length },
     ]
@@ -2005,6 +2015,16 @@ const todayReviewFollowRelevantTasks = computed(() =>
 const reviewFollowupTasks = computed(() =>
   actionableTasks.value.filter(task => isReviewTrackableTask(task))
 )
+const reviewFollowCapsuleStats = computed(() => {
+  const tasks = allTasks.value
+  return {
+    followedToday: tasks.filter(task => isSameLocalDay(task.review_followed_at)).length,
+    submittedToday: tasks.filter(task => isSameLocalDay(task.review_submitted_at)).length,
+    blockedToday: tasks.filter(task =>
+      REVIEW_FOLLOW_FAILURE_REASONS.includes(task.status) && isSameLocalDay(task.updated_at)
+    ).length,
+  }
+})
 const displayedReviewFollowTasks = computed(() =>
   getSortedReviewFollowTasks(reviewFollowupTasks.value)
 )
@@ -2030,12 +2050,12 @@ const workflowPanelTasks = computed(() => {
 const reviewFollowSectionDesc = computed(() => {
   const map: Record<string, string> = {
     '待催评': '下单超过 7 个自然日，且催评超过 3 个自然日仍未上评的订单',
-    '已催评': '催评满 3 次仍未上评的订单，流入超时跟进',
-    '已上评待显示': '上评超过 7 个自然日的订单，流入待传评',
+    '已催评': '催评满 3 次且超过 3 个自然日未上评的订单，流入超时跟进',
+    '已上评待显示': '上评超过 3 个自然日的订单，流入待传评',
     '待传评': '进入本页超过 2 个自然日的订单，流入超时跟进',
-    '超时跟进': '集中处理评论进度已超时的订单',
+    '超时跟进': '集中处理评论进度异常的订单',
   }
-  return map[taskFilter.value] || '集中跟进已下单但未完成留评回传的订单'
+  return map[taskFilter.value] || '集中处理待留评的订单'
 })
 
 const wbNavItems = computed<Array<{ key: WorkbenchNavKey; label: string; count: number }>>(() => ([
@@ -2224,6 +2244,10 @@ function isDone(status: string) {
   return ['已完成', '已取消'].includes(status)
 }
 
+function isSameLocalDay(value?: string | null) {
+  return !!value && dayjs(value).isSame(dayjs(), 'day')
+}
+
 function isOverdue(dateStr: string) {
   if (!dateStr) return false
   return dayjs(dateStr).isBefore(dayjs(), 'day')
@@ -2350,6 +2374,13 @@ function getTaskProgressBadgeClass(task: any) {
   ]
 }
 
+const improvingSectionDesc = computed(() => {
+  if (taskFilter.value === '异常订单') return '待下单、已返款，且返款超过 2 个自然日的订单流入此页'
+  if (taskFilter.value === '待返款') return '待下单且未返款的订单'
+  if (taskFilter.value === '待下单') return '待下单且已返款的订单'
+  return '排期逾期、未返款且买手匹配超过 2 小时的订单，自动释放到抢单大厅'
+})
+
 function getImprovingFilterCategory(task: any) {
   const checkpoint = getTaskCheckpoint(task)
   if (['待设置返款', '待申请返款', '待返款完成'].includes(checkpoint)) return '待返款'
@@ -2409,7 +2440,7 @@ function getReviewFollowProgressText(task: any) {
   const baseCategory = getReviewFollowBaseCategory(task)
   if (category === '超时跟进') return getReviewFollowOverdueLabel(task)
   if (baseCategory === '待传评') return '待传评'
-  if (baseCategory === '已上评待显示') return '已上评待显示'
+  if (baseCategory === '已上评待显示') return '已上评'
   if (baseCategory === '已催评') return '已催评'
   return '待催评'
 }
@@ -5887,6 +5918,68 @@ onUnmounted(() => {
 .wb-vbtn { padding: 2px 10px; font-size: 12px; cursor: pointer; color: #6b7280; background: #fff; user-select: none; }
 .wb-vbtn.active { background: #2563eb; color: #fff; }
 
+.review-follow-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.review-follow-head-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 28px;
+}
+.review-follow-head-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a2e;
+  line-height: 1;
+}
+.review-follow-capsules {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.review-follow-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.review-follow-capsule strong {
+  color: #1a1a2e;
+  font-size: 13px;
+  font-weight: 700;
+}
+.review-follow-capsule.is-followed {
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+.review-follow-capsule.is-followed strong { color: #2563eb; }
+.review-follow-capsule.is-submitted {
+  color: #059669;
+  border-color: rgba(5, 150, 105, 0.28);
+  background: rgba(5, 150, 105, 0.08);
+}
+.review-follow-capsule.is-submitted strong { color: #059669; }
+.review-follow-capsule.is-blocked {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.2);
+  background: rgba(220, 38, 38, 0.06);
+}
+.review-follow-capsule.is-blocked strong { color: #dc2626; }
 .workbench-priority {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
