@@ -193,10 +193,13 @@
           </div>
           <div class="offset-business-list">
             <div v-for="(row, index) in addRecordForm.refund_business_rows" :key="index" class="offset-business-row">
-              <a-select v-model:value="row.business_type" size="small" placeholder="测评类型" style="flex:1" show-search>
+              <a-select v-model:value="row.country" size="small" placeholder="国家" class="offset-detail-country" show-search>
+                <a-select-option v-for="item in offsetCountryOptions" :key="item" :value="item">{{ item }}</a-select-option>
+              </a-select>
+              <a-select v-model:value="row.business_type" size="small" placeholder="测评类型" class="offset-detail-type" show-search>
                 <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
               </a-select>
-              <a-input-number v-model:value="row.order_count" size="small" :min="1" :precision="0" style="width:110px" placeholder="退款单量" />
+              <a-input-number v-model:value="row.order_count" size="small" :min="1" :precision="0" class="offset-detail-count" placeholder="退款单量" />
               <a-button
                 size="small"
                 danger
@@ -207,7 +210,7 @@
               </a-button>
             </div>
           </div>
-          <div class="offset-brief-tip">用于财务流水的业务摘要，例如：文字 3 单，免评 1 单。</div>
+          <div class="offset-brief-tip">同一笔里国家不同就分行填，例如：美国文字 3 单，德国免评 1 单。</div>
         </div>
         <div v-if="addRecordType === '账面抵消'" class="ar-field">
           <label class="ar-label">类型 <span class="required">*</span></label>
@@ -652,7 +655,7 @@ const addRecordForm = ref({
   offset_related_task_id: '',
   offset_task_rows: [{ task_id: '', amount_cny: undefined as number | undefined }],
   offset_business_rows: [{ country: undefined as string | undefined, business_type: undefined as string | undefined, order_count: undefined as number | undefined }],
-  refund_business_rows: [{ business_type: '', order_count: undefined as number | undefined }],
+  refund_business_rows: [{ country: undefined as string | undefined, business_type: '', order_count: undefined as number | undefined }],
   payment_date_picker: null as any,
   payment_method: '银行转账',
   refund_account: '',
@@ -788,7 +791,7 @@ function createOffsetBusinessRows() {
 }
 
 function createRefundBusinessRows(order: any) {
-  return createBusinessCountRows(order)
+  return createBusinessCountRows(order).map((row) => ({ country: undefined as string | undefined, ...row }))
 }
 
 function addOffsetBusinessRow() {
@@ -801,7 +804,7 @@ function removeOffsetBusinessRow(index: number) {
 }
 
 function addRefundBusinessRow() {
-  addRecordForm.value.refund_business_rows.push({ business_type: '', order_count: undefined })
+  addRecordForm.value.refund_business_rows.push({ country: undefined, business_type: '', order_count: undefined })
 }
 
 function removeRefundBusinessRow(index: number) {
@@ -931,10 +934,11 @@ async function saveRecord() {
     const businessDetail = buildOrderBusinessBreakdown(props.order, amountCny)
     const refundBusinessRows = addRecordForm.value.refund_business_rows
       .map((row: any) => ({
+        country: String(row.country || '').trim(),
         business_type: normalizeBusinessType(row.business_type),
         order_count: Number(row.order_count || 0),
       }))
-      .filter((row: any) => row.business_type || row.order_count > 0)
+      .filter((row: any) => row.country || row.business_type || row.order_count > 0)
     const offsetBusinessRows = addRecordForm.value.offset_business_rows
       .map((row: any) => ({
         country: String(row.country || '').trim(),
@@ -995,7 +999,8 @@ async function saveRecord() {
         addRecordSaving.value = false
         return
       }
-      if (isRefund && (refundBusinessRows.length === 0 || refundBusinessRows.some((row: any) => !row.business_type || row.order_count <= 0))) {
+      const refundNeedsDetail = (addRecordForm.value.secondary_categories || []).some((item: string) => ['截单退款', '赔付佣金'].includes(item))
+      if (isRefund && refundNeedsDetail && (refundBusinessRows.length === 0 || refundBusinessRows.some((row: any) => !row.country || !row.business_type || row.order_count <= 0))) {
         message.warning('请完整填写退款明细')
         addRecordSaving.value = false
         return
@@ -1024,8 +1029,8 @@ async function saveRecord() {
         noteParts.push(`抵消明细: ${savedOffsetBusinessRows.map((row: any) => `${row.business_type}${row.order_count}单`).join('、')}`)
       }
     }
-    if (isRefund) {
-      noteParts.push(`退款明细: ${refundBusinessRows.map((row: any) => `${row.business_type}${row.order_count}单`).join('、')}`)
+    if (isRefund && refundBusinessRows.length) {
+      noteParts.push(`退款明细: ${refundBusinessRows.map((row: any) => `${row.country}${row.business_type}${row.order_count}单`).join('、')}`)
     }
     if (isRefund && addRecordForm.value.refund_account) {
       noteParts.push(`退款账号: ${addRecordForm.value.refund_account}`)

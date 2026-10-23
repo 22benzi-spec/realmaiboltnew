@@ -341,10 +341,13 @@
           </div>
           <div class="offset-business-list">
             <div v-for="(row, index) in batchRecordForm.refund_business_rows" :key="index" class="offset-business-row">
-              <a-select v-model:value="row.business_type" size="small" placeholder="测评类型" style="flex:1" show-search>
+              <a-select v-model:value="row.country" size="small" placeholder="国家" class="offset-detail-country" show-search>
+                <a-select-option v-for="item in refundCountryOptions" :key="item" :value="item">{{ item }}</a-select-option>
+              </a-select>
+              <a-select v-model:value="row.business_type" size="small" placeholder="测评类型" class="offset-detail-type" show-search>
                 <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
               </a-select>
-              <a-input-number v-model:value="row.order_count" size="small" :min="1" :precision="0" style="width:110px" placeholder="退款单量" />
+              <a-input-number v-model:value="row.order_count" size="small" :min="1" :precision="0" class="offset-detail-count" placeholder="退款单量" />
               <a-button
                 size="small"
                 danger
@@ -355,7 +358,7 @@
               </a-button>
             </div>
           </div>
-          <div class="offset-brief-tip">用于财务流水的业务摘要，例如：文字 3 单，免评 1 单。</div>
+          <div class="offset-brief-tip">同一笔里国家不同就分行填，例如：美国文字 3 单，德国免评 1 单。</div>
         </div>
         <div v-if="batchRecordMode === 'supplement'" class="add-record-tip">
           默认只展示一种币种；确实需要双币种时选择“同时填写”。
@@ -800,6 +803,7 @@ const nestedBatchParentFilesSnapshot = ref<any[]>([])
 const nestedBatchParentAllocMap = ref<Record<string, number | undefined>>({})
 const batchRecordFiles = ref<any[]>([])
 const businessTypeOptions = ['文字', '免评', '图片', '视频', 'Feedback']
+const refundCountryOptions = ['美国', '德国', '英国', '加拿大']
 
 interface AllocRow {
   orderId: string
@@ -953,7 +957,7 @@ const batchRecordForm = ref({
   offset_related_task_id: '',
   offset_task_rows: [{ task_id: '', amount_cny: undefined as number | undefined }],
   offset_business_rows: [{ business_type: '', order_count: undefined as number | undefined }],
-  refund_business_rows: [{ business_type: '', order_count: undefined as number | undefined }],
+  refund_business_rows: [{ country: undefined as string | undefined, business_type: '', order_count: undefined as number | undefined }],
   notes: '',
 })
 
@@ -1039,7 +1043,7 @@ function createBatchOffsetBusinessRows() {
 }
 
 function createBatchRefundBusinessRows() {
-  return createBatchOffsetBusinessRows()
+  return createBatchOffsetBusinessRows().map((row) => ({ country: undefined as string | undefined, ...row }))
 }
 
 function addBatchOffsetBusinessRow() {
@@ -1052,7 +1056,7 @@ function removeBatchOffsetBusinessRow(index: number) {
 }
 
 function addBatchRefundBusinessRow() {
-  batchRecordForm.value.refund_business_rows.push({ business_type: '', order_count: undefined })
+  batchRecordForm.value.refund_business_rows.push({ country: undefined, business_type: '', order_count: undefined })
 }
 
 function removeBatchRefundBusinessRow(index: number) {
@@ -1218,10 +1222,11 @@ async function saveBatchRecord() {
   const offsetBusinessCount = offsetBusinessRows.reduce((sum: number, row: any) => sum + row.order_count, 0)
   const refundBusinessRows = batchRecordForm.value.refund_business_rows
     .map((row: any) => ({
+      country: String(row.country || '').trim(),
       business_type: normalizeBusinessType(row.business_type),
       order_count: Number(row.order_count || 0),
     }))
-    .filter((row: any) => row.business_type || row.order_count > 0)
+    .filter((row: any) => row.country || row.business_type || row.order_count > 0)
   const refundBusinessCount = refundBusinessRows.reduce((sum: number, row: any) => sum + row.order_count, 0)
   const offsetTaskRows = batchRecordForm.value.offset_task_rows
     .map((row: any) => ({
@@ -1244,7 +1249,8 @@ async function saveBatchRecord() {
       return
     }
   }
-  if (mode === 'refund' && (refundBusinessRows.length === 0 || refundBusinessRows.some((row: any) => !row.business_type || row.order_count <= 0))) {
+  const refundNeedsDetail = (batchRecordForm.value.secondary_categories || []).some((item: string) => ['截单退款', '赔付佣金'].includes(item))
+  if (mode === 'refund' && refundNeedsDetail && (refundBusinessRows.length === 0 || refundBusinessRows.some((row: any) => !row.country || !row.business_type || row.order_count <= 0))) {
     message.warning('请完整填写退款明细')
     return
   }
@@ -1282,7 +1288,87 @@ async function saveBatchRecord() {
     const formUsdTotal = mode === 'supplement' && batchRecordForm.value.currency_mode !== 'cny'
       ? Number(batchRecordForm.value.amount_usd || 0)
       : 0
+    if (mode === 'refund') {
+      const taskLines = toProcess.flatMap((row) => {
+        const order = orders.value.find(o => o.id === row.orderId)
+        const amount = Math.abs(Number(row.allocated || 0))
+        return order && amount > 0 ? [{ order, amount }] : []
+      })
+      if (!taskLines.length) {
+        message.warning('请至少填写一条退款金额')
+        return
+      }
+      const totalAmount = Number(taskLines.reduce((sum, item) => sum + item.amount, 0).toFixed(2))
+      const countries = [...new Set(taskLines.map(item => String(item.order.country || '').trim()).filter(Boolean))]
+      const businessBreakdown = taskLines.map(item => ({
+        order_id: item.order.id,
+        order_number: item.order.order_number || '',
+        target_order_number: item.order.order_number || '',
+        country: String(item.order.country || '').trim(),
+        amount_cny: item.amount,
+      }))
+      const firstOrder = taskLines[0].order
+      const noteParts: string[] = []
+      if (refundBusinessRows.length) {
+        noteParts.push(`退款明细: ${refundBusinessRows.map((item: any) => `${item.country}${item.business_type}${item.order_count}单`).join('、')}`)
+      }
+      if (batchRecordForm.value.refund_account) noteParts.push(`退款账号: ${batchRecordForm.value.refund_account}`)
+      if (batchRecordForm.value.refund_account_surname) noteParts.push(`姓氏: ${batchRecordForm.value.refund_account_surname}`)
+      if (batchRecordForm.value.notes) noteParts.push(batchRecordForm.value.notes)
+      const recordNotes = noteParts.join(' | ')
+      const { data: txNo } = await supabase.rpc('generate_transaction_no')
+      const transactionNo = txNo || `FT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      const { data: txData, error: txErr } = await supabase.from('financial_transactions').insert({
+        transaction_no: transactionNo,
+        entry_scope: batchRecordForm.value.primary_category,
+        transaction_type: secondaryCategories[0] || null,
+        direction: '支出',
+        amount_cny: totalAmount,
+        amount_usd: 0,
+        exchange_rate: firstOrder.exchange_rate || 7.25,
+        customer_name: firstOrder.customer_name || '',
+        customer_id_str: firstOrder.customer_id_str || '',
+        order_id: firstOrder.id,
+        order_number: firstOrder.order_number,
+        staff_name: batchRecordForm.value.recorded_by,
+        status: '待审批',
+        business_countries: countries,
+        business_types: Array.from(new Set<string>(refundBusinessRows.map((item: any) => item.business_type).filter(Boolean))),
+        business_order_count: refundBusinessCount,
+        business_breakdown: businessBreakdown,
+        offset_source_type: null,
+        offset_source_note: null,
+        notes: `${categorySummary} - ${batchRecordForm.value.payment_method}${recordNotes ? ' | ' + recordNotes : ''}`,
+        transaction_date: paymentDate,
+        receipt_urls: receiptUrls,
+      }).select('id').maybeSingle()
+      if (txErr) throw txErr
+      for (const item of taskLines) {
+        const { error: payErr } = await supabase.from('batch_payments').insert({
+          batch_id: item.order.id,
+          batch_number: item.order.order_number,
+          transaction_id: txData?.id || null,
+          amount_cny: item.amount,
+          amount_usd: 0,
+          payment_date: paymentDate,
+          payment_method: batchRecordForm.value.payment_method,
+          payer_name: batchRecordForm.value.payer_name,
+          recorded_by: batchRecordForm.value.recorded_by,
+          notes: [`分类: ${categorySummary}`, recordNotes].filter(Boolean).join(' | '),
+          payment_type: '退款',
+          business_countries: String(item.order.country || '').trim() ? [String(item.order.country || '').trim()] : [],
+          business_types: Array.from(new Set<string>(refundBusinessRows.map((row: any) => row.business_type).filter(Boolean))),
+          business_order_count: refundBusinessCount,
+          business_breakdown: businessBreakdown,
+          offset_source_type: null,
+          offset_source_note: null,
+          receipt_urls: receiptUrls,
+        })
+        if (payErr) throw payErr
+      }
+    }
     for (const row of toProcess) {
+      if (mode === 'refund') break
       const rawAmt = Number(row.allocated)
       const isRefund = mode === 'refund'
       const isOffset = mode === 'offset'
@@ -1323,7 +1409,7 @@ async function saveBatchRecord() {
         noteParts.push(`抵消明细: ${offsetBusinessRows.map((item: any) => `${item.business_type}${item.order_count}单`).join('、')}`)
       }
       if (isRefund) {
-        noteParts.push(`退款明细: ${refundBusinessRows.map((item: any) => `${item.business_type}${item.order_count}单`).join('、')}`)
+        noteParts.push(`退款明细: ${refundBusinessRows.map((item: any) => `${item.country}${item.business_type}${item.order_count}单`).join('、')}`)
       }
       if (isRefund && batchRecordForm.value.refund_account) {
         noteParts.push(`退款账号: ${batchRecordForm.value.refund_account}`)
@@ -1392,7 +1478,11 @@ async function saveBatchRecord() {
     const parts = []
     if (supplementCount > 0) parts.push(`补款 ${supplementCount} 笔`)
     if (refundCount > 0) parts.push(`退款 ${refundCount} 笔（待审批）`)
-    message.success(mode === 'refund' ? `退款申请已提交：${parts.join('，')}` : mode === 'offset' ? `账面抵消已记录：${toProcess.length} 笔` : `补款已记录：${parts.join('，')}`)
+    if (mode === 'refund') {
+      message.success(`退款申请已提交：${refundCount} 个任务（待审批）`)
+    } else {
+      message.success(mode === 'offset' ? `账面抵消已记录：${toProcess.length} 笔` : `补款已记录：${parts.join('，')}`)
+    }
     await loadAllPayments()
 
     const processedMap = toProcess.reduce((acc, row) => {
@@ -2028,6 +2118,14 @@ async function saveBatchRecord() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.offset-detail-country,
+.offset-detail-type,
+.offset-detail-count {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
 }
 
 .offset-brief-tip {

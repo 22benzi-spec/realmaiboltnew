@@ -3,8 +3,9 @@
     <div class="page-header">
       <div class="header-text">
         <h1 class="page-title">买手校验中心</h1>
-        <p class="page-desc">支持任务校验和多维度查询，系统按买手、目标和风险维度输出判定原因与历史证据</p>
+        <p class="page-desc">填写买手和要查的内容，查看能不能下单，或者以前有没有买过。</p>
       </div>
+      <a-button @click="downloadCheckSheet">下载检查表</a-button>
     </div>
 
     <!-- ===== 单个校验 ===== -->
@@ -21,10 +22,10 @@
             <div class="buyer-input-wrap">
               <a-textarea
                 v-model:value="buyerInput"
-                placeholder="输入买手姓名或买手ID；多买手请每行一个"
+                placeholder="姓名和 ID 只能选一种，不能混填；多个买手用逗号隔开"
                 size="large"
                 allow-clear
-                :auto-size="{ minRows: 3, maxRows: 6 }"
+                :auto-size="{ minRows: 1, maxRows: 3 }"
                 @input="onBuyerInput"
               />
               <div v-if="buyerSuggestions.length > 0" class="suggestions-panel">
@@ -47,10 +48,7 @@
                 </div>
               </div>
             </div>
-            <div class="buyer-input-hint">
-              <UserOutlined />
-              <span>{{ buyerNames.length <= 1 ? '单个买手支持姓名模糊搜索或ID精确查询；批量校验请每行一个买手姓名或ID。' : `已输入 ${buyerNames.length} 个买手，将自动走批量校验。` }}</span>
-            </div>
+            <div v-if="buyerInputMixed" class="buyer-input-error">姓名和 ID 请分开查询。</div>
           </div>
 
           <div v-if="selectedBuyer && buyerNames.length === 1" class="buyer-profile-card">
@@ -77,45 +75,13 @@
                 <span>{{ mode.shortLabel }}</span>
               </button>
             </div>
-            <div class="mode-demo-row">
-              <template v-if="activeCheckMode === 'task'">
-                <a-button size="small" class="single-dim-demo-btn pass" @click="showTaskMockDemo('pass')">
-                  任务通过演示
-                </a-button>
-                <a-button size="small" class="single-dim-demo-btn fail" @click="showTaskMockDemo('fail')">
-                  任务综合拦截演示
-                </a-button>
-              </template>
-              <template v-else>
-                <a-button size="small" class="single-dim-demo-btn pass" @click="showMultiDimensionDemo('pass')">
-                  多维通过演示
-                </a-button>
-                <a-button size="small" class="demo-btn" @click="showMultiDimensionDemo('fail')">
-                  多维拦截演示
-                </a-button>
-              </template>
-            </div>
-            <div class="common-demo-row">
-              <a-button
-                v-if="activeCheckMode !== 'task'"
-                size="small"
-                block
-                class="single-target-demo-btn"
-                @click="showSingleBuyerMultiTargetDemo"
-              >
-                单买手多目标演示
-              </a-button>
-              <a-button size="small" block class="batch-demo-btn" @click="showMockBatchDemo">
-                当前方式批量演示
-              </a-button>
-            </div>
           </div>
 
           <div v-if="activeCheckMode === 'task'" class="field">
-            <label class="field-label">任务ID <span class="required">*</span></label>
+            <label class="field-label">任务号 <span class="required">*</span></label>
             <a-input
               v-model:value="dimValues.task_id"
-              placeholder="输入任务ID，按本次任务规则判断排重"
+              placeholder="输入任务号"
               size="large"
               allow-clear
               @press-enter="runSingleCheck"
@@ -123,16 +89,13 @@
               <template #prefix><SafetyCertificateOutlined style="color:#bbb" /></template>
             </a-input>
             <div class="asin-lookup-hint">
-              读取当前任务规则，只有这里才判断全店排重/组织级排重是否开启。
+              填任务号。只有这里会按这个任务的排重规则决定能不能下单。
             </div>
           </div>
 
           <div v-else class="multi-query-panel">
             <div class="multi-query-head">
-              <div>
-                <div class="field-label">多维度查询条件 <span class="required">*</span></div>
-                <div class="asin-lookup-hint">自定义维度需要各填各的；全选快捷只填 ASIN，并自动带出关联店铺、品牌、客户和公司主体。</div>
-              </div>
+              <div class="field-label">多维度查询条件 <span class="required">*</span></div>
               <a-checkbox v-model:checked="fullAutoLookup">全选快捷</a-checkbox>
             </div>
 
@@ -141,10 +104,11 @@
                 <label class="field-label">ASIN <span class="required">*</span></label>
                 <a-textarea
                   v-model:value="dimValues.asin"
-                  placeholder="每行一个 ASIN，系统自动带出关联维度"
+                  placeholder="每行一个 ASIN"
                   allow-clear
                   :auto-size="{ minRows: 2, maxRows: 5 }"
                 />
+                <div class="asin-lookup-hint">根据 ASIN 关联出店铺、品牌、客户和公司。</div>
               </div>
             </template>
 
@@ -223,9 +187,9 @@
                 <CloseCircleOutlined v-else />
                 {{ heroStatusText(singleResult) }}
               </div>
-              <div v-if="!isSingleDimensionDemoResult(singleResult)" class="hero-counts">
-                <span class="hc-pass">{{ singleResult.passCount }} 通过</span>
-                <span class="hc-fail">{{ singleResult.failCount }} 拦截</span>
+              <div v-if="showHeroCounts(singleResult)" class="hero-counts">
+                <span class="hc-pass">{{ heroPassCount(singleResult) }} 通过</span>
+                <span class="hc-fail">{{ heroFailCount(singleResult) }} 拦截</span>
               </div>
               <div v-if="primaryResultReason(singleResult)" class="hero-reason">
                 {{ primaryResultReason(singleResult) }}
@@ -235,11 +199,8 @@
 
           <div v-if="showContextCard(singleResult)" class="context-card">
             <div class="section-title-row">
-              <div>
-                <div class="section-title-text">任务上下文</div>
-                <div class="section-subtitle">只保留校验需要的核心信息</div>
-              </div>
-              <span v-if="singleResult.usingMock" class="mock-tag">演示数据</span>
+              <div class="section-title-text">{{ contextCardTitle(singleResult) }}</div>
+              <span v-if="singleResult.usingMock" class="mock-tag">示例</span>
             </div>
             <div v-if="contextItems(singleResult).length > 0" class="context-grid">
               <div v-for="item in contextItems(singleResult)" :key="item.label" class="context-item">
@@ -253,7 +214,7 @@
             <div class="section-title-row">
               <div>
                 <div class="section-title-text">{{ detailSectionTitle(singleResult) }}</div>
-                <div class="section-subtitle">{{ detailSectionSubtitle(singleResult) }}</div>
+                <div v-if="detailSectionSubtitle(singleResult)" class="section-subtitle">{{ detailSectionSubtitle(singleResult) }}</div>
               </div>
               <span
                 v-if="!isSingleDimensionDemoResult(singleResult)"
@@ -266,11 +227,11 @@
               <div
                 v-for="risk in detailRisks(singleResult)"
                 :key="risk.key"
-                :class="['risk-card-v2', risk.status, riskDimensionClass(risk)]"
+                :class="['risk-card-v2', riskVisualStatus(risk), riskDimensionClass(risk)]"
               >
-                <div class="risk-card-top">
+                <div v-if="!isHistoryOnlyResult(singleResult)" class="risk-card-top">
                   <span class="risk-dim-badge">{{ riskDimensionLabel(risk) }}</span>
-                  <span v-if="!isSingleDimensionDemoResult(singleResult)" :class="['history-risk-badge', riskVisualStatus(risk)]">
+                  <span v-if="showRiskStatusBadge(singleResult, risk)" :class="['history-risk-badge', riskVisualStatus(risk)]">
                     {{ riskBadgeText(risk) }}
                   </span>
                 </div>
@@ -278,7 +239,7 @@
                 <div v-if="risk.records.length > 0" class="risk-evidence-list">
                   <div class="risk-evidence-title">历史订单</div>
                   <div v-for="record in risk.records.slice(0, 4)" :key="record.id" class="risk-evidence-card">
-                    <div v-for="field in historyEvidenceFields(record)" :key="field.label" class="risk-evidence-field">
+                    <div v-for="field in historyEvidenceFields(record, isHistoryOnlyResult(singleResult))" :key="field.label" class="risk-evidence-field">
                       <span>{{ field.label }}</span>
                       <strong>{{ field.value }}</strong>
                     </div>
@@ -386,7 +347,7 @@
               <div
                 v-for="br in filteredBatchResults"
                 :key="batchResultKey(br)"
-                :class="['batch-result-card', br.overallPass ? 'card-pass' : 'card-fail', { 'single-buyer-target-card': isSingleBuyerBatch }]"
+                :class="['batch-result-card', batchCardTone(br) === 'fail' ? 'card-fail' : 'card-pass', { 'single-buyer-target-card': isSingleBuyerBatch }]"
               >
                 <div v-if="!isSingleBuyerBatch" class="brc-left">
                   <div class="brc-avatar" :style="{ background: getAvatarColor(br.buyerName) }">
@@ -406,17 +367,19 @@
                 <div v-else class="brc-target-main">
                   <div class="brc-check-label">{{ br.checkLabel || resultBuyerDisplayName(br) }}</div>
                 </div>
-                <div class="brc-dims">
-                  <span
-                    v-for="risk in visibleRisks(br).slice(0, 4)"
-                    :key="risk.key"
-                    :class="['brc-dim-tag', riskVisualStatus(risk)]"
-                  >
-                    {{ riskDimensionLabel(risk) }}:
-                    {{ riskBadgeText(risk) }}
-                  </span>
+                <div class="brc-dims" :class="{ 'is-empty': !showBatchRiskChips(br) }">
+                  <template v-if="showBatchRiskChips(br)">
+                    <span
+                      v-for="risk in visibleRisks(br).slice(0, 4)"
+                      :key="risk.key"
+                      :class="['brc-dim-tag', riskVisualStatus(risk)]"
+                    >
+                      {{ riskDimensionLabel(risk) }}:
+                      {{ riskBadgeText(risk) }}
+                    </span>
+                  </template>
                 </div>
-                <div :class="['brc-verdict', br.overallPass ? 'pass' : 'fail']">
+                <div :class="['brc-verdict', batchCardTone(br)]">
                   <ExclamationCircleOutlined v-if="isHistoryOnlyResult(br) && hasHistoryRecords(br)" />
                   <CheckCircleOutlined v-else-if="br.overallPass" />
                   <CloseCircleOutlined v-else />
@@ -430,19 +393,19 @@
                     <div
                       v-for="risk in visibleRisks(br)"
                       :key="risk.key"
-                      :class="['risk-card-v2', risk.status, riskDimensionClass(risk)]"
+                      :class="['risk-card-v2', riskVisualStatus(risk), riskDimensionClass(risk)]"
                     >
-                      <div class="risk-card-top">
+                      <div v-if="!isHistoryOnlyResult(br)" class="risk-card-top">
                         <span class="risk-dim-badge">{{ riskDimensionLabel(risk) }}</span>
-                        <span :class="['history-risk-badge', riskVisualStatus(risk)]">
+                        <span v-if="!isHistoryLookupRisk(risk)" :class="['history-risk-badge', riskVisualStatus(risk)]">
                           {{ riskBadgeText(risk) }}
                         </span>
                       </div>
-                      <div class="risk-reason-v2">{{ risk.reason }}</div>
+                      <div v-if="!isHistoryOnlyResult(br)" class="risk-reason-v2">{{ risk.reason }}</div>
                       <div v-if="risk.records.length > 0" class="risk-evidence-list">
                         <div class="risk-evidence-title">历史订单</div>
                         <div v-for="record in risk.records.slice(0, 4)" :key="record.id" class="risk-evidence-card">
-                          <div v-for="field in historyEvidenceFields(record)" :key="field.label" class="risk-evidence-field">
+                          <div v-for="field in historyEvidenceFields(record, isHistoryOnlyResult(br))" :key="field.label" class="risk-evidence-field">
                             <span>{{ field.label }}</span>
                             <strong>{{ field.value }}</strong>
                           </div>
@@ -466,7 +429,7 @@
             <SafetyCertificateOutlined class="empty-main-icon" />
           </div>
           <div class="empty-title">选择校验方式后开始排查</div>
-          <div class="empty-desc">输入买手姓名或买手ID，再填写 ASIN、任务ID、店铺、品牌、客户或公司主体，系统会按当前方式展示校验结论和历史证据。</div>
+          <div class="empty-desc">输入买手姓名或买手 ID，再填写 ASIN、任务号、店铺、品牌、客户或公司主体。</div>
           <div class="empty-dims">
             <span class="empty-dim-tag"><SafetyCertificateOutlined style="font-size:12px" />任务校验</span>
             <span class="empty-dim-tag"><BarcodeOutlined style="font-size:12px" />全面排查</span>
@@ -483,7 +446,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
 import {
-  SearchOutlined, UserOutlined, CloseOutlined,
+  SearchOutlined, CloseOutlined,
   ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined,
   ExclamationCircleOutlined, SafetyCertificateOutlined,
   DownOutlined,
@@ -643,8 +606,19 @@ const expandedBatch = ref<string[]>([])
 let suggestTimer: ReturnType<typeof setTimeout> | null = null
 
 const buyerNames = computed(() =>
-  buyerInput.value.split(/\n/).map(n => n.trim()).filter(Boolean)
+  buyerInput.value.split(/[,，\n]+/).map(name => name.trim()).filter(Boolean)
 )
+
+function isBuyerIdToken(value: string) {
+  const text = value.trim()
+  if (isUuidLike(text)) return true
+  return !/[\u4e00-\u9fa5\s]/.test(text) && /[0-9]/.test(text)
+}
+
+const buyerInputMixed = computed(() => {
+  const kinds = buyerNames.value.map(name => isBuyerIdToken(name))
+  return kinds.some(Boolean) && kinds.some(kind => !kind)
+})
 
 const batchNames = computed(() => buyerNames.value)
 
@@ -685,8 +659,8 @@ const checkModeOptions: CheckModeConfig[] = [
     label: '任务校验',
     shortLabel: '任务校验',
     inputKey: 'task_id',
-    inputLabel: '任务ID',
-    placeholder: '输入任务ID，按本次任务规则判断排重',
+    inputLabel: '任务号',
+    placeholder: '输入任务号',
     hint: '读取当前任务规则，只有这里才判断全店排重/组织级排重是否开启。',
     icon: SafetyCertificateOutlined,
   },
@@ -776,12 +750,18 @@ const visibleQueryDimensions = computed(() =>
   queryDimensionOptions.filter(dim => selectedQueryDims.value.includes(dim.key))
 )
 
+const multiDemoHistoryOnly = computed(() => {
+  if (fullAutoLookup.value) return false
+  const dims = visibleQueryDimensions.value
+  return dims.length > 0 && dims.every(dim => dim.mode === 'customer' || dim.mode === 'company')
+})
+
 const activeModeConfig = computed(() => checkModeOptions.find(mode => mode.key === activeCheckMode.value) || checkModeOptions[0])
 
 const activeTargetValue = computed(() => dimValues[activeModeConfig.value.inputKey] || '')
 
 const canRunCheck = computed(() => {
-  if (buyerNames.value.length === 0) return false
+  if (buyerNames.value.length === 0 || buyerInputMixed.value) return false
   if (activeCheckMode.value === 'task') return Boolean(dimValues.task_id.trim())
   if (fullAutoLookup.value) return parseMultiValues(dimValues.asin, 'asin').length > 0
   return selectedQueryDims.value.some(key => parseMultiValues(dimValues[key], key).length > 0)
@@ -1514,15 +1494,24 @@ function displayOrderId(record: BuyerHistoryRecord) {
   return record.orderNumber || record.id || '未知订单'
 }
 
-function historyEvidenceFields(record: BuyerHistoryRecord) {
-  return [
+function formatNamedId(name?: string, id?: string) {
+  const label = String(name || '').trim()
+  const code = String(id || '').trim()
+  if (label && code && label !== code) return `${label}（ID: ${code}）`
+  return label || code
+}
+
+function historyEvidenceFields(record: BuyerHistoryRecord, partyOnly = false) {
+  const fields = [
     { label: '订单ID', value: displayOrderId(record) },
     { label: '时间', value: fmtDate(record.date) },
     { label: 'ASIN', value: record.asin || '未知ASIN' },
     { label: '店铺', value: record.storeName || '未知店铺' },
     { label: '品牌', value: record.brandName || '未知品牌' },
-    { label: '客户', value: record.customerName || record.customerIdStr || '未知客户' },
+    { label: '客户', value: formatNamedId(record.customerName, record.customerIdStr) || '未知客户' },
   ]
+  if (!partyOnly) return fields
+  return fields.filter(field => field.label === '订单ID' || field.label === '时间')
 }
 
 function visibleRiskDetailLines(risk: BuyerHistoryRisk) {
@@ -1671,14 +1660,14 @@ function buildMockBlockingDemo(): CheckResult {
       key: 'mock-full-customer-history',
       title: '客户历史查询',
       status: 'pass',
-      reason: `该买手有购买过客户「${assoc.companyName}」下的历史订单，是否拦截需使用任务校验判断。`,
+      reason: `该买手有购买过客户「${formatNamedId(assoc.companyName, assoc.customerIdStr)}」下的历史订单，是否拦截需使用任务校验判断。`,
       records: [sameCustomerRecord],
     },
     {
       key: 'mock-full-company-history',
       title: '客户公司历史查询',
       status: 'pass',
-      reason: '该买手有购买过公司主体「Demo Trading Group」下的历史订单，是否拦截需使用任务校验判断。',
+      reason: '该买手有购买过公司主体「Demo Trading Group（ID: ORG-GROUP）」下的历史订单，是否拦截需使用任务校验判断。',
       records: [sameCompanyRecord],
     },
     {
@@ -1882,7 +1871,7 @@ function buildSingleDimensionMockAssociations(mode: CheckMode): AsinAssociation[
     contactName: '',
     companyId: '',
     companyName: mode === 'customer' || mode === 'company' ? target : '',
-    customerIdStr: mode === 'customer' || mode === 'company' ? target : '',
+    customerIdStr: mode === 'customer' ? 'ORG-DEMO' : mode === 'company' ? 'ORG-GROUP' : '',
     productName: '',
     productImage: '',
     productPrice: 0,
@@ -1897,8 +1886,10 @@ function buildSingleDimensionRisk(
   mode: Exclude<CheckMode, 'full'>,
   status: 'pass' | 'fail' | 'enabled-pass' | 'disabled-pass',
   targetOverride?: string,
+  targetId?: string,
 ): BuyerHistoryRisk {
   const target = targetOverride || mockModeTarget(mode)
+  const partyId = String(targetId || '').trim()
   const record: BuyerHistoryRecord = {
     id: `mock-single-${mode}`,
     orderNumber: `SUB-MOCK-${mode.toUpperCase()}-01`,
@@ -1906,7 +1897,7 @@ function buildSingleDimensionRisk(
     storeName: mode === 'store' ? target : 'FreshJoy History Store',
     brandName: mode === 'brand' ? target : 'FreshJoy',
     customerName: mode === 'customer' || mode === 'company' ? target : mode === 'task' ? 'Demo Trading Group' : 'Demo Trading LLC',
-    customerIdStr: mode === 'customer' || mode === 'company' ? target : mode === 'task' ? 'ORG-GROUP' : 'ORG-DEMO',
+    customerIdStr: mode === 'customer' || mode === 'company' ? partyId : mode === 'task' ? 'ORG-GROUP' : 'ORG-DEMO',
     date: mockRiskDate(mode === 'brand' ? 8 : 21),
     isMock: true,
   }
@@ -1968,8 +1959,8 @@ function buildSingleDimensionRisk(
       title: '客户历史查询',
       status: 'pass',
       reason: status === 'fail'
-        ? `该买手有购买过客户「${target}」下的历史订单，是否拦截需结合任务规则判断。`
-        : `未发现该买手购买过客户「${target}」下的历史订单。`,
+        ? `该买手有购买过客户「${formatNamedId(target, partyId)}」下的历史订单，是否拦截需结合任务规则判断。`
+        : `未发现该买手购买过客户「${formatNamedId(target, partyId)}」下的历史订单。`,
       records: status === 'fail' ? [record] : [],
     }
   }
@@ -1979,8 +1970,8 @@ function buildSingleDimensionRisk(
     title: '客户公司历史查询',
     status: 'pass',
     reason: status === 'fail'
-      ? `该买手有购买过公司主体「${target}」下的历史订单，是否拦截需结合任务规则判断。`
-      : `未发现该买手购买过公司主体「${target}」下的历史订单。`,
+      ? `该买手有购买过公司主体「${formatNamedId(target, partyId)}」下的历史订单，是否拦截需结合任务规则判断。`
+      : `未发现该买手购买过公司主体「${formatNamedId(target, partyId)}」下的历史订单。`,
     records: status === 'fail' ? [record] : [],
   }
 }
@@ -1989,9 +1980,12 @@ function buildSingleDimensionMockResult(
   mode: Exclude<CheckMode, 'full'>,
   status: 'pass' | 'fail' | 'enabled-pass' | 'disabled-pass',
   associations: AsinAssociation[],
-  options: { target?: string, buyerName?: string, checkLabel?: string } = {},
+  options: { target?: string, targetId?: string, buyerName?: string, checkLabel?: string } = {},
 ): CheckResult {
-  const risk = buildSingleDimensionRisk(mode, status, options.target)
+  const targetName = options.target || mockModeTarget(mode)
+  const associationId = associations[0]?.customerIdStr || ''
+  const targetId = options.targetId || (associationId && associationId !== targetName ? associationId : '')
+  const risk = buildSingleDimensionRisk(mode, status, options.target, targetId)
   const buyerName = options.buyerName || 'Michael Brown'
   return {
     buyerName,
@@ -2002,7 +1996,7 @@ function buildSingleDimensionMockResult(
       rating: 4.8,
       total_orders: 13,
     },
-    checkLabel: options.checkLabel,
+    checkLabel: options.checkLabel || subjectCheckLabel(mode, targetName, targetId),
     items: [],
     asinAssociations: associations,
     buyerHistory: {
@@ -2218,10 +2212,25 @@ function activeCustomDemoDimensions() {
   }))
 }
 
+function mockPartyId(mode: Exclude<CheckMode, 'full' | 'task' | 'multi'>, name: string) {
+  return mockTargetsForMode(mode).find(item => item.name === name)?.id || ''
+}
+
+function subjectCheckLabel(mode: CheckMode, name: string, id = '') {
+  if (mode !== 'customer' && mode !== 'company') return undefined
+  const label = mode === 'customer' ? '客户' : '公司主体'
+  return `${label}：${formatNamedId(name, id) || name}`
+}
+
 function buildMultiDimensionCustomDemo(status: 'pass' | 'fail'): CheckResult {
   const dims = activeCustomDemoDimensions()
-  const associations = dims.flatMap(dim => buildSingleDimensionMockAssociations(dim.mode))
-  const risks = dims.map(dim => buildSingleDimensionRisk(dim.mode, status, mockModeTarget(dim.mode)))
+  const subjects = dims.map(dim => {
+    const name = mockModeTarget(dim.mode)
+    const id = mockPartyId(dim.mode, name)
+    return { dim, name, id }
+  })
+  const associations = subjects.flatMap(item => [buildAssociationForTarget(item.dim.mode, item.name, item.id)])
+  const risks = subjects.map(item => buildSingleDimensionRisk(item.dim.mode, status, item.name, item.id))
   const blocking = risks.filter(risk => risk.status === 'fail' && !isHistoryLookupRisk(risk))
   return {
     buyerName: 'Michael Brown',
@@ -2232,7 +2241,9 @@ function buildMultiDimensionCustomDemo(status: 'pass' | 'fail'): CheckResult {
       rating: 4.8,
       total_orders: 13,
     },
-    checkLabel: dims.map(dim => dim.label).join(' + '),
+    checkLabel: subjects.length === 1
+      ? (subjectCheckLabel(subjects[0].dim.mode, subjects[0].name, subjects[0].id) || subjects[0].dim.label)
+      : subjects.map(item => item.dim.label).join(' + '),
     items: [],
     asinAssociations: associations,
     buyerHistory: {
@@ -2273,17 +2284,31 @@ function showMultiDimensionDemo(status: 'pass' | 'fail') {
   singleResult.value = buildMultiDimensionCustomDemo(status)
 }
 
-function mockTargetsForMode(mode: Exclude<CheckMode, 'full' | 'task' | 'multi'>) {
-  if (mode === 'asin') return ['B0MOCKMULTI01', 'B0MOCKMULTI02', 'B0MOCKMULTI03']
-  if (mode === 'store') return ['FreshJoy Home', 'NorthPeak Store', 'UrbanLife Outlet']
-  if (mode === 'brand') return ['FreshJoy', 'KitchenPeak', 'UrbanLife']
-  if (mode === 'customer') return ['Demo Trading LLC', 'Bright Client Group', 'NorthPeak Customer']
-  return ['Demo Trading Group', 'Bright Holdings', 'NorthPeak Global']
+function mockTargetsForMode(mode: Exclude<CheckMode, 'full' | 'task' | 'multi'>): Array<{ name: string, id: string }> {
+  if (mode === 'asin') return ['B0MOCKMULTI01', 'B0MOCKMULTI02', 'B0MOCKMULTI03'].map(name => ({ name, id: '' }))
+  if (mode === 'store') return ['FreshJoy Home', 'NorthPeak Store', 'UrbanLife Outlet'].map(name => ({ name, id: '' }))
+  if (mode === 'brand') return ['FreshJoy', 'KitchenPeak', 'UrbanLife'].map(name => ({ name, id: '' }))
+  if (mode === 'customer') {
+    return [
+      { name: 'Demo Trading LLC', id: 'ORG-DEMO' },
+      { name: 'Bright Client Group', id: 'ORG-BRIGHT' },
+      { name: 'NorthPeak Customer', id: 'ORG-NORTH' },
+    ]
+  }
+  return [
+    { name: 'Demo Trading Group', id: 'ORG-GROUP' },
+    { name: 'Bright Holdings', id: 'ORG-BRIGHT-CO' },
+    { name: 'NorthPeak Global', id: 'ORG-NORTH-CO' },
+  ]
 }
 
-function buildAssociationForTarget(mode: Exclude<CheckMode, 'full' | 'task' | 'multi'>, target: string) {
+function buildAssociationForTarget(mode: Exclude<CheckMode, 'full' | 'task' | 'multi'>, target: string, targetId = '') {
+  const association = buildManualAssociation(mode, target)
+  if ((mode === 'customer' || mode === 'company') && targetId) {
+    association.customerIdStr = targetId
+  }
   return {
-    ...buildManualAssociation(mode, target),
+    ...association,
     key: `mock-multi-target|${mode}|${target}`,
     isMock: true,
   }
@@ -2307,14 +2332,15 @@ function showSingleBuyerMultiTargetDemo() {
   const dims = activeCustomDemoDimensions()
   batchResults.value = dims.flatMap(dim => {
     const targets = mockTargetsForMode(dim.mode)
-    dimValues[dim.key] = targets.join('\n')
-    return targets.map((target, index) => {
+    dimValues[dim.key] = targets.map(item => item.name).join('\n')
+    return targets.map((item, index) => {
       const status = index % 2 === 0 ? 'fail' : 'pass'
-      const associations = [buildAssociationForTarget(dim.mode, target)]
+      const associations = [buildAssociationForTarget(dim.mode, item.name, item.id)]
       return buildSingleDimensionMockResult(dim.mode, status, associations, {
-        target,
+        target: item.name,
+        targetId: item.id,
         buyerName: 'Michael Brown',
-        checkLabel: `${dim.label}：${target}`,
+        checkLabel: `${dim.label}：${formatNamedId(item.name, item.id)}`,
       })
     })
   })
@@ -2336,7 +2362,7 @@ function withMockBuyer(result: CheckResult, buyerName: string): CheckResult {
 
 function showMockBatchDemo() {
   const mode = activeCheckMode.value
-  buyerInput.value = 'Michael Brown\nEmily Stone\nJames Wilson'
+  buyerInput.value = 'Michael Brown, Emily Stone, James Wilson'
   selectedBuyer.value = null
   buyerSuggestions.value = []
   singleResult.value = null
@@ -2708,11 +2734,183 @@ async function fetchBuyerAsinHistory(
   }
 }
 
+function isSampleToken(value: string) {
+  const text = value.trim()
+  return text.startsWith('B0SAMPLE') || text.startsWith('TASK-SAMPLE') || text.startsWith('示例')
+}
+
+function sampleTokensInContext(context: CheckContext) {
+  return [
+    context.asin || '',
+    ...(context.targetOverrides?.task_id || []),
+    ...(context.targetOverrides?.asin || []),
+    ...(context.targetOverrides?.store || []),
+    ...(context.targetOverrides?.brand || []),
+    ...(context.targetOverrides?.client_company || []),
+  ].map(value => String(value || '').trim()).filter(Boolean)
+}
+
+function sampleStatusFor(value: string, buyerName: string): 'pass' | 'fail' {
+  if (value.includes('混合') || value.includes('MIX')) return /emily stone/i.test(buyerName) ? 'pass' : 'fail'
+  if (value.includes('无记录') || value.includes('PASS') || value.includes('通过')) return 'pass'
+  if (value.includes('有记录') || value.includes('FAIL') || value.includes('拦截')) return 'fail'
+  return 'pass'
+}
+
+function samplePartyId(name: string) {
+  const ids: Record<string, string> = {
+    '示例客户-无记录': 'ORG-SAMPLE-NONE',
+    '示例客户-有记录': 'ORG-SAMPLE-HIT',
+    '示例客户-混合': 'ORG-SAMPLE-MIX',
+    '示例客户-A有记录': 'ORG-SAMPLE-A',
+    '示例客户-B无记录': 'ORG-SAMPLE-B',
+    '示例客户-C有记录': 'ORG-SAMPLE-C',
+    '示例公司-无记录': 'ORG-CO-NONE',
+    '示例公司-有记录': 'ORG-CO-HIT',
+    '示例公司-混合': 'ORG-CO-MIX',
+    '示例公司-A有记录': 'ORG-CO-A',
+    '示例公司-B无记录': 'ORG-CO-B',
+    '示例公司-C有记录': 'ORG-CO-C',
+  }
+  return ids[name] || ''
+}
+
+function sampleBuyerId(buyerName: string) {
+  const ids: Record<string, string> = {
+    'michael brown': 'MB-001',
+    'emily stone': 'ES-002',
+    'james wilson': 'JW-003',
+  }
+  return ids[buyerName.trim().toLowerCase()] || 'SAMPLE'
+}
+
+function buildComboSampleResult(token: string): CheckResult {
+  const associations = buildMockAssociations(token)
+  associations[0].asin = token
+  return {
+    buyerName: 'James Wilson',
+    buyerInfo: {
+      id: 'JW-003',
+      name: 'James Wilson',
+      status: 'active',
+      rating: 4.8,
+      total_orders: 13,
+    },
+    checkLabel: `全选：${token}`,
+    items: [],
+    asinAssociations: associations,
+    buyerHistory: {
+      total: 4,
+      risks: [{
+        key: 'mock-asin-combo',
+        title: 'ASIN 组合购买风险',
+        status: 'fail',
+        reason: '买手 A、买手 B 已购买该组合，当前买手不能购买。',
+        records: [],
+        detailLines: [
+          '组合：B0SAMPLE-P1 + B0SAMPLE-P2',
+          '买手 A：已购买 B0SAMPLE-P1、B0SAMPLE-P2',
+          '买手 B：已购买 B0SAMPLE-P1、B0SAMPLE-P2',
+          '当前买手：不能再购买 B0SAMPLE-P2',
+        ],
+      }],
+      hasBlockingRisk: true,
+    },
+    overallPass: false,
+    passCount: 0,
+    failCount: 1,
+    warnCount: 0,
+    usingMock: true,
+  }
+}
+
+function buildSampleResult(buyerName: string, context: CheckContext): CheckResult | null {
+  const token = sampleTokensInContext(context).find(isSampleToken)
+  if (!token) return null
+  const status = sampleStatusFor(token, buyerName)
+  const mode = context.mode || 'asin'
+  let result: CheckResult
+  if (token.includes('COMBO')) {
+    result = buildComboSampleResult(token)
+  } else if (mode === 'task' || token.startsWith('TASK-SAMPLE')) {
+    result = buildTaskMockDemo(status)
+    result.checkLabel = `任务：${token}`
+  } else if (mode === 'full' || token.includes('FULL')) {
+    result = status === 'pass' ? buildFullPassDemo() : buildMockBlockingDemo()
+    result.checkLabel = `全选：${token}`
+  } else {
+    const dimMode = (mode === 'multi' ? 'asin' : mode) as Exclude<CheckMode, 'full' | 'task' | 'multi'>
+    const partyId = samplePartyId(token)
+    const label = dimMode === 'customer' ? '客户' : dimMode === 'company' ? '公司主体' : dimMode === 'store' ? '店铺' : dimMode === 'brand' ? '品牌' : 'ASIN'
+    result = buildSingleDimensionMockResult(dimMode, status, [buildAssociationForTarget(dimMode, token, partyId)], {
+      target: token,
+      targetId: partyId,
+      buyerName,
+      checkLabel: `${label}：${formatNamedId(token, partyId) || token}`,
+    })
+  }
+  const named = withMockBuyer(result, buyerName)
+  if (named.buyerInfo) named.buyerInfo = { ...named.buyerInfo, id: sampleBuyerId(buyerName) }
+  return named
+}
+
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+function downloadCheckSheet() {
+  const headers = ['编号', '场景', '怎么查', '买手', '要勾选的维度', 'ASIN', '店铺', '品牌', '客户', '公司主体', '任务号', '右边应看到']
+  const rows = [
+    ['1', '单买手，一个 ASIN，通过', '多维查询', 'Michael Brown', 'ASIN', 'B0SAMPLE-PASS', '', '', '', '', '', '一张卡，结论通过。不要再出现第二个通过数字，也不要出现任务上下文'],
+    ['2', '单买手，一个 ASIN，拦截', '多维查询', 'Michael Brown', 'ASIN', 'B0SAMPLE-FAIL', '', '', '', '', '', '一张卡，结论拦截'],
+    ['3', '单买手，一个店铺，通过', '多维查询', 'Michael Brown', '店铺', '', '示例店铺-通过', '', '', '', '', '一张卡，结论通过'],
+    ['4', '单买手，一个店铺，拦截', '多维查询', 'Michael Brown', '店铺', '', '示例店铺-拦截', '', '', '', '', '一张卡，结论拦截'],
+    ['5', '单买手，一个品牌，通过', '多维查询', 'Michael Brown', '品牌', '', '', '示例品牌-通过', '', '', '', '一张卡，结论通过'],
+    ['6', '单买手，一个品牌，拦截', '多维查询', 'Michael Brown', '品牌', '', '', '示例品牌-拦截', '', '', '', '一张卡，结论拦截'],
+    ['7', '单买手，一个客户，无记录', '多维查询', 'Michael Brown', '客户', '', '', '', '示例客户-无记录', '', '', '绿色无购买记录，客户后面带 ID：ORG-SAMPLE-NONE'],
+    ['8', '单买手，一个客户，有记录', '多维查询', 'Michael Brown', '客户', '', '', '', '示例客户-有记录', '', '', '红色有购买记录，客户后面带 ID：ORG-SAMPLE-HIT'],
+    ['9', '单买手，一个公司，无记录', '多维查询', 'Michael Brown', '公司主体', '', '', '', '', '示例公司-无记录', '', '绿色无购买记录，公司后面带 ID：ORG-CO-NONE'],
+    ['10', '单买手，一个公司，有记录', '多维查询', 'Michael Brown', '公司主体', '', '', '', '', '示例公司-有记录', '', '红色有购买记录，公司后面带 ID：ORG-CO-HIT'],
+    ['11', '单买手，多个 ASIN', '多维查询', 'Michael Brown', 'ASIN', 'B0SAMPLE-A-FAIL\nB0SAMPLE-B-PASS\nB0SAMPLE-C-FAIL', '', '', '', '', '', '买手只在顶部出现一次。三行分别是拦截、通过、拦截'],
+    ['12', '单买手，多个店铺', '多维查询', 'Michael Brown', '店铺', '', '示例店铺-A拦截\n示例店铺-B通过\n示例店铺-C拦截', '', '', '', '', '三行：拦截、通过、拦截'],
+    ['13', '单买手，多个品牌', '多维查询', 'Michael Brown', '品牌', '', '', '示例品牌-A拦截\n示例品牌-B通过\n示例品牌-C拦截', '', '', '', '三行：拦截、通过、拦截'],
+    ['14', '单买手，多个客户', '多维查询', 'Michael Brown', '客户', '', '', '', '示例客户-A有记录\n示例客户-B无记录\n示例客户-C有记录', '', '', '三行都带客户 ID。有记录为红色，无记录为绿色'],
+    ['15', '单买手，多个公司', '多维查询', 'Michael Brown', '公司主体', '', '', '', '', '示例公司-A有记录\n示例公司-B无记录\n示例公司-C有记录', '', '三行都带公司 ID。有记录为红色，无记录为绿色'],
+    ['16', '单买手，ASIN 加店铺，都拦截', '多维查询', 'Michael Brown', 'ASIN 和店铺', 'B0SAMPLE-FAIL', '示例店铺-拦截', '', '', '', '', '右边两行，一行 ASIN、一行店铺，都是拦截。不要出现品牌或客户'],
+    ['17', '单买手，ASIN 加店铺，都通过', '多维查询', 'Michael Brown', 'ASIN 和店铺', 'B0SAMPLE-PASS', '示例店铺-通过', '', '', '', '', '右边两行，都是通过'],
+    ['18', '单买手，ASIN 和店铺都有多个', '多维查询', 'Michael Brown', 'ASIN 和店铺', 'B0SAMPLE-A-FAIL\nB0SAMPLE-B-PASS\nB0SAMPLE-C-FAIL', '示例店铺-A拦截\n示例店铺-B通过\n示例店铺-C拦截', '', '', '', '', '右边 6 行。买手只在顶部出现一次'],
+    ['19', '全选，一个 ASIN，通过', '勾选全选快捷', 'Michael Brown', '全选', 'B0SAMPLE-FULL-PASS', '', '', '', '', '', '只填了 ASIN，右边要带出店铺、品牌、客户、公司。客户和公司只表示没有购买记录'],
+    ['20', '全选，一个 ASIN，拦截', '勾选全选快捷', 'Michael Brown', '全选', 'B0SAMPLE-FULL-FAIL', '', '', '', '', '', '店铺、品牌可以拦截。客户和公司仍然只表示有没有购买记录'],
+    ['21', '单买手，一个任务，通过', '任务校验', 'Michael Brown', '任务', '', '', '', '', '', 'TASK-SAMPLE-PASS', '一张卡，结论通过。这里才会看任务排重'],
+    ['22', '单买手，一个任务，拦截', '任务校验', 'Michael Brown', '任务', '', '', '', '', '', 'TASK-SAMPLE-FAIL', '一张卡，结论拦截'],
+    ['23', '多个买手，一个 ASIN', '多维查询', 'Michael Brown, Emily Stone, James Wilson', 'ASIN', 'B0SAMPLE-MIX', '', '', '', '', '', '三行都显示买手。Michael 拦截，Emily 通过，James 拦截'],
+    ['24', '多个买手，一个店铺', '多维查询', 'Michael Brown, Emily Stone, James Wilson', '店铺', '', '示例店铺-混合', '', '', '', '', '三行。Emily 通过，另外两人拦截'],
+    ['25', '多个买手，一个品牌', '多维查询', 'Michael Brown, Emily Stone, James Wilson', '品牌', '', '', '示例品牌-混合', '', '', '', '三行。Emily 通过，另外两人拦截'],
+    ['26', '多个买手，一个客户', '多维查询', 'Michael Brown, Emily Stone, James Wilson', '客户', '', '', '', '示例客户-混合', '', '', 'Emily 是绿色无购买记录，另外两人是红色有购买记录'],
+    ['27', '多个买手，一个公司', '多维查询', 'Michael Brown, Emily Stone, James Wilson', '公司主体', '', '', '', '', '示例公司-混合', '', 'Emily 是绿色无购买记录，另外两人是红色有购买记录'],
+    ['28', '多个买手，一个任务', '任务校验', 'Michael Brown, Emily Stone, James Wilson', '任务', '', '', '', '', '', 'TASK-SAMPLE-MIX', '三行。Emily 通过，另外两人拦截'],
+    ['29', '多个买手，全选一个 ASIN', '勾选全选快捷', 'Michael Brown, Emily Stone, James Wilson', '全选', 'B0SAMPLE-FULL-MIX', '', '', '', '', '', '三个买手对同一个 ASIN，并带出店铺、品牌、客户、公司'],
+    ['30', '多个买手，多个 ASIN', '多维查询', 'Michael Brown, Emily Stone, James Wilson', 'ASIN', 'B0SAMPLE-A-FAIL\nB0SAMPLE-B-PASS\nB0SAMPLE-C-FAIL', '', '', '', '', '', '9 行：每个买手各对应 3 个 ASIN，分别是拦截、通过、拦截'],
+    ['31', '多个买手，同时查 ASIN 和店铺', '多维查询', 'Michael Brown, Emily Stone, James Wilson', 'ASIN 和店铺', 'B0SAMPLE-A-FAIL\nB0SAMPLE-B-PASS', '示例店铺-A拦截\n示例店铺-B通过', '', '', '', '', '每个买手都有 ASIN 和店铺两行，一共 12 行'],
+    ['32', '多个买手，全选多个 ASIN', '勾选全选快捷', 'Michael Brown, Emily Stone, James Wilson', '全选', 'B0SAMPLE-FULL-A-FAIL\nB0SAMPLE-FULL-B-PASS', '', '', '', '', '', '每个买手两个 ASIN，每个 ASIN 都带出店铺、品牌、客户、公司'],
+    ['33', 'ASIN 组合，A 和 B 已买，C 不能买', '勾选全选快捷', 'James Wilson', '全选', 'B0SAMPLE-COMBO', '', '', '', '', '', '拦截。买手 A、买手 B 已购买组合 B0SAMPLE-P1 + B0SAMPLE-P2，当前买手不能再买'],
+  ]
+  const csv = `\uFEFF${[headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')}`
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = '买手校验检查表.csv'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 async function checkOneBuyer(
   buyerName: string,
   context: CheckContext = {},
   buyerOverride: BuyerInfo | null = null,
 ): Promise<CheckResult> {
+  const sampleResult = buildSampleResult(buyerName, context)
+  if (sampleResult) return sampleResult
   const buyerInfo = buyerOverride || await fetchBuyerInfo(buyerName)
   const resolvedBuyerName = buyerInfo?.name || buyerName
   const items: DimResult[] = []
@@ -2825,8 +3023,30 @@ function contextItems(result: CheckResult) {
   ].filter(item => item.value && item.value !== '—')
 }
 
+function contextCardTitle(result: CheckResult) {
+  if ((result.checkLabel || '').startsWith('任务') || isTaskDemoResult(result)) return '任务里的商品'
+  return '带出的信息'
+}
+
 function showContextCard(result: CheckResult) {
-  return !isSingleDimensionDemoResult(result)
+  return contextItems(result).length > 1
+}
+
+function countedRisks(result: CheckResult) {
+  return result.buyerHistory.risks.filter(risk => !isHistoryLookupRisk(risk))
+}
+
+function showHeroCounts(result: CheckResult) {
+  const risks = countedRisks(result)
+  return risks.some(risk => risk.status === 'pass') && risks.some(risk => risk.status === 'fail')
+}
+
+function heroPassCount(result: CheckResult) {
+  return countedRisks(result).filter(risk => risk.status === 'pass').length
+}
+
+function heroFailCount(result: CheckResult) {
+  return countedRisks(result).filter(risk => risk.status === 'fail').length
 }
 
 function isSingleDimensionDemoResult(result: CheckResult) {
@@ -2836,6 +3056,7 @@ function isSingleDimensionDemoResult(result: CheckResult) {
 }
 
 function primaryResultReason(result: CheckResult) {
+  if (isHistoryOnlyResult(result)) return ''
   if (isTaskDemoResult(result)) {
     return result.overallPass
       ? '此任务的 ASIN、店铺、品牌和已开启排重规则均未命中，可下单。'
@@ -2881,13 +3102,26 @@ function hasHistoryRecords(result: CheckResult) {
 }
 
 function resultHeroClass(result: CheckResult) {
-  if (isHistoryOnlyResult(result)) return hasHistoryRecords(result) ? 'hero-neutral' : 'hero-pass'
+  if (isHistoryOnlyResult(result)) return hasHistoryRecords(result) ? 'hero-fail' : 'hero-pass'
   return result.overallPass ? 'hero-pass' : 'hero-fail'
 }
 
 function heroBadgeClass(result: CheckResult) {
-  if (isHistoryOnlyResult(result)) return hasHistoryRecords(result) ? 'badge-neutral' : 'badge-pass'
+  if (isHistoryOnlyResult(result)) return hasHistoryRecords(result) ? 'badge-fail' : 'badge-pass'
   return result.overallPass ? 'badge-pass' : 'badge-fail'
+}
+
+function batchCardTone(result: CheckResult) {
+  if (isHistoryOnlyResult(result)) return hasHistoryRecords(result) ? 'fail' : 'pass'
+  return result.overallPass ? 'pass' : 'fail'
+}
+
+function showBatchRiskChips(result: CheckResult) {
+  return visibleRisks(result).length > 1
+}
+
+function showRiskStatusBadge(result: CheckResult, risk: BuyerHistoryRisk) {
+  return !isSingleDimensionDemoResult(result) && !isHistoryLookupRisk(risk)
 }
 
 function heroStatusText(result: CheckResult) {
@@ -2931,6 +3165,7 @@ function detailSectionTitle(result: CheckResult) {
 }
 
 function detailSectionSubtitle(result: CheckResult) {
+  if (isHistoryOnlyResult(result)) return ''
   return blockingRisks(result).length > 0
     ? '按维度展示具体原因和历史订单'
     : '仅展示历史购买事实，是否拦截需结合任务规则判断'
@@ -3081,19 +3316,15 @@ function getDimIconComp(dim: string) {
 
 .buyer-input-wrap { position: relative; }
 
-.buyer-input-hint {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-top: 7px;
-  color: #6b7280;
+.buyer-input-wrap :deep(textarea::placeholder) {
+  color: #9ca3af;
+}
+
+.buyer-input-error {
+  margin-top: 6px;
+  color: #dc2626;
   font-size: 12px;
   line-height: 1.45;
-  .anticon {
-    margin-top: 2px;
-    color: #2563eb;
-    flex-shrink: 0;
-  }
 }
 
 .suggestions-panel {
@@ -4471,11 +4702,18 @@ function getDimIconComp(dim: string) {
 }
 
 .single-buyer-target-card {
-  display: grid;
-  grid-template-columns: minmax(150px, 220px) 1fr auto auto;
+  display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
+}
+
+.single-buyer-target-card .brc-target-main {
+  flex: 1;
+}
+
+.single-buyer-target-card .brc-dims.is-empty {
+  display: none;
 }
 
 .brc-left { display: flex; align-items: center; gap: 10px; min-width: 160px; }

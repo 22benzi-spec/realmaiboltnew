@@ -42,7 +42,7 @@
 
     <!-- 筛选栏 -->
     <div class="filter-bar">
-      <a-input v-model:value="search" placeholder="搜索对象 / 任务号 / 流水号 / 备注" style="width:240px" allow-clear @change="loadData" />
+      <a-input v-model:value="search" placeholder="搜索对象 / 任务号 / 流水号 / 备注" style="width:240px" allow-clear />
       <a-select v-model:value="filterPrimaryCategory" placeholder="一级分类" style="width:140px" allow-clear @change="onPrimaryFilterChange">
         <a-select-option v-for="item in primaryCategoryOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
       </a-select>
@@ -131,10 +131,11 @@
           <span v-else class="text-muted">-</span>
         </template>
         <template v-if="column.key === 'business_summary'">
-          <div class="business-summary">
+          <div v-if="showBusinessSummary(record)" class="business-summary">
             <span>{{ getBusinessSummary(record) }}</span>
-              <span v-if="getBusinessSubSummary(record)" class="business-sub">{{ getBusinessSubSummary(record) }}</span>
+            <span v-if="getBusinessSubSummary(record)" class="business-sub">{{ getBusinessSubSummary(record) }}</span>
           </div>
+          <span v-else class="text-muted">-</span>
         </template>
         <template v-if="column.key === 'status'">
           <a-badge :status="statusBadge[record.status] || 'default'" :text="record.status" />
@@ -356,7 +357,43 @@
           </div>
         </div>
 
-        <div v-if="showDetailTask(detailRecord)" class="detail-card">
+        <div v-if="showDetailTask(detailRecord) && isRefundTaskAmountRecord(detailRecord)" class="detail-card">
+          <div class="detail-section-title">业务明细</div>
+          <div class="detail-subsection">
+            <div class="detail-subsection-title">任务金额</div>
+            <div v-if="getRefundTaskAmountRows(detailRecord).length" class="breakdown-table breakdown-table-refund-task">
+              <div class="breakdown-table-head">
+                <span>任务号</span>
+                <span>国家</span>
+                <span class="amount">金额</span>
+              </div>
+              <div v-for="(item, index) in getRefundTaskAmountRows(detailRecord)" :key="index" class="breakdown-table-row">
+                <span class="mono">{{ item.taskId || '-' }}</span>
+                <span>{{ item.country || '-' }}</span>
+                <strong class="amount">¥{{ formatNum(item.amount) }}</strong>
+              </div>
+            </div>
+            <div v-else class="detail-empty">暂无任务金额</div>
+          </div>
+          <div v-if="showRefundTypeDetail(detailRecord)" class="detail-subsection">
+            <div class="detail-subsection-title">退款明细</div>
+            <div v-if="getRefundTypeDetailRows(detailRecord).length" class="breakdown-table breakdown-table-refund-type">
+              <div class="breakdown-table-head">
+                <span>国家</span>
+                <span>类型</span>
+                <span>单量</span>
+              </div>
+              <div v-for="(item, index) in getRefundTypeDetailRows(detailRecord)" :key="index" class="breakdown-table-row">
+                <span>{{ item.country || '-' }}</span>
+                <span>{{ item.type || '-' }}</span>
+                <span>{{ item.count }} 单</span>
+              </div>
+            </div>
+            <div v-else class="detail-empty">暂无退款明细</div>
+          </div>
+        </div>
+
+        <div v-else-if="showDetailTask(detailRecord)" class="detail-card">
           <div class="detail-section-title">业务明细</div>
           <table v-if="getBusinessTaskRows(detailRecord).length" class="detail-merge-table">
             <thead>
@@ -382,29 +419,45 @@
         </div>
 
         <div v-if="showDetailTask(detailRecord) && hasOffsetPart(detailRecord)" class="detail-card">
-          <div class="detail-section-title">抵消明细</div>
-          <div v-if="getOffsetDetailRows(detailRecord).length" class="breakdown-table">
-            <div class="breakdown-table-head">
-              <span>抵消来源任务号</span>
-              <span>国家</span>
-              <span>类型</span>
-              <span>单量</span>
-              <span>金额</span>
-            </div>
-            <div v-for="(item, index) in getOffsetDetailRows(detailRecord)" :key="index" class="breakdown-table-row">
-              <span class="mono">{{ item.showSourceTaskId ? (item.sourceTaskId || '-') : '' }}</span>
-              <span>{{ item.country || '-' }}</span>
-              <span>{{ item.type || '-' }}</span>
-              <span>{{ item.count }} 单</span>
-              <strong>¥{{ formatNum(item.amount) }}</strong>
-            </div>
+          <div class="detail-section-head">
+            <div class="detail-section-title">抵消详情</div>
+            <span v-if="getOffsetKindLabel(detailRecord)" class="detail-offset-kind">{{ getOffsetKindLabel(detailRecord) }}</span>
           </div>
-          <div v-else class="detail-empty">暂无抵消明细</div>
+          <div class="detail-subsection">
+            <div class="detail-subsection-title">抵消来源</div>
+            <div v-if="getOffsetSourceRows(detailRecord).length" class="breakdown-table breakdown-table-source">
+              <div class="breakdown-table-head">
+                <span>来源任务号</span>
+                <span class="amount">金额</span>
+              </div>
+              <div v-for="(item, index) in getOffsetSourceRows(detailRecord)" :key="index" class="breakdown-table-row">
+                <span class="mono">{{ item.sourceOrderId || '-' }}</span>
+                <strong class="amount">¥{{ formatNum(item.amountCny) }}</strong>
+              </div>
+            </div>
+            <div v-else class="detail-empty">暂无抵消来源</div>
+          </div>
+          <div v-if="showOffsetBusinessDetail(detailRecord)" class="detail-subsection">
+            <div class="detail-subsection-title">抵消明细</div>
+            <div v-if="getOffsetBusinessDetailRows(detailRecord).length" class="breakdown-table breakdown-table-detail">
+              <div class="breakdown-table-head">
+                <span>国家</span>
+                <span>类型</span>
+                <span>单量</span>
+              </div>
+              <div v-for="(item, index) in getOffsetBusinessDetailRows(detailRecord)" :key="index" class="breakdown-table-row">
+                <span>{{ item.country || '-' }}</span>
+                <span>{{ item.type || '-' }}</span>
+                <span>{{ item.count }} 单</span>
+              </div>
+            </div>
+            <div v-else class="detail-empty">暂无抵消明细</div>
+          </div>
         </div>
 
-        <div v-if="detailRecord.notes" class="detail-card">
+        <div v-if="getLedgerDisplayNotes(detailRecord)" class="detail-card">
           <div class="detail-section-title">账单备注</div>
-          <div class="detail-notes">{{ detailRecord.notes }}</div>
+          <div class="detail-notes">{{ getLedgerDisplayNotes(detailRecord) }}</div>
         </div>
       </div>
     </a-drawer>
@@ -412,7 +465,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabase'
 import type { Dayjs } from 'dayjs'
@@ -786,7 +839,7 @@ function getOrderIdSummary(record: any) {
 }
 
 function getDetailOrderIdText(record: any) {
-  return getOrderIds(record).join('、')
+  return getOrderIdSummary(record)
 }
 
 function getDetailBreakdownRows(record: any) {
@@ -916,25 +969,134 @@ function getBusinessTaskRows(record: any) {
   })
 }
 
-function getOffsetDetailRows(record: any) {
-  let lastSourceTaskId = '\0'
-  return getOffsetRows(record).map((item: any) => {
-    const sourceTaskId = getBreakdownSourceOrderId(item)
-    const showSourceTaskId = sourceTaskId !== lastSourceTaskId
-    lastSourceTaskId = sourceTaskId
-    return {
-      sourceTaskId,
-      showSourceTaskId,
+function getOffsetKindLabel(record: any) {
+  return extractNoteSection(record?.notes, '抵消类型')
+}
+
+function getOffsetBusinessDetailRows(record: any) {
+  const fromBreakdown = getOffsetRows(record)
+    .map((item: any) => ({
       country: String(item?.source_country || item?.country || '').trim(),
       type: normalizeBusinessType(item?.source_business_type || item?.offset_business_type || item?.business_type),
       count: Number(item?.source_order_count || item?.offset_order_count || item?.order_count || 0),
-      amount: Number(item?.amount_cny || 0),
+    }))
+    .filter((item: any) => item.country || item.type || item.count > 0)
+  if (fromBreakdown.length) return fromBreakdown
+  return parseOffsetBusinessPairRows(record?.notes).map((item) => ({
+    country: '',
+    type: item.businessType,
+    count: item.orderCount,
+  }))
+}
+
+function showOffsetBusinessDetail(record: any) {
+  if (!showDetailTask(record) || !hasOffsetPart(record)) return false
+  const kind = getOffsetKindLabel(record)
+  if (kind === '余额抵消' || kind === '补款抵消') return false
+  if (kind === '截单抵消') return true
+  return getOffsetBusinessDetailRows(record).length > 0
+}
+
+function getLedgerDisplayNotes(record: any) {
+  return String(record?.notes || '')
+    .split('|')
+    .map((item) => item.trim())
+    .filter((item) => item && !/^(抵消类型|抵消来源|抵消明细|退款明细)\s*:/.test(item))
+    .join(' | ')
+}
+
+function isRefundTaskAmountRecord(record: any) {
+  const { primary, secondary } = normalizeTransactionCategories(record)
+  return primary === '业务支出' && ['截单退款', '赔付佣金', '退差价'].includes(secondary)
+}
+
+function showRefundTypeDetail(record: any) {
+  return ['截单退款', '赔付佣金'].includes(normalizeTransactionCategories(record).secondary)
+}
+
+function getRefundTaskAmountRows(record: any) {
+  const grouped: Record<string, { taskId: string; countries: string[]; amount: number }> = {}
+  const order: string[] = []
+  getDetailBreakdownRows(record).forEach((item: any) => {
+    const taskId = getBreakdownOrderId(item) || String(record?.order_number || '').trim()
+    const key = taskId || '未填写'
+    if (!grouped[key]) {
+      grouped[key] = { taskId, countries: [], amount: 0 }
+      order.push(key)
     }
+    const country = String(item?.country || '').trim()
+    if (country && !grouped[key].countries.includes(country)) grouped[key].countries.push(country)
+    grouped[key].amount += Number(item?.amount_cny || 0)
   })
+  return order.map(key => ({
+    taskId: grouped[key].taskId,
+    country: grouped[key].countries.join('、'),
+    amount: grouped[key].amount,
+  }))
+}
+
+function parseRefundDetailToken(raw: string) {
+  const match = String(raw || '').trim().match(/^(.*?)([0-9]+(?:\.[0-9]+)?)\s*单$/)
+  if (!match) return null
+  const compact = match[1].replace(/\s+/g, '')
+  const count = Number(match[2] || 0)
+  const types = ['Feedback', '文字评', '图片评', '视频评', '文字', '图片', '视频', '免评', 'FB']
+  const found = types.find(name => compact.endsWith(name))
+  if (!found) return { country: '', type: normalizeBusinessType(compact), count }
+  return {
+    country: compact.slice(0, compact.length - found.length),
+    type: normalizeBusinessType(found),
+    count,
+  }
+}
+
+function getRefundTypeDetailRows(record: any) {
+  const section = extractNoteSection(record?.notes, '退款明细')
+  const source = section
+    ? section.split(/[、,，]/).map(item => parseRefundDetailToken(item)).filter(Boolean) as Array<{ country: string; type: string; count: number }>
+    : getBusinessBreakdown(record).map((item: any) => {
+        const type = normalizeBusinessType(item?.business_type)
+        const count = Number(item?.order_count || 0)
+        if (!type && count <= 0) return null
+        return { country: String(item?.country || '').trim(), type, count }
+      }).filter(Boolean) as Array<{ country: string; type: string; count: number }>
+  const grouped: Record<string, { country: string; type: string; count: number }> = {}
+  const order: string[] = []
+  source.forEach((item) => {
+    const type = item.type || '未分类'
+    const key = `${item.country}||${type}`
+    if (!grouped[key]) {
+      grouped[key] = { country: item.country, type, count: 0 }
+      order.push(key)
+    }
+    grouped[key].count += Number(item.count || 0)
+  })
+  return order.map(key => grouped[key])
+}
+
+function showBusinessSummary(record: any) {
+  const { primary, secondary } = normalizeTransactionCategories(record)
+  if (secondary === '任务收入') return true
+  return primary === '业务支出' && !!secondary && secondary !== '退差价'
 }
 
 function getBusinessSummary(record: any) {
-  if (!showDetailTypeColumns(record)) return '-'
+  if (!showBusinessSummary(record)) return ''
+  if (showRefundTypeDetail(record)) {
+    const rows = getRefundTypeDetailRows(record)
+    if (!rows.length) return '-'
+    const countByType: Record<string, number> = {}
+    const order: string[] = []
+    rows.forEach((item) => {
+      const type = item.type || '未分类'
+      if (!(type in countByType)) {
+        countByType[type] = 0
+        order.push(type)
+      }
+      countByType[type] += Number(item.count || 0)
+    })
+    return order.map(type => `${type}${countByType[type] ? `${countByType[type]}单` : ''}`).join(' · ')
+  }
   const breakdown = getBusinessBreakdown(record)
   if (breakdown.length) {
     const countByType = breakdown.reduce((acc: Record<string, number>, item: any) => {
@@ -951,7 +1113,7 @@ function getBusinessSummary(record: any) {
 }
 
 function getBusinessSubSummary(record: any) {
-  if (!showDetailTypeColumns(record)) return ''
+  if (!showBusinessSummary(record)) return ''
   const orderCount = getBusinessOrderCount(record)
   const taskCount = getOrderIds(record).length
   if (orderCount <= 0 && taskCount <= 0) return ''
@@ -984,7 +1146,7 @@ function buildLedgerPreviewRows() {
     business_order_count: 4,
     handler_name: '财务-陈岚',
     status: '待确认',
-    notes: '分笔实收',
+    notes: '抵消类型: 余额抵消 | 抵消来源: TASK-20260422-009 ¥200.00 | 分笔实收',
     _group_offset_amount: 200,
     transaction_date: now.format('YYYY-MM-DD'),
   }
@@ -1104,9 +1266,9 @@ function buildLedgerPreviewRows() {
       ],
       offset_source_type: '客户余款抵消',
       offset_source_note: '上一批任务余款抵消本次这 1 个任务。',
-      handler_name: '',
+      handler_name: '财务-陈岚',
       status: '待确认',
-      notes: '账面抵消 | 客户余款抵消',
+      notes: '抵消类型: 截单抵消 | 抵消来源: TASK-20260428-008 ¥360.00 | 账面抵消 | 客户余款抵消',
       transaction_date: now.subtract(3, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(3, 'hour').toISOString(),
       updated_at: now.subtract(3, 'hour').toISOString(),
@@ -1135,7 +1297,7 @@ function buildLedgerPreviewRows() {
       offset_source_note: '同客户同事历史任务余款抵消本次部分款项。',
       handler_name: '财务-陈岚',
       status: '已修改',
-      notes: '账面抵消',
+      notes: '抵消类型: 截单抵消 | 抵消来源: TASK-20260418-031 ¥310.00 | 账面抵消',
       transaction_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
       created_at: now.subtract(1, 'day').hour(10).toISOString(),
       updated_at: now.subtract(1, 'day').hour(14).toISOString(),
@@ -1153,20 +1315,20 @@ function buildLedgerPreviewRows() {
       exchange_rate: null,
       customer_name: '宁波朗行科技',
       landing_account: '公司对公 · 8801',
-      order_number: 'TASK-20260507-060',
+      order_number: 'TASK-GRP-20260507-060-001',
       staff_name: '商务-Aiden',
       business_countries: ['美国', '德国'],
       business_types: ['文字', '免评'],
       business_order_count: 6,
       business_breakdown: [
-        { direction: '收入', target_order_number: 'TASK-20260507-060', country: '美国', business_type: '文字', order_count: 4, amount_cny: 520 },
-        { direction: '账面抵消', target_order_number: 'TASK-20260507-061', source_order_number: 'TASK-20260430-016', source_business_type: '免评', source_order_count: 2, country: '德国', business_type: '免评', order_count: 2, amount_cny: 360 },
+        { direction: '收入', target_order_number: 'TASK-GRP-20260507-060-001', country: '美国', business_type: '文字', order_count: 4, amount_cny: 520 },
+        { direction: '账面抵消', target_order_number: 'TASK-GRP-20260507-060-002', source_order_number: 'TASK-20260430-016', source_business_type: '免评', source_order_count: 2, country: '德国', business_type: '免评', order_count: 2, amount_cny: 360 },
       ],
       offset_source_type: '客户余款抵消',
       offset_source_note: '本次新任务部分现金收款，部分使用历史任务余款抵消。',
-      handler_name: '',
+      handler_name: '财务-陈岚',
       status: '待确认',
-      notes: '任务结算 | 收入 + 账面抵消',
+      notes: '抵消类型: 截单抵消 | 抵消来源: TASK-20260430-016 ¥360.00 | 任务结算 | 收入 + 账面抵消',
       transaction_date: now.subtract(2, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(2, 'hour').toISOString(),
       updated_at: now.subtract(2, 'hour').toISOString(),
@@ -1252,6 +1414,143 @@ function buildLedgerPreviewRows() {
       transaction_date: now.subtract(5, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(5, 'hour').toISOString(),
       updated_at: now.subtract(5, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-topup-offset',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0018',
+      entry_scope: '业务收入',
+      transaction_type: '补款收入',
+      direction: '账面抵消',
+      amount_cny: 150,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '成都拾光贸易',
+      order_number: 'TASK-20260507-092',
+      staff_name: '商务-王晨',
+      business_countries: ['加拿大'],
+      business_types: [],
+      business_order_count: 0,
+      business_breakdown: [
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-092', source_order_number: 'TASK-20260420-014', source_country: '加拿大', source_business_type: '图片', source_order_count: 1, country: '加拿大', amount_cny: 150 },
+      ],
+      offset_source_type: '客户余款抵消',
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '抵消类型: 截单抵消 | 抵消来源: TASK-20260420-014 ¥150.00 | 账面抵消',
+      transaction_date: now.subtract(4, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(4, 'hour').toISOString(),
+      updated_at: now.subtract(4, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-balance-offset',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0019',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
+      direction: '账面抵消',
+      amount_cny: 220,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '武汉清禾商贸',
+      order_number: 'TASK-20260507-093',
+      staff_name: '商务-林夕',
+      business_countries: ['英国'],
+      business_types: ['文字'],
+      business_order_count: 2,
+      business_breakdown: [
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-093', country: '英国', business_type: '文字', order_count: 2, amount_cny: 220 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '抵消类型: 余额抵消 | 抵消来源: TASK-20260412-006 ¥220.00 | 账面抵消',
+      transaction_date: now.subtract(7, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(7, 'hour').toISOString(),
+      updated_at: now.subtract(7, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-supplement-offset',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0020',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
+      direction: '账面抵消',
+      amount_cny: 90,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '长沙南枝电商',
+      order_number: 'TASK-20260507-094',
+      staff_name: '商务-周敏',
+      business_countries: ['美国'],
+      business_types: ['免评'],
+      business_order_count: 1,
+      business_breakdown: [
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-094', country: '美国', business_type: '免评', order_count: 1, amount_cny: 90 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '抵消类型: 补款抵消 | 抵消来源: TASK-20260415-011 ¥90.00 | 账面抵消',
+      transaction_date: now.subtract(8, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(8, 'hour').toISOString(),
+      updated_at: now.subtract(8, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-batch-cutoff-refund',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0021',
+      entry_scope: '业务支出',
+      transaction_type: '截单退款',
+      direction: '支出',
+      amount_cny: 460,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '苏州青禾贸易',
+      landing_account: '青禾支付宝 · qinghe-01',
+      payment_account: 'alipay · finance-01',
+      order_number: 'TASK-GRP-20260507-120-001',
+      staff_name: '商务-李婷',
+      business_countries: ['美国', '德国'],
+      business_types: ['文字', '免评'],
+      business_order_count: 4,
+      business_breakdown: [
+        { direction: '支出', target_order_number: 'TASK-GRP-20260507-120-001', country: '美国', amount_cny: 180 },
+        { direction: '支出', target_order_number: 'TASK-GRP-20260507-120-002', country: '德国', amount_cny: 280 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '退款明细: 美国文字3单、德国免评1单 | 业务支出 | 同一客户多个任务合并退款',
+      transaction_date: now.subtract(9, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(9, 'hour').toISOString(),
+      updated_at: now.subtract(9, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-batch-diff-refund',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0022',
+      entry_scope: '业务支出',
+      transaction_type: '退差价',
+      direction: '支出',
+      amount_cny: 115,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '苏州青禾贸易',
+      landing_account: '青禾支付宝 · qinghe-01',
+      payment_account: 'alipay · finance-01',
+      order_number: 'TASK-GRP-20260507-130-001',
+      staff_name: '商务-李婷',
+      business_countries: ['英国', '加拿大'],
+      business_types: [],
+      business_order_count: 0,
+      business_breakdown: [
+        { direction: '支出', target_order_number: 'TASK-GRP-20260507-130-001', country: '英国', amount_cny: 45 },
+        { direction: '支出', target_order_number: 'TASK-GRP-20260507-130-002', country: '加拿大', amount_cny: 70 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '业务支出 | 本金差价退款',
+      transaction_date: now.subtract(10, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(10, 'hour').toISOString(),
+      updated_at: now.subtract(10, 'hour').toISOString(),
     },
     {
       id: 'mock-ledger-expense-commission',
@@ -1823,7 +2122,24 @@ function onPrimaryFilterChange() {
   loadData()
 }
 
+function matchesLedgerSearch(row: any, keyword: string) {
+  const text = keyword.trim().toLowerCase()
+  if (!text) return true
+  const fields = [
+    row?.transaction_no,
+    row?.customer_name,
+    row?.order_number,
+    row?.notes,
+    ...getOrderIds(row),
+    ...getOffsetSourceRows(row).map((item: any) => item.sourceOrderId),
+  ]
+  return fields.some(item => String(item || '').toLowerCase().includes(text))
+}
+
+let ledgerLoadSeq = 0
+
 async function loadData() {
+  const seq = ++ledgerLoadSeq
   loading.value = true
   try {
     let q = supabase.from('financial_transactions').select('*')
@@ -1835,13 +2151,15 @@ async function loadData() {
       q = q.lte('transaction_date', dateRange.value[1].format('YYYY-MM-DD'))
     }
     const { data } = await q
+    if (seq !== ledgerLoadSeq) return
     const rows = clusterSplitGroups([...mockRows.value, ...(data || [])]
       .map(normalizeFinancialRow)
       .filter((row: any) => !filterPrimaryCategory.value || row.entry_scope === filterPrimaryCategory.value)
       .filter((row: any) => !filterType.value || row.transaction_type === filterType.value)
       .filter((row: any) => !filterDirection.value || getDirectionParts(row).includes(filterDirection.value))
       .filter((row: any) => !filterCountry.value || getCountries(row).includes(filterCountry.value))
-      .filter((row: any) => !filterStatus.value || row.status === filterStatus.value))
+      .filter((row: any) => !filterStatus.value || row.status === filterStatus.value)
+      .filter((row: any) => matchesLedgerSearch(row, search.value)))
     ledgerRows.value = rows
     total.value = rows.length
     if ((page.value - 1) * pageSize.value >= rows.length && page.value > 1) {
@@ -1850,8 +2168,15 @@ async function loadData() {
     const start = (page.value - 1) * pageSize.value
     list.value = markVisibleSplitSpans(rows.slice(start, start + pageSize.value))
     selectedRowKeys.value = selectedRowKeys.value.filter(id => list.value.some(row => row.id === id && canApprove(row)))
-  } finally { loading.value = false }
+  } finally {
+    if (seq === ledgerLoadSeq) loading.value = false
+  }
 }
+
+watch(search, () => {
+  page.value = 1
+  loadData()
+})
 
 function csvCell(value: any) {
   const text = value == null ? '' : String(value)
@@ -2316,6 +2641,11 @@ onMounted(() => {
 .detail-merge-table strong { color: #1a1a2e; font-weight: 600; }
 .detail-section-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 20px; }
 .detail-section-title { display: block; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+.detail-subsection + .detail-subsection { margin-top: 16px; }
+.detail-subsection-title { margin-bottom: 8px; color: #6b7280; font-size: 12px; font-weight: 600; }
+.detail-offset-kind { color: #6b7280; font-size: 12px; font-weight: 400; }
+.detail-section-head .detail-offset-kind { margin-top: 0; line-height: 1.2; }
+.breakdown-table .amount { text-align: right; }
 .detail-section-head .detail-section-title { margin-bottom: 0; }
 .detail-section-summary { color: #6b7280; font-size: 12px; text-align: right; }
 .detail-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -2328,6 +2658,14 @@ onMounted(() => {
 .breakdown-table-row { display: grid; grid-template-columns: 1.4fr .7fr .7fr 52px 80px; gap: 8px; align-items: center; padding: 9px 10px; }
 .breakdown-table-plain .breakdown-table-head,
 .breakdown-table-plain .breakdown-table-row { grid-template-columns: 1.6fr 1fr 90px; }
+.breakdown-table-source .breakdown-table-head,
+.breakdown-table-source .breakdown-table-row { grid-template-columns: minmax(0, 1fr) 90px; }
+.breakdown-table-detail .breakdown-table-head,
+.breakdown-table-detail .breakdown-table-row { grid-template-columns: .8fr .8fr 70px; }
+.breakdown-table-refund-task .breakdown-table-head,
+.breakdown-table-refund-task .breakdown-table-row { grid-template-columns: 1.4fr .7fr 90px; }
+.breakdown-table-refund-type .breakdown-table-head,
+.breakdown-table-refund-type .breakdown-table-row { grid-template-columns: .8fr .8fr 70px; }
 .breakdown-table-head { background: #f8f9fb; color: #6b7280; font-size: 12px; font-weight: 600; }
 .breakdown-table-row { color: #374151; font-size: 12px; border-top: 1px solid #f0f0f0; }
 .breakdown-table-row strong { color: #1a1a2e; text-align: right; }

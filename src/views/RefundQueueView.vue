@@ -1661,11 +1661,13 @@ function getOtherExchangeRate(record: any) {
 }
 
 function buildOtherPaymentLedgerNote(record: any, financeNotes: string) {
+  const payoutAccount = String(record?.payout_account || '').trim()
   return [
     '付款审批',
     getOtherPaymentTypeText(record),
     record?.refund_reason || '',
     record?.payout_method || '',
+    payoutAccount ? `对方账号:${payoutAccount}` : '',
     financeNotes || '',
   ].filter(Boolean).join(' | ')
 }
@@ -1718,6 +1720,10 @@ async function insertOtherPaymentTransactions(records: any[], handledAt: string)
     }
     if (record.paypal_receipt_screenshot) {
       payload.receipt_urls = [record.paypal_receipt_screenshot]
+    }
+    const country = String(record.country || '').trim()
+    if (primary === '运营支出' && country) {
+      payload.business_countries = [country]
     }
     const { error: insertError } = await supabase.from('financial_transactions').insert(payload)
     if (insertError) throw insertError

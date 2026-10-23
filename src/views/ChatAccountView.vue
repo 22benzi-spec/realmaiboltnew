@@ -51,7 +51,7 @@
     <div class="filter-bar">
       <a-input
         v-model:value="search"
-        placeholder="搜索聊单号 / 归属人 / 手机号 / 邮箱"
+        placeholder="搜索聊单号别名 / 归属人 / 手机号 / 邮箱"
         style="width:260px" allow-clear @change="loadData"
       />
       <a-select v-model:value="filterRole" placeholder="账号用途" style="width:110px" allow-clear @change="loadData">
@@ -152,14 +152,13 @@
     >
       <a-form :model="form" layout="vertical" style="margin-top:8px">
         <a-row :gutter="16">
-          <!-- 基本信息 -->
           <a-col :span="12">
-            <a-form-item label="聊单号" required>
-              <a-input v-model:value="form.account_no" placeholder="如 WX001 / 账号名称" />
+            <a-form-item label="聊单号别名" required>
+              <a-input v-model:value="form.account_no" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="账号用途">
+            <a-form-item label="账号用途" required>
               <a-select v-model:value="form.account_role">
                 <a-select-option value="主号">主号</a-select-option>
                 <a-select-option value="次用号">次用号</a-select-option>
@@ -168,48 +167,132 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="归属人">
-              <a-input v-model:value="form.owner_name" placeholder="业务员 / 买手姓名" />
+            <a-form-item label="名字" required>
+              <a-input v-model:value="form.person_name" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="IP 地址">
-              <a-input v-model:value="form.ip_address" placeholder="如 192.168.1.1" />
+            <a-form-item label="生日" required>
+              <a-date-picker
+                v-model:value="birthdayDayjs"
+                placeholder=""
+                style="width:100%"
+                @change="onBirthdayChange"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="注册账号">
-              <a-input v-model:value="form.registration_account" placeholder="注册时使用的账号" />
+            <a-form-item label="好友数量" required>
+              <a-input-number v-model:value="form.friend_count" :min="0" style="width:100%" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="好友数量">
-              <a-input-number v-model:value="form.friend_count" :min="0" style="width:100%" placeholder="好友人数" />
+            <a-form-item label="账户链接" required>
+              <a-input v-model:value="form.account_link" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="账号链接">
-              <a-input v-model:value="form.account_link" placeholder="账号主页链接" />
+            <a-form-item label="登入账号" required>
+              <a-input v-model:value="form.registration_account" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="登入密码" required>
+              <a-input-password v-model:value="form.login_password" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="验证邮箱">
+              <a-input v-model:value="form.email" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="验证邮箱密码">
+              <a-input-password v-model:value="form.email_password" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="手机号类型" required>
+              <a-select v-model:value="form.phone_type" @change="onPhoneTypeChange">
+                <a-select-option value="无">无</a-select-option>
+                <a-select-option value="个人">个人</a-select-option>
+                <a-select-option value="Pingme">Pingme</a-select-option>
+                <a-select-option value="香港esim">香港esim</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col v-if="showPhoneNumber" :span="12">
+            <a-form-item label="号码" required>
+              <a-input v-model:value="activePhoneNumber" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="两步验证码">
-              <a-input v-model:value="form.two_fa_code" placeholder="2FA 验证码 / 备用码" />
+              <a-input v-model:value="form.two_fa_code" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="状态">
+            <a-form-item label="IP" required>
+              <a-input v-model:value="form.ip_address" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="登录环境" required>
+              <a-select
+                v-model:value="loginEnvTypes"
+                mode="multiple"
+                @change="onLoginEnvChange"
+              >
+                <a-select-option v-for="opt in loginEnvOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col v-for="opt in selectedLoginEnvOptions" :key="opt.value" :span="12">
+            <a-form-item :label="opt.label" required>
+              <a-input v-model:value="form[opt.field]" />
+            </a-form-item>
+          </a-col>
+          <template v-if="loginEnvTypes.includes('device') && form.physical_device">
+            <a-col :span="24">
+              <a-divider style="margin:4px 0 10px;font-size:13px;color:#6b7280">实体机 SIM 卡</a-divider>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="SIM 卡号">
+                <a-input v-model:value="form.sim_card_number" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="SIM 卡到期日">
+                <a-date-picker
+                  v-model:value="simCardExpireDayjs"
+                  placeholder=""
+                  style="width:100%"
+                  @change="onSimExpireChange"
+                />
+              </a-form-item>
+            </a-col>
+          </template>
+          <a-col :span="12">
+            <a-form-item label="证件地址">
+              <a-input v-model:value="form.id_document_address" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="归属人" required>
+              <a-input v-model:value="form.owner_name" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="状态" required>
               <a-select v-model:value="form.status" @change="onStatusChange">
                 <a-select-option value="在用">在用</a-select-option>
                 <a-select-option value="停用">停用</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
-
-          <!-- 停用原因（仅停用时显示） -->
           <a-col v-if="form.status === '停用'" :span="24">
             <a-form-item label="停用原因" required>
-              <a-select v-model:value="form.disabled_reason_type" placeholder="选择停用原因" style="width:200px;margin-right:8px" @change="onDisabledReasonTypeChange">
+              <a-select v-model:value="form.disabled_reason_type" style="width:200px;margin-right:8px" @change="onDisabledReasonTypeChange">
                 <a-select-option value="账号封禁">账号封禁</a-select-option>
                 <a-select-option value="号码被封">号码被封</a-select-option>
                 <a-select-option value="设备损坏">设备损坏</a-select-option>
@@ -220,84 +303,11 @@
               <a-input
                 v-if="form.disabled_reason_type === '其他'"
                 v-model:value="form.disabled_reason_custom"
-                placeholder="请描述具体原因"
                 style="width:260px"
               />
               <div v-if="showDisabledReasonError" class="form-error-tip">请选择或填写停用原因</div>
             </a-form-item>
           </a-col>
-
-          <!-- 手机号 -->
-          <a-col :span="24">
-            <a-divider style="margin:8px 0 12px;font-size:13px;color:#6b7280">手机号 / 邮箱</a-divider>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="手机号类型">
-              <a-select v-model:value="form.phone_type">
-                <a-select-option value="个人">个人（中国手机号）</a-select-option>
-                <a-select-option value="Pingme">Pingme（虚拟号）</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item v-if="form.phone_type === '个人'" label="手机号">
-              <a-input v-model:value="form.phone_number" placeholder="中国手机号" />
-            </a-form-item>
-            <a-form-item v-else label="Pingme 号码">
-              <a-input v-model:value="form.pingme_number" placeholder="Pingme 虚拟号码" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="绑定邮箱">
-              <a-input v-model:value="form.email" placeholder="注册邮箱" />
-            </a-form-item>
-          </a-col>
-
-          <!-- 多端登录 -->
-          <a-col :span="24">
-            <a-divider style="margin:8px 0 12px;font-size:13px;color:#6b7280">登录环境（可多端登录）</a-divider>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="AdsPower ID">
-              <a-input v-model:value="form.ads_power_id" placeholder="AdsPower 环境ID" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="本地浏览器">
-              <a-input v-model:value="form.local_browser" placeholder="本地浏览器环境标识" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="实体机">
-              <a-input v-model:value="form.physical_device" placeholder="如 iPhone13 / 设备序列号" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="云手机">
-              <a-input v-model:value="form.cloud_phone" placeholder="云手机标识 / 编号" />
-            </a-form-item>
-          </a-col>
-          <template v-if="form.physical_device">
-            <a-col :span="24">
-              <a-divider style="margin:4px 0 10px;font-size:13px;color:#6b7280">实体机 SIM 卡</a-divider>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="SIM 卡号">
-                <a-input v-model:value="form.sim_card_number" placeholder="绑定的手机卡号码" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="SIM 卡到期日">
-                <a-date-picker
-                  v-model:value="simCardExpireDayjs"
-                  placeholder="选择到期日期"
-                  style="width:100%"
-                  @change="onSimExpireChange"
-                />
-              </a-form-item>
-            </a-col>
-          </template>
-
           <a-col :span="24">
             <a-form-item label="备注">
               <a-textarea v-model:value="form.notes" :rows="2" />
@@ -314,6 +324,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
+import { useCurrentUser } from '../composables/useCurrentUser'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -329,11 +340,23 @@ const modalOpen = ref(false)
 const editId = ref<string | null>(null)
 const showDisabledReasonError = ref(false)
 
+const { currentUser, loadFromStorage } = useCurrentUser()
+
+const loginEnvOptions = [
+  { value: 'ads', label: 'AdsPower ID', field: 'ads_power_id' },
+  { value: 'local', label: '本地浏览器', field: 'local_browser' },
+  { value: 'device', label: '实体机', field: 'physical_device' },
+  { value: 'cloud', label: '云手机', field: 'cloud_phone' },
+] as const
+
 const emptyForm = () => ({
-  account_no: '', owner_name: '', account_role: '主号',
-  ip_address: '', registration_account: '', friend_count: null as number | null,
+  account_no: '', owner_name: '', account_role: undefined as string | undefined,
+  ip_address: '', registration_account: '', login_password: '',
+  email: '', email_password: '', person_name: '',
+  friend_count: null as number | null,
   account_link: '', two_fa_code: '',
-  phone_type: '个人', phone_number: '', pingme_number: '', email: '',
+  phone_type: undefined as string | undefined, phone_number: '', pingme_number: '',
+  birthday: '' as string, id_document_address: '',
   ads_power_id: '', local_browser: '', physical_device: '', cloud_phone: '',
   sim_card_number: '', sim_card_expire: '' as string,
   status: '在用', disabled_reason: '',
@@ -341,6 +364,23 @@ const emptyForm = () => ({
   notes: '',
 })
 const form = reactive(emptyForm())
+const loginEnvTypes = ref<string[]>([])
+const selectedLoginEnvOptions = computed(() => loginEnvOptions.filter(opt => loginEnvTypes.value.includes(opt.value)))
+
+function onLoginEnvChange(selected: string[]) {
+  for (const opt of loginEnvOptions) {
+    if (selected.includes(opt.value)) continue
+    form[opt.field] = ''
+    if (opt.value === 'device') {
+      form.sim_card_number = ''
+      form.sim_card_expire = ''
+    }
+  }
+}
+
+function loginEnvTypesFromRow(row: { ads_power_id?: string, local_browser?: string, physical_device?: string, cloud_phone?: string }) {
+  return loginEnvOptions.filter(opt => String(row[opt.field] || '').trim()).map(opt => opt.value)
+}
 
 const simCardExpireDayjs = computed({
   get: () => form.sim_card_expire ? dayjs(form.sim_card_expire) : null,
@@ -348,6 +388,28 @@ const simCardExpireDayjs = computed({
 })
 function onSimExpireChange(v: Dayjs | null) {
   form.sim_card_expire = v ? v.format('YYYY-MM-DD') : ''
+}
+
+const birthdayDayjs = computed({
+  get: () => form.birthday ? dayjs(form.birthday) : null,
+  set: (v: Dayjs | null) => { form.birthday = v ? v.format('YYYY-MM-DD') : '' },
+})
+function onBirthdayChange(v: Dayjs | null) {
+  form.birthday = v ? v.format('YYYY-MM-DD') : ''
+}
+
+const showPhoneNumber = computed(() => form.phone_type === '个人' || form.phone_type === 'Pingme' || form.phone_type === '香港esim')
+const activePhoneNumber = computed({
+  get: () => form.phone_type === 'Pingme' ? form.pingme_number : form.phone_number,
+  set: (value: string) => {
+    if (form.phone_type === 'Pingme') form.pingme_number = value
+    else form.phone_number = value
+  },
+})
+
+function onPhoneTypeChange(val: string) {
+  if (val !== '个人' && val !== '香港esim') form.phone_number = ''
+  if (val !== 'Pingme') form.pingme_number = ''
 }
 
 function onStatusChange(val: string) {
@@ -369,9 +431,9 @@ function onDisabledReasonTypeChange() {
 const roleColor: Record<string, string> = { '主号': 'blue', '次用号': 'orange', '备用号': 'default' }
 
 const columns = [
-  { title: '聊单号', key: 'account_no', width: 180 },
+  { title: '聊单号别名', key: 'account_no', width: 180 },
   { title: '归属人', dataIndex: 'owner_name', key: 'owner_name', width: 100 },
-  { title: 'IP 地址', key: 'ip_address', width: 140 },
+  { title: 'IP', key: 'ip_address', width: 140 },
   { title: '好友数量', key: 'friend_count', width: 90 },
   { title: '手机号 / 邮箱', key: 'contact', width: 200 },
   { title: '登录环境', key: 'login_envs', width: 300 },
@@ -417,6 +479,9 @@ function onTableChange(p: any) {
 function openAdd() {
   editId.value = null
   Object.assign(form, emptyForm())
+  form.owner_name = currentUser.value?.name || ''
+  loginEnvTypes.value = []
+  showDisabledReasonError.value = false
   modalOpen.value = true
 }
 
@@ -428,16 +493,21 @@ function openEdit(row: any) {
   Object.assign(form, {
     account_no: row.account_no || '',
     owner_name: row.owner_name || '',
-    account_role: row.account_role || '主号',
+    account_role: row.account_role || undefined,
     ip_address: row.ip_address || '',
     registration_account: row.registration_account || '',
+    login_password: row.login_password || '',
+    email: row.email || '',
+    email_password: row.email_password || '',
+    person_name: row.person_name || '',
     friend_count: row.friend_count ?? null,
     account_link: row.account_link || '',
     two_fa_code: row.two_fa_code || '',
-    phone_type: row.phone_type || '个人',
+    phone_type: row.phone_type || undefined,
     phone_number: row.phone_number || '',
     pingme_number: row.pingme_number || '',
-    email: row.email || '',
+    birthday: row.birthday || '',
+    id_document_address: row.id_document_address || '',
     ads_power_id: row.ads_power_id || '',
     local_browser: row.local_browser || '',
     physical_device: row.physical_device || '',
@@ -450,12 +520,36 @@ function openEdit(row: any) {
     disabled_reason_custom: isPreset ? '' : disabledReason,
     notes: row.notes || '',
   })
+  loginEnvTypes.value = loginEnvTypesFromRow(row)
   showDisabledReasonError.value = false
   modalOpen.value = true
 }
 
+function requireText(value: string, label: string) {
+  if (!String(value || '').trim()) {
+    message.error(`${label}不能为空`)
+    return false
+  }
+  return true
+}
+
 async function handleSave() {
-  if (!form.account_no.trim()) { message.error('聊单号不能为空'); return }
+  if (!requireText(form.account_no, '聊单号别名')) return
+  if (!form.account_role) { message.error('账号用途不能为空'); return }
+  if (!requireText(form.owner_name, '归属人')) return
+  if (!requireText(form.ip_address, 'IP')) return
+  if (!requireText(form.registration_account, '登入账号')) return
+  if (!requireText(form.login_password, '登入密码')) return
+  if (!requireText(form.person_name, '名字')) return
+  if (form.friend_count == null) { message.error('好友数量不能为空'); return }
+  if (!requireText(form.account_link, '账户链接')) return
+  if (!form.phone_type) { message.error('手机号类型不能为空'); return }
+  if (showPhoneNumber.value && !requireText(activePhoneNumber.value, '号码')) return
+  if (!form.birthday) { message.error('生日不能为空'); return }
+  if (!loginEnvTypes.value.length) { message.error('请选择登录环境'); return }
+  for (const opt of selectedLoginEnvOptions.value) {
+    if (!requireText(form[opt.field], opt.label)) return
+  }
 
   if (form.status === '停用') {
     const reason = form.disabled_reason_type === '其他' ? form.disabled_reason_custom.trim() : form.disabled_reason_type
@@ -474,6 +568,7 @@ async function handleSave() {
     const { disabled_reason_type, disabled_reason_custom, ...rest } = form
     const payload: any = { ...rest, updated_at: new Date().toISOString() }
     if (!payload.sim_card_expire) payload.sim_card_expire = null
+    if (!payload.birthday) payload.birthday = null
     if (editId.value) {
       await supabase.from('chat_accounts').update(payload).eq('id', editId.value)
       message.success('已更新')
@@ -492,7 +587,7 @@ async function deleteRow(id: string) {
   loadData(); loadStats()
 }
 
-onMounted(() => { loadData(); loadStats() })
+onMounted(() => { loadFromStorage(); loadData(); loadStats() })
 </script>
 
 <style scoped>
