@@ -18,30 +18,6 @@
             <span v-if="order.asin" class="meta-asin">{{ order.asin }}</span>
           </div>
         </div>
-        <div class="billing-header-right">
-          <div class="billing-summary-trio">
-            <div class="trio-item">
-              <div class="trio-label">实际应收</div>
-              <div class="trio-val trio-expect">¥{{ displayActualReceivable.toFixed(2) }}</div>
-            </div>
-            <div class="trio-divider"></div>
-            <div class="trio-item">
-              <div class="trio-label">累计入账</div>
-              <div class="trio-val trio-received" :style="{ color: settledTotal > 0 ? '#16a34a' : '#9ca3af' }">
-                ¥{{ settledTotal.toFixed(2) }}
-              </div>
-            </div>
-            <div class="trio-divider"></div>
-            <div class="trio-item">
-              <div class="trio-label">待结算差额</div>
-              <div class="trio-val" :style="{ color: displaySettlementDiff < 0 ? '#dc2626' : displaySettlementDiff > 0 ? '#059669' : '#16a34a' }">
-                <template v-if="displaySettlementDiff > 0.005">+¥{{ displaySettlementDiff.toFixed(2) }}</template>
-                <template v-else-if="displaySettlementDiff < -0.005">-¥{{ Math.abs(displaySettlementDiff).toFixed(2) }}</template>
-                <template v-else>¥0.00</template>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- 如有未结清提醒 -->
@@ -89,8 +65,14 @@
                 <span class="dv-label">账款情况</span>
                 <span class="dv-hint">人工计算</span>
               </div>
-              <a-tag v-if="order.debt_status === 'owed'" color="orange" size="small">客户需补款 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}</a-tag>
-              <a-tag v-else-if="order.debt_status === 'surplus'" color="blue" size="small">需退客户 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}</a-tag>
+              <a-tag v-if="order.debt_status === 'owed'" color="orange" size="small">
+                有欠款 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}
+                <template v-if="displayDebtAmountUsd > 0.005"> / ${{ displayDebtAmountUsd.toFixed(2) }}</template>
+              </a-tag>
+              <a-tag v-else-if="order.debt_status === 'surplus'" color="blue" size="small">
+                有余款 ¥{{ Number(order.debt_amount || 0).toFixed(2) }}
+                <template v-if="displayDebtAmountUsd > 0.005"> / ${{ displayDebtAmountUsd.toFixed(2) }}</template>
+              </a-tag>
               <a-tag v-else-if="order.debt_status === 'cleared'" color="green" size="small">已结清</a-tag>
               <a-tag v-else color="default" size="small">无异常</a-tag>
             </div>
@@ -118,8 +100,8 @@
               <label class="edit-label">账款情况</label>
               <a-radio-group v-model:value="debtForm.debt_status" size="small">
                 <a-radio-button value="none">无异常</a-radio-button>
-                <a-radio-button value="owed">客户需补款</a-radio-button>
-                <a-radio-button value="surplus">需退客户</a-radio-button>
+                <a-radio-button value="owed">有欠款</a-radio-button>
+                <a-radio-button value="surplus">有余款</a-radio-button>
                 <a-radio-button value="cleared">已结清</a-radio-button>
               </a-radio-group>
             </div>
@@ -131,6 +113,16 @@
                   style="width:200px"
                   :min="0"
                   :precision="2"
+                />
+              </div>
+              <div class="edit-field">
+                <label class="edit-label">差价金额（美元）</label>
+                <a-input-number
+                  v-model:value="debtForm.debt_amount_usd"
+                  style="width:200px"
+                  :min="0"
+                  :precision="2"
+                  placeholder="仅展示，不入库"
                 />
               </div>
             </template>
@@ -375,7 +367,7 @@
           <a-radio-group v-model:value="addRecordForm.update_debt_status" size="small">
             <a-radio-button value="cleared">已结清</a-radio-button>
             <a-radio-button value="owed">有欠款</a-radio-button>
-            <a-radio-button value="surplus">有溢款</a-radio-button>
+            <a-radio-button value="surplus">有余款</a-radio-button>
           </a-radio-group>
           <div v-if="addRecordForm.update_debt_status" class="debt-status-reminder">
             账款状态需手动确认，实际情况请以商务核实为准
@@ -519,7 +511,13 @@ const debtForm = ref({
   billing_status: '已完成',
   debt_status: 'none',
   debt_amount: 0,
+  /** 仅前端展示，不写入数据库 */
+  debt_amount_usd: 0,
 })
+
+const displayDebtAmountUsd = computed(() =>
+  Number(props.order?._debt_amount_usd || 0)
+)
 
 function startEditDebt() {
   if (!props.order) return
@@ -528,6 +526,7 @@ function startEditDebt() {
     billing_status: props.order.billing_status || '已完成',
     debt_status: props.order.debt_status || 'none',
     debt_amount: props.order.debt_amount || 0,
+    debt_amount_usd: Number(props.order._debt_amount_usd || 0),
   }
   editingDebt.value = true
 }
@@ -542,6 +541,8 @@ async function saveDebt() {
   try {
     const hasIssue = debtForm.value.debt_status === 'owed' || debtForm.value.debt_status === 'surplus'
     const actualReceivableValue = Number(Number(debtForm.value.actual_receivable || 0).toFixed(2))
+    // 美元差价仅前端展示，不写入数据库
+    const debtAmountUsd = hasIssue ? Number(Number(debtForm.value.debt_amount_usd || 0).toFixed(2)) : 0
     const payload: any = {
       billing_status: debtForm.value.billing_status,
       debt_status: debtForm.value.debt_status,
@@ -551,11 +552,18 @@ async function saveDebt() {
       debt_marked_at: hasIssue ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     }
-    const { error } = await supabase.from('erp_orders').update(payload).eq('id', props.order.id)
-    if (error) throw error
+    if (!props.order._is_bill_proto_mock && !props.order._debt_usd_display_only) {
+      const { error } = await supabase.from('erp_orders').update(payload).eq('id', props.order.id)
+      if (error) throw error
+    }
     message.success('账款状态已保存')
     editingDebt.value = false
-    emit('updated', { id: props.order.id, ...payload, actual_receivable: actualReceivableValue })
+    emit('updated', {
+      id: props.order.id,
+      ...payload,
+      actual_receivable: actualReceivableValue,
+      _debt_amount_usd: debtAmountUsd,
+    })
   } catch (e: any) {
     message.error('保存失败：' + e.message)
   } finally {
@@ -1160,7 +1168,6 @@ async function deleteRecord(payment: any) {
 .billing-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 20px 24px 16px;
   background: #fff;
   border-bottom: 1px solid #f0f0f0;

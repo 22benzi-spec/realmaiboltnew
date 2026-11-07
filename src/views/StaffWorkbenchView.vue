@@ -730,17 +730,23 @@
                 >
                   <template #amount-side="{ task: carryTask }">
                     <div v-if="showWorkbenchCarry(carryTask)" class="wb-carry-block">
-                      <span class="wb-carry-label">挂账金额</span>
-                      <span class="wb-carry-amount">${{ getWorkbenchCarryDisplay(carryTask).toFixed(2) }}</span>
-                      <a-button
-                        v-if="getWorkbenchCarryRemaining(carryTask) > 0 || isCarryOffsetEditing(carryTask)"
-                        type="link"
-                        size="small"
-                        class="wb-carry-action"
-                        @click="toggleCarryOffset(carryTask)"
-                      >
-                        {{ isCarryOffsetEditing(carryTask) ? '收起' : '抵消' }}
-                      </a-button>
+                      <div v-if="getWorkbenchCarryDisplay(carryTask) > 0 || getWorkbenchOffsetDisplay(carryTask) > 0" class="wb-carry-inline">
+                        <span class="wb-carry-label">挂账金额</span>
+                        <span class="wb-carry-amount">${{ getWorkbenchCarryDisplay(carryTask).toFixed(2) }}</span>
+                        <a-button
+                          v-if="getWorkbenchCarryRemaining(carryTask) > 0 || isCarryOffsetEditing(carryTask)"
+                          type="link"
+                          size="small"
+                          class="wb-carry-action"
+                          @click="toggleCarryOffset(carryTask)"
+                        >
+                          {{ isCarryOffsetEditing(carryTask) ? '收起' : '抵消' }}
+                        </a-button>
+                      </div>
+                      <div v-if="getWorkbenchSupplementDisplay(carryTask) > 0" class="wb-carry-inline">
+                        <span class="wb-carry-label">补挂金额</span>
+                        <span class="wb-carry-amount">${{ getWorkbenchSupplementDisplay(carryTask).toFixed(2) }}</span>
+                      </div>
                     </div>
                   </template>
                   <template #amount-offset="{ task: carryTask }">
@@ -1368,17 +1374,23 @@
       >
         <template #amount-side="{ task: carryTask }">
           <div v-if="showWorkbenchCarry(carryTask)" class="wb-carry-block">
-            <span class="wb-carry-label">挂账金额</span>
-            <span class="wb-carry-amount">${{ getWorkbenchCarryDisplay(carryTask).toFixed(2) }}</span>
-            <a-button
-              v-if="getWorkbenchCarryRemaining(carryTask) > 0 || isCarryOffsetEditing(carryTask)"
-              type="link"
-              size="small"
-              class="wb-carry-action"
-              @click="toggleCarryOffset(carryTask)"
-            >
-              {{ isCarryOffsetEditing(carryTask) ? '收起' : '抵消' }}
-            </a-button>
+            <div v-if="getWorkbenchCarryDisplay(carryTask) > 0 || getWorkbenchOffsetDisplay(carryTask) > 0" class="wb-carry-inline">
+              <span class="wb-carry-label">挂账金额</span>
+              <span class="wb-carry-amount">${{ getWorkbenchCarryDisplay(carryTask).toFixed(2) }}</span>
+              <a-button
+                v-if="getWorkbenchCarryRemaining(carryTask) > 0 || isCarryOffsetEditing(carryTask)"
+                type="link"
+                size="small"
+                class="wb-carry-action"
+                @click="toggleCarryOffset(carryTask)"
+              >
+                {{ isCarryOffsetEditing(carryTask) ? '收起' : '抵消' }}
+              </a-button>
+            </div>
+            <div v-if="getWorkbenchSupplementDisplay(carryTask) > 0" class="wb-carry-inline">
+              <span class="wb-carry-label">补挂金额</span>
+              <span class="wb-carry-amount">${{ getWorkbenchSupplementDisplay(carryTask).toFixed(2) }}</span>
+            </div>
           </div>
         </template>
         <template #amount-offset="{ task: carryTask }">
@@ -1742,7 +1754,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { applyCarryOffset, getCarryItemsForBuyer, getCarryRemainingForBuyer } from '../utils/buyerCarryBalance'
+import { applyCarryOffset, getCarryItemsForBuyer, getCarryRemainingForBuyer, getSupplementTotalForBuyer } from '../utils/buyerCarryBalance'
 import {
   TeamOutlined, UserOutlined, CheckCircleFilled,
   SwapOutlined, LoadingOutlined, ExclamationCircleOutlined,
@@ -3090,8 +3102,13 @@ function getWorkbenchOffsetDisplay(task: any) {
   return Number(Number(task?._carry_offset_usd || 0).toFixed(2))
 }
 
+function getWorkbenchSupplementDisplay(task: any) {
+  carryTick.value
+  return getSupplementTotalForBuyer(task)
+}
+
 function showWorkbenchCarry(task: any) {
-  return getWorkbenchCarryRemaining(task) > 0 || Number(task?._carry_offset_usd || 0) > 0
+  return getWorkbenchCarryRemaining(task) > 0 || getWorkbenchSupplementDisplay(task) > 0 || Number(task?._carry_offset_usd || 0) > 0
 }
 
 function getWorkbenchActualRefund(task: any) {
@@ -7604,6 +7621,12 @@ onUnmounted(() => {
 .outgoing-reason { color: #9ca3af; font-size: 11px; flex: 1; }
 .outgoing-time { font-size: 11px; color: #9ca3af; white-space: nowrap; margin-left: auto; }
 .wb-carry-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.wb-carry-inline {
   display: flex;
   align-items: center;
   gap: 2px;

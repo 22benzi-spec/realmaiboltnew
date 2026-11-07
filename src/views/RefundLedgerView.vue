@@ -91,13 +91,15 @@
                     :class="surplusCostClassByValue(record._batch_surplus_usd)"
                   >${{ money(record._batch_surplus_usd) }}</span>
                   <span v-else :class="surplusCostClass(record)">${{ money(surplusCostValue(record)) }}</span>
-                  <a-button
-                    v-if="displaySurplusCost(record) > 0"
-                    size="small"
-                    type="link"
-                    class="carry-link"
-                    @click="toggleLedgerCarry(record)"
-                  >{{ isLedgerCarried(record) ? '已挂账' : '挂账' }}</a-button>
+                  <button
+                    v-if="displaySurplusCost(record) > 0 || isLedgerCarried(record) || ledgerSupplementAmount(record) > 0"
+                    type="button"
+                    class="carry-line"
+                    @click="openCarryModal(record)"
+                  >
+                    <span>{{ carryActionLabel(record) }}</span>
+                    <span v-if="ledgerSupplementAmount(record) > 0" class="carry-note">{{ carrySupplementNote(record) }}</span>
+                  </button>
                 </div>
               </template>
               <template v-if="column.key === 'gift_card'">
@@ -223,7 +225,7 @@
             row-key="id"
             :row-class-name="paypalRowClassName"
             size="middle"
-            :scroll="{ x: 1760 }"
+            :scroll="{ x: 1860 }"
             @change="handlePpTableChange"
           >
             <template #bodyCell="{ column, record }">
@@ -243,13 +245,48 @@
                 <div v-if="record.chat_account" class="cell-email">聊单号：{{ record.chat_account }}</div>
               </template>
               <template v-if="column.key === 'buyer_paypal'">
-                <div class="cell-email">{{ record.buyer_paypal_email || '—' }}</div>
+                <div class="need-amount-cell">
+                  <div class="amount-with-edit">
+                    <div class="cell-email">{{ record.buyer_paypal_email || '—' }}</div>
+                    <a-popover
+                      v-if="record._isMock"
+                      trigger="click"
+                      placement="bottomLeft"
+                      :open="isBuyerPaypalEditing(record)"
+                      overlay-class-name="amount-edit-pop"
+                      @openChange="open => setBuyerPaypalEdit(record, open)"
+                    >
+                      <template #content>
+                        <a-input
+                          v-model:value="buyerPaypalDraft"
+                          size="small"
+                          autofocus
+                          @pressEnter="confirmBuyerPaypalEdit(record)"
+                          @blur="confirmBuyerPaypalEdit(record)"
+                        />
+                      </template>
+                      <button type="button" class="amount-edit-pen" aria-label="修改买手贝宝">
+                        <svg class="pen-icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M15.1 4.9l4 4L8.4 19.6 4 20.6l1-4.4L15.1 4.9z" />
+                        </svg>
+                      </button>
+                    </a-popover>
+                  </div>
+                  <div v-if="ledgerBuyerPaypalChangeText(record)" class="amount-change-text">{{ ledgerBuyerPaypalChangeText(record) }}</div>
+                </div>
               </template>
               <template v-if="column.key === 'refund_amount'">
                 <div class="need-amount-cell">
                   <span class="amount-usd">${{ money(record._line_amount_usd) }}</span>
+                  <div v-if="ledgerNeedChangeText(record)" class="amount-change-text">{{ ledgerNeedChangeText(record) }}</div>
                   <span v-if="ledgerOffsetUsd(record) > 0" class="need-amount-offset">抵消 ${{ money(ledgerOffsetUsd(record)) }}</span>
                   <span v-if="ledgerOffsetUsd(record) > 0" class="need-amount-total">合计 ${{ money(ledgerNeedTotal(record)) }}</span>
+                </div>
+              </template>
+              <template v-if="column.key === 'paypal_fee'">
+                <div class="need-amount-cell">
+                  <span class="amount-usd">${{ money(ledgerPaypalFee(record)) }}</span>
+                  <div v-if="ledgerFeeChangeText(record)" class="amount-change-text">{{ ledgerFeeChangeText(record) }}</div>
                 </div>
               </template>
               <template v-if="column.key === 'actual_amount'">
@@ -269,13 +306,15 @@
                     :class="surplusCostClassByValue(record._batch_surplus_usd)"
                   >${{ money(record._batch_surplus_usd) }}</span>
                   <span v-else :class="surplusCostClass(record)">${{ money(surplusCostValue(record)) }}</span>
-                  <a-button
-                    v-if="displaySurplusCost(record) > 0"
-                    size="small"
-                    type="link"
-                    class="carry-link"
-                    @click="toggleLedgerCarry(record)"
-                  >{{ isLedgerCarried(record) ? '已挂账' : '挂账' }}</a-button>
+                  <button
+                    v-if="displaySurplusCost(record) > 0 || isLedgerCarried(record) || ledgerSupplementAmount(record) > 0"
+                    type="button"
+                    class="carry-line"
+                    @click="openCarryModal(record)"
+                  >
+                    <span>{{ carryActionLabel(record) }}</span>
+                    <span v-if="ledgerSupplementAmount(record) > 0" class="carry-note">{{ carrySupplementNote(record) }}</span>
+                  </button>
                 </div>
               </template>
               <template v-if="column.key === 'paypal_account'">
@@ -398,10 +437,31 @@
         <div class="resubmit-check-section">
           <div v-for="item in resubmitItems" :key="item.id" class="resubmit-check-item">
             <span class="resubmit-check-id">{{ item.subOrderNumber || item.subOrderId || item.id }}</span>
-            <span class="resubmit-check-paid">实付金额 ${{ money(item.actualPaidUsd ?? item.correctedAmountUsd) }}</span>
-            <span class="resubmit-check-apply">申请金额 ${{ money(item.correctedAmountUsd) }}</span>
+            <span v-if="!canEditSingleGiftApply" class="resubmit-check-paid">实付金额 ${{ money(item.actualPaidUsd ?? item.correctedAmountUsd) }}</span>
+            <span v-if="!canEditSingleGiftApply" class="resubmit-check-apply">申请金额 ${{ money(item.correctedAmountUsd) }}</span>
           </div>
-          <div class="resubmit-check-total">
+          <div v-if="canEditSingleGiftApply" class="resubmit-check-total">
+            <span>实付金额</span>
+            <a-input-number
+              v-model:value="actionForm.giftReturnItems[0].actualPaidUsd"
+              size="small"
+              :min="0.01"
+              :precision="2"
+              :step="0.01"
+            />
+          </div>
+          <div v-if="canEditSingleGiftApply" class="resubmit-check-total">
+            <span>本笔申请金额</span>
+            <a-input-number
+              v-model:value="actionForm.correctedAmountUsd"
+              size="small"
+              :min="0.01"
+              :precision="2"
+              :step="0.01"
+              @change="syncSingleGiftApplyFromTotal"
+            />
+          </div>
+          <div v-if="!canEditSingleGiftApply" class="resubmit-check-total">
             <span>本次申请总额</span>
             <strong>${{ money(resubmitDisplayTotal) }}</strong>
           </div>
@@ -518,6 +578,111 @@
     </a-modal>
 
     <a-modal
+      v-model:open="carryModalOpen"
+      title="挂账"
+      :width="carryModalProducts.length > 1 ? 480 : 400"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="confirmCarryModal"
+    >
+      <div v-if="carryModalSupplementOnly" class="carry-panel">
+        <div class="carry-option is-done">
+          <span class="carry-option-name">直接挂账</span>
+          <span class="carry-option-amount">${{ money(carryModalSurplus) }}</span>
+          <span class="carry-option-state">已挂账</span>
+        </div>
+        <div class="carry-option is-active is-stack">
+          <div class="carry-option-head">
+            <span class="carry-option-name">补挂金额</span>
+            <a-input-number
+              v-model:value="carryModalAmount"
+              :min="0.01"
+              :precision="2"
+              :step="0.01"
+              class="carry-amount-input"
+            />
+          </div>
+          <div v-if="carryModalProducts.length > 1" class="carry-products">
+            <div class="carry-products-label">选择子订单</div>
+            <div
+              v-for="item in carryModalProducts"
+              :key="item.id"
+              class="carry-product"
+              :class="{ 'is-active': carryModalProductId === item.id }"
+              @click="carryModalProductId = item.id"
+            >
+              <span class="carry-option-mark" />
+              <span class="carry-product-main">
+                <span class="carry-product-order">{{ item.subOrderNumber }}</span>
+                <span class="carry-product-name">{{ item.productName }}</span>
+              </span>
+              <span class="carry-product-money">
+                <span>产品实返 ${{ money(item.refundAmount) }}</span>
+                <span
+                  v-if="carryModalProductId === item.id && Number(carryModalAmount || 0) > 0"
+                  :class="carryPreviewClass(item)"
+                >调整后 ${{ money(carryPreviewAmount(item)) }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="carry-panel">
+        <div
+          class="carry-option"
+          :class="{ 'is-active': carryModalChoice === 'direct' }"
+          @click="carryModalChoice = 'direct'"
+        >
+          <span class="carry-option-mark" />
+          <span class="carry-option-name">直接挂账</span>
+          <span class="carry-option-amount">${{ money(carryModalSurplus) }}</span>
+        </div>
+        <div
+          class="carry-option"
+          :class="{ 'is-active': carryModalChoice === 'supplement', 'is-stack': carryModalChoice === 'supplement' && carryModalProducts.length > 1 }"
+          @click="carryModalChoice = 'supplement'"
+        >
+          <div class="carry-option-head">
+            <span class="carry-option-mark" />
+            <span class="carry-option-name">补挂</span>
+            <a-input-number
+              v-if="carryModalChoice === 'supplement'"
+              v-model:value="carryModalAmount"
+              :min="0.01"
+              :precision="2"
+              :step="0.01"
+              class="carry-amount-input"
+              @click.stop
+            />
+          </div>
+          <div v-if="carryModalChoice === 'supplement' && carryModalProducts.length > 1" class="carry-products" @click.stop>
+            <div class="carry-products-label">选择子订单</div>
+            <div
+              v-for="item in carryModalProducts"
+              :key="item.id"
+              class="carry-product"
+              :class="{ 'is-active': carryModalProductId === item.id }"
+              @click="carryModalProductId = item.id"
+            >
+              <span class="carry-option-mark" />
+              <span class="carry-product-main">
+                <span class="carry-product-order">{{ item.subOrderNumber }}</span>
+                <span class="carry-product-name">{{ item.productName }}</span>
+              </span>
+              <span class="carry-product-money">
+                <span>产品实返 ${{ money(item.refundAmount) }}</span>
+                <span
+                  v-if="carryModalProductId === item.id && Number(carryModalAmount || 0) > 0"
+                  :class="carryPreviewClass(item)"
+                >调整后 ${{ money(carryPreviewAmount(item)) }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </a-modal>
+
+    <a-modal
       v-model:open="giftOverpayOpen"
       title="本次重新申请金额超过回流卡密面值"
       width="640px"
@@ -549,9 +714,9 @@ import { ReloadOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
-import { isCarryPosted, toggleCarryRecord } from '../utils/buyerCarryBalance'
+import { getSupplementAmount, getSupplementRecord, isCarryPosted, postCarryRecord, saveSupplementRecord } from '../utils/buyerCarryBalance'
 
-const MOCK_LEDGER_PAYPAL_KEY = 'refund-ledger-mock-paypal-v7'
+const MOCK_LEDGER_PAYPAL_KEY = 'refund-ledger-mock-paypal-v8'
 const MOCK_LEDGER_GIFT_KEY = 'refund-ledger-mock-gift-v14'
 const QUEUE_PAYPAL_EXTRA_KEY = 'refund-queue-extra-paypal-v1'
 const QUEUE_GIFT_EXTRA_KEY = 'refund-queue-extra-gift-v1'
@@ -580,6 +745,30 @@ const gcAllStats = ref<any[]>([])
 const ppAllStats = ref<any[]>([])
 
 const mockPaypalSeed = [
+  {
+    id: 'mock-ledger-pp-apply-edit',
+    flow_no: 'PP-APPLY-001',
+    sub_order_id: 'SUB-LEDGER-PP-APPLY-001',
+    sub_order_number: 'SO-LEDGER-PP-APPLY-001',
+    product_name: 'Desk Lamp',
+    asin: 'B0LEDGERPPAPPLY01',
+    country: '美国',
+    buyer_name: '买手-PP改申请',
+    chat_account: 'wx-pp-apply-01',
+    buyer_paypal_email: 'pp.apply.buyer@gmail.com',
+    refund_amount_usd: 15.99,
+    paypal_fee_usd: 1,
+    assigned_paypal_email: 'finance-us-01@company.com',
+    paypal_receipt_screenshot: 'https://placehold.co/240x120/e2e8f0/64748b?text=PP+Apply',
+    handled_at: dayjs().subtract(18, 'second').toISOString(),
+    finance_notes: '演示：需返从 16.99 改到 15.99，手续费可改',
+    refund_status: '已返款',
+    _need_original_usd: 16.99,
+    _fee_original_usd: 1,
+    _exact_ledger_amounts: true,
+    _demo_new: true,
+    _isMock: true,
+  },
   {
     id: 'mock-demo-pp-resub-origin-1',
     sub_order_id: 'SUB-DEMO-PP-RESUB-001',
@@ -1108,7 +1297,81 @@ const mockPaypalSeed = [
   },
 ]
 
+const suppBatchHandledAt = dayjs().startOf('minute').toISOString()
+
 const mockGiftSeed = [
+  {
+    id: 'mock-ledger-supp-batch-a',
+    flow_no: 'GC-SUPP-BATCH',
+    sub_order_id: 'SUB-LEDGER-SUPP-BATCH-A',
+    sub_order_number: 'SO-SUPP-BATCH-A',
+    product_name: 'Desk Lamp',
+    asin: 'B0SUPPBATCHA',
+    country: '美国',
+    buyer_name: '买手-补挂批量',
+    chat_account: 'wx-supp-batch',
+    refund_amount_usd: 20,
+    actual_refund_usd: 20.2,
+    assigned_gift_card_id: 'GC-MOCK-SUPP-BATCH-A',
+    assigned_gift_card_number: 'GC-SUPP-BATCH-A',
+    assigned_gift_card_code: 'SUPP-BATCH-A',
+    gift_card_face_value_usd: 20.2,
+    handled_at: suppBatchHandledAt,
+    finance_notes: '演示：批量返款补挂选产品，搜索 GC-SUPP-BATCH',
+    refund_status: '已返款',
+    gift_returned: false,
+    _exact_ledger_amounts: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-supp-batch-b',
+    flow_no: 'GC-SUPP-BATCH',
+    sub_order_id: 'SUB-LEDGER-SUPP-BATCH-B',
+    sub_order_number: 'SO-SUPP-BATCH-B',
+    product_name: 'USB Hub',
+    asin: 'B0SUPPBATCHB',
+    country: '美国',
+    buyer_name: '买手-补挂批量',
+    chat_account: 'wx-supp-batch',
+    refund_amount_usd: 14.59,
+    actual_refund_usd: 14.59,
+    assigned_gift_card_id: 'GC-MOCK-SUPP-BATCH-B',
+    assigned_gift_card_number: 'GC-SUPP-BATCH-B',
+    assigned_gift_card_code: 'SUPP-BATCH-B',
+    gift_card_face_value_usd: 14.59,
+    handled_at: suppBatchHandledAt,
+    finance_notes: '演示：批量返款补挂选产品，搜索 GC-SUPP-BATCH',
+    refund_status: '已返款',
+    gift_returned: false,
+    _exact_ledger_amounts: true,
+    _demo_new: true,
+    _isMock: true,
+  },
+  {
+    id: 'mock-ledger-supp-batch-c',
+    flow_no: 'GC-SUPP-BATCH',
+    sub_order_id: 'SUB-LEDGER-SUPP-BATCH-C',
+    sub_order_number: 'SO-SUPP-BATCH-C',
+    product_name: 'Mouse Pad',
+    asin: 'B0SUPPBATCHC',
+    country: '美国',
+    buyer_name: '买手-补挂批量',
+    chat_account: 'wx-supp-batch',
+    refund_amount_usd: 9.41,
+    actual_refund_usd: 9.62,
+    assigned_gift_card_id: 'GC-MOCK-SUPP-BATCH-C',
+    assigned_gift_card_number: 'GC-SUPP-BATCH-C',
+    assigned_gift_card_code: 'SUPP-BATCH-C',
+    gift_card_face_value_usd: 9.62,
+    handled_at: suppBatchHandledAt,
+    finance_notes: '演示：批量返款补挂选产品，搜索 GC-SUPP-BATCH',
+    refund_status: '已返款',
+    gift_returned: false,
+    _exact_ledger_amounts: true,
+    _demo_new: true,
+    _isMock: true,
+  },
   {
     id: 'mock-ledger-offset-single',
     flow_no: 'GC-OFFSET-001',
@@ -1810,6 +2073,19 @@ const resubmitDisplayTotal = computed(() =>
   Number(actionForm.value.correctedAmountUsd || resubmitItemsTotal.value || 0),
 )
 
+const canEditSingleGiftApply = computed(() =>
+  actionType.value === 'giftReturn'
+  && actionForm.value.refundMethod === '礼品卡'
+  && resubmitItems.value.length === 1,
+)
+
+function syncSingleGiftApplyFromTotal() {
+  const amount = Number(actionForm.value.correctedAmountUsd || 0)
+  if (actionForm.value.giftReturnItems[0]) {
+    actionForm.value.giftReturnItems[0].correctedAmountUsd = amount
+  }
+}
+
 const gcColumns = [
   { title: '子订单 / 产品', key: 'order_info', width: 260 },
   { title: '买手 / 聊单号', key: 'buyer', width: 170 },
@@ -1828,6 +2104,7 @@ const ppColumns = [
   { title: '买手 / 聊单号', key: 'buyer', width: 170 },
   { title: '买手贝宝', key: 'buyer_paypal', width: 220 },
   { title: '需返金额', key: 'refund_amount', width: 132 },
+  { title: 'PayPal手续费', key: 'paypal_fee', width: 120 },
   { title: '实返金额', key: 'actual_amount', width: 118, customCell: actualAmountCell },
   { title: '溢余金额', key: 'surplus_cost', width: 150, customCell: actualAmountCell },
   { title: '付款 PayPal', key: 'paypal_account', width: 210 },
@@ -1850,6 +2127,68 @@ function ledgerNeedTotal(record: any) {
   return Number((Number(record?._line_amount_usd || 0) + ledgerOffsetUsd(record)).toFixed(2))
 }
 
+function ledgerPaypalFee(record: any) {
+  return Number(record?.paypal_fee_usd || 0)
+}
+
+function ledgerAmountChangeText(from: any, to: any) {
+  if (from == null || from === '') return ''
+  const start = Number(Number(from).toFixed(2))
+  const end = Number(Number(to || 0).toFixed(2))
+  if (start === end) return ''
+  return `${money(start)}-${money(end)}`
+}
+
+function ledgerNeedChangeText(record: any) {
+  return ledgerAmountChangeText(record?._need_original_usd, record?._line_amount_usd)
+}
+
+function ledgerFeeChangeText(record: any) {
+  return ledgerAmountChangeText(record?._fee_original_usd, ledgerPaypalFee(record))
+}
+
+const buyerPaypalEditId = ref<string | null>(null)
+const buyerPaypalDraft = ref('')
+
+function isBuyerPaypalEditing(record: any) {
+  return buyerPaypalEditId.value === record.id
+}
+
+function setBuyerPaypalEdit(record: any, open: boolean) {
+  if (open) {
+    buyerPaypalEditId.value = record.id
+    buyerPaypalDraft.value = record.buyer_paypal_email || ''
+    return
+  }
+  if (isBuyerPaypalEditing(record)) buyerPaypalEditId.value = null
+}
+
+function ledgerBuyerPaypalChangeText(record: any) {
+  const from = String(record?._buyer_paypal_original || '')
+  const to = String(record?.buyer_paypal_email || '')
+  if (!from || from === to) return ''
+  return `${from}-${to}`
+}
+
+function confirmBuyerPaypalEdit(record: any) {
+  if (!isBuyerPaypalEditing(record)) return
+  const next = String(buyerPaypalDraft.value || '').trim()
+  const current = String(record?.buyer_paypal_email || '')
+  const original = record?._buyer_paypal_original != null ? String(record._buyer_paypal_original) : current
+  buyerPaypalEditId.value = null
+  mockPaypalLedgerRecords.value = mockPaypalLedgerRecords.value.map(item =>
+    item.id === record.id
+      ? {
+          ...item,
+          buyer_paypal_email: next,
+          _buyer_paypal_original: original,
+        }
+      : item,
+  )
+  persistMockLedgerState('paypal')
+  loadPaypalRefunds()
+}
+
 function isUuidLike(value: any) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''))
 }
@@ -1862,6 +2201,7 @@ function shortUuidFlow(id: string, prefix: string) {
 function resolveLedgerAmounts(item: any) {
   const rawLine = Number(item?.refund_amount_usd || item?.refund_amount || 0)
   const rawActual = Number(item?.actual_refund_usd || item?.gift_card_face_value_usd || rawLine)
+  if (item?._exact_ledger_amounts) return { line: rawLine, actual: rawActual }
   if (!item?._isMock) return { line: rawLine, actual: rawActual }
   const line = Number((Math.floor(rawLine) + 0.35).toFixed(2))
   const actual = rawActual === line || rawActual === rawLine
@@ -1936,11 +2276,120 @@ function isLedgerCarried(record: any) {
   return isCarryPosted(record)
 }
 
-function toggleLedgerCarry(record: any) {
-  const amount = displaySurplusCost(record)
-  const posted = toggleCarryRecord(record, amount)
+function ledgerSupplementAmount(record: any) {
+  carryTick.value
+  return getSupplementAmount(record)
+}
+
+const carryModalOpen = ref(false)
+const carryModalRecord = ref<any>(null)
+const carryModalChoice = ref<'direct' | 'supplement' | ''>('')
+const carryModalAmount = ref<number | null>(null)
+const carryModalSupplementOnly = ref(false)
+const carryModalSurplus = ref(0)
+const carryModalProducts = ref<Array<{ id: string, subOrderNumber: string, productName: string, refundAmount: number }>>([])
+const carryModalProductId = ref('')
+
+function listCarryProducts(record: any) {
+  const ids = Array.isArray(record?._batch_member_ids) && record._batch_member_ids.length
+    ? record._batch_member_ids
+    : [record?.id]
+  const pool = [...gcRecords.value, ...ppRecords.value]
+  const rows = ids
+    .map((id: string) => pool.find(item => item.id === id))
+    .filter(Boolean)
+  const source = rows.length ? rows : [record]
+  return source.map((item: any) => ({
+    id: String(item.id),
+    subOrderNumber: String(item.sub_order_number || item.sub_order_id || item.id || ''),
+    productName: String(item.product_name || '—'),
+    refundAmount: Number(item._line_amount_usd || item.refund_amount_usd || 0),
+  }))
+}
+
+function carryPreviewAmount(product: { refundAmount: number }) {
+  return Number((product.refundAmount - Number(carryModalAmount.value || 0)).toFixed(2))
+}
+
+function carryPreviewClass(product: { refundAmount: number }) {
+  return carryPreviewAmount(product) < 0 ? 'carry-product-next is-over' : 'carry-product-next'
+}
+
+function carryActionLabel(record: any) {
+  if (isLedgerCarried(record)) return '已挂账'
+  if (ledgerSupplementAmount(record) > 0) return '已补挂'
+  return '挂账'
+}
+
+function carrySupplementNote(record: any) {
+  const amount = `$${money(ledgerSupplementAmount(record))}`
+  return isLedgerCarried(record) ? `已补挂 ${amount}` : amount
+}
+
+function openCarryModal(record: any) {
+  const supplement = getSupplementRecord(record)
+  const products = listCarryProducts(record)
+  const savedProductId = String(supplement?.productId || '')
+  carryModalRecord.value = record
+  carryModalProducts.value = products
+  carryModalProductId.value = products.length === 1
+    ? products[0].id
+    : (products.some(item => item.id === savedProductId) ? savedProductId : '')
+  carryModalSurplus.value = displaySurplusCost(record)
+  carryModalAmount.value = Number(supplement?.amount || 0) || null
+  carryModalSupplementOnly.value = isCarryPosted(record)
+  carryModalChoice.value = carryModalSupplementOnly.value || Number(supplement?.amount || 0) > 0 ? 'supplement' : ''
+  carryModalOpen.value = true
+}
+
+function confirmSupplement(record: any) {
+  const amount = Number(carryModalAmount.value || 0)
+  const products = carryModalProducts.value
+  const product = products.find(item => item.id === carryModalProductId.value) || null
+  if (amount <= 0) {
+    message.warning('请填写补挂金额')
+    return Promise.reject()
+  }
+  if (products.length > 1 && !product) {
+    message.warning('请选择补挂的子订单')
+    return Promise.reject()
+  }
+  if (product && amount - product.refundAmount > 0.001) {
+    message.warning('补挂金额不能大于该子订单的产品实返')
+    return Promise.reject()
+  }
+  if (!saveSupplementRecord(record, amount, product?.id || '')) {
+    message.warning('补挂金额没有记下，请确认这条账单有买手')
+    return Promise.reject()
+  }
   carryTick.value += 1
-  message.success(posted ? '已挂账，可在工作台该买手的子订单编辑页查看' : '已取消挂账')
+  carryModalOpen.value = false
+  message.success('已补挂。实返调整目前只在弹窗里预览，还没有改账单')
+  return Promise.resolve()
+}
+
+function confirmCarryModal() {
+  const record = carryModalRecord.value
+  if (!record) return Promise.reject()
+  if (isLedgerCarried(record)) return confirmSupplement(record)
+  if (carryModalChoice.value === 'direct') {
+    const amount = displaySurplusCost(record)
+    if (amount <= 0) {
+      message.warning('当前没有可直接挂账的溢余')
+      return Promise.reject()
+    }
+    if (!postCarryRecord(record, amount)) {
+      message.warning('直接挂账没有记下，请确认这条账单有买手')
+      return Promise.reject()
+    }
+    carryTick.value += 1
+    carryModalOpen.value = false
+    message.success('已挂账，可在工作台该买手的子订单编辑页查看')
+    return
+  }
+  if (carryModalChoice.value === 'supplement') return confirmSupplement(record)
+  message.warning('请选择直接挂账或补挂')
+  return Promise.reject()
 }
 
 function handleUnbindLedger(record: any) {
@@ -3129,7 +3578,7 @@ function openGiftReturn(record: any) {
       buyerName: item.buyer_name || '',
       asin: item.asin || '',
       correctedAmountUsd: Number(item.gift_card_face_value_usd || item.refund_amount_usd || 0),
-      actualPaidUsd: Number(item.gift_card_face_value_usd || item.actual_refund_usd || item.refund_amount_usd || 0),
+      actualPaidUsd: Number(item.actual_paid_usd || item.gift_card_face_value_usd || item.actual_refund_usd || item.refund_amount_usd || 0),
       processedCardNumber: item.returned_gift_card_number || item.voided_gift_card_number || item.assigned_gift_card_number || '原卡密',
       processedLabel: giftCardProcessLabel(item),
     })),
@@ -3435,22 +3884,33 @@ async function submitLedgerAction() {
         message.warning('请填写重新提交的返款金额')
         return
       }
+      const singlePaid = canEditSingleGiftApply.value
+        ? Number(actionForm.value.giftReturnItems[0]?.actualPaidUsd || 0)
+        : 0
+      if (canEditSingleGiftApply.value && singlePaid <= 0) {
+        message.warning('请填写实付金额')
+        return
+      }
       const mergedGiftAmount = Number(actionForm.value.correctedAmountUsd || 0)
       const returnedFaceLimit = getGiftReturnedFaceLimit(actionRecord.value)
-      const allowedAmount = Math.max(returnedFaceLimit, giftActualPaidOverrideAmount.value)
+      const allowedAmount = Math.max(returnedFaceLimit, giftActualPaidOverrideAmount.value, singlePaid)
       if (mergedGiftAmount > allowedAmount) {
         openGiftOverpayModal(mergedGiftAmount, returnedFaceLimit, giftReturnItems)
         return
       }
       const giftItemIds = new Set(giftReturnItems.map(item => item.id))
-      mockGiftLedgerRecords.value = mockGiftLedgerRecords.value.map(item =>
-        giftItemIds.has(item.id)
-          ? {
-              ...item,
-              gift_resubmitted: true,
-            }
-          : item,
-      )
+      mockGiftLedgerRecords.value = mockGiftLedgerRecords.value.map(item => {
+        if (!giftItemIds.has(item.id)) return item
+        const next = { ...item, gift_resubmitted: true }
+        if (canEditSingleGiftApply.value && item.id === giftReturnItems[0]?.id && singlePaid > 0) {
+          const previousPaid = Number(item.actual_paid_usd || item.gift_card_face_value_usd || item.actual_refund_usd || item.refund_amount_usd || 0)
+          next.actual_paid_usd = singlePaid
+          if (previousPaid !== singlePaid) {
+            next.finance_notes = [item.finance_notes, `实付金额已调整为 $${money(singlePaid)}`].filter(Boolean).join('；')
+          }
+        }
+        return next
+      })
       persistMockLedgerState('giftcard')
       const firstGiftItem = giftReturnItems[0]
       const subOrderText = giftReturnItems.map(item => item.subOrderNumber || item.subOrderId).filter(Boolean).join(' / ')
@@ -3604,6 +4064,38 @@ onMounted(async () => {
   flex-direction: column;
   gap: 2px;
 }
+.amount-with-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.amount-edit-pen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 12px;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+.amount-edit-pen:hover {
+  color: #2563eb;
+  text-decoration: none;
+}
+.pen-icon {
+  width: 12px;
+  height: 12px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
 .need-amount-offset {
   font-size: 12px;
   color: #6b7280;
@@ -3612,6 +4104,10 @@ onMounted(async () => {
   font-size: 12px;
   font-weight: 600;
   color: #1a1a2e;
+}
+.amount-change-text {
+  font-size: 12px;
+  color: #6b7280;
 }
 .amount-usd { font-weight: 700; color: #dc2626; font-size: 14px; }
 .amount-usd.surplus-positive { color: #dc2626; }
@@ -3646,15 +4142,164 @@ onMounted(async () => {
   max-width: 118px;
 }
 .surplus-with-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
-.carry-link {
-  padding: 0 4px;
-  height: auto;
+.carry-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #2563eb;
   font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.carry-note {
+  color: #6b7280;
+}
+.carry-line:hover,
+.carry-line:hover .carry-note {
+  color: #2563eb;
+}
+.carry-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.carry-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  color: #1a1a2e;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.carry-option.is-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+.carry-option-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.carry-products {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.carry-products-label {
+  font-size: 12px;
+  line-height: 1.2;
+  color: #6b7280;
+}
+.carry-product {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.carry-product.is-active {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+}
+.carry-product-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.carry-product-order {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #1a1a2e;
+}
+.carry-product-name {
+  font-size: 12px;
+  line-height: 1.3;
+  color: #6b7280;
+}
+.carry-product-money {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #1a1a2e;
+  white-space: nowrap;
+}
+.carry-product-next {
+  color: #6b7280;
+}
+.carry-product-next.is-over {
+  color: #dc2626;
+}
+.carry-option.is-active {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+}
+.carry-option.is-done {
+  cursor: default;
+  background: #f5f7fa;
+}
+.carry-option-mark {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 50%;
+  background: #fff;
+  box-sizing: border-box;
+}
+.carry-option.is-active > .carry-option-mark,
+.carry-option.is-active > .carry-option-head > .carry-option-mark,
+.carry-product.is-active .carry-option-mark {
+  border-color: #2563eb;
+  box-shadow: inset 0 0 0 4px #2563eb;
+}
+.carry-option-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.carry-option-amount {
+  font-size: 14px;
+  font-weight: 700;
+  color: #2563eb;
+  line-height: 1.2;
+}
+.carry-option-state {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.2;
+}
+.carry-amount-input {
+  width: 128px;
 }
 .batch-card-line.is-total {
   font-weight: 700;
@@ -4003,6 +4648,9 @@ onMounted(async () => {
   font-size: 12px;
   white-space: nowrap;
   text-align: left;
+}
+.resubmit-check-total :deep(.ant-input-number) {
+  width: 110px;
 }
 .resubmit-check-total {
   display: flex;

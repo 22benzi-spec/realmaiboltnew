@@ -164,7 +164,6 @@
               </div>
               <div>
                 <div class="hero-name">{{ resultBuyerDisplayName(singleResult) }}</div>
-                <div v-if="singleResult.checkLabel" class="hero-check-label">{{ singleResult.checkLabel }}</div>
                 <div class="hero-info">
                   <template v-if="singleResult.buyerInfo">
                     <a-tag :color="buyerStatusColor(singleResult.buyerInfo.status)" size="small">
@@ -214,7 +213,6 @@
             <div class="section-title-row">
               <div>
                 <div class="section-title-text">{{ detailSectionTitle(singleResult) }}</div>
-                <div v-if="detailSectionSubtitle(singleResult)" class="section-subtitle">{{ detailSectionSubtitle(singleResult) }}</div>
               </div>
               <span
                 v-if="!isSingleDimensionDemoResult(singleResult)"
@@ -1503,7 +1501,7 @@ function formatNamedId(name?: string, id?: string) {
 
 function historyEvidenceFields(record: BuyerHistoryRecord, partyOnly = false) {
   const fields = [
-    { label: '订单ID', value: displayOrderId(record) },
+    { label: '子订单号', value: displayOrderId(record) },
     { label: '时间', value: fmtDate(record.date) },
     { label: 'ASIN', value: record.asin || '未知ASIN' },
     { label: '店铺', value: record.storeName || '未知店铺' },
@@ -1511,13 +1509,13 @@ function historyEvidenceFields(record: BuyerHistoryRecord, partyOnly = false) {
     { label: '客户', value: formatNamedId(record.customerName, record.customerIdStr) || '未知客户' },
   ]
   if (!partyOnly) return fields
-  return fields.filter(field => field.label === '订单ID' || field.label === '时间')
+  return fields.filter(field => field.label === '子订单号' || field.label === '时间')
 }
 
 function visibleRiskDetailLines(risk: BuyerHistoryRisk) {
   return (risk.detailLines || []).filter(line => {
     if (line.startsWith('当前店铺：') || line.startsWith('当前公司主体：')) return false
-    if (line.startsWith('订单ID：') || line.startsWith('当前买手：订单ID：')) return false
+    if (line.startsWith('子订单号：') || line.startsWith('当前买手：子订单号：')) return false
     return true
   })
 }
@@ -1908,10 +1906,10 @@ function buildSingleDimensionRisk(
       title: '任务排重规则',
       status: status === 'fail' ? 'fail' : 'pass',
       reason: status === 'fail'
-        ? '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单，不可下单。'
+        ? '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单。'
         : status === 'enabled-pass'
-          ? '此任务开启了“全店排重”和“组织级排重”，未发现该买手命中客户或公司主体历史，可下单。'
-          : '此任务未开启“全店排重”和“组织级排重”，可下单。',
+          ? '此任务开启了“全店排重”和“组织级排重”，未发现该买手命中客户或公司主体历史。'
+          : '此任务未开启“全店排重”和“组织级排重”。',
       records: status === 'fail' ? [record] : [],
     }
   }
@@ -1923,8 +1921,8 @@ function buildSingleDimensionRisk(
       title: '同买手重复 ASIN',
       status: normalizedStatus,
       reason: status === 'fail'
-        ? `该买手已购买过 ASIN ${target}，不可下单。`
-        : `该买手未购买过 ASIN ${target}，可下单。`,
+        ? `该买手已购买过 ASIN ${target}。`
+        : `该买手未购买过 ASIN ${target}。`,
       records: status === 'fail' ? [record] : [],
     }
   }
@@ -1936,7 +1934,7 @@ function buildSingleDimensionRisk(
       status: normalizedStatus,
       reason: status === 'fail'
         ? `3 个月内已购买过店铺「${target}」。`
-        : `该买手 3 个月内未购买过店铺「${target}」，可下单。`,
+        : `该买手 3 个月内未购买过店铺「${target}」。`,
       records: status === 'fail' ? [record] : [],
     }
   }
@@ -1948,7 +1946,7 @@ function buildSingleDimensionRisk(
       status: normalizedStatus,
       reason: status === 'fail'
         ? `1 个月内已购买过品牌「${target}」。`
-        : `该买手未在 1 个月内购买过品牌「${target}」的 ASIN，可下单。`,
+        : `该买手未在 1 个月内购买过品牌「${target}」的 ASIN。`,
       records: status === 'fail' ? [record] : [],
     }
   }
@@ -2096,7 +2094,7 @@ function buildTaskMockDemo(status: 'pass' | 'fail'): CheckResult {
           key: 'mock-task-pass-customer',
           title: '任务排重规则',
           status: 'pass',
-          reason: '此任务开启了“全店排重”和“组织级排重”，未发现客户或公司主体历史命中，可下单。',
+          reason: '此任务开启了“全店排重”和“组织级排重”，未发现客户或公司主体历史命中。',
           records: [],
         },
       ]
@@ -2105,28 +2103,28 @@ function buildTaskMockDemo(status: 'pass' | 'fail'): CheckResult {
           key: 'mock-task-fail-asin',
           title: '同买手重复 ASIN',
           status: 'fail',
-          reason: `该买手已购买过任务 ASIN ${assoc.asin}，不可下单。`,
+          reason: `该买手已购买过任务 ASIN ${assoc.asin}。`,
           records: [sameAsinRecord],
         },
         {
           key: 'mock-task-fail-store',
           title: '同店铺历史限制',
           status: 'fail',
-          reason: `3 个月内已购买过任务店铺「${assoc.storeName}」，不可下单。`,
+          reason: `3 个月内已购买过任务店铺「${assoc.storeName}」。`,
           records: [sameStoreRecord],
         },
         {
           key: 'mock-task-fail-company',
           title: '同客户公司限制',
           status: 'fail',
-          reason: '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单，不可下单。',
+          reason: '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单。',
           records: [companyRecord],
         },
         {
           key: 'mock-task-fail-combo',
           title: 'ASIN 组合购买风险',
           status: 'fail',
-          reason: '该买手继续接此任务会形成高风险 ASIN 组合购买轨迹，不可下单。',
+          reason: '该买手继续接此任务会形成高风险 ASIN 组合购买轨迹。',
           records: [comboRecord],
           detailLines: [
             '组合：B0MOCKCOMBO01 + B0MOCKTASK01',
@@ -2448,21 +2446,21 @@ function buildFullPassDemo(): CheckResult {
       key: 'mock-full-pass-asin',
       title: '同买手重复 ASIN',
       status: 'pass',
-      reason: `该买手未购买过 ASIN ${asin}，可下单。`,
+      reason: `该买手未购买过 ASIN ${asin}。`,
       records: [],
     },
     {
       key: 'mock-full-pass-store',
       title: '同店铺历史限制',
       status: 'pass',
-      reason: `该买手 3 个月内未购买过店铺「${assoc.storeName}」，可下单。`,
+      reason: `该买手 3 个月内未购买过店铺「${assoc.storeName}」。`,
       records: [],
     },
     {
       key: 'mock-full-pass-brand',
       title: '同品牌 1 个月限制',
       status: 'pass',
-      reason: `该买手 1 个月内未购买过品牌「${assoc.brandName}」的 ASIN，可下单。`,
+      reason: `该买手 1 个月内未购买过品牌「${assoc.brandName}」的 ASIN。`,
       records: [],
     },
     {
@@ -2577,7 +2575,7 @@ async function fetchBuyerAsinHistory(
       status: sameAsinRecords.length > 0 ? 'fail' : 'pass',
       reason: sameAsinRecords.length > 0
         ? `该买手已购买过当前 ASIN。`
-        : `该买手未购买过 ASIN ${currentAsin}，可继续校验下单。`,
+        : `该买手未购买过 ASIN ${currentAsin}。`,
       records: sameAsinRecords,
     })
   }
@@ -2603,7 +2601,7 @@ async function fetchBuyerAsinHistory(
           : `3 个月内已购买过店铺「${firstSameStore?.storeName || '未知店铺'}」。`
         : storeStatus === 'warn'
           ? `该买手历史上已有 1 次同店铺记录（${makeRiskRecordText(firstSameStore)}）；若本次允许，后续将进入该店铺终身限制。`
-          : '该买手 3 个月内未购买过此店铺，可下单。',
+          : '该买手 3 个月内未购买过此店铺。',
       records: sameStoreRecords,
     })
   }
@@ -2621,7 +2619,7 @@ async function fetchBuyerAsinHistory(
         ? '当前品牌为 General 或未识别品牌，不进入同品牌 1 个月限制。'
         : sameBrandRecords.length > 0
           ? `1 个月内已购买过品牌「${currentBrandLabel}」。`
-          : `该买手未在 1 个月内购买过品牌「${currentBrandLabel}」的 ASIN，可下单。`,
+          : `该买手未在 1 个月内购买过品牌「${currentBrandLabel}」的 ASIN。`,
       records: sameBrandRecords,
     })
   }
@@ -2638,7 +2636,7 @@ async function fetchBuyerAsinHistory(
       key: 'task-dedupe-disabled',
       title: '任务排重规则',
       status: 'pass',
-      reason: '此任务未开启“全店排重”和“组织级排重”，可下单。',
+      reason: '此任务未开启“全店排重”和“组织级排重”。',
       records: [],
     })
   } else if (mode === 'task' && !options.sameCustomerOtherStores && (associations[0]?.companyName || associations[0]?.customerIdStr)) {
@@ -2646,7 +2644,7 @@ async function fetchBuyerAsinHistory(
       key: 'task-customer-dedupe-disabled',
       title: '同客户其他店铺限制',
       status: 'pass',
-      reason: '此任务未开启“全店排重”，可下单。',
+      reason: '此任务未开启“全店排重”。',
       records: [],
     })
   } else if (mode === 'customer') {
@@ -2666,8 +2664,8 @@ async function fetchBuyerAsinHistory(
       title: '同客户其他店铺限制',
       status: otherStoreCustomerRecords.length > 0 ? 'fail' : 'pass',
       reason: otherStoreCustomerRecords.length > 0
-        ? '此任务开启了“全店排重”，该买手已购买过当前客户下其他店铺，不可下单。'
-        : '此任务开启了“全店排重”，未发现该买手命中其他店铺历史，可下单。',
+        ? '此任务开启了“全店排重”，该买手已购买过当前客户下其他店铺。'
+        : '此任务开启了“全店排重”，未发现该买手命中其他店铺历史。',
       records: otherStoreCustomerRecords,
     })
   }
@@ -2682,7 +2680,7 @@ async function fetchBuyerAsinHistory(
       key: 'task-company-dedupe-disabled',
       title: '同客户公司限制',
       status: 'pass',
-      reason: '此任务未开启“组织级排重”，可下单。',
+      reason: '此任务未开启“组织级排重”。',
       records: [],
     })
   } else if (mode === 'company') {
@@ -2702,8 +2700,8 @@ async function fetchBuyerAsinHistory(
       title: '同客户公司限制',
       status: sameCustomerRecords.length > 0 ? 'fail' : 'pass',
       reason: sameCustomerRecords.length > 0
-        ? '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单，不可下单。'
-        : '此任务开启了“组织级排重”，未发现该买手命中公司主体历史，可下单。',
+        ? '此任务开启了“组织级排重”，该买手已购买过当前公司主体下的订单。'
+        : '此任务开启了“组织级排重”，未发现该买手命中公司主体历史。',
       records: sameCustomerRecords,
     })
   }
@@ -3059,8 +3057,8 @@ function primaryResultReason(result: CheckResult) {
   if (isHistoryOnlyResult(result)) return ''
   if (isTaskDemoResult(result)) {
     return result.overallPass
-      ? '此任务的 ASIN、店铺、品牌和已开启排重规则均未命中，可下单。'
-      : `此任务命中 ${blockingRisks(result).length} 个拦截维度，不可下单。`
+      ? '此任务的 ASIN、店铺、品牌和已开启排重规则均未命中。'
+      : `此任务命中 ${blockingRisks(result).length} 个拦截维度。`
   }
   if (isFullCheckResult(result)) {
     return result.overallPass
@@ -3162,13 +3160,6 @@ function detailRisks(result: CheckResult) {
 
 function detailSectionTitle(result: CheckResult) {
   return blockingRisks(result).length > 0 ? '拦截明细' : '历史记录'
-}
-
-function detailSectionSubtitle(result: CheckResult) {
-  if (isHistoryOnlyResult(result)) return ''
-  return blockingRisks(result).length > 0
-    ? '按维度展示具体原因和历史订单'
-    : '仅展示历史购买事实，是否拦截需结合任务规则判断'
 }
 
 function visibleRisks(result: CheckResult) {
@@ -3811,18 +3802,6 @@ function getDimIconComp(dim: string) {
 }
 
 .hero-name { font-size: 20px; font-weight: 800; color: #0f172a; margin-bottom: 6px; word-break: break-all; }
-.hero-check-label {
-  display: inline-flex;
-  max-width: 100%;
-  margin-bottom: 8px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, .08);
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 800;
-  word-break: break-all;
-}
 .hero-info { display: flex; align-items: center; gap: 10px; }
 .hero-stat { font-size: 12px; color: #64748b; }
 .hero-unknown { font-size: 12px; color: #94a3b8; font-style: italic; }

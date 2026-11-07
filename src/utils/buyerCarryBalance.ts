@@ -5,14 +5,16 @@ export type CarryItem = {
   flowNo: string
   amount: number
   buyerName: string
+  productId?: string
 }
 
 export type CarryStore = {
   items: CarryItem[]
+  supplements: CarryItem[]
 }
 
 function emptyStore(): CarryStore {
-  return { items: [] }
+  return { items: [], supplements: [] }
 }
 
 export function readCarryStore(): CarryStore {
@@ -21,7 +23,10 @@ export function readCarryStore(): CarryStore {
     const raw = window.localStorage.getItem(CARRY_STORAGE_KEY)
     if (!raw) return emptyStore()
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed?.items) ? { items: parsed.items } : emptyStore()
+    return {
+      items: Array.isArray(parsed?.items) ? parsed.items : [],
+      supplements: Array.isArray(parsed?.supplements) ? parsed.supplements : [],
+    }
   } catch {
     return emptyStore()
   }
@@ -65,6 +70,68 @@ export function getCarryRemainingForBuyer(task: any) {
 export function getCarryItemsForBuyer(task: any) {
   const names = buyerNamesOf(task)
   return readCarryStore().items.filter(item => names.includes(item.buyerName))
+}
+
+function carryIdentity(record: any) {
+  return {
+    sourceKey: carrySourceKey(record),
+    flowNo: String(record?._flow_no || record?.id || ''),
+    buyerName: String(record?.buyer_name || record?.buyer_id || '').trim(),
+  }
+}
+
+export function postCarryRecord(record: any, amount: number) {
+  const { sourceKey, flowNo, buyerName } = carryIdentity(record)
+  const store = readCarryStore()
+  if (store.items.some(item => item.sourceKey === sourceKey)) return true
+  if (!(amount > 0) || !buyerName) return false
+  store.items.push({
+    sourceKey,
+    flowNo,
+    amount: Number(amount.toFixed(2)),
+    buyerName,
+  })
+  writeCarryStore(store)
+  return true
+}
+
+export function getSupplementRecord(record: any) {
+  const sourceKey = carrySourceKey(record)
+  return readCarryStore().supplements.find(item => item.sourceKey === sourceKey) || null
+}
+
+export function getSupplementAmount(record: any) {
+  return Number(getSupplementRecord(record)?.amount || 0)
+}
+
+export function saveSupplementRecord(record: any, amount: number, productId = '') {
+  const { sourceKey, flowNo, buyerName } = carryIdentity(record)
+  const nextAmount = Number(Number(amount || 0).toFixed(2))
+  if (!(nextAmount > 0) || !buyerName) return false
+  const store = readCarryStore()
+  const index = store.supplements.findIndex(item => item.sourceKey === sourceKey)
+  const next: CarryItem = {
+    sourceKey,
+    flowNo,
+    amount: nextAmount,
+    buyerName,
+    productId: productId || undefined,
+  }
+  if (index >= 0) store.supplements[index] = next
+  else store.supplements.push(next)
+  writeCarryStore(store)
+  return true
+}
+
+export function getSupplementTotalForBuyer(task: any) {
+  const names = buyerNamesOf(task)
+  if (!names.length) return 0
+  return Number(
+    readCarryStore().supplements
+      .filter(item => names.includes(item.buyerName))
+      .reduce((sum, item) => sum + Number(item.amount || 0), 0)
+      .toFixed(2),
+  )
 }
 
 export function toggleCarryRecord(record: any, amount: number) {

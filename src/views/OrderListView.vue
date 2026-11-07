@@ -103,10 +103,10 @@
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'order_number'">
             <div class="order-number-cell">
-              <div v-if="record._isMultiBatch && record._isFirstInBatch" class="batch-group-header">
+              <div v-if="record.batch_number && record._isFirstInBatch" class="batch-group-header">
                 <div class="batch-group-left" @click.stop="showGroupDetail(record)">
                   <span class="batch-group-icon"><LinkOutlined /></span>
-                  <span class="batch-group-name">{{ record.batch_number }}</span>
+                  <span class="batch-group-name" :title="record.batch_number">{{ record.batch_number }}</span>
                 </div>
                 <a-button
                   size="small"
@@ -117,7 +117,7 @@
                 </a-button>
               </div>
               <div class="order-number-row">
-                <div v-if="record._isMultiBatch" class="batch-side-bar" :style="{ background: record._batchColor }"></div>
+                <div v-if="record._hasBatchGroup" class="batch-side-bar" :style="{ background: record._batchColor }"></div>
                 <a class="order-number-link" @click="viewDetail(record)">{{ record.order_number }}</a>
               </div>
             </div>
@@ -191,12 +191,18 @@
                 >{{ record.billing_status || '已完成' }}</a-tag>
               </div>
               <div v-if="hasRealDebt(record)" class="debt-row">
-                <span class="billing-label">欠款：</span>
-                <a-tag color="orange" size="small">&yen;{{ Number(record.debt_amount).toFixed(0) }}</a-tag>
+                <span class="billing-label">有欠款：</span>
+                <a-tag color="orange" size="small">
+                  &yen;{{ Number(record.debt_amount).toFixed(0) }}
+                  <template v-if="Number(record._debt_amount_usd || 0) > 0.005"> / ${{ Number(record._debt_amount_usd).toFixed(2) }}</template>
+                </a-tag>
               </div>
               <div v-else-if="hasRealSurplus(record)" class="debt-row">
-                <span class="billing-label">溢款：</span>
-                <a-tag color="blue" size="small">退&yen;{{ Number(record.debt_amount).toFixed(0) }}</a-tag>
+                <span class="billing-label">有余款：</span>
+                <a-tag color="blue" size="small">
+                  &yen;{{ Number(record.debt_amount).toFixed(0) }}
+                  <template v-if="Number(record._debt_amount_usd || 0) > 0.005"> / ${{ Number(record._debt_amount_usd).toFixed(2) }}</template>
+                </a-tag>
               </div>
               <div v-else-if="record.debt_status === 'cleared'" class="billing-row">
                 <a-tag color="green" size="small">已结清</a-tag>
@@ -494,6 +500,19 @@
 
         <!-- Billing + Payment Records (Merged) -->
         <a-divider style="margin: 20px 0 16px" />
+        <template v-if="isBillProtoMockBatch(currentOrder.batch_number)">
+          <div class="detail-section-title">资金情况</div>
+          <div class="bill-proto-redirect">
+            <div class="bill-proto-redirect-title">请在账单查看组资金情况</div>
+            <div class="bill-proto-redirect-desc">
+              本组为多任务共收原型（{{ currentOrder.batch_number }}）：资金汇总与交易流水已放到组头「账单」抽屉（结算账单），避免每个任务详情重复显示同一笔入账。
+            </div>
+            <a-button type="primary" size="small" @click="openBillModal(currentOrder.batch_number)">
+              <FileTextOutlined /> 打开组账单
+            </a-button>
+          </div>
+        </template>
+        <template v-else>
         <div class="detail-section-title" style="display:flex;align-items:center;justify-content:space-between">
           <span>资金汇总</span>
         </div>
@@ -544,8 +563,14 @@
             </div>
             <div class="billing-info-row">
               <span class="billing-key">账款状态：</span>
-              <a-tag v-if="hasRealDebt(currentOrder)" color="orange">客户欠款</a-tag>
-              <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">我方溢收</a-tag>
+              <a-tag v-if="hasRealDebt(currentOrder)" color="orange">
+                有欠款
+                <template v-if="Number(currentOrder._debt_amount_usd || 0) > 0.005"> / ${{ Number(currentOrder._debt_amount_usd).toFixed(2) }}</template>
+              </a-tag>
+              <a-tag v-else-if="hasRealSurplus(currentOrder)" color="blue">
+                有余款
+                <template v-if="Number(currentOrder._debt_amount_usd || 0) > 0.005"> / ${{ Number(currentOrder._debt_amount_usd).toFixed(2) }}</template>
+              </a-tag>
               <a-tag v-else-if="currentOrder.debt_status === 'cleared'" color="green">已结清</a-tag>
               <a-tag v-else color="green">无异常</a-tag>
             </div>
@@ -600,6 +625,7 @@
             </span>
           </div>
         </div>
+        </template>
       </template>
     </a-drawer>
 
@@ -800,6 +826,18 @@
       @updated="loadOrders"
     />
 
+    <!-- 统一组结算工作台（账单 / 批量编辑，原型组 001·003） -->
+    <GroupBillDrawer
+      :open="groupBillDrawerOpen"
+      :batch-number="groupBillDrawerBatch"
+      :orders="groupBillDrawerOrders"
+      :groups="groupBillDrawerGroups"
+      :mode="groupBillDrawerMode"
+      :writable="true"
+      @close="groupBillDrawerOpen = false"
+      @updated="loadOrders"
+    />
+
     <!-- 统一账款抽屉 -->
     <BillingDrawer
       :open="billingDrawerOpen"
@@ -886,6 +924,221 @@ import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import BillingDrawer from '../components/BillingDrawer.vue'
 import GroupBillingDrawer from '../components/GroupBillingDrawer.vue'
+import GroupBillDrawer from '../components/GroupBillDrawer.vue'
+
+/** 组账单三板块原型：001 / 003 常规；005 / 006 跨组合并操作 */
+const BILL_PROTO_BATCH_KEYS = ['GRP-20260326-001', 'GRP-20260326-003', 'GRP-20260326-005', 'GRP-20260326-006']
+const BILL_PROTO_BATCH_NUMBER = 'TASK-GRP-20260326-001'
+
+function isBillProtoMockBatch(batchNumber?: string | null) {
+  const n = String(batchNumber || '')
+  return BILL_PROTO_BATCH_KEYS.some((key) => n === key || n.includes(key))
+}
+
+function buildBillGroupsFromOrders(list: any[]) {
+  const map = new Map<string, any[]>()
+  for (const order of list) {
+    const key = order.batch_number || order.order_number || order.id
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(order)
+  }
+  return [...map.entries()].map(([batchNumber, groupOrders]) => ({
+    batchNumber,
+    orders: groupOrders,
+  }))
+}
+
+function buildBillProtoMockOrders() {
+  const createdAt = '2026-03-26T10:00:00+08:00'
+  return [
+    {
+      id: 'mock-bill-proto-001-001',
+      order_number: 'TASK-GRP-20260326-001-001',
+      batch_number: BILL_PROTO_BATCH_NUMBER,
+      batch_id: 'mock-bill-proto-batch',
+      customer_name: '杭州组任务示例',
+      company_name: '杭州组任务示例公司',
+      asin: 'B0PROTO001A',
+      product_name: '组账单原型任务A',
+      store_name: 'Demo Store A',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'owed',
+      debt_amount: 100,
+      total_amount: 600,
+      order_quantity: 3,
+      commission_fee: 30,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    {
+      id: 'mock-bill-proto-001-002',
+      order_number: 'TASK-GRP-20260326-001-002',
+      batch_number: BILL_PROTO_BATCH_NUMBER,
+      batch_id: 'mock-bill-proto-batch',
+      customer_name: '杭州组任务示例',
+      company_name: '杭州组任务示例公司',
+      asin: 'B0PROTO001B',
+      product_name: '组账单原型任务B',
+      store_name: 'Demo Store B',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'owed',
+      debt_amount: 100,
+      total_amount: 500,
+      order_quantity: 2,
+      commission_fee: 20,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+  ]
+}
+
+/** 账款美元差价展示原型：一条欠款带美元、一条余款带美元（美元不入库） */
+function buildBillingUsdDebtMockOrders() {
+  const createdAt = '2026-03-27T10:00:00+08:00'
+  return [
+    {
+      id: 'mock-billing-usd-owed-001',
+      order_number: 'TASK-BILL-USD-OWED-001',
+      batch_number: null,
+      customer_name: '美元欠款示例客户',
+      asin: 'B0USDOWED01',
+      product_name: '美元欠款原型任务',
+      store_name: 'USD Demo Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '未完成',
+      debt_status: 'owed',
+      debt_amount: 200,
+      _debt_amount_usd: 28.5,
+      _debt_usd_display_only: true,
+      total_amount: 1100,
+      order_quantity: 2,
+      commission_fee: 20,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    {
+      id: 'mock-billing-usd-surplus-001',
+      order_number: 'TASK-BILL-USD-SURPLUS-001',
+      batch_number: null,
+      customer_name: '美元余款示例客户',
+      asin: 'B0USDSURP01',
+      product_name: '美元余款原型任务',
+      store_name: 'USD Demo Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'surplus',
+      debt_amount: 150,
+      _debt_amount_usd: 21.0,
+      _debt_usd_display_only: true,
+      total_amount: 980,
+      order_quantity: 1,
+      commission_fee: 15,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+  ]
+}
+
+/** 跨组合并操作原型：005 + 006 共一笔补款流水（不覆盖 001 退款示例） */
+function buildBillProtoMergeMockOrders() {
+  const createdAt = '2026-03-26T11:00:00+08:00'
+  return [
+    {
+      id: 'mock-bill-proto-005-001',
+      order_number: 'TASK-GRP-20260326-005-001',
+      batch_number: 'GRP-20260326-005',
+      batch_id: 'mock-bill-proto-merge-005',
+      customer_name: '合并操作客户甲',
+      company_name: '合并操作示例公司',
+      asin: 'B0MERGED005',
+      product_name: '合并操作原型任务甲',
+      store_name: 'Merge Store A',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'owed',
+      debt_amount: 200,
+      total_amount: 900,
+      order_quantity: 2,
+      commission_fee: 20,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    {
+      id: 'mock-bill-proto-006-001',
+      order_number: 'TASK-GRP-20260326-006-001',
+      batch_number: 'GRP-20260326-006',
+      batch_id: 'mock-bill-proto-merge-006',
+      customer_name: '合并操作客户乙',
+      company_name: '合并操作示例公司',
+      asin: 'B0MERGED006',
+      product_name: '合并操作原型任务乙',
+      store_name: 'Merge Store B',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'owed',
+      debt_amount: 150,
+      total_amount: 700,
+      order_quantity: 1,
+      commission_fee: 15,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+  ]
+}
+
+function markBatchMeta(rows: any[]) {
+  const batchGroups: Record<string, any[]> = {}
+  for (const row of rows) {
+    const key = row.batch_number || `_solo_${row.id}`
+    if (!batchGroups[key]) batchGroups[key] = []
+    batchGroups[key].push(row)
+  }
+  const batchColorPalette = ['#2563eb', '#0891b2', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
+  let colorIdx = 0
+  const batchColorMap: Record<string, string> = {}
+  for (const key of Object.keys(batchGroups)) {
+    const hasBatch = !key.startsWith('_solo_')
+    batchColorMap[key] = hasBatch ? batchColorPalette[colorIdx % batchColorPalette.length] : 'none'
+    if (hasBatch) colorIdx++
+  }
+  for (const row of rows) {
+    const key = row.batch_number || `_solo_${row.id}`
+    const group = batchGroups[key]
+    const hasBatch = !key.startsWith('_solo_')
+    row._batchColor = batchColorMap[key]
+    row._hasBatchGroup = hasBatch
+    row._isMultiBatch = group.length > 1
+    row._isFirstInBatch = group[0].id === row.id
+    row._isLastInBatch = group[group.length - 1].id === row.id
+  }
+  return rows
+}
 
 const loading = ref(false)
 const orders = ref<any[]>([])
@@ -1365,7 +1618,7 @@ function hasRealSurplus(record: any): boolean {
 
 function getRowClass(record: any): string {
   const classes: string[] = []
-  if (record._isMultiBatch) {
+  if (record._hasBatchGroup) {
     classes.push('row-in-batch')
     if (record._isFirstInBatch) classes.push('row-batch-first')
     if (record._isLastInBatch) classes.push('row-batch-last')
@@ -1451,31 +1704,20 @@ async function loadOrders() {
         totalBillingBalance: 0,
       }
     }
-    const rows = data || []
-    const batchGroups: Record<string, any[]> = {}
-    for (const row of rows) {
-      const key = row.batch_number || `_solo_${row.id}`
-      if (!batchGroups[key]) batchGroups[key] = []
-      batchGroups[key].push(row)
+    let rows = data || []
+    // 组账单原型：无筛选时确保列表可见 001（没有真实组则注入）以及合并操作 005/006
+    if (!hasActiveFilters.value && !rows.some((r: any) => isBillProtoMockBatch(r.batch_number))) {
+      rows = [...buildBillProtoMockOrders(), ...rows]
     }
-    const batchColorPalette = ['#2563eb', '#0891b2', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
-    let colorIdx = 0
-    const batchColorMap: Record<string, string> = {}
-    for (const key of Object.keys(batchGroups)) {
-      const isMulti = batchGroups[key].length > 1
-      batchColorMap[key] = isMulti ? batchColorPalette[colorIdx % batchColorPalette.length] : 'none'
-      if (isMulti) colorIdx++
+    if (!hasActiveFilters.value && !rows.some((r: any) => String(r.batch_number || '').includes('GRP-20260326-005'))) {
+      rows = [...buildBillProtoMergeMockOrders(), ...rows]
     }
-    for (const row of rows) {
-      const key = row.batch_number || `_solo_${row.id}`
-      const group = batchGroups[key]
-      row._batchColor = batchColorMap[key]
-      row._isMultiBatch = group.length > 1
-      row._isFirstInBatch = group[0].id === row.id
-      row._isLastInBatch = group[group.length - 1].id === row.id
+    if (!hasActiveFilters.value && !rows.some((r: any) => String(r.id || '').includes('mock-billing-usd-'))) {
+      rows = [...buildBillingUsdDebtMockOrders(), ...rows]
     }
-    // 子订单统计
-    const orderIds = rows.map((r: any) => r.id)
+    markBatchMeta(rows)
+    // 子订单统计（排除前端注入的原型 mock id，避免非 UUID 查询报错）
+    const orderIds = rows.filter((r: any) => !r._is_bill_proto_mock).map((r: any) => r.id)
     if (orderIds.length > 0) {
       const { data: subs } = await supabase
         .from('sub_orders')
@@ -1551,6 +1793,10 @@ function handleTableChange(pag: any) {
 async function viewDetail(record: any) {
   currentOrder.value = record
   drawerOpen.value = true
+  if (record?._is_bill_proto_mock || isBillProtoMockBatch(record?.batch_number)) {
+    batchPayments.value = []
+    return
+  }
   await loadPayments(record.id)
 }
 
@@ -1896,6 +2142,12 @@ function openBatchEditFromSelection() {
     return
   }
 
+  // 原型组：批量编辑走统一工作台（组汇总可展开 + 可写任务 + 结算账单）
+  if (selected.some((o) => isBillProtoMockBatch(o.batch_number))) {
+    openGroupBillDrawer(buildBillGroupsFromOrders(selected), 'batch')
+    return
+  }
+
   const batchNames = [...new Set(selected.map(o => o.batch_number).filter(Boolean))]
   const customerNames = [...new Set(selected.map(o => o.customer_name || o.group_name).filter(Boolean))]
   const salesNames = [...new Set(selected.map(o => o.sales_person).filter(Boolean))]
@@ -2024,9 +2276,34 @@ function buildBillText(): string {
   return parts.join('\n')
 }
 
+const groupBillDrawerOpen = ref(false)
+const groupBillDrawerBatch = ref('')
+const groupBillDrawerOrders = ref<any[]>([])
+const groupBillDrawerGroups = ref<{ batchNumber: string; orders: any[] }[]>([])
+const groupBillDrawerMode = ref<'bill' | 'batch'>('bill')
+
+function openGroupBillDrawer(groups: { batchNumber: string; orders: any[] }[], mode: 'bill' | 'batch' = 'bill') {
+  const normalized = groups.length
+    ? groups
+    : [{ batchNumber: BILL_PROTO_BATCH_NUMBER, orders: buildBillProtoMockOrders() }]
+  groupBillDrawerMode.value = mode
+  groupBillDrawerGroups.value = normalized
+  groupBillDrawerBatch.value = normalized[0]?.batchNumber || ''
+  groupBillDrawerOrders.value = normalized[0]?.orders || []
+  groupBillDrawerOpen.value = true
+}
+
 function openBillModal(batchNumber: string) {
   billBatchNumber.value = batchNumber
   const batchOrders = orders.value.filter(o => o.batch_number === batchNumber)
+  // 原型组：组头「账单」→ 统一工作台（单组）
+  if (isBillProtoMockBatch(batchNumber)) {
+    openGroupBillDrawer([{
+      batchNumber,
+      orders: batchOrders.length ? batchOrders : buildBillProtoMockOrders(),
+    }], 'bill')
+    return
+  }
   billOrders.value = batchOrders
   billCustomerName.value = batchOrders[0]?.customer_name || batchOrders[0]?.group_name || ''
   billModalOpen.value = true
@@ -2036,6 +2313,11 @@ function openBillModal(batchNumber: string) {
 function openBillModalFromSelection() {
   billBatchNumber.value = ''
   const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id))
+  // 原型组：批量「生成账单」并入统一工作台（与批量编辑同一套）
+  if (selected.some((o) => isBillProtoMockBatch(o.batch_number))) {
+    openGroupBillDrawer(buildBillGroupsFromOrders(selected), 'batch')
+    return
+  }
   billOrders.value = selected
   billCustomerName.value = selected[0]?.customer_name || selected[0]?.group_name || ''
   billModalOpen.value = true
@@ -2060,6 +2342,25 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.bill-proto-redirect {
+  margin-top: 8px;
+  padding: 14px 16px;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+}
+.bill-proto-redirect-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+.bill-proto-redirect-desc {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
 .page-content { padding: 24px; }
 
 :deep(.ant-table-header) {
@@ -2198,28 +2499,24 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  background: #f0f4ff;
-  border: 1px solid #c7d7fd;
-  border-radius: 5px;
-  padding: 2px 4px 2px 6px;
-  transition: background 0.15s;
+  gap: 8px;
   max-width: 100%;
-  overflow: hidden;
-  width: 100%;
+  margin-bottom: 2px;
+  padding: 0;
+  background: transparent;
+  border: none;
 }
 .batch-group-left {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  flex: 1;
   min-width: 0;
-  overflow: hidden;
+  max-width: calc(100% - 52px);
 }
-.batch-group-header:hover {
-  background: #dbeafe;
-  border-color: #93c5fd;
+.batch-group-header:hover .batch-group-name {
+  color: #1d4ed8;
+  text-decoration: underline;
 }
 .batch-bill-btn {
   font-size: 11px;
@@ -2237,17 +2534,18 @@ onMounted(() => {
   background: #fef3c7 !important;
 }
 .batch-group-icon {
-  font-size: 10px;
+  font-size: 11px;
   color: #2563eb;
   flex-shrink: 0;
 }
 .batch-group-name {
   font-size: 11px;
-  font-weight: 600;
-  color: #1d4ed8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 650;
+  color: #2563eb;
+  font-family: 'Courier New', monospace;
+  line-height: 1.3;
+  white-space: normal;
+  word-break: break-all;
 }
 
 .order-number-row {

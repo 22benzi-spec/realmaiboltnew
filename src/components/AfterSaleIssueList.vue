@@ -147,7 +147,7 @@
             </div>
           </template>
           <template v-if="column.key === 'remark'">
-            <span v-if="record.resolution_notes" class="remark-text">{{ record.resolution_notes }}</span>
+            <span v-if="getListRemarkText(record)" class="remark-text">{{ getListRemarkText(record) }}</span>
             <span v-else class="text-gray">--</span>
           </template>
           <template v-if="column.key === 'resolution_result'">
@@ -185,7 +185,7 @@
               <div class="after-sale-title-line">
                 <span>{{ currentIssue.product_name || currentIssue.asin || '--' }}</span>
                 <a-tag :color="issueTypeColor[currentIssue.issue_type] || 'default'">{{ currentIssue.issue_type }}</a-tag>
-                <a-tag :color="statusColorMap[normalizeIssueStatus(currentIssue.issue_status)] || 'default'">{{ formatIssueStatusLabel(currentIssue.issue_status) }}</a-tag>
+                <a-tag :color="afterSaleProgressTagColor(currentIssue)">{{ getAfterSaleProgressMainStatus(currentIssue) }}</a-tag>
               </div>
               <div class="after-sale-meta">
                 <span class="mono">{{ currentIssue.asin || '--' }}</span>
@@ -222,22 +222,34 @@
               </div>
             </div>
 
-            <div class="after-sale-card is-wide">
+            <div v-if="getAfterSaleProgressMainStatus(currentIssue) === '已处理'" class="after-sale-card is-wide">
               <div class="after-sale-card-title">处理详情</div>
               <div class="after-sale-field-grid">
-                <div v-if="getResolutionMethodLabel(currentIssue)" class="after-sale-field"><span>处理结果</span><strong>{{ getResolutionMethodLabel(currentIssue) }}</strong></div>
-                <template v-if="isOrderNumberReplacement(currentIssue)">
-                  <div class="after-sale-field wide"><span>订单号变更</span><strong class="mono">{{ currentIssue.old_amazon_order_id || '--' }} -> {{ currentIssue.new_amazon_order_id || '--' }}</strong></div>
-                </template>
-                <template v-if="isReorderResult(currentIssue)">
-                  <div class="after-sale-field wide"><span>子单ID变更</span><strong class="mono">{{ currentIssue.sub_order_number || '--' }} -> {{ currentIssue.replacement_sub_order_number || '--' }}</strong></div>
-                </template>
-                <div v-if="shouldShowPrincipalAmount(currentIssue)" class="after-sale-field"><span>{{ currentIssue.issue_type === '本金多返' ? '差价金额' : '损失金额' }}</span><strong class="amount-usd">{{ formatMoney(getPrincipalAmount(currentIssue), currentIssue) }}</strong></div>
-                <div v-if="currentIssue.refund_to_client_method" class="after-sale-field"><span>返款方式</span><strong>{{ currentIssue.refund_to_client_method }}</strong></div>
-                <div v-if="currentIssue.refund_to_client_amount" class="after-sale-field"><span>返款金额</span><strong class="amount-usd">{{ formatMoney(Number(currentIssue.refund_to_client_amount || 0), currentIssue) }}</strong></div>
-                <div v-if="currentIssue.resolution_notes" class="after-sale-field wide"><span>处理备注</span><strong>{{ currentIssue.resolution_notes }}</strong></div>
-                <div v-if="currentIssue.refund_to_client_notes" class="after-sale-field wide"><span>返款备注</span><strong>{{ currentIssue.refund_to_client_notes }}</strong></div>
-                <div v-if="!hasAfterSaleResult(currentIssue)" class="after-sale-empty-row">暂无处理结果</div>
+                <div v-if="getResolutionMethodLabel(currentIssue)" class="after-sale-field">
+                  <span>处理结果</span>
+                  <strong>{{ getResolutionMethodLabel(currentIssue) }}</strong>
+                </div>
+                <div v-if="shouldShowOrderNumberChange(currentIssue)" class="after-sale-field">
+                  <span>订单号变更</span>
+                  <strong class="mono">{{ currentIssue.old_amazon_order_id || '--' }} -> {{ currentIssue.new_amazon_order_id || '--' }}</strong>
+                </div>
+                <div
+                  v-if="getPrincipalStatus(currentIssue) === '已追回'"
+                  class="after-sale-recover-group"
+                >
+                  <div class="after-sale-field">
+                    <span>本金追回方式</span>
+                    <strong>{{ getRecoveryMethodLabel(currentIssue.recovery_method) }}</strong>
+                  </div>
+                  <div v-if="currentIssue.recovery_method === 'offset'" class="after-sale-field">
+                    <span>抵消子订单号</span>
+                    <strong class="mono">{{ currentIssue.recovery_new_sub_order_number || '--' }}</strong>
+                  </div>
+                </div>
+                <div
+                  v-if="!getResolutionMethodLabel(currentIssue) && !shouldShowOrderNumberChange(currentIssue) && getPrincipalStatus(currentIssue) !== '已追回'"
+                  class="after-sale-empty-row"
+                >暂无处理详情</div>
               </div>
             </div>
           </div>
@@ -292,7 +304,7 @@
               <div class="handle-group-title">商务结果</div>
               <div class="handle-action-grid compact">
                 <button
-                  v-for="action in resultHandleActionOptions"
+                  v-for="action in visibleResultHandleActionOptions"
                   :key="action.key"
                   type="button"
                   :class="['handle-action-card', handleAction === action.key ? 'active' : '', action.tone]"
@@ -320,14 +332,14 @@
                     <a-input-number v-model:value="editForm.principal_amount" :min="0" :precision="2" style="width: 100%" :prefix="getCurrencySymbol(currentIssue)" />
                   </a-form-item>
                   <template v-if="editForm.principal_status === '已追回'">
-                    <a-form-item label="追回方式">
+                    <a-form-item label="本金追回方式">
                       <a-radio-group v-model:value="editForm.recovery_method" button-style="solid">
                         <a-radio-button value="direct">直接退回</a-radio-button>
                         <a-radio-button value="offset">新订单抵消</a-radio-button>
                       </a-radio-group>
                     </a-form-item>
-                    <a-form-item v-if="editForm.recovery_method === 'offset'" label="抵消子订单ID">
-                      <a-input v-model:value="editForm.recovery_new_sub_order_number" placeholder="填写抵消子订单ID" />
+                    <a-form-item v-if="editForm.recovery_method === 'offset'" label="抵消子订单号">
+                      <a-input v-model:value="editForm.recovery_new_sub_order_number" placeholder="填写抵消子订单号" />
                     </a-form-item>
                   </template>
                   <a-form-item
@@ -531,7 +543,14 @@ const emit = defineEmits<{
   (e: 'changed'): void
 }>()
 
-const MOCK_AFTER_SALE_ISSUES_KEY = 'mock_after_sale_issue_list_v11'
+const MOCK_AFTER_SALE_ISSUES_KEY = 'mock_after_sale_issue_list_v15'
+const MOCK_SEED_TIME_FIELDS = [
+  'created_at',
+  'updated_at',
+  'resolved_at',
+  'amazon_order_placed_at',
+  '_mock_timeline',
+] as const
 const MOCK_AFTER_SALE_ISSUES = [
   {
     id: 'mock_after_sale_principal_overpaid',
@@ -584,15 +603,16 @@ const MOCK_AFTER_SALE_ISSUES = [
     amazon_order_placed_at: dayjs().subtract(12, 'day').hour(9).minute(45).second(0).millisecond(0).toISOString(),
     new_amazon_order_id: '222-2222222-2222222',
     buyer_chat_id: 'CHAT-US-2002',
+    mock_scenario: '【检查】已处理·替换单号（订单号变更只在处理详情展示一次）',
     description: '客户核对后台无此订单，需要业务员确认买手填写的订单号。',
-    resolution_notes: '买手确认填写错误，已将订单号从 111-1111111-1111111 修改为 222-2222222-2222222。',
+    resolution_notes: '买手确认填写错误，已完成订单号替换。',
     created_at: dayjs().subtract(10, 'day').hour(14).minute(10).second(0).millisecond(0).toISOString(),
     updated_at: dayjs().subtract(9, 'day').hour(11).minute(25).second(0).millisecond(0).toISOString(),
     resolved_at: dayjs().subtract(9, 'day').hour(11).minute(25).second(0).millisecond(0).toISOString(),
     _mock_timeline: [
       { title: '创建问题单', desc: '无此订单，订单号待核对', time: dayjs().subtract(10, 'day').hour(14).minute(10).toISOString(), type: 'created' },
       { title: '核对订单号', desc: '买手反馈原订单号填写错误', time: dayjs().subtract(10, 'day').hour(17).minute(40).toISOString(), type: 'processing' },
-      { title: '已替换单号', desc: '订单号：111-1111111-1111111 -> 222-2222222-2222222', time: dayjs().subtract(9, 'day').hour(11).minute(25).toISOString(), type: 'resolved' },
+      { title: '已替换单号', desc: '已完成订单号替换', time: dayjs().subtract(9, 'day').hour(11).minute(25).toISOString(), type: 'resolved' },
     ],
   },
   {
@@ -656,6 +676,7 @@ const MOCK_AFTER_SALE_ISSUES = [
     refund_to_client_method: '余额抵扣',
     refund_to_client_amount: 31.8,
     refund_to_client_notes: '客户同意转为余额抵扣。',
+    mock_scenario: '【检查】已处理·无需处理，本金已损失（金额只在右上本金状态展示）',
     description: '买手退款导致客户订单无法继续，需确认客户处理方式和本金损失。',
     resolution_notes: '客户已确认余额抵扣，本金记录为损失。',
     created_at: dayjs().subtract(4, 'day').hour(13).minute(0).second(0).millisecond(0).toISOString(),
@@ -663,8 +684,8 @@ const MOCK_AFTER_SALE_ISSUES = [
     resolved_at: dayjs().subtract(3, 'day').hour(16).minute(45).second(0).millisecond(0).toISOString(),
     _mock_timeline: [
       { title: '创建问题单', desc: '退款导致订单无法继续', time: dayjs().subtract(4, 'day').hour(13).minute(0).toISOString(), type: 'created' },
-      { title: '确认本金损失', desc: '本金损失 $31.80', time: dayjs().subtract(4, 'day').hour(18).minute(10).toISOString(), type: 'processing' },
-      { title: '无需处理', desc: '客户已确认余额抵扣 $31.80', time: dayjs().subtract(3, 'day').hour(16).minute(45).toISOString(), type: 'resolved' },
+      { title: '确认本金损失', desc: '确认为本金损失', time: dayjs().subtract(4, 'day').hour(18).minute(10).toISOString(), type: 'processing' },
+      { title: '无需处理', desc: '客户确认后结束处理', time: dayjs().subtract(3, 'day').hour(16).minute(45).toISOString(), type: 'resolved' },
     ],
   },
   {
@@ -828,13 +849,15 @@ const MOCK_AFTER_SALE_ISSUES = [
     old_amazon_order_id: '113-6677889-4455667',
     amazon_order_placed_at: dayjs().subtract(4, 'day').hour(14).minute(10).second(0).millisecond(0).toISOString(),
     buyer_chat_id: 'CHAT-US-2016',
+    mock_scenario: '【检查】本金：待追回 → 已追回 · 本金追回方式：直接退回（问题单仍处理中）',
     description: '买手已退回部分本金，本金状态记为已追回，问题单仍在跟进后续处理。',
-    resolution_notes: '已追回本金 $8.60，方式：直接退回。',
+    resolution_notes: '本金由待追回改为已追回，方式：直接退回。',
     created_at: dayjs().subtract(4, 'day').hour(15).minute(20).second(0).millisecond(0).toISOString(),
     updated_at: dayjs().subtract(1, 'day').hour(11).minute(5).second(0).millisecond(0).toISOString(),
     _mock_timeline: [
-      { title: '创建问题单', desc: '退款后存在本金待确认', time: dayjs().subtract(4, 'day').hour(15).minute(20).toISOString(), type: 'created' },
-      { title: '已追回', desc: '买手直接退回 $8.60', time: dayjs().subtract(1, 'day').hour(11).minute(5).toISOString(), type: 'processing' },
+      { title: '创建问题单', desc: '退款后本金先记为待追回', time: dayjs().subtract(4, 'day').hour(15).minute(20).toISOString(), type: 'created' },
+      { title: '本金待追回', desc: '确认需追回差价', time: dayjs().subtract(3, 'day').hour(10).minute(0).toISOString(), type: 'processing' },
+      { title: '本金已追回', desc: '改为已追回，方式：直接退回', time: dayjs().subtract(1, 'day').hour(11).minute(5).toISOString(), type: 'processing' },
     ],
   },
   {
@@ -863,16 +886,130 @@ const MOCK_AFTER_SALE_ISSUES = [
     recovered_amount: 6.2,
     recovery_method: 'offset',
     recovery_new_sub_order_number: 'SUB-MOCK-AS-2207',
-    replacement_sub_order_number: 'SUB-MOCK-AS-2207',
+    mock_scenario: '【检查】本金：待追回 → 已追回 · 本金追回方式：新订单抵消 · 抵消子订单号：SUB-MOCK-AS-2207',
     description: '财务误多返本金，已通过后续订单抵扣追回。',
-    resolution_notes: '追回本金 $6.20，方式：新订单抵消，抵消子订单ID：SUB-MOCK-AS-2207',
+    resolution_notes: '本金由待追回改为已追回，方式：新订单抵消。',
     created_at: dayjs().subtract(8, 'day').hour(11).minute(40).second(0).millisecond(0).toISOString(),
     updated_at: dayjs().subtract(6, 'day').hour(9).minute(18).second(0).millisecond(0).toISOString(),
     resolved_at: dayjs().subtract(6, 'day').hour(9).minute(18).second(0).millisecond(0).toISOString(),
     _mock_timeline: [
-      { title: '创建问题单', desc: '检测到多返本金 $6.20', time: dayjs().subtract(8, 'day').hour(11).minute(40).toISOString(), type: 'created' },
-      { title: '处理中', desc: '确认通过新单 SUB-MOCK-AS-2207 抵扣追回', time: dayjs().subtract(7, 'day').hour(14).minute(5).toISOString(), type: 'processing' },
-      { title: '已追回本金', desc: '已通过新单抵扣追回 $6.20', time: dayjs().subtract(6, 'day').hour(9).minute(18).toISOString(), type: 'resolved' },
+      { title: '创建问题单', desc: '本金多返，先记为待追回', time: dayjs().subtract(8, 'day').hour(11).minute(40).toISOString(), type: 'created' },
+      { title: '本金待追回', desc: '确认差价待追回', time: dayjs().subtract(7, 'day').hour(14).minute(5).toISOString(), type: 'processing' },
+      { title: '本金已追回', desc: '改为已追回，方式：新订单抵消', time: dayjs().subtract(6, 'day').hour(9).minute(18).toISOString(), type: 'resolved' },
+    ],
+  },
+  {
+    id: 'mock_after_sale_unrecoverable_principal',
+    issue_number: 'ASI-MOCK-20260707-0019',
+    sub_order_id: 'mock_sub_order_unrecoverable_principal',
+    sub_order_number: 'SUB-MOCK-AS-2019',
+    order_number: 'MOCK-AS-2019',
+    buyer_name: 'Oliver Grant',
+    staff_name: '王浩',
+    customer_name: '天津启程贸易',
+    business_manager_name: '陈婷',
+    asin: 'B0MOCKAS2019',
+    store_name: 'US-Store-28',
+    country: '美国',
+    product_name: 'Desk Cable Clips',
+    product_price: 9.9,
+    commission_fee: 20,
+    issue_type: '本金多返',
+    issue_status: '无法追回',
+    principal_status: '已损失',
+    principal_amount: 3.5,
+    principal_reason: '买手失联，多返本金确认无法追回。',
+    actual_paid_usd: 9.9,
+    old_amazon_order_id: '208-9090909-8080808',
+    amazon_order_placed_at: dayjs().subtract(10, 'day').hour(14).minute(20).second(0).millisecond(0).toISOString(),
+    buyer_chat_id: 'CHAT-US-2019',
+    mock_scenario: '【检查】本金多返·处理结果=无法追回；本金状态=已损失',
+    description: '财务多返本金后买手失联，确认无法追回。',
+    resolution_notes: '本金确认无法追回，记为已损失。',
+    created_at: dayjs().subtract(9, 'day').hour(11).minute(0).second(0).millisecond(0).toISOString(),
+    updated_at: dayjs().subtract(4, 'day').hour(15).minute(40).second(0).millisecond(0).toISOString(),
+    resolved_at: dayjs().subtract(4, 'day').hour(15).minute(40).second(0).millisecond(0).toISOString(),
+    _mock_timeline: [
+      { title: '创建问题单', desc: '本金多返', time: dayjs().subtract(9, 'day').hour(11).minute(0).toISOString(), type: 'created' },
+      { title: '处理中', desc: '', time: dayjs().subtract(7, 'day').hour(10).minute(20).toISOString(), type: 'processing' },
+      { title: '已处理', desc: '无法追回', time: dayjs().subtract(4, 'day').hour(15).minute(40).toISOString(), type: 'resolved' },
+    ],
+  },
+  {
+    id: 'mock_after_sale_recovered_from_loss_direct',
+    issue_number: 'ASI-MOCK-20260705-0017',
+    sub_order_id: 'mock_sub_order_recovered_from_loss_direct',
+    sub_order_number: 'SUB-MOCK-AS-2017',
+    order_number: 'MOCK-AS-2017',
+    buyer_name: 'Harper Quinn',
+    staff_name: '李娜',
+    customer_name: '无锡云启贸易',
+    business_manager_name: '赵蕾',
+    asin: 'B0MOCKAS2017',
+    store_name: 'US-Store-31',
+    country: '美国',
+    product_name: 'Cable Management Box',
+    product_price: 15.4,
+    commission_fee: 24,
+    issue_type: '退款',
+    issue_status: '无需处理',
+    principal_status: '已追回',
+    principal_amount: 15.4,
+    recovered_amount: 15.4,
+    recovery_method: 'direct',
+    actual_paid_usd: 15.4,
+    old_amazon_order_id: '206-5555666-7777888',
+    amazon_order_placed_at: dayjs().subtract(8, 'day').hour(11).minute(20).second(0).millisecond(0).toISOString(),
+    buyer_chat_id: 'CHAT-US-2017',
+    mock_scenario: '【检查】退款·处理结果=无需处理；本金：已损失→已追回·直接退回（追回只在处理详情，不是处理结果）',
+    description: '退款后本金曾记为已损失，买手后来直接退回本金；问题单结论为无需处理。',
+    resolution_notes: '问题单无需处理；本金由已损失改为已追回，方式：直接退回。',
+    created_at: dayjs().subtract(7, 'day').hour(10).minute(0).second(0).millisecond(0).toISOString(),
+    updated_at: dayjs().subtract(2, 'day').hour(16).minute(30).second(0).millisecond(0).toISOString(),
+    resolved_at: dayjs().subtract(2, 'day').hour(16).minute(30).second(0).millisecond(0).toISOString(),
+    _mock_timeline: [
+      { title: '创建问题单', desc: '退款', time: dayjs().subtract(7, 'day').hour(10).minute(0).toISOString(), type: 'created' },
+      { title: '处理中', desc: '', time: dayjs().subtract(6, 'day').hour(15).minute(10).toISOString(), type: 'processing' },
+      { title: '已处理', desc: '无需处理', time: dayjs().subtract(2, 'day').hour(16).minute(30).toISOString(), type: 'resolved' },
+    ],
+  },
+  {
+    id: 'mock_after_sale_recovered_from_loss_offset',
+    issue_number: 'ASI-MOCK-20260706-0018',
+    sub_order_id: 'mock_sub_order_recovered_from_loss_offset',
+    sub_order_number: 'SUB-MOCK-AS-2018',
+    order_number: 'MOCK-AS-2018',
+    buyer_name: 'Logan Pierce',
+    staff_name: '周敏',
+    customer_name: '长沙南桥电商',
+    business_manager_name: '黄思',
+    asin: 'B0MOCKAS2018',
+    store_name: 'CA-Store-19',
+    country: '加拿大',
+    product_name: 'Silicone Baking Mat',
+    product_price: 12.8,
+    commission_fee: 22,
+    issue_type: '取消',
+    issue_status: '已关闭',
+    principal_status: '已追回',
+    principal_amount: 12.8,
+    recovered_amount: 12.8,
+    recovery_method: 'offset',
+    recovery_new_sub_order_number: 'SUB-MOCK-AS-2218',
+    actual_paid_usd: 12.8,
+    old_amazon_order_id: '207-1212121-3434343',
+    amazon_order_placed_at: dayjs().subtract(9, 'day').hour(9).minute(40).second(0).millisecond(0).toISOString(),
+    buyer_chat_id: 'CHAT-CA-2018',
+    mock_scenario: '【检查】取消·处理结果=已关闭；本金：已损失→已追回·新订单抵消·抵消子订单号：SUB-MOCK-AS-2218（追回只在处理详情）',
+    description: '取消后本金曾记为已损失，后续用新单抵消追回；问题单结论为已关闭。',
+    resolution_notes: '问题单已关闭；本金由已损失改为已追回，方式：新订单抵消。',
+    created_at: dayjs().subtract(8, 'day').hour(12).minute(20).second(0).millisecond(0).toISOString(),
+    updated_at: dayjs().subtract(3, 'day').hour(11).minute(45).second(0).millisecond(0).toISOString(),
+    resolved_at: dayjs().subtract(3, 'day').hour(11).minute(45).second(0).millisecond(0).toISOString(),
+    _mock_timeline: [
+      { title: '创建问题单', desc: '取消', time: dayjs().subtract(8, 'day').hour(12).minute(20).toISOString(), type: 'created' },
+      { title: '处理中', desc: '', time: dayjs().subtract(7, 'day').hour(9).minute(15).toISOString(), type: 'processing' },
+      { title: '已处理', desc: '已关闭', time: dayjs().subtract(3, 'day').hour(11).minute(45).toISOString(), type: 'resolved' },
     ],
   },
   {
@@ -1051,6 +1188,7 @@ const MOCK_AFTER_SALE_ISSUES = [
     new_amazon_order_id: '204-9999888-7777666',
     amazon_order_placed_at: dayjs().subtract(5, 'day').hour(10).minute(15).second(0).millisecond(0).toISOString(),
     buyer_chat_id: 'CHAT-US-2014',
+    mock_scenario: '【检查】已处理·替换单号（近期）',
     description: '买手原订单号填错，已核对并更正。',
     resolution_notes: '已完成订单号替换并同步客户。',
     created_at: dayjs().subtract(4, 'day').hour(9).minute(20).second(0).millisecond(0).toISOString(),
@@ -1058,7 +1196,7 @@ const MOCK_AFTER_SALE_ISSUES = [
     resolved_at: dayjs().subtract(3, 'day').hour(15).minute(45).second(0).millisecond(0).toISOString(),
     _mock_timeline: [
       { title: '创建问题单', desc: '客户未查到原订单号', time: dayjs().subtract(4, 'day').hour(9).minute(20).toISOString(), type: 'created' },
-      { title: '已替换单号', desc: '已更新为正确的新订单号', time: dayjs().subtract(3, 'day').hour(15).minute(45).toISOString(), type: 'resolved' },
+      { title: '已替换单号', desc: '已完成订单号替换', time: dayjs().subtract(3, 'day').hour(15).minute(45).toISOString(), type: 'resolved' },
     ],
   },
   {
@@ -1115,7 +1253,7 @@ const currentIssue = ref<any>(null)
 const actionModalOpen = ref(false)
 const actionModalType = ref<'replace-order' | 'reorder' | ''>('')
 const drawerMode = ref<'detail' | 'handle'>('detail')
-type HandleActionKey = 'mark-need-reorder' | 'replace-order' | 'reorder' | 'recover-principal' | 'transfer-other' | 'release-grab' | 'mark-closed' | 'mark-no-need' | 'revoke'
+type HandleActionKey = 'mark-need-reorder' | 'replace-order' | 'reorder' | 'recover-principal' | 'mark-unrecoverable' | 'transfer-other' | 'release-grab' | 'mark-closed' | 'mark-no-need' | 'revoke'
 const handleAction = ref<HandleActionKey | ''>('')
 const editingProgressId = ref('')
 const progressDraft = reactive({
@@ -1132,7 +1270,7 @@ const COUNTRY_FILTER_ALIASES: Record<string, string[]> = {
   '加拿大': ['加拿大', 'CA'],
 }
 const processStatusOptions = ['待处理', '处理中', '处理中-转给他人', '处理中-无新单号', '处理中-抢单大厅', '已处理']
-const resolutionResultOptions = ['替换单号', '补单', '追回本金', '无需处理', '已关闭']
+const resolutionResultOptions = ['替换单号', '补单', '追回本金', '无法追回', '无需处理', '已关闭']
 const principalStatusOptions = ['正常', '待确定', '待追回', '已追回', '已损失']
 const inlineProcessStatusOptions = ['待处理', '处理中', '无新单号']
 
@@ -1155,6 +1293,7 @@ const statusColorMap: Record<string, string> = {
   '补单': 'green',
   '已追回本金': 'green',
   '追回本金': 'green',
+  '无法追回': 'red',
   '无需处理': 'purple',
   '已关闭': 'default',
 }
@@ -1225,6 +1364,7 @@ const handleActionOptions: Array<{
   { key: 'transfer-other', label: '转给他人', desc: '当前业务员处理不了，转交他人', tone: 'is-purple' },
   { key: 'release-grab', label: '放入抢单大厅', desc: '释放给所有业务员处理', tone: 'is-purple' },
   { key: 'recover-principal', label: '追回本金', desc: '记录追回金额和方式', tone: 'is-success' },
+  { key: 'mark-unrecoverable', label: '无法追回', desc: '本金确认无法追回，记为已损失', tone: 'is-danger' },
   { key: 'mark-closed', label: '关闭', desc: '不再继续处理此单', tone: 'is-purple' },
   { key: 'mark-no-need', label: '无需处理', desc: '卖家已确定无需补单', tone: 'is-purple' },
   { key: 'revoke', label: '撤销', desc: '彻底删除此问题单', tone: 'is-danger' },
@@ -1240,9 +1380,20 @@ const resultHandleActionOptions = computed(() =>
 
 const visibleBusinessHandleActionOptions = computed(() => {
   if (currentIssue.value?.issue_type === '本金多返') {
-    return businessHandleActionOptions.value.filter(action => action.key === 'recover-principal')
+    return businessHandleActionOptions.value.filter(action =>
+      action.key === 'recover-principal' || action.key === 'mark-unrecoverable'
+    )
   }
-  return businessHandleActionOptions.value.filter(action => action.key !== 'recover-principal')
+  return businessHandleActionOptions.value.filter(action =>
+    action.key !== 'recover-principal' && action.key !== 'mark-unrecoverable'
+  )
+})
+
+const visibleResultHandleActionOptions = computed(() => {
+  if (currentIssue.value?.issue_type === '本金多返') {
+    return resultHandleActionOptions.value.filter(action => action.key === 'revoke')
+  }
+  return resultHandleActionOptions.value
 })
 
 const columns = computed(() => {
@@ -1363,7 +1514,7 @@ function applyProcessStatusFilter<T>(query: T, status: string) {
       .neq('transfer_to_staff', '')
       .neq('transfer_to_staff', 'GRAB_HALL')
   }
-  if (status === '已处理') return nextQuery.in('issue_status', ['已处理', '已替换单号', '已替换订单', '已补单', '已追回本金', '已关闭', '无需处理', '已退款给客户'])
+  if (status === '已处理') return nextQuery.in('issue_status', ['已处理', '已替换单号', '已替换订单', '已补单', '已追回本金', '无法追回', '已关闭', '无需处理', '已退款给客户'])
   return nextQuery.eq('issue_status', status)
 }
 
@@ -1372,6 +1523,7 @@ function applyResolutionResultFilter<T>(query: T, result: string) {
   if (result === '替换单号') return nextQuery.in('issue_status', ['已替换单号', '已替换订单'])
   if (result === '补单') return nextQuery.eq('issue_status', '已补单')
   if (result === '追回本金') return nextQuery.eq('issue_status', '已追回本金')
+  if (result === '无法追回') return nextQuery.eq('issue_status', '无法追回')
   if (result === '无需处理') return nextQuery.in('issue_status', ['无需处理', '已退款给客户'])
   if (result === '已关闭') return nextQuery.eq('issue_status', '已关闭')
   return nextQuery.eq('issue_status', result)
@@ -1426,10 +1578,23 @@ async function load() {
   }
 }
 
+function pickMockSeedTimeFields(seed: Record<string, any>) {
+  const next: Record<string, any> = {}
+  MOCK_SEED_TIME_FIELDS.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(seed, field)) {
+      next[field] = seed[field]
+    }
+  })
+  return next
+}
+
 function loadMockIssuesState() {
   if (typeof window === 'undefined') return MOCK_AFTER_SALE_ISSUES.map(item => ({ ...item }))
   try {
-    const raw = window.localStorage.getItem(MOCK_AFTER_SALE_ISSUES_KEY)
+    // 兼容旧 key：时间字段曾被写死进 localStorage，会落出默认近 29 天筛选
+    const legacyKeys = ['mock_after_sale_issue_list_v11', 'mock_after_sale_issue_list_v12', 'mock_after_sale_issue_list_v13', 'mock_after_sale_issue_list_v14']
+    const legacyRaw = legacyKeys.map(key => window.localStorage.getItem(key)).find(Boolean) || null
+    const raw = window.localStorage.getItem(MOCK_AFTER_SALE_ISSUES_KEY) || legacyRaw
     const parsed = raw ? JSON.parse(raw) : []
     const seeded = Array.isArray(parsed)
       ? parsed.map((item: any) => {
@@ -1437,7 +1602,30 @@ function loadMockIssuesState() {
           const normalized = item?.issue_status === '需补单'
             ? { ...item, issue_status: '无新单号' }
             : item
-          return seed ? { ...seed, ...normalized } : normalized
+          // 业务字段保留本地改动；相对时间/时间线始终回落到代码种子，避免过期后整批消失
+          // 有检查场景的追回种子，强制回落展示字段，保证详情检查文案最新
+          return seed
+            ? {
+                ...seed,
+                ...normalized,
+                ...pickMockSeedTimeFields(seed),
+                ...(seed.mock_scenario
+                  ? {
+                      mock_scenario: seed.mock_scenario,
+                      issue_status: seed.issue_status,
+                      issue_type: seed.issue_type,
+                    }
+                  : {}),
+                ...(seed.recovery_method
+                  ? {
+                      recovery_method: seed.recovery_method,
+                      recovery_new_sub_order_number: seed.recovery_new_sub_order_number,
+                      recovered_amount: seed.recovered_amount,
+                      principal_status: seed.principal_status,
+                    }
+                  : {}),
+              }
+            : normalized
         })
       : []
     const merged = [...seeded]
@@ -1447,6 +1635,7 @@ function loadMockIssuesState() {
       }
     })
     window.localStorage.setItem(MOCK_AFTER_SALE_ISSUES_KEY, JSON.stringify(merged))
+    legacyKeys.forEach(key => window.localStorage.removeItem(key))
     return merged
   } catch {
     return MOCK_AFTER_SALE_ISSUES.map(item => ({ ...item }))
@@ -2500,6 +2689,7 @@ function getSuggestedPrincipalStatus(action: HandleActionKey | '', record: any) 
   if (!action) return getDefaultPrincipalStatus(record)
   if (action === 'replace-order') return '正常'
   if (action === 'recover-principal') return '已追回'
+  if (action === 'mark-unrecoverable') return '已损失'
   if (action === 'revoke') return '正常'
   if (['transfer-other', 'release-grab'].includes(action)) return '已损失'
   if (['reorder', 'mark-closed', 'mark-no-need'].includes(action)) return '已损失'
@@ -2546,7 +2736,7 @@ function validatePrincipalForm() {
       return false
     }
     if (editForm.recovery_method === 'offset' && !editForm.recovery_new_sub_order_number?.trim()) {
-      message.warning('请填写抵消子订单ID')
+      message.warning('请填写抵消子订单号')
       return false
     }
   }
@@ -2556,7 +2746,7 @@ function validatePrincipalForm() {
 function applyRecoveredPrincipalFields(update: any, sharedNote: string) {
   const recoveredAmount = Number(editForm.principal_amount || 0)
   const recoveryDesc = editForm.recovery_method === 'offset'
-    ? `追回本金 ${formatMoney(recoveredAmount, currentIssue.value)}，方式：新订单抵消，抵消子订单ID：${editForm.recovery_new_sub_order_number.trim()}`
+    ? `追回本金 ${formatMoney(recoveredAmount, currentIssue.value)}，方式：新订单抵消，抵消子订单号：${editForm.recovery_new_sub_order_number.trim()}`
     : `追回本金 ${formatMoney(recoveredAmount, currentIssue.value)}，方式：直接退回`
   Object.assign(update, buildPrincipalUpdate(
     '已追回',
@@ -2752,6 +2942,7 @@ function inferHandleAction(status: string) {
   if (status === '已替换单号') return 'replace-order'
   if (status === '已补单') return 'reorder'
   if (status === '已追回本金') return 'recover-principal'
+  if (status === '无法追回') return 'mark-unrecoverable'
   if (status === '已关闭') return 'mark-closed'
   if (status === '无需处理') return 'mark-no-need'
   return ''
@@ -2768,6 +2959,7 @@ function setHandleAction(action: HandleActionKey) {
     'reorder': '已补单',
     'mark-need-reorder': '无新单号',
     'recover-principal': '已追回本金',
+    'mark-unrecoverable': '无法追回',
     'transfer-other': '处理中',
     'release-grab': '处理中',
     'mark-closed': '已关闭',
@@ -2783,7 +2975,8 @@ function setHandleAction(action: HandleActionKey) {
 }
 
 function getHandleActionHint() {
-  if (handleAction.value === 'recover-principal') return '登记追回金额和追回方式。'
+  if (handleAction.value === 'recover-principal') return '登记追回金额和本金追回方式。'
+  if (handleAction.value === 'mark-unrecoverable') return '确认本金无法追回，记为已损失并结束处理。'
   if (handleAction.value === 'transfer-other') return '转交给其他业务员继续跟进。'
   if (handleAction.value === 'release-grab') return '释放给其他业务员继续接手。'
   if (handleAction.value === 'mark-closed') return '作为最终结果关闭当前问题单。'
@@ -2810,6 +3003,7 @@ const shouldShowHandleActionPanel = computed(() => {
 function getHandleNotePlaceholder() {
   if (handleAction.value === 'transfer-other') return '说明为什么需要转交，以及交接重点...'
   if (handleAction.value === 'release-grab') return '说明为什么放入抢单大厅，以及需要注意的事项...'
+  if (handleAction.value === 'mark-unrecoverable') return '说明无法追回的原因...'
   if (handleAction.value === 'mark-closed') return '说明关闭原因...'
   if (handleAction.value === 'mark-no-need') return '说明无需处理的原因...'
   if (handleAction.value === 'revoke') return '说明撤销原因...'
@@ -2900,6 +3094,7 @@ async function handleUpdate() {
       'reorder': '已补单',
       'mark-need-reorder': '无新单号',
       'recover-principal': '已追回本金',
+      'mark-unrecoverable': '无法追回',
       'transfer-other': '处理中',
       'release-grab': '处理中',
       'mark-closed': '已关闭',
@@ -2963,6 +3158,21 @@ async function handleUpdate() {
           normalizedStatus = '已追回本金'
         }
       }
+    }
+
+    if (effectiveAction === 'mark-unrecoverable') {
+      if (currentIssue.value.issue_type !== '本金多返') {
+        message.warning('无法追回仅用于本金多返问题单')
+        return
+      }
+      update.issue_status = '无法追回'
+      normalizedStatus = '无法追回'
+      update.principal_status = '已损失'
+      if (!Number(editForm.principal_amount || editForm.loss_amount || 0)) {
+        message.warning('标记为无法追回时，请填写损失金额')
+        return
+      }
+      update.resolution_notes = sharedNote || '本金确认无法追回，记为已损失'
     }
 
     if (effectiveAction && ['mark-need-reorder', 'mark-closed', 'mark-no-need'].includes(effectiveAction)) {
@@ -3156,17 +3366,27 @@ function getHandledTime(record: any) {
   return record.resolved_at || record.updated_at || record.created_at || ''
 }
 
+function getTimelineProcessingAt(record: any) {
+  const mockRows = Array.isArray(record._mock_timeline) ? record._mock_timeline : []
+  const processingHit = mockRows.find((item: any) => {
+    const title = String(item?.title || '')
+    return item?.type === 'processing'
+      || title === '处理中'
+      || title.includes('核对')
+      || title.includes('本金待')
+      || title.includes('本金已损失')
+      || title.includes('放入抢单')
+      || title.includes('转给')
+  })
+  if (processingHit?.time) return processingHit.time
+  if (record.updated_at && record.updated_at !== record.resolved_at) return record.updated_at
+  if (record.created_at) return record.created_at
+  return ''
+}
+
 function getAfterSaleDetailTimeline(record: any) {
-  if (Array.isArray(record._mock_timeline) && record._mock_timeline.length) {
-    return record._mock_timeline.map((item: any, index: number) => ({
-      key: `mock-${index}`,
-      type: item.type || 'processing',
-      title: item.title,
-      desc: item.desc || '',
-      time: item.time,
-    })).filter((item: any) => !!item.time)
-  }
-  const rows = [
+  // 固定三段：创建问题单（问题类型）→ 处理中（无附加信息）→ 已处理（处理结果）
+  const rows: Array<{ key: string, type: string, title: string, desc: string, time: string }> = [
     {
       key: 'created',
       type: 'created',
@@ -3175,23 +3395,23 @@ function getAfterSaleDetailTimeline(record: any) {
       time: record.created_at,
     },
   ]
-  const normalized = normalizeIssueStatus(record.issue_status)
-  if (normalized !== '待处理') {
+  const mainStatus = getAfterSaleProgressMainStatus(record)
+  if (mainStatus === '处理中' || mainStatus === '已处理') {
     rows.push({
       key: 'processing',
       type: 'processing',
-      title: ['处理中', '无新单号'].includes(normalized) ? formatIssueStatusLabel(normalized) : '进入处理',
-      desc: record.resolution_notes || '',
-      time: record.updated_at || record.created_at,
+      title: '处理中',
+      desc: '',
+      time: getTimelineProcessingAt(record),
     })
   }
-  if (['已替换单号', '已补单', '已追回本金', '已关闭', '无需处理'].includes(normalized)) {
+  if (mainStatus === '已处理') {
     rows.push({
       key: 'resolved',
       type: 'resolved',
-      title: normalized,
-      desc: getResolutionSummary(record) || getAfterSaleProgressSubText(record),
-      time: record.resolved_at || record.updated_at || record.created_at,
+      title: '已处理',
+      desc: getResolutionMethodLabel(record) || '',
+      time: getHandledTime(record),
     })
   }
   return rows.filter(item => !!item.time)
@@ -3203,12 +3423,14 @@ function getPrincipalDescription(record: any) {
   return '暂无本金异常'
 }
 
-function isOrderNumberReplacement(record: any) {
-  return normalizeIssueStatus(record.issue_status) === '已替换单号' || !!record.new_amazon_order_id
+function getListRemarkText(record: any) {
+  return String(record?.mock_scenario || record?.resolution_notes || '').trim()
 }
 
-function isReorderResult(record: any) {
-  return normalizeIssueStatus(record.issue_status) === '已补单' || !!record.replacement_sub_order_number
+function shouldShowOrderNumberChange(record: any) {
+  const label = getResolutionMethodLabel(record)
+  return (label === '替换单号' || label === '补单')
+    && !!String(record.new_amazon_order_id || '').trim()
 }
 
 function hasReplacementOrderNumber(record: any) {
@@ -3234,10 +3456,10 @@ function isRecoverHandled(record: any) {
 
 function isIssueFullyHandled(record: any) {
   const normalized = normalizeIssueStatus(record?.issue_status)
-  if (['已关闭', '无需处理'].includes(normalized)) return true
+  if (['已关闭', '无需处理', '无法追回'].includes(normalized)) return true
   if (normalized === '已替换单号' && isReplaceOrderHandled(record)) return true
   if (normalized === '已补单' && isReorderHandled(record)) return true
-  if (normalized === '已追回本金' && isRecoverHandled(record)) return true
+  if (normalized === '已追回本金' && record.issue_type === '本金多返' && isRecoverHandled(record)) return true
   if (normalized === '已处理') return true
   if (isReplaceOrderHandled(record) && normalized === '已替换单号') return true
   return false
@@ -3245,16 +3467,19 @@ function isIssueFullyHandled(record: any) {
 
 function getResolutionMethodLabel(record: any) {
   const normalized = normalizeIssueStatus(record.issue_status)
+  // 处理结果「追回本金 / 无法追回」仅用于订单状态=本金多返；其它类型的本金追回只展示在处理详情
+  const canUseRecoverResult = record.issue_type === '本金多返'
   if (normalized === '已处理') {
     if (record.replacement_sub_order_number || isReorderHandled(record)) return '补单'
     if (isReplaceOrderHandled(record) || record.new_amazon_order_id) return '替换单号'
-    if (isRecoverHandled(record) || record.recovery_method || record.recovery_new_sub_order_number) return '追回本金'
+    if (canUseRecoverResult && (isRecoverHandled(record) || record.recovery_method || record.recovery_new_sub_order_number)) return '追回本金'
     if (record.refund_to_client_method || record.refund_to_client_amount || /无需处理/.test(String(record.resolution_notes || ''))) return '无需处理'
     return ''
   }
   if (normalized === '已替换单号') return '替换单号'
   if (normalized === '已补单') return '补单'
-  if (normalized === '已追回本金') return '追回本金'
+  if (normalized === '已追回本金') return canUseRecoverResult ? '追回本金' : ''
+  if (normalized === '无法追回') return canUseRecoverResult ? '无法追回' : ''
   if (normalized === '已关闭') return '已关闭'
   if (normalized === '无需处理') return '无需处理'
   return ''
@@ -3841,6 +4066,12 @@ watch(() => [props.issueId, props.subOrder, props.staffId], () => {
 .after-sale-field.wide {
   grid-column: 1 / -1;
   align-items: flex-start;
+}
+.after-sale-recover-group {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 .after-sale-field span {
   min-width: 72px;
