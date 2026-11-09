@@ -40,8 +40,8 @@
                 allow-clear
               >
                 <a-select-option value="none">无异常</a-select-option>
-                <a-select-option value="owed">客户需补款</a-select-option>
-                <a-select-option value="surplus">需退客户</a-select-option>
+                <a-select-option value="owed">有欠款</a-select-option>
+                <a-select-option value="surplus">有余款</a-select-option>
                 <a-select-option value="cleared">已结清</a-select-option>
               </a-select>
               <a-button size="small" :loading="statusSaving" @click="applyBatchStatus">批量应用</a-button>
@@ -100,7 +100,8 @@
                   <span class="t-amt">实际应收</span>
                   <span class="t-status">基础入账状态</span>
                   <span class="t-debt">账款情况</span>
-                  <span class="t-debt-amt">差价金额</span>
+                  <span class="t-debt-amt">差价金额（元）</span>
+                  <span class="t-debt-usd">差价金额（美元）</span>
                 </div>
                 <div v-for="row in group.taskRows" :key="row.id" class="gbd-task-row">
                   <span class="t-asin">{{ row.asin }}</span>
@@ -126,8 +127,8 @@
                       @change="onDebtStatusChange(row)"
                     >
                       <a-select-option value="none">无异常</a-select-option>
-                      <a-select-option value="owed">客户需补款</a-select-option>
-                      <a-select-option value="surplus">需退客户</a-select-option>
+                      <a-select-option value="owed">有欠款</a-select-option>
+                      <a-select-option value="surplus">有余款</a-select-option>
                       <a-select-option value="cleared">已结清</a-select-option>
                     </a-select>
                   </span>
@@ -137,9 +138,21 @@
                       size="small"
                       :min="0"
                       :precision="2"
-                      style="width: 100px"
+                      style="width: 96px"
                       :disabled="!writable || statusSaving || row.debt_status === 'none' || row.debt_status === 'cleared'"
                       @change="saveOrderField(row, 'debt_amount')"
+                    />
+                  </span>
+                  <span class="t-debt-usd">
+                    <a-input-number
+                      v-model:value="row._debt_amount_usd"
+                      size="small"
+                      :min="0"
+                      :precision="2"
+                      style="width: 96px"
+                      placeholder="仅展示"
+                      :disabled="!writable || statusSaving || row.debt_status === 'none' || row.debt_status === 'cleared'"
+                      @change="saveOrderField(row, '_debt_amount_usd')"
                     />
                   </span>
                 </div>
@@ -464,6 +477,8 @@ function buildTaskRows(orders: any[], credited: number) {
       billing_status: o.billing_status || '已完成',
       debt_status: o.debt_status || 'none',
       debt_amount: Number(o.debt_amount || 0),
+      /** 仅前端展示，不入库 */
+      _debt_amount_usd: Number(o._debt_amount_usd || 0),
       _is_bill_proto_mock: !!o._is_bill_proto_mock,
       _raw: o,
     }
@@ -689,30 +704,49 @@ function patchLocalOrder(row: any, patch: Record<string, any>) {
   return null
 }
 
-async function saveOrderField(row: any, field: 'billing_status' | 'debt_status' | 'debt_amount') {
-  const payload: any = { updated_at: new Date().toISOString() }
-  if (field === 'billing_status') payload.billing_status = row.billing_status
+async function saveOrderField(
+  row: any,
+  field: 'billing_status' | 'debt_status' | 'debt_amount' | '_debt_amount_usd',
+) {
+  const localPatch: any = {}
+  const dbPayload: any = { updated_at: new Date().toISOString() }
+  if (field === 'billing_status') {
+    localPatch.billing_status = row.billing_status
+    dbPayload.billing_status = row.billing_status
+  }
   if (field === 'debt_status') {
-    payload.debt_status = row.debt_status
+    localPatch.debt_status = row.debt_status
+    dbPayload.debt_status = row.debt_status
     if (row.debt_status === 'none' || row.debt_status === 'cleared') {
-      payload.debt_amount = 0
+      localPatch.debt_amount = 0
+      localPatch._debt_amount_usd = 0
       row.debt_amount = 0
+      row._debt_amount_usd = 0
+      dbPayload.debt_amount = 0
     }
   }
-  if (field === 'debt_amount') payload.debt_amount = Number(row.debt_amount || 0)
+  if (field === 'debt_amount') {
+    const amount = Number(row.debt_amount || 0)
+    localPatch.debt_amount = amount
+    dbPayload.debt_amount = amount
+  }
+  // 美元差价仅前端展示，不写入数据库
+  if (field === '_debt_amount_usd') {
+    localPatch._debt_amount_usd = Number(Number(row._debt_amount_usd || 0).toFixed(2))
+  }
 
-  patchLocalOrder(row, payload)
+  patchLocalOrder(row, localPatch)
 
-  if (row._is_bill_proto_mock) {
-    message.success('已更新（原型 mock）')
-    emit('updated')
+  if (row._is_bill_proto_mock || field === '_debt_amount_usd') {
+    message.success(field === '_debt_amount_usd' ? '已更新（仅展示）' : '已更新（原型 mock）')
+    if (field !== '_debt_amount_usd' || row._is_bill_proto_mock) emit('updated')
     refreshUnsavedTexts()
     return
   }
 
   statusSaving.value = true
   try {
-    const { error } = await supabase.from('erp_orders').update(payload).eq('id', row.id)
+    const { error } = await supabase.from('erp_orders').update(dbPayload).eq('id', row.id)
     if (error) throw error
     message.success('已保存')
     emit('updated')
@@ -739,13 +773,15 @@ async function applyBatchStatus() {
     payload.debt_status = batchDebtTarget.value
     if (batchDebtTarget.value === 'none' || batchDebtTarget.value === 'cleared') {
       payload.debt_amount = 0
+      // 美元仅本地清零，不入库
+      payload._debt_amount_usd = 0
     }
   }
 
   const allOrders = Object.values(localOrdersByBatch.value).flat()
   const realIds = allOrders.filter(o => !o._is_bill_proto_mock).map(o => o.id)
 
-  // 先更新本地副本
+  // 先更新本地副本（含美元展示字段）
   const nextMap: Record<string, any[]> = {}
   for (const [batch, list] of Object.entries(localOrdersByBatch.value)) {
     nextMap[batch] = list.map(o => ({ ...o, ...payload }))
@@ -759,10 +795,11 @@ async function applyBatchStatus() {
     return
   }
 
+  const { _debt_amount_usd: _usdDisplayOnly, ...dbPayload } = payload
   statusSaving.value = true
   try {
     const { error } = await supabase.from('erp_orders').update({
-      ...payload,
+      ...dbPayload,
       updated_at: new Date().toISOString(),
     }).in('id', realIds)
     if (error) throw error
@@ -948,7 +985,7 @@ function saveText() {
 .gbd-task-head,
 .gbd-task-row {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr 1fr 1.15fr 0.95fr;
+  grid-template-columns: 1fr 0.8fr 0.9fr 1.05fr 0.85fr 0.85fr;
   gap: 8px;
   padding: 7px 6px;
   font-size: 11px;
