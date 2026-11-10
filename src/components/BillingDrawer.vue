@@ -206,30 +206,36 @@
         </div>
         <div v-if="addRecordType === '账面抵消'" class="ar-field">
           <label class="ar-label">类型 <span class="required">*</span></label>
-          <a-radio-group v-model:value="offsetKind" size="small">
-            <a-radio-button value="cutoff">截单抵消</a-radio-button>
-            <a-radio-button value="balance">余额抵消</a-radio-button>
-            <a-radio-button value="supplement">补款抵消</a-radio-button>
+          <a-radio-group v-model:value="addRecordForm.offset_mode" class="offset-type-group">
+            <a-radio-button value="balance">余款抵消</a-radio-button>
+            <a-radio-button value="with_order">随单补款</a-radio-button>
           </a-radio-group>
-          <div v-if="offsetKindHint" class="offset-kind-hint">{{ offsetKindHint }}</div>
+          <a-checkbox-group
+            v-if="addRecordForm.offset_mode === 'balance'"
+            v-model:value="addRecordForm.offset_balance_kinds"
+            class="offset-subtypes"
+            :options="offsetBalanceKindOptions"
+          />
         </div>
-        <div v-if="addRecordType === '账面抵消' && offsetKind" class="offset-brief-card">
+        <div v-if="addRecordType === '账面抵消' && addRecordForm.offset_mode" class="offset-brief-card">
           <div class="offset-brief-head">
             <span>来源任务</span>
-            <a-button size="small" @click="addOffsetTaskRow">添加</a-button>
           </div>
+          <div v-if="addRecordForm.offset_mode === 'with_order'" class="offset-kind-hint">差价已随新任务合并付款。</div>
           <div class="offset-business-list">
             <div v-for="(row, index) in addRecordForm.offset_task_rows" :key="index" class="offset-business-row">
               <a-input v-model:value="row.task_id" size="small" placeholder="任务号" style="flex:1" />
               <a-input-number v-model:value="row.amount_cny" size="small" :min="0" :precision="2" style="width:120px" placeholder="金额" />
-              <a-button
-                size="small"
-                danger
-                :disabled="addRecordForm.offset_task_rows.length <= 1"
-                @click="removeOffsetTaskRow(index)"
-              >
-                删除
-              </a-button>
+              <span class="row-icon-pair">
+                <button type="button" class="row-icon-btn" title="添加" @click="addOffsetTaskRow">+</button>
+                <button
+                  type="button"
+                  class="row-icon-btn row-icon-btn-remove"
+                  title="删除"
+                  :disabled="addRecordForm.offset_task_rows.length <= 1"
+                  @click="removeOffsetTaskRow(index)"
+                >−</button>
+              </span>
             </div>
           </div>
           <div class="offset-brief-total">合计：¥{{ offsetTaskTotal.toFixed(2) }}</div>
@@ -290,10 +296,9 @@
         <div v-if="addRecordType === '补款'" class="add-record-tip">
           默认只展示一种币种；确实需要双币种时选择“同时填写”。
         </div>
-        <div v-if="showOffsetDetail" class="offset-brief-card">
+        <div v-if="showCutoffOffsetDetail" class="offset-brief-card">
           <div class="offset-brief-head">
-            <span>明细</span>
-            <a-button size="small" @click="addOffsetBusinessRow">添加</a-button>
+            <span>截单余款明细 <span class="required">*</span></span>
           </div>
           <div class="offset-business-list">
             <div v-for="(row, index) in addRecordForm.offset_business_rows" :key="index" class="offset-business-row">
@@ -304,14 +309,42 @@
                 <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
               </a-select>
               <a-input-number v-model:value="row.order_count" size="small" :min="1" :precision="0" class="offset-detail-count" placeholder="对应单量" />
-              <a-button
-                size="small"
-                danger
-                :disabled="addRecordForm.offset_business_rows.length <= 1"
-                @click="removeOffsetBusinessRow(index)"
-              >
-                删除
-              </a-button>
+              <span class="row-icon-pair">
+                <button type="button" class="row-icon-btn" title="添加" @click="addOffsetBusinessRow">+</button>
+                <button
+                  type="button"
+                  class="row-icon-btn row-icon-btn-remove"
+                  title="删除"
+                  :disabled="addRecordForm.offset_business_rows.length <= 1"
+                  @click="removeOffsetBusinessRow(index)"
+                >−</button>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div v-if="showCommissionOffsetDetail" class="offset-brief-card">
+          <div class="offset-brief-head">
+            <span>佣金余款明细 <span class="required">*</span></span>
+          </div>
+          <div class="offset-business-list">
+            <div v-for="(row, index) in addRecordForm.offset_commission_rows" :key="index" class="offset-business-row">
+              <a-select v-model:value="row.country" size="small" placeholder="国家" class="offset-detail-country" show-search>
+                <a-select-option v-for="item in offsetCountryOptions" :key="item" :value="item">{{ item }}</a-select-option>
+              </a-select>
+              <a-select v-model:value="row.business_type" size="small" placeholder="类型" class="offset-detail-type" show-search>
+                <a-select-option v-for="item in businessTypeOptions" :key="item" :value="item">{{ item }}</a-select-option>
+              </a-select>
+              <a-input-number v-model:value="row.order_count" size="small" :min="1" :precision="0" class="offset-detail-count" placeholder="对应单量" />
+              <span class="row-icon-pair">
+                <button type="button" class="row-icon-btn" title="添加" @click="addOffsetCommissionRow">+</button>
+                <button
+                  type="button"
+                  class="row-icon-btn row-icon-btn-remove"
+                  title="删除"
+                  :disabled="addRecordForm.offset_commission_rows.length <= 1"
+                  @click="removeOffsetCommissionRow(index)"
+                >−</button>
+              </span>
             </div>
           </div>
         </div>
@@ -374,8 +407,12 @@
           </div>
         </div>
         <div v-if="addRecordType !== '账面抵消' || !offsetOpenedFromNestedAction" class="ar-field">
-          <label class="ar-label">备注</label>
-          <a-textarea v-model:value="addRecordForm.notes" :rows="2" placeholder="备注（可选）" />
+          <label class="ar-label">{{ addRecordType === '账面抵消' ? '账单备注' : '备注' }}</label>
+          <a-textarea
+            v-model:value="addRecordForm.notes"
+            :rows="2"
+            :placeholder="addRecordType === '账面抵消' ? '账单备注（可选）' : '备注（可选）'"
+          />
         </div>
       </div>
     </a-modal>
@@ -581,6 +618,11 @@ const nestedParentRecordFormSnapshot = ref<any | null>(null)
 const nestedParentRecordFilesSnapshot = ref<any[]>([])
 const addRecordFiles = ref<any[]>([])
 const businessTypeOptions = ['文字', '免评', '图片', '视频', 'Feedback']
+const offsetBalanceKindOptions = [
+  { label: '截单余款', value: 'cutoff' },
+  { label: '佣金余款', value: 'commission' },
+  { label: '其他余款', value: 'price' },
+]
 const offsetCountryOptions = ['美国', '德国', '英国', '加拿大']
 const billingTransactionCategoryOptions = [
   {
@@ -596,8 +638,8 @@ const billingTransactionCategoryOptions = [
     label: '业务支出',
     children: [
       { value: '截单退款', label: '截单退款' },
-      { value: '赔付佣金', label: '赔付佣金' },
-      { value: '退差价', label: '退差价' },
+      { value: '佣金退款', label: '佣金退款' },
+      { value: '余款退回', label: '余款退回' },
     ],
   },
   {
@@ -655,14 +697,14 @@ const addRecordForm = ref({
   business_types: [] as string[],
   business_order_count: 0,
   business_breakdown: [] as any[],
-  is_cutoff_offset: false,
-  is_balance_offset: false,
-  is_supplement_offset: false,
+  offset_mode: '' as '' | 'balance' | 'with_order',
+  offset_balance_kinds: [] as string[],
   offset_source_type: '客户余款抵消',
   offset_source_note: '',
   offset_related_task_id: '',
   offset_task_rows: [{ task_id: '', amount_cny: undefined as number | undefined }],
   offset_business_rows: [{ country: undefined as string | undefined, business_type: undefined as string | undefined, order_count: undefined as number | undefined }],
+  offset_commission_rows: [{ country: undefined as string | undefined, business_type: undefined as string | undefined, order_count: undefined as number | undefined }],
   refund_business_rows: [{ country: undefined as string | undefined, business_type: '', order_count: undefined as number | undefined }],
   payment_date_picker: null as any,
   payment_method: '银行转账',
@@ -686,31 +728,20 @@ const isRefundAccountTransfer = computed(() =>
 const offsetTaskTotal = computed(() =>
   addRecordForm.value.offset_task_rows.reduce((sum: number, row: any) => sum + Number(row.amount_cny || 0), 0),
 )
-const offsetKind = computed({
-  get() {
-    if (addRecordForm.value.is_cutoff_offset) return 'cutoff'
-    if (addRecordForm.value.is_balance_offset) return 'balance'
-    if (addRecordForm.value.is_supplement_offset) return 'supplement'
-    return ''
-  },
-  set(value: string) {
-    addRecordForm.value.is_cutoff_offset = value === 'cutoff'
-    addRecordForm.value.is_balance_offset = value === 'balance'
-    addRecordForm.value.is_supplement_offset = value === 'supplement'
-  },
-})
-const showOffsetDetail = computed(() => addRecordType.value === '账面抵消' && addRecordForm.value.is_cutoff_offset)
+const offsetBalanceKindLabels: Record<string, string> = { cutoff: '截单余款', commission: '佣金余款', price: '其他余款' }
+const showCutoffOffsetDetail = computed(() =>
+  addRecordType.value === '账面抵消' && addRecordForm.value.offset_mode === 'balance' && addRecordForm.value.offset_balance_kinds.includes('cutoff'),
+)
+const showCommissionOffsetDetail = computed(() =>
+  addRecordType.value === '账面抵消' && addRecordForm.value.offset_mode === 'balance' && addRecordForm.value.offset_balance_kinds.includes('commission'),
+)
 const offsetKindLabel = computed(() => {
-  if (addRecordForm.value.is_cutoff_offset) return '截单抵消'
-  if (addRecordForm.value.is_balance_offset) return '余额抵消'
-  if (addRecordForm.value.is_supplement_offset) return '补款抵消'
-  return ''
-})
-const offsetKindHint = computed(() => {
-  if (addRecordForm.value.is_cutoff_offset) return '客户截单后留在账上的余额'
-  if (addRecordForm.value.is_balance_offset) return '客户预充值或产品降价等留在账上的余额'
-  if (addRecordForm.value.is_supplement_offset) return '客户差价已在新任务收款时一并补入'
-  return ''
+  if (addRecordForm.value.offset_mode === 'with_order') return '随单补款'
+  if (addRecordForm.value.offset_mode !== 'balance') return ''
+  const names = ['cutoff', 'commission', 'price']
+    .filter(kind => addRecordForm.value.offset_balance_kinds.includes(kind))
+    .map(kind => offsetBalanceKindLabels[kind])
+  return names.length ? `余款抵消-${names.join('、')}` : ''
 })
 
 function normalizeBusinessType(value: any) {
@@ -806,6 +837,15 @@ function addOffsetBusinessRow() {
   addRecordForm.value.offset_business_rows.push({ country: undefined, business_type: undefined, order_count: undefined })
 }
 
+function addOffsetCommissionRow() {
+  addRecordForm.value.offset_commission_rows.push({ country: undefined, business_type: undefined, order_count: undefined })
+}
+
+function removeOffsetCommissionRow(index: number) {
+  if (addRecordForm.value.offset_commission_rows.length <= 1) return
+  addRecordForm.value.offset_commission_rows.splice(index, 1)
+}
+
 function removeOffsetBusinessRow(index: number) {
   if (addRecordForm.value.offset_business_rows.length <= 1) return
   addRecordForm.value.offset_business_rows.splice(index, 1)
@@ -853,14 +893,14 @@ function openAddRecord(type: '补款' | '退款' | '账面抵消', fromNestedAct
     business_types: businessDetail.types,
     business_order_count: businessDetail.orderCount,
     business_breakdown: businessDetail.breakdown,
-    is_cutoff_offset: false,
-    is_balance_offset: false,
-    is_supplement_offset: false,
+    offset_mode: '',
+    offset_balance_kinds: [],
     offset_source_type: '客户余款抵消',
     offset_source_note: '',
     offset_related_task_id: '',
     offset_task_rows: [{ task_id: '', amount_cny: undefined }],
     offset_business_rows: createOffsetBusinessRows(),
+    offset_commission_rows: createOffsetBusinessRows(),
     refund_business_rows: createRefundBusinessRows(props.order),
     payment_date_picker: dayjs(),
     payment_method: type === '账面抵消' ? '账面抵消' : '银行转账',
@@ -884,7 +924,7 @@ async function saveRecord() {
     return
   }
   if (addRecordType.value === '账面抵消' && !offsetKindLabel.value) {
-    message.warning('请选择类型')
+    message.warning(addRecordForm.value.offset_mode === 'balance' ? '请选择截单余款、佣金余款或其他余款' : '请选择类型')
     return
   }
   const isCurrentOffset = addRecordType.value === '账面抵消'
@@ -900,7 +940,6 @@ async function saveRecord() {
   try {
     const isRefund = addRecordType.value === '退款'
     const isOffset = addRecordType.value === '账面抵消'
-    const useOffsetDetail = isOffset && addRecordForm.value.is_cutoff_offset
     const paymentDate = isRefund
       ? dayjs().format('YYYY-MM-DD')
       : typeof addRecordForm.value.payment_date_picker === 'string'
@@ -947,15 +986,18 @@ async function saveRecord() {
         order_count: Number(row.order_count || 0),
       }))
       .filter((row: any) => row.country || row.business_type || row.order_count > 0)
-    const offsetBusinessRows = addRecordForm.value.offset_business_rows
+    const readOffsetDetailRows = (rows: any[]) => rows
       .map((row: any) => ({
         country: String(row.country || '').trim(),
         business_type: normalizeBusinessType(row.business_type),
         order_count: Number(row.order_count || 0),
       }))
       .filter((row: any) => row.country || row.business_type || row.order_count > 0)
+    const offsetDetailInvalid = (rows: any[]) => rows.length === 0 || rows.some((row: any) => !row.country || !row.business_type || row.order_count <= 0)
+    const cutoffDetailRows = showCutoffOffsetDetail.value ? readOffsetDetailRows(addRecordForm.value.offset_business_rows) : []
+    const commissionDetailRows = showCommissionOffsetDetail.value ? readOffsetDetailRows(addRecordForm.value.offset_commission_rows) : []
+    const savedOffsetBusinessRows = [...cutoffDetailRows, ...commissionDetailRows]
     const manualBusinessTypes = addRecordForm.value.business_types.map(normalizeBusinessType).filter(Boolean)
-    const savedOffsetBusinessRows = useOffsetDetail ? offsetBusinessRows : []
     const businessCountries = isOffset
       ? Array.from(new Set<string>(savedOffsetBusinessRows.map((row: any) => row.country).filter(Boolean)))
       : (addRecordForm.value.business_countries.length ? addRecordForm.value.business_countries : businessDetail.countries)
@@ -1002,24 +1044,19 @@ async function saveRecord() {
         addRecordSaving.value = false
         return
       }
-      if (useOffsetDetail && businessTypes.length === 0) {
-        message.warning('请填写明细类型')
+      if (showCutoffOffsetDetail.value && offsetDetailInvalid(cutoffDetailRows)) {
+        message.warning('请完整填写截单余款明细')
         addRecordSaving.value = false
         return
       }
-      const refundNeedsDetail = (addRecordForm.value.secondary_categories || []).some((item: string) => ['截单退款', '赔付佣金'].includes(item))
+      if (showCommissionOffsetDetail.value && offsetDetailInvalid(commissionDetailRows)) {
+        message.warning('请完整填写佣金余款明细')
+        addRecordSaving.value = false
+        return
+      }
+      const refundNeedsDetail = (addRecordForm.value.secondary_categories || []).some((item: string) => ['截单退款', '佣金退款'].includes(item))
       if (isRefund && refundNeedsDetail && (refundBusinessRows.length === 0 || refundBusinessRows.some((row: any) => !row.country || !row.business_type || row.order_count <= 0))) {
         message.warning('请完整填写退款明细')
-        addRecordSaving.value = false
-        return
-      }
-      if (useOffsetDetail && offsetBusinessRows.some((row: any) => !row.country || !row.business_type || row.order_count <= 0)) {
-        message.warning('请完整填写每行国家、类型和对应单量')
-        addRecordSaving.value = false
-        return
-      }
-      if (useOffsetDetail && businessOrderCount <= 0) {
-        message.warning('请输入对应单量')
         addRecordSaving.value = false
         return
       }
@@ -1033,9 +1070,11 @@ async function saveRecord() {
     if (isOffset) {
       noteParts.push(`抵消类型: ${offsetKindLabel.value}`)
       noteParts.push(`抵消来源: ${offsetTaskRows.map((row: any) => `${row.task_id} ¥${row.amount_cny.toFixed(2)}`).join('、')}`)
-      if (useOffsetDetail) {
-        noteParts.push(`抵消明细: ${savedOffsetBusinessRows.map((row: any) => `${row.business_type}${row.order_count}单`).join('、')}`)
-      }
+      const detailText = [
+        ...cutoffDetailRows.map((row: any) => `截单余款${row.country}${row.business_type}${row.order_count}单`),
+        ...commissionDetailRows.map((row: any) => `佣金余款${row.country}${row.business_type}${row.order_count}单`),
+      ]
+      if (detailText.length) noteParts.push(`抵消明细: ${detailText.join('、')}`)
     }
     if (isRefund && refundBusinessRows.length) {
       noteParts.push(`退款明细: ${refundBusinessRows.map((row: any) => `${row.country}${row.business_type}${row.order_count}单`).join('、')}`)
@@ -1571,9 +1610,83 @@ async function deleteRecord(payment: any) {
 }
 
 .offset-kind-hint {
+  margin-bottom: 8px;
   color: #6b7280;
   font-size: 12px;
   line-height: 1.5;
+}
+.row-icon-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.row-icon-btn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a2e;
+  font-size: 16px;
+  line-height: 22px;
+  text-align: center;
+  cursor: pointer;
+}
+.row-icon-btn:hover:not(:disabled) {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+.row-icon-btn-remove:hover:not(:disabled) {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+.row-icon-btn:disabled {
+  color: #6b7280;
+  background: #f5f7fa;
+  cursor: not-allowed;
+}
+.offset-type-group {
+  display: flex;
+  width: 100%;
+}
+.offset-type-group :deep(.ant-radio-button-wrapper) {
+  flex: 1;
+  height: 32px;
+  line-height: 30px;
+  text-align: center;
+}
+.offset-subtypes {
+  display: grid !important;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px;
+  background: #f5f7fa;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.offset-subtypes :deep(.ant-checkbox-wrapper) {
+  width: 100%;
+  margin-inline-start: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 6px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #1a1a2e;
+  font-size: 13px;
+}
+.offset-subtypes :deep(.ant-checkbox-wrapper-checked) {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #fff;
 }
 
 .refund-account-grid {

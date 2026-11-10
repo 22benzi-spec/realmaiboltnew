@@ -316,7 +316,7 @@
           <div class="detail-info-grid">
             <div class="detail-info-item">
               <span>交易类型</span>
-              <strong>{{ getPrimaryCategoryLabel(detailRecord) }}<template v-if="normalizeTransactionCategories(detailRecord).secondary"> / {{ getTransactionTypeLabel(detailRecord) }}</template></strong>
+              <strong>{{ getPrimaryCategoryLabel(detailRecord) }}<template v-if="getDetailSecondaryText(detailRecord)"> / {{ getDetailSecondaryText(detailRecord) }}</template></strong>
             </div>
             <div class="detail-info-item">
               <span>对象</span>
@@ -402,7 +402,8 @@
                 <th>国家</th>
                 <th v-if="showDetailTypeColumns(detailRecord)">类型</th>
                 <th v-if="showDetailTypeColumns(detailRecord)">单量</th>
-                <th class="amount">{{ getDetailAmountLabel(detailRecord) }}</th>
+                <th class="amount">{{ showMixedIncomeAmounts(detailRecord) ? '应收基础款项' : getDetailAmountLabel(detailRecord) }}</th>
+                <th v-if="showMixedIncomeAmounts(detailRecord)" class="amount">差价金额</th>
               </tr>
             </thead>
             <tbody>
@@ -411,7 +412,8 @@
                 <td>{{ item.country || '-' }}</td>
                 <td v-if="showDetailTypeColumns(detailRecord)">{{ item.type || '-' }}</td>
                 <td v-if="showDetailTypeColumns(detailRecord)">{{ item.count }} 单</td>
-                <td class="amount"><strong>{{ formatDetailAmount(detailRecord, item.amount) }}</strong></td>
+                <td class="amount"><strong>{{ showMixedIncomeAmounts(detailRecord) ? formatReceivableAmount(item.amount) : formatDetailAmount(detailRecord, item.amount) }}</strong></td>
+                <td v-if="showMixedIncomeAmounts(detailRecord)" class="amount"><strong>{{ formatDifferenceAmount(item.difference) }}</strong></td>
               </tr>
             </tbody>
           </table>
@@ -437,22 +439,22 @@
             </div>
             <div v-else class="detail-empty">暂无抵消来源</div>
           </div>
-          <div class="detail-subsection">
+          <div v-if="showOffsetDetailSection(detailRecord)" class="detail-subsection">
             <div class="detail-subsection-title">抵消明细</div>
-            <div class="detail-offset-kind-line">抵消类型：{{ getOffsetKindLabel(detailRecord) || '-' }}</div>
-            <div v-if="showOffsetBusinessDetail(detailRecord) && getOffsetBusinessDetailRows(detailRecord).length" class="breakdown-table breakdown-table-detail">
+            <div v-if="getOffsetBusinessDetailRows(detailRecord).length" class="breakdown-table breakdown-table-detail" :class="{ 'breakdown-table-detail-kind': showOffsetKindColumn(detailRecord) }">
               <div class="breakdown-table-head">
+                <span v-if="showOffsetKindColumn(detailRecord)">余款类型</span>
                 <span>国家</span>
                 <span>类型</span>
                 <span>单量</span>
               </div>
               <div v-for="(item, index) in getOffsetBusinessDetailRows(detailRecord)" :key="index" class="breakdown-table-row">
+                <span v-if="showOffsetKindColumn(detailRecord)">{{ item.kind || '-' }}</span>
                 <span>{{ item.country || '-' }}</span>
                 <span>{{ item.type || '-' }}</span>
                 <span>{{ item.count }} 单</span>
               </div>
             </div>
-            <div v-else-if="showOffsetBusinessDetail(detailRecord)" class="detail-empty">暂无抵消明细</div>
           </div>
         </div>
 
@@ -518,8 +520,8 @@ const transactionCategoryOptions = [
     label: '业务支出',
     children: [
       { value: '截单退款', label: '截单退款' },
-      { value: '赔付佣金', label: '赔付佣金' },
-      { value: '退差价', label: '退差价' },
+      { value: '佣金退款', label: '佣金退款' },
+      { value: '余款退回', label: '余款退回' },
     ],
   },
   {
@@ -573,8 +575,8 @@ const transactionTypeMeta: Record<string, { label: string; color: string }> = {
   补款收入: { label: '补款收入', color: 'cyan' },
   账面抵消: { label: '账面抵消', color: 'blue' },
   截单退款: { label: '截单退款', color: 'red' },
-  赔付佣金: { label: '赔付佣金', color: 'volcano' },
-  退差价: { label: '退差价', color: 'orange' },
+  佣金退款: { label: '佣金退款', color: 'volcano' },
+  余款退回: { label: '余款退回', color: 'orange' },
   IP采购: { label: 'IP采购', color: 'purple' },
   服务器: { label: '服务器', color: 'blue' },
   账号购买: { label: '账号购买', color: 'gold' },
@@ -670,8 +672,36 @@ function usesReceivableLabel(record: any) {
   return normalizeTransactionCategories(record).secondary === '任务收入'
 }
 
+function getIncomeCategories(record: any) {
+  const raw = record?.income_categories
+  if (!Array.isArray(raw)) return []
+  return raw.map(item => String(item || '').trim()).filter(Boolean)
+}
+
+function showMixedIncomeAmounts(record: any) {
+  const categories = new Set(getIncomeCategories(record))
+  return categories.has('任务收入') && categories.has('补款收入')
+}
+
+function getDetailSecondaryText(record: any) {
+  if (showMixedIncomeAmounts(record)) return '任务收入、补款收入'
+  return getTransactionTypeLabel(record)
+}
+
 function getDetailAmountLabel(record: any) {
   return usesReceivableLabel(record) ? '应收基础款项' : '差价金额'
+}
+
+function formatReceivableAmount(amount: number) {
+  const text = Math.abs(Number(amount || 0)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `¥${text}`
+}
+
+function formatDifferenceAmount(amount: number) {
+  const value = Number(amount || 0)
+  const text = Math.abs(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (value < 0) return `-¥${text}`
+  return `¥${text}`
 }
 
 function formatDetailAmount(record: any, amount: number) {
@@ -825,15 +855,22 @@ function parseOffsetSourceRows(notes: any) {
 function parseOffsetBusinessPairRows(notes: any) {
   const section = extractNoteSection(notes, '抵消明细')
   if (!section) return []
+  const kindNames = ['截单余款', '佣金余款', '其他余款']
+  const typeNames = ['Feedback', '文字评', '图片评', '视频评', '文字', '图片', '视频', '免评', 'FB']
   return section.split(/[、,，]/)
     .map(item => item.trim())
     .map((item) => {
-      const match = item.match(/^(.+?)([0-9]+(?:\.[0-9]+)?)\s*单$/)
-      return match
-        ? { businessType: normalizeBusinessType(match[1]), orderCount: Number(match[2] || 0) }
-        : null
+      const kind = kindNames.find(name => item.startsWith(name)) || ''
+      const body = kind ? item.slice(kind.length) : item
+      const match = body.match(/^(.*?)([0-9]+(?:\.[0-9]+)?)\s*单$/)
+      if (!match) return null
+      const compact = match[1].replace(/\s+/g, '')
+      const found = typeNames.find(name => compact.endsWith(name))
+      const businessType = normalizeBusinessType(found || compact)
+      const country = found ? compact.slice(0, compact.length - found.length) : ''
+      return { kind, country, businessType, orderCount: Number(match[2] || 0) }
     })
-    .filter(Boolean) as Array<{ businessType: string; orderCount: number }>
+    .filter(Boolean) as Array<{ kind: string; country: string; businessType: string; orderCount: number }>
 }
 
 function extractNoteSection(notes: any, label: string) {
@@ -939,7 +976,7 @@ function showDetailUsd(record: any) {
 
 function showDetailTypeColumns(record: any) {
   const secondary = normalizeTransactionCategories(record).secondary
-  return !['退差价', '补款收入'].includes(secondary)
+  return !['余款退回', '补款收入'].includes(secondary)
 }
 
 function showDetailPaymentAccount(record: any) {
@@ -989,6 +1026,7 @@ function getBusinessTaskRows(record: any) {
     type: normalizeBusinessType(item?.business_type),
     count: Number(item?.order_count || 0),
     amount: Number(item?.amount_cny || 0),
+    difference: Number(item?.difference_cny || 0),
   }))
   const spanByTask = rows.reduce((acc: Record<string, number>, item) => {
     acc[item.taskId] = (acc[item.taskId] || 0) + 1
@@ -1013,24 +1051,43 @@ function getOffsetKindLabel(record: any) {
 function getOffsetBusinessDetailRows(record: any) {
   const fromBreakdown = getOffsetRows(record)
     .map((item: any) => ({
+      kind: String(item?.offset_balance_kind || '').trim(),
       country: String(item?.source_country || item?.country || '').trim(),
       type: normalizeBusinessType(item?.source_business_type || item?.offset_business_type || item?.business_type),
       count: Number(item?.source_order_count || item?.offset_order_count || item?.order_count || 0),
     }))
-    .filter((item: any) => item.country || item.type || item.count > 0)
-  if (fromBreakdown.length) return fromBreakdown
-  return parseOffsetBusinessPairRows(record?.notes).map((item) => ({
-    country: '',
-    type: item.businessType,
-    count: item.orderCount,
-  }))
+    .filter((item: any) => item.kind || item.country || item.type || item.count > 0)
+  const rows = fromBreakdown.length
+    ? fromBreakdown
+    : parseOffsetBusinessPairRows(record?.notes).map((item) => ({
+        kind: item.kind,
+        country: item.country,
+        type: item.businessType,
+        count: item.orderCount,
+      }))
+  return rows.filter(item => item.kind !== '其他余款' || item.country || item.type || item.count > 0)
+}
+
+function selectedOffsetKindNames(record: any) {
+  const label = getOffsetKindLabel(record)
+  return ['截单余款', '佣金余款', '其他余款'].filter(name => label.includes(name))
+}
+
+function showOffsetKindColumn(record: any) {
+  return selectedOffsetKindNames(record).length > 1
+}
+
+function showOffsetDetailSection(record: any) {
+  if (getOffsetKindLabel(record) === '随单补款') return false
+  return showOffsetBusinessDetail(record) && getOffsetBusinessDetailRows(record).length > 0
 }
 
 function showOffsetBusinessDetail(record: any) {
   if (!showDetailTask(record) || !hasOffsetPart(record)) return false
   const kind = getOffsetKindLabel(record)
-  if (kind === '余额抵消' || kind === '补款抵消') return false
-  if (kind === '截单抵消') return true
+  if (kind === '余额抵消' || kind === '补款抵消' || kind === '随单补款') return false
+  if (kind.includes('其他余款') && !kind.includes('截单余款') && !kind.includes('佣金余款')) return false
+  if (kind === '截单抵消' || kind.includes('截单余款') || kind.includes('佣金余款')) return true
   return getOffsetBusinessDetailRows(record).length > 0
 }
 
@@ -1044,11 +1101,11 @@ function getLedgerDisplayNotes(record: any) {
 
 function isRefundTaskAmountRecord(record: any) {
   const { primary, secondary } = normalizeTransactionCategories(record)
-  return primary === '业务支出' && ['截单退款', '赔付佣金', '退差价'].includes(secondary)
+  return primary === '业务支出' && ['截单退款', '佣金退款', '余款退回'].includes(secondary)
 }
 
 function showRefundTypeDetail(record: any) {
-  return ['截单退款', '赔付佣金'].includes(normalizeTransactionCategories(record).secondary)
+  return ['截单退款', '佣金退款'].includes(normalizeTransactionCategories(record).secondary)
 }
 
 function getRefundTaskAmountRows(record: any) {
@@ -1114,7 +1171,7 @@ function getRefundTypeDetailRows(record: any) {
 function showBusinessSummary(record: any) {
   const { primary, secondary } = normalizeTransactionCategories(record)
   if (secondary === '任务收入') return true
-  return primary === '业务支出' && !!secondary && secondary !== '退差价'
+  return primary === '业务支出' && !!secondary && secondary !== '余款退回'
 }
 
 function getBusinessSummary(record: any) {
@@ -1183,7 +1240,7 @@ function buildLedgerPreviewRows() {
     business_order_count: 4,
     handler_name: '财务-陈岚',
     status: '待确认',
-    notes: '抵消类型: 余额抵消 | 抵消来源: TASK-20260422-009 ¥200.00 | 分笔实收',
+    notes: '抵消类型: 余款抵消-其他余款 | 抵消来源: TASK-20260422-009 ¥200.00 | 分笔实收',
     _group_offset_amount: 200,
     transaction_date: now.format('YYYY-MM-DD'),
   }
@@ -1305,7 +1362,7 @@ function buildLedgerPreviewRows() {
       offset_source_note: '上一批任务余款抵消本次这 1 个任务。',
       handler_name: '财务-陈岚',
       status: '待确认',
-      notes: '抵消类型: 截单抵消 | 抵消来源: TASK-20260428-008 ¥360.00 | 账面抵消 | 客户余款抵消',
+      notes: '抵消类型: 余款抵消-截单余款 | 抵消来源: TASK-20260428-008 ¥360.00 | 账面抵消 | 客户余款抵消',
       transaction_date: now.subtract(3, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(3, 'hour').toISOString(),
       updated_at: now.subtract(3, 'hour').toISOString(),
@@ -1334,7 +1391,7 @@ function buildLedgerPreviewRows() {
       offset_source_note: '同客户同事历史任务余款抵消本次部分款项。',
       handler_name: '财务-陈岚',
       status: '已修改',
-      notes: '抵消类型: 截单抵消 | 抵消来源: TASK-20260418-031 ¥310.00 | 账面抵消',
+      notes: '抵消类型: 余款抵消-佣金余款 | 抵消来源: TASK-20260418-031 ¥310.00 | 账面抵消',
       transaction_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
       created_at: now.subtract(1, 'day').hour(10).toISOString(),
       updated_at: now.subtract(1, 'day').hour(14).toISOString(),
@@ -1365,7 +1422,7 @@ function buildLedgerPreviewRows() {
       offset_source_note: '本次新任务部分现金收款，部分使用历史任务余款抵消。',
       handler_name: '财务-陈岚',
       status: '待确认',
-      notes: '抵消类型: 截单抵消 | 抵消来源: TASK-20260430-016 ¥360.00 | 任务结算 | 收入 + 账面抵消 | 创建任务时部分收款、部分抵消',
+      notes: '抵消类型: 余款抵消-截单余款 | 抵消来源: TASK-20260430-016 ¥360.00 | 任务结算 | 收入 + 账面抵消 | 创建任务时部分收款、部分抵消',
       transaction_date: now.subtract(2, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(2, 'hour').toISOString(),
       updated_at: now.subtract(2, 'hour').toISOString(),
@@ -1474,7 +1531,7 @@ function buildLedgerPreviewRows() {
       offset_source_type: '客户余款抵消',
       handler_name: '财务-陈岚',
       status: '待确认',
-      notes: '抵消类型: 截单抵消 | 抵消来源: TASK-20260420-014 ¥150.00 | 账面抵消 | 接单管理账款抵消',
+      notes: '抵消类型: 余款抵消-其他余款 | 抵消来源: TASK-20260420-014 ¥150.00 | 账面抵消 | 接单管理账款抵消',
       transaction_date: now.subtract(4, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(4, 'hour').toISOString(),
       updated_at: now.subtract(4, 'hour').toISOString(),
@@ -1500,7 +1557,7 @@ function buildLedgerPreviewRows() {
       ],
       handler_name: '财务-陈岚',
       status: '待确认',
-      notes: '抵消类型: 余额抵消 | 抵消来源: TASK-20260412-006 ¥220.00 | 账面抵消',
+      notes: '抵消类型: 余款抵消-其他余款 | 抵消来源: TASK-20260412-006 ¥220.00 | 账面抵消',
       transaction_date: now.subtract(7, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(7, 'hour').toISOString(),
       updated_at: now.subtract(7, 'hour').toISOString(),
@@ -1526,10 +1583,90 @@ function buildLedgerPreviewRows() {
       ],
       handler_name: '财务-陈岚',
       status: '待确认',
-      notes: '抵消类型: 补款抵消 | 抵消来源: TASK-20260415-011 ¥90.00 | 账面抵消',
+      notes: '抵消类型: 随单补款 | 抵消来源: TASK-20260415-011 ¥90.00 | 账面抵消',
       transaction_date: now.subtract(8, 'hour').format('YYYY-MM-DD'),
       created_at: now.subtract(8, 'hour').toISOString(),
       updated_at: now.subtract(8, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-offset-cutoff-commission',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0026',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
+      direction: '账面抵消',
+      amount_cny: 480,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '青岛海禾贸易',
+      order_number: 'TASK-20260507-261',
+      staff_name: '商务-李婷',
+      business_countries: ['美国', '德国'],
+      business_types: ['文字', '图片'],
+      business_order_count: 4,
+      business_breakdown: [
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-261', source_order_number: 'TASK-20260408-021', offset_balance_kind: '截单余款', source_country: '美国', source_business_type: '文字', source_order_count: 3, country: '美国', business_type: '文字', order_count: 3, amount_cny: 300 },
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-261', source_order_number: 'TASK-20260408-021', offset_balance_kind: '佣金余款', source_country: '德国', source_business_type: '图片', source_order_count: 1, country: '德国', business_type: '图片', order_count: 1, amount_cny: 180 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '抵消类型: 余款抵消-截单余款、佣金余款 | 抵消来源: TASK-20260408-021 ¥480.00 | 抵消明细: 截单余款美国文字3单、佣金余款德国图片1单 | 账面抵消',
+      transaction_date: now.subtract(6, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(6, 'hour').toISOString(),
+      updated_at: now.subtract(6, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-offset-cutoff-other',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0027',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
+      direction: '账面抵消',
+      amount_cny: 260,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '厦门南风电商',
+      order_number: 'TASK-20260507-271',
+      staff_name: '商务-王晨',
+      business_countries: ['英国'],
+      business_types: ['免评'],
+      business_order_count: 2,
+      business_breakdown: [
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-271', source_order_number: 'TASK-20260409-012', offset_balance_kind: '截单余款', source_country: '英国', source_business_type: '免评', source_order_count: 2, country: '英国', business_type: '免评', order_count: 2, amount_cny: 260 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '抵消类型: 余款抵消-截单余款、其他余款 | 抵消来源: TASK-20260409-012 ¥260.00 | 抵消明细: 截单余款英国免评2单 | 账面抵消',
+      transaction_date: now.subtract(7, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(7, 'hour').toISOString(),
+      updated_at: now.subtract(7, 'hour').toISOString(),
+    },
+    {
+      id: 'mock-ledger-offset-all-kinds',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0028',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
+      direction: '账面抵消',
+      amount_cny: 280,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '合肥澄光贸易',
+      order_number: 'TASK-20260507-281',
+      staff_name: '商务-林夕',
+      business_countries: ['美国', '加拿大'],
+      business_types: ['文字', 'Feedback'],
+      business_order_count: 3,
+      business_breakdown: [
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-281', source_order_number: 'TASK-20260411-003', offset_balance_kind: '截单余款', source_country: '美国', source_business_type: '文字', source_order_count: 2, country: '美国', business_type: '文字', order_count: 2, amount_cny: 200 },
+        { direction: '账面抵消', target_order_number: 'TASK-20260507-281', source_order_number: 'TASK-20260411-003', offset_balance_kind: '佣金余款', source_country: '加拿大', source_business_type: 'Feedback', source_order_count: 1, country: '加拿大', business_type: 'Feedback', order_count: 1, amount_cny: 80 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '抵消类型: 余款抵消-截单余款、佣金余款、其他余款 | 抵消来源: TASK-20260411-003 ¥280.00 | 抵消明细: 截单余款美国文字2单、佣金余款加拿大Feedback1单 | 账面抵消',
+      transaction_date: now.subtract(9, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(9, 'hour').toISOString(),
+      updated_at: now.subtract(9, 'hour').toISOString(),
     },
     {
       id: 'mock-ledger-batch-cutoff-refund',
@@ -1565,7 +1702,7 @@ function buildLedgerPreviewRows() {
       _is_preview_mock: true,
       transaction_no: 'FT-MOCK-20260507-0022',
       entry_scope: '业务支出',
-      transaction_type: '退差价',
+      transaction_type: '余款退回',
       direction: '支出',
       amount_cny: 115,
       amount_usd: null,
@@ -1594,7 +1731,7 @@ function buildLedgerPreviewRows() {
       _is_preview_mock: true,
       transaction_no: 'FT-MOCK-20260507-0007',
       entry_scope: '业务支出',
-      transaction_type: '赔付佣金',
+      transaction_type: '佣金退款',
       direction: '支出',
       amount_cny: 96,
       amount_usd: null,
@@ -1622,7 +1759,7 @@ function buildLedgerPreviewRows() {
       _is_preview_mock: true,
       transaction_no: 'FT-MOCK-20260507-0008',
       entry_scope: '业务支出',
-      transaction_type: '退差价',
+      transaction_type: '余款退回',
       direction: '支出',
       amount_cny: 45,
       amount_usd: null,
@@ -1640,7 +1777,7 @@ function buildLedgerPreviewRows() {
       ],
       handler_name: '财务-陈岚',
       status: '已确认',
-      notes: '业务支出 | 退差价',
+      notes: '业务支出 | 余款退回',
       transaction_date: now.subtract(1, 'day').format('YYYY-MM-DD'),
       created_at: now.subtract(1, 'day').hour(9).toISOString(),
       updated_at: now.subtract(1, 'day').hour(9).toISOString(),
@@ -1860,6 +1997,35 @@ function buildLedgerPreviewRows() {
       created_at: now.subtract(7, 'hour').toISOString(),
       updated_at: now.subtract(7, 'hour').toISOString(),
     },
+    {
+      id: 'mock-ledger-income-and-topup',
+      _is_preview_mock: true,
+      transaction_no: 'FT-MOCK-20260507-0025',
+      entry_scope: '业务收入',
+      transaction_type: '任务收入',
+      income_categories: ['任务收入', '补款收入'],
+      direction: '收入',
+      amount_cny: 820,
+      amount_usd: null,
+      exchange_rate: null,
+      customer_name: '广州优品贸易',
+      landing_account: '公司对公 · 8801',
+      order_number: 'TASK-20260507-251',
+      staff_name: '商务-王晨',
+      business_countries: ['美国', '德国'],
+      business_types: ['文字', '图片'],
+      business_order_count: 4,
+      business_breakdown: [
+        { direction: '收入', target_order_number: 'TASK-20260507-251', country: '美国', business_type: '文字', order_count: 3, amount_cny: 520, difference_cny: -80 },
+        { direction: '收入', target_order_number: 'TASK-20260507-252', country: '德国', business_type: '图片', order_count: 1, amount_cny: 300, difference_cny: 40 },
+      ],
+      handler_name: '财务-陈岚',
+      status: '待确认',
+      notes: '同时选择任务收入和补款收入。美国差价是客户欠我们，德国差价是需退客户',
+      transaction_date: now.subtract(4, 'hour').format('YYYY-MM-DD'),
+      created_at: now.subtract(4, 'hour').toISOString(),
+      updated_at: now.subtract(4, 'hour').toISOString(),
+    },
   ]
 }
 
@@ -1949,11 +2115,13 @@ function normalizeTransactionCategories(record: any) {
   if (secondaryToPrimaryMap[rawType]) {
     return { primary: secondaryToPrimaryMap[rawType], secondary: rawType }
   }
+  if (rawType === '退差价') return { primary: '业务支出', secondary: '余款退回' }
+  if (rawType === '赔付佣金') return { primary: '业务支出', secondary: '佣金退款' }
   if (rawType === '订单收入') return { primary: '业务收入', secondary: '任务收入' }
   if (rawType === '客户充值' || rawType === '批次收款') return { primary: '业务收入', secondary: '补款收入' }
   if (rawType === '退款' || rawType === '退款支出') return { primary: '业务支出', secondary: '截单退款' }
-  if (rawType === '返佣支出') return { primary: '业务支出', secondary: '赔付佣金' }
-  if (rawType === '任务支出' || rawType === '业务支出') return { primary: '业务支出', secondary: '退差价' }
+  if (rawType === '返佣支出') return { primary: '业务支出', secondary: '佣金退款' }
+  if (rawType === '任务支出' || rawType === '业务支出') return { primary: '业务支出', secondary: '余款退回' }
   if (rawType === '礼品卡采购') return { primary: '运营支出', secondary: '礼品卡' }
   if (rawType === '美金购汇') return { primary: '运营支出', secondary: '信用卡' }
   if (rawType === '行政支出') return { primary: '行政办公', secondary: '' }
@@ -1969,8 +2137,8 @@ function normalizeTransactionCategories(record: any) {
   if (/礼品卡/.test(text)) return { primary: '运营支出', secondary: '礼品卡' }
   if (/信用卡|卡费/.test(text)) return { primary: '运营支出', secondary: '信用卡' }
   if (/退款|截单/.test(text)) return { primary: '业务支出', secondary: '截单退款' }
-  if (/佣金|返佣/.test(text)) return { primary: '业务支出', secondary: '赔付佣金' }
-  if (/差价|补差/.test(text)) return { primary: '业务支出', secondary: '退差价' }
+  if (/佣金|返佣/.test(text)) return { primary: '业务支出', secondary: '佣金退款' }
+  if (/差价|补差/.test(text)) return { primary: '业务支出', secondary: '余款退回' }
   if (/收入|补款|收款/.test(text) || record?.direction === '收入') return { primary: '业务收入', secondary: '补款收入' }
   if (rawScope === '行政') return { primary: '行政办公', secondary: '' }
   return record?.direction === '收入'
@@ -2778,6 +2946,8 @@ onMounted(() => {
 .breakdown-table-source .breakdown-table-row { grid-template-columns: minmax(0, 1fr) 90px; }
 .breakdown-table-detail .breakdown-table-head,
 .breakdown-table-detail .breakdown-table-row { grid-template-columns: .8fr .8fr 70px; }
+.breakdown-table-detail-kind .breakdown-table-head,
+.breakdown-table-detail-kind .breakdown-table-row { grid-template-columns: 72px .8fr .8fr 70px; }
 .breakdown-table-refund-task .breakdown-table-head,
 .breakdown-table-refund-task .breakdown-table-row { grid-template-columns: 1.4fr .7fr 120px; }
 .breakdown-table-refund-type .breakdown-table-head,
