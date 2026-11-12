@@ -473,6 +473,15 @@
           </a-upload>
         </div>
         <div v-if="batchRecordMode !== 'offset' || !offsetOpenedFromNestedBatchAction" class="ar-field">
+          <label class="ar-label">账款状态变更</label>
+          <a-radio-group v-model:value="batchRecordForm.update_debt_status" size="small">
+            <a-radio-button value="cleared">已结清</a-radio-button>
+          </a-radio-group>
+          <div class="debt-status-reminder">
+            可勾选「已结清」；提交后弹出结清确认清单（按 ASIN），取消勾选可保留原差价
+          </div>
+        </div>
+        <div v-if="batchRecordMode !== 'offset' || !offsetOpenedFromNestedBatchAction" class="ar-field">
           <label class="ar-label">{{ batchRecordMode === 'offset' ? '账单备注' : '备注' }}</label>
           <a-textarea
             v-model:value="batchRecordForm.notes"
@@ -481,6 +490,37 @@
           />
         </div>
       </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="clearConfirmOpen"
+      title="确认结清"
+      :confirm-loading="clearConfirmSaving"
+      width="520px"
+      :mask-closable="false"
+      @ok="applyClearConfirm"
+    >
+      <template #footer>
+        <a-button type="primary" :loading="clearConfirmSaving" @click="applyClearConfirm">确认</a-button>
+      </template>
+      <div class="clear-confirm-bool">
+        <span class="clear-confirm-bool-label">是否结清</span>
+        <a-radio-group v-model:value="clearConfirmDoClear" size="small">
+          <a-radio-button value="yes">是</a-radio-button>
+          <a-radio-button value="no">否</a-radio-button>
+        </a-radio-group>
+      </div>
+      <div v-if="clearConfirmDoClear === 'yes'" class="clear-confirm-list">
+        <div v-for="row in clearConfirmRows" :key="row.id" class="clear-confirm-row">
+          <a-checkbox v-model:checked="row.include">
+            <span class="clear-confirm-line">
+              {{ row.created_mmdd }} {{ row.asin }} {{ row.debt_label }}
+              ¥{{ row.debt_amount.toFixed(2) }}<template v-if="row.debt_amount_usd > 0.005">/${{ row.debt_amount_usd.toFixed(2) }}</template>
+            </span>
+          </a-checkbox>
+        </div>
+      </div>
+      <div v-else class="clear-confirm-tip">选择「否」后点确认，不变更账款状态。</div>
     </a-modal>
 
   </a-drawer>
@@ -843,7 +883,113 @@ watch(() => props.groupOrders, async (val) => {
 // --- 合并款项录入 ---
 const batchRecordModalOpen = ref(false)
 const batchRecordSaving = ref(false)
+const clearConfirmOpen = ref(false)
+const clearConfirmSaving = ref(false)
+const clearConfirmDoClear = ref<'yes' | 'no'>('yes')
+type ClearConfirmRow = {
+  id: string
+  asin: string
+  created_mmdd: string
+  debt_label: string
+  debt_amount: number
+  debt_amount_usd: number
+  include: boolean
+  _is_demo?: boolean
+}
+const clearConfirmRows = ref<ClearConfirmRow[]>([])
 const batchRecordMode = ref<'supplement' | 'refund' | 'offset'>('supplement')
+
+const CLEAR_CONFIRM_DEMO_ROWS: ClearConfirmRow[] = [
+  { id: '__clear_demo_1', asin: 'B0DEMOAAA01', created_mmdd: '1102', debt_label: '有欠款', debt_amount: 200, debt_amount_usd: 28.5, include: true, _is_demo: true },
+  { id: '__clear_demo_2', asin: 'B0DEMOBBB02', created_mmdd: '1105', debt_label: '有余款', debt_amount: 85.5, debt_amount_usd: 12.2, include: true, _is_demo: true },
+  { id: '__clear_demo_3', asin: 'B0DEMOCCC03', created_mmdd: '1108', debt_label: '有欠款', debt_amount: 320, debt_amount_usd: 0, include: true, _is_demo: true },
+  { id: '__clear_demo_4', asin: 'B0DEMODDD04', created_mmdd: '1110', debt_label: '有余款', debt_amount: 46, debt_amount_usd: 6.5, include: false, _is_demo: true },
+]
+
+function formatClearCreatedMmdd(value: any) {
+  if (!value) return '--'
+  const d = dayjs(value)
+  return d.isValid() ? d.format('MMDD') : '--'
+}
+
+function withClearConfirmDemoRows(rows: ClearConfirmRow[]) {
+  return [...rows, ...CLEAR_CONFIRM_DEMO_ROWS.map(row => ({ ...row }))]
+}
+
+function buildClearCandidateFromOrder(order: any): ClearConfirmRow | null {
+  if (!order?.id) return null
+  if (order.debt_status !== 'owed' && order.debt_status !== 'surplus') return null
+  return {
+    id: order.id,
+    asin: order.asin || '-',
+    created_mmdd: formatClearCreatedMmdd(order.created_at),
+    debt_label: order.debt_status === 'owed' ? '有欠款' : '有余款',
+    debt_amount: Number(order.debt_amount || 0),
+    debt_amount_usd: Number(order._debt_amount_usd || 0),
+    include: true,
+  }
+}
+
+function openClearConfirmModal(rows: ClearConfirmRow[]) {
+  clearConfirmDoClear.value = 'yes'
+  clearConfirmRows.value = withClearConfirmDemoRows(rows)
+  clearConfirmOpen.value = true
+}
+
+async function applyClearedDebtToOrders(orderList: any[]) {
+  if (!orderList.length) return
+  const updatedAt = new Date().toISOString()
+  const ids: string[] = []
+  for (const order of orderList) {
+    ids.push(order.id)
+    order.debt_status = 'cleared'
+    order.debt_amount = 0
+    order._debt_amount_usd = 0
+  }
+  const realIds = orderList.filter(o => !o._is_bill_proto_mock).map(o => o.id)
+  if (realIds.length) {
+    const { error } = await supabase.from('erp_orders').update({
+      debt_status: 'cleared',
+      debt_amount: 0,
+      updated_at: updatedAt,
+    }).in('id', realIds)
+    if (error) throw error
+  }
+  // 刷新本地行展示
+  orders.value = orders.value.map(o => (
+    ids.includes(o.id)
+      ? { ...o, debt_status: 'cleared', debt_amount: 0, _debt_amount_usd: 0 }
+      : o
+  ))
+  resetBatchForm()
+}
+
+async function applyClearConfirm() {
+  if (clearConfirmDoClear.value !== 'yes') {
+    clearConfirmOpen.value = false
+    message.info('未结清，账款状态未变更')
+    return
+  }
+  const targets = clearConfirmRows.value.filter(row => row.include && !row._is_demo)
+  if (!targets.length) {
+    clearConfirmOpen.value = false
+    message.info('未勾选真实任务，未变更账款状态')
+    return
+  }
+  clearConfirmSaving.value = true
+  try {
+    const idSet = new Set(targets.map(row => row.id))
+    const orderList = orders.value.filter(o => idSet.has(o.id))
+    await applyClearedDebtToOrders(orderList)
+    message.success(`已结清 ${targets.length} 个任务`)
+    clearConfirmOpen.value = false
+    emit('updated')
+  } catch (e: any) {
+    message.error('结清失败：' + e.message)
+  } finally {
+    clearConfirmSaving.value = false
+  }
+}
 const offsetOpenedFromNestedBatchAction = ref(false)
 const nestedBatchReturnMode = ref<'supplement' | 'refund' | null>(null)
 const nestedBatchParentFormSnapshot = ref<any | null>(null)
@@ -1016,6 +1162,7 @@ const batchRecordForm = ref({
   offset_commission_rows: [{ country: undefined as string | undefined, business_type: undefined as string | undefined, order_count: undefined as number | undefined }],
   refund_business_rows: [{ country: undefined as string | undefined, business_type: '', order_count: undefined as number | undefined }],
   notes: '',
+  update_debt_status: null as string | null,
 })
 
 const isBatchRefundAccountTransfer = computed(() =>
@@ -1262,6 +1409,7 @@ function openBatchRecordModal(mode: 'supplement' | 'refund' | 'offset', fromNest
     offset_commission_rows: [createBatchOffsetDetailRow()],
     refund_business_rows: createBatchRefundBusinessRows(),
     notes: '',
+    update_debt_status: null as string | null,
   }
   if (mode !== 'offset') {
     onBatchRecordPrimaryChange()
@@ -1594,6 +1742,20 @@ async function saveBatchRecord() {
     }
     await loadAllPayments()
 
+    const clearCandidates = batchRecordForm.value.update_debt_status === 'cleared'
+      ? toProcess
+        .map(row => buildClearCandidateFromOrder(orders.value.find(o => o.id === row.orderId)))
+        .filter(Boolean) as Array<{
+          id: string
+          asin: string
+          order_number: string
+          debt_label: string
+          debt_amount: number
+          debt_amount_usd: number
+          include: boolean
+        }>
+      : []
+
     const processedMap = toProcess.reduce((acc, row) => {
       acc[row.orderId] = Math.abs(Number(row.allocated || 0))
       return acc
@@ -1641,6 +1803,11 @@ async function saveBatchRecord() {
       rebuildAllocRowsWithDrafts(remainingDrafts)
     }
     emit('updated')
+
+    // 款项提交后再确认：按 ASIN 勾选结清并清零差价
+    if (clearCandidates.length) {
+      openClearConfirmModal(clearCandidates)
+    }
   } catch (e: any) {
     message.error('操作失败：' + e.message)
   } finally {
@@ -2348,6 +2515,52 @@ async function saveBatchRecord() {
   font-size: 12px;
   color: #374151;
   font-weight: 500;
+}
+
+.debt-status-reminder {
+  font-size: 11px;
+  color: #f59e0b;
+  margin-top: 4px;
+}
+
+.clear-confirm-bool {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.clear-confirm-bool-label {
+  font-size: 13px;
+  color: #1a1a2e;
+  font-weight: 500;
+}
+
+.clear-confirm-tip {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.clear-confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.clear-confirm-row {
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.clear-confirm-line {
+  color: #1a1a2e;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .upload-btn {

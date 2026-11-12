@@ -399,11 +399,9 @@
           <label class="ar-label">账款状态变更</label>
           <a-radio-group v-model:value="addRecordForm.update_debt_status" size="small">
             <a-radio-button value="cleared">已结清</a-radio-button>
-            <a-radio-button value="owed">有欠款</a-radio-button>
-            <a-radio-button value="surplus">有余款</a-radio-button>
           </a-radio-group>
-          <div v-if="addRecordForm.update_debt_status" class="debt-status-reminder">
-            账款状态需手动确认，实际情况请以商务核实为准
+          <div class="debt-status-reminder">
+            可勾选「已结清」；提交后弹出结清确认清单，取消勾选可保留原差价
           </div>
         </div>
         <div v-if="addRecordType !== '账面抵消' || !offsetOpenedFromNestedAction" class="ar-field">
@@ -415,6 +413,37 @@
           />
         </div>
       </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="clearConfirmOpen"
+      title="确认结清"
+      :confirm-loading="clearConfirmSaving"
+      width="520px"
+      :mask-closable="false"
+      @ok="applyClearConfirm"
+    >
+      <template #footer>
+        <a-button type="primary" :loading="clearConfirmSaving" @click="applyClearConfirm">确认</a-button>
+      </template>
+      <div class="clear-confirm-bool">
+        <span class="clear-confirm-bool-label">是否结清</span>
+        <a-radio-group v-model:value="clearConfirmDoClear" size="small">
+          <a-radio-button value="yes">是</a-radio-button>
+          <a-radio-button value="no">否</a-radio-button>
+        </a-radio-group>
+      </div>
+      <div v-if="clearConfirmDoClear === 'yes'" class="clear-confirm-list">
+        <div v-for="row in clearConfirmRows" :key="row.id" class="clear-confirm-row">
+          <a-checkbox v-model:checked="row.include">
+            <span class="clear-confirm-line">
+              {{ row.created_mmdd }} {{ row.asin }} {{ row.debt_label }}
+              ¥{{ row.debt_amount.toFixed(2) }}<template v-if="row.debt_amount_usd > 0.005">/${{ row.debt_amount_usd.toFixed(2) }}</template>
+            </span>
+          </a-checkbox>
+        </div>
+      </div>
+      <div v-else class="clear-confirm-tip">选择「否」后点确认，不变更账款状态。</div>
     </a-modal>
   </a-drawer>
 </template>
@@ -611,6 +640,107 @@ async function saveDebt() {
 // --- 新增记录 ---
 const addRecordOpen = ref(false)
 const addRecordSaving = ref(false)
+const clearConfirmOpen = ref(false)
+const clearConfirmSaving = ref(false)
+const clearConfirmDoClear = ref<'yes' | 'no'>('yes')
+type ClearConfirmRow = {
+  id: string
+  asin: string
+  created_mmdd: string
+  debt_label: string
+  debt_amount: number
+  debt_amount_usd: number
+  include: boolean
+  _is_demo?: boolean
+}
+const clearConfirmRows = ref<ClearConfirmRow[]>([])
+
+const CLEAR_CONFIRM_DEMO_ROWS: ClearConfirmRow[] = [
+  { id: '__clear_demo_1', asin: 'B0DEMOAAA01', created_mmdd: '1102', debt_label: '有欠款', debt_amount: 200, debt_amount_usd: 28.5, include: true, _is_demo: true },
+  { id: '__clear_demo_2', asin: 'B0DEMOBBB02', created_mmdd: '1105', debt_label: '有余款', debt_amount: 85.5, debt_amount_usd: 12.2, include: true, _is_demo: true },
+  { id: '__clear_demo_3', asin: 'B0DEMOCCC03', created_mmdd: '1108', debt_label: '有欠款', debt_amount: 320, debt_amount_usd: 0, include: true, _is_demo: true },
+  { id: '__clear_demo_4', asin: 'B0DEMODDD04', created_mmdd: '1110', debt_label: '有余款', debt_amount: 46, debt_amount_usd: 6.5, include: false, _is_demo: true },
+]
+
+function formatClearCreatedMmdd(value: any) {
+  if (!value) return '--'
+  const d = dayjs(value)
+  return d.isValid() ? d.format('MMDD') : '--'
+}
+
+function withClearConfirmDemoRows(rows: ClearConfirmRow[]) {
+  return [...rows, ...CLEAR_CONFIRM_DEMO_ROWS.map(row => ({ ...row }))]
+}
+
+function buildClearCandidateFromOrder(order: any): ClearConfirmRow | null {
+  if (!order?.id) return null
+  if (order.debt_status !== 'owed' && order.debt_status !== 'surplus') return null
+  return {
+    id: order.id,
+    asin: order.asin || '-',
+    created_mmdd: formatClearCreatedMmdd(order.created_at),
+    debt_label: order.debt_status === 'owed' ? '有欠款' : '有余款',
+    debt_amount: Number(order.debt_amount || 0),
+    debt_amount_usd: Number(order._debt_amount_usd || 0),
+    include: true,
+  }
+}
+
+function openClearConfirmModal(rows: ClearConfirmRow[]) {
+  clearConfirmDoClear.value = 'yes'
+  clearConfirmRows.value = withClearConfirmDemoRows(rows)
+  clearConfirmOpen.value = true
+}
+
+async function applyClearedDebtToOrders(orderList: any[]) {
+  if (!orderList.length) return
+  const updatedAt = new Date().toISOString()
+  for (const order of orderList) {
+    const statusPayload: any = {
+      debt_status: 'cleared',
+      debt_amount: 0,
+      _debt_amount_usd: 0,
+      updated_at: updatedAt,
+    }
+    const dbPayload = {
+      debt_status: 'cleared',
+      debt_amount: 0,
+      updated_at: updatedAt,
+    }
+    if (order._is_bill_proto_mock || order._debt_usd_display_only) {
+      emit('updated', { id: order.id, ...statusPayload })
+      continue
+    }
+    const { error } = await supabase.from('erp_orders').update(dbPayload).eq('id', order.id)
+    if (!error) emit('updated', { id: order.id, ...statusPayload })
+  }
+}
+
+async function applyClearConfirm() {
+  if (clearConfirmDoClear.value !== 'yes') {
+    clearConfirmOpen.value = false
+    message.info('未结清，账款状态未变更')
+    return
+  }
+  const targets = clearConfirmRows.value.filter(row => row.include && !row._is_demo)
+  if (!targets.length) {
+    clearConfirmOpen.value = false
+    message.info('未勾选真实任务，未变更账款状态')
+    return
+  }
+  clearConfirmSaving.value = true
+  try {
+    const orderMap = new Map([[props.order?.id, props.order]])
+    const orderList = targets.map(row => orderMap.get(row.id)).filter(Boolean)
+    await applyClearedDebtToOrders(orderList)
+    message.success(`已结清 ${targets.length} 个任务`)
+    clearConfirmOpen.value = false
+  } catch (e: any) {
+    message.error('结清失败：' + e.message)
+  } finally {
+    clearConfirmSaving.value = false
+  }
+}
 const addRecordType = ref<'补款' | '退款' | '账面抵消'>('补款')
 const offsetOpenedFromNestedAction = ref(false)
 const nestedReturnRecordType = ref<'补款' | '退款' | null>(null)
@@ -1139,23 +1269,13 @@ async function saveRecord() {
     })
     if (payErr) throw payErr
 
-    if (addRecordForm.value.update_debt_status) {
-      const statusPayload: any = {
-        debt_status: addRecordForm.value.update_debt_status,
-        updated_at: new Date().toISOString(),
-      }
-      if (addRecordForm.value.update_debt_status === 'cleared') {
-        statusPayload.debt_amount = 0
-      }
-      const { error: dsErr } = await supabase.from('erp_orders').update(statusPayload).eq('id', props.order.id)
-      if (!dsErr) {
-        emit('updated', { id: props.order.id, ...statusPayload })
-      }
-    }
-
     const label = isOffset ? '账面抵消已记录' : isRefund ? '退款已提交，流水待审批' : '补款已记录'
     message.success(label)
     await loadPayments()
+
+    const needClearConfirm = addRecordForm.value.update_debt_status === 'cleared'
+      && !!buildClearCandidateFromOrder(props.order)
+
     if (isOffset && offsetOpenedFromNestedAction.value && nestedReturnRecordType.value && nestedParentRecordFormSnapshot.value) {
       const parentType = nestedReturnRecordType.value
       const restoredForm = JSON.parse(JSON.stringify(nestedParentRecordFormSnapshot.value))
@@ -1181,6 +1301,12 @@ async function saveRecord() {
       }
     } else {
       addRecordOpen.value = false
+    }
+
+    // 款项提交后再确认：勾选任务结清并清零差价
+    if (needClearConfirm) {
+      const candidate = buildClearCandidateFromOrder(props.order)
+      openClearConfirmModal(candidate ? [candidate] : [])
     }
   } catch (e: any) {
     message.error('操作失败：' + e.message)
@@ -1742,6 +1868,46 @@ async function deleteRecord(payment: any) {
   font-size: 11px;
   color: #f59e0b;
   margin-top: 4px;
+}
+
+.clear-confirm-bool {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.clear-confirm-bool-label {
+  font-size: 13px;
+  color: #1a1a2e;
+  font-weight: 500;
+}
+
+.clear-confirm-tip {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.clear-confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.clear-confirm-row {
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.clear-confirm-line {
+  color: #1a1a2e;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 @media (max-width: 560px) {

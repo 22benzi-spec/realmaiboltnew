@@ -192,9 +192,9 @@
           </div>
 
           <div class="gbd-fund-actions">
-            <a-button size="small" class="gbd-btn-in">录入补款</a-button>
-            <a-button size="small" class="gbd-btn-offset">账面抵消</a-button>
-            <a-button size="small" class="gbd-btn-out">提交退款</a-button>
+            <a-button size="small" class="gbd-btn-in" @click="openRecordModal('supplement')">录入补款</a-button>
+            <a-button size="small" class="gbd-btn-offset" @click="openRecordModal('offset')">账面抵消</a-button>
+            <a-button size="small" class="gbd-btn-out" @click="openRecordModal('refund')">提交退款</a-button>
           </div>
         </section>
 
@@ -269,6 +269,79 @@
         </section>
       </div>
     </div>
+
+    <a-modal
+      v-model:open="recordModalOpen"
+      :title="recordModalTitle"
+      :ok-text="recordModalOkText"
+      :ok-button-props="{ danger: recordMode === 'refund' }"
+      :confirm-loading="recordSaving"
+      cancel-text="取消"
+      width="520px"
+      @ok="saveRecordModal"
+    >
+      <div class="gbd-record-form">
+        <div class="gbd-record-summary">
+          本次涉及 {{ allLocalOrders.length }} 个任务
+          <template v-if="recordMode === 'refund'">（退款提交后待审批）</template>
+          <template v-else-if="recordMode === 'offset'">（账面抵消用于对账）</template>
+        </div>
+        <div class="gbd-record-field">
+          <label>金额（元）</label>
+          <a-input-number
+            v-model:value="recordForm.amount_cny"
+            style="width:100%"
+            :min="0"
+            :precision="2"
+            placeholder="请输入金额"
+          />
+        </div>
+        <div class="gbd-record-field">
+          <label>备注</label>
+          <a-textarea v-model:value="recordForm.notes" :rows="2" placeholder="备注（可选）" />
+        </div>
+        <div class="gbd-record-field">
+          <label>账款状态变更</label>
+          <a-radio-group v-model:value="recordForm.update_debt_status" size="small">
+            <a-radio-button value="cleared">已结清</a-radio-button>
+          </a-radio-group>
+          <div class="gbd-record-hint">
+            提交后将弹出结清确认清单（按 ASIN）；取消勾选可保留原差价
+          </div>
+        </div>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="clearConfirmOpen"
+      title="确认结清"
+      :confirm-loading="clearConfirmSaving"
+      width="520px"
+      :mask-closable="false"
+      @ok="applyClearConfirm"
+    >
+      <template #footer>
+        <a-button type="primary" :loading="clearConfirmSaving" @click="applyClearConfirm">确认</a-button>
+      </template>
+      <div class="gbd-clear-bool">
+        <span class="gbd-clear-bool-label">是否结清</span>
+        <a-radio-group v-model:value="clearConfirmDoClear" size="small">
+          <a-radio-button value="yes">是</a-radio-button>
+          <a-radio-button value="no">否</a-radio-button>
+        </a-radio-group>
+      </div>
+      <div v-if="clearConfirmDoClear === 'yes'" class="gbd-clear-list">
+        <div v-for="row in clearConfirmRows" :key="row.id" class="gbd-clear-row">
+          <a-checkbox v-model:checked="row.include">
+            <span class="gbd-clear-line">
+              {{ row.created_mmdd }} {{ row.asin }} {{ row.debt_label }}
+              ¥{{ row.debt_amount.toFixed(2) }}<template v-if="row.debt_amount_usd > 0.005">/${{ row.debt_amount_usd.toFixed(2) }}</template>
+            </span>
+          </a-checkbox>
+        </div>
+      </div>
+      <div v-else class="gbd-clear-tip">选择「否」后点确认，不变更账款状态。</div>
+    </a-modal>
   </a-drawer>
 </template>
 
@@ -312,6 +385,173 @@ const savedOnce = ref(false)
 /** 本地可变订单副本，支持可写 */
 const localOrdersByBatch = ref<Record<string, any[]>>({})
 const expandedMap = ref<Record<string, boolean>>({})
+
+type RecordMode = 'supplement' | 'offset' | 'refund'
+const recordModalOpen = ref(false)
+const recordSaving = ref(false)
+const recordMode = ref<RecordMode>('supplement')
+const recordForm = ref({
+  amount_cny: undefined as number | undefined,
+  notes: '',
+  update_debt_status: null as string | null,
+})
+const clearConfirmOpen = ref(false)
+const clearConfirmSaving = ref(false)
+const clearConfirmDoClear = ref<'yes' | 'no'>('yes')
+type ClearConfirmRow = {
+  id: string
+  asin: string
+  created_mmdd: string
+  debt_label: string
+  debt_amount: number
+  debt_amount_usd: number
+  include: boolean
+  _is_demo?: boolean
+}
+const clearConfirmRows = ref<ClearConfirmRow[]>([])
+
+const CLEAR_CONFIRM_DEMO_ROWS: ClearConfirmRow[] = [
+  { id: '__clear_demo_1', asin: 'B0DEMOAAA01', created_mmdd: '1102', debt_label: '有欠款', debt_amount: 200, debt_amount_usd: 28.5, include: true, _is_demo: true },
+  { id: '__clear_demo_2', asin: 'B0DEMOBBB02', created_mmdd: '1105', debt_label: '有余款', debt_amount: 85.5, debt_amount_usd: 12.2, include: true, _is_demo: true },
+  { id: '__clear_demo_3', asin: 'B0DEMOCCC03', created_mmdd: '1108', debt_label: '有欠款', debt_amount: 320, debt_amount_usd: 0, include: true, _is_demo: true },
+  { id: '__clear_demo_4', asin: 'B0DEMODDD04', created_mmdd: '1110', debt_label: '有余款', debt_amount: 46, debt_amount_usd: 6.5, include: false, _is_demo: true },
+]
+
+const allLocalOrders = computed(() => Object.values(localOrdersByBatch.value).flat())
+const recordModalTitle = computed(() => ({
+  supplement: '录入补款',
+  offset: '录入账面抵消',
+  refund: '提交退款',
+}[recordMode.value]))
+const recordModalOkText = computed(() => ({
+  supplement: '录入补款',
+  offset: '保存抵消',
+  refund: '提交退款',
+}[recordMode.value]))
+
+function formatClearCreatedMmdd(value: any) {
+  if (!value) return '--'
+  const d = dayjs(value)
+  return d.isValid() ? d.format('MMDD') : '--'
+}
+
+function withClearConfirmDemoRows(rows: ClearConfirmRow[]) {
+  return [...rows, ...CLEAR_CONFIRM_DEMO_ROWS.map(row => ({ ...row }))]
+}
+
+function buildClearCandidateFromOrder(order: any): ClearConfirmRow | null {
+  if (!order?.id) return null
+  if (order.debt_status !== 'owed' && order.debt_status !== 'surplus') return null
+  return {
+    id: order.id,
+    asin: order.asin || '-',
+    created_mmdd: formatClearCreatedMmdd(order.created_at),
+    debt_label: order.debt_status === 'owed' ? '有欠款' : '有余款',
+    debt_amount: Number(order.debt_amount || 0),
+    debt_amount_usd: Number(order._debt_amount_usd || 0),
+    include: true,
+  }
+}
+
+function openClearConfirmModal(rows: ClearConfirmRow[]) {
+  clearConfirmDoClear.value = 'yes'
+  clearConfirmRows.value = withClearConfirmDemoRows(rows)
+  clearConfirmOpen.value = true
+}
+
+function openRecordModal(mode: RecordMode) {
+  recordMode.value = mode
+  recordForm.value = {
+    amount_cny: undefined,
+    notes: '',
+    update_debt_status: null,
+  }
+  recordModalOpen.value = true
+}
+
+async function saveRecordModal() {
+  const amount = Number(recordForm.value.amount_cny || 0)
+  if (amount <= 0) {
+    message.warning('请输入金额')
+    return Promise.reject(new Error('amount required'))
+  }
+  if (!allLocalOrders.value.length) {
+    message.warning('当前没有可操作的任务')
+    return Promise.reject(new Error('no orders'))
+  }
+  recordSaving.value = true
+  try {
+    const isMockOnly = allLocalOrders.value.every(o => o._is_bill_proto_mock)
+    message.success(
+      recordMode.value === 'refund'
+        ? (isMockOnly ? '退款已提交（原型展示，待审批）' : '退款已提交，流水待审批')
+        : recordMode.value === 'offset'
+          ? (isMockOnly ? '账面抵消已记录（原型展示）' : '账面抵消已记录')
+          : (isMockOnly ? '补款已记录（原型展示）' : '补款已记录'),
+    )
+    recordModalOpen.value = false
+
+    if (recordForm.value.update_debt_status === 'cleared') {
+      const candidates = allLocalOrders.value
+        .map(o => buildClearCandidateFromOrder(o))
+        .filter(Boolean) as ClearConfirmRow[]
+      openClearConfirmModal(candidates)
+    }
+  } finally {
+    recordSaving.value = false
+  }
+}
+
+async function applyClearConfirm() {
+  if (clearConfirmDoClear.value !== 'yes') {
+    clearConfirmOpen.value = false
+    message.info('未结清，账款状态未变更')
+    return
+  }
+  const targets = clearConfirmRows.value.filter(row => row.include && !row._is_demo)
+  if (!targets.length) {
+    clearConfirmOpen.value = false
+    message.info('未勾选真实任务，未变更账款状态')
+    return
+  }
+  clearConfirmSaving.value = true
+  try {
+    const idSet = new Set(targets.map(row => row.id))
+    const sourceOrders = allLocalOrders.value
+    const realIds = targets
+      .map(row => sourceOrders.find(o => o.id === row.id))
+      .filter(o => o && !o._is_bill_proto_mock)
+      .map(o => o!.id)
+    const updatedAt = new Date().toISOString()
+    const nextMap: Record<string, any[]> = {}
+    for (const [batch, list] of Object.entries(localOrdersByBatch.value)) {
+      nextMap[batch] = list.map(o => (
+        idSet.has(o.id)
+          ? { ...o, debt_status: 'cleared', debt_amount: 0, _debt_amount_usd: 0 }
+          : o
+      ))
+    }
+    localOrdersByBatch.value = nextMap
+
+    if (realIds.length) {
+      const { error } = await supabase.from('erp_orders').update({
+        debt_status: 'cleared',
+        debt_amount: 0,
+        updated_at: updatedAt,
+      }).in('id', realIds)
+      if (error) throw error
+    }
+    message.success(`已结清 ${targets.length} 个任务`)
+    clearConfirmOpen.value = false
+    emit('updated')
+    refreshUnsavedTexts()
+  } catch (e: any) {
+    message.error('结清失败：' + e.message)
+    return Promise.reject(e)
+  } finally {
+    clearConfirmSaving.value = false
+  }
+}
 
 const rawGroups = computed<GroupBillGroupInput[]>(() => {
   if (props.groups && props.groups.length > 0) return props.groups
@@ -1103,4 +1343,65 @@ function saveText() {
 .gbd-copy-label { font-size: 12px; color: #6b7280; }
 .gbd-copy-text { font-size: 13px; }
 .gbd-copy-actions { margin-top: 10px; display: flex; justify-content: flex-end; gap: 8px; }
+
+.gbd-record-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gbd-record-summary {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+.gbd-record-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gbd-record-field label {
+  font-size: 12px;
+  color: #374151;
+  font-weight: 500;
+}
+.gbd-record-hint {
+  font-size: 11px;
+  color: #f59e0b;
+}
+.gbd-clear-bool {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.gbd-clear-bool-label {
+  font-size: 13px;
+  color: #1a1a2e;
+  font-weight: 500;
+}
+.gbd-clear-tip {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+.gbd-clear-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+.gbd-clear-row {
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.gbd-clear-line {
+  color: #1a1a2e;
+  font-size: 13px;
+  line-height: 1.4;
+}
 </style>
