@@ -20,6 +20,7 @@
         </a-select>
         <a-button type="primary" @click="load"><ReloadOutlined /> 刷新</a-button>
         <span class="total-hint">共 {{ pagination.total }} 个任务</span>
+        <a-button type="primary" @click="createTaskOpen = true"><PlusOutlined /> 创建任务</a-button>
       </div>
 
       <div v-if="loading" class="loading-wrap"><a-spin /></div>
@@ -1474,6 +1475,7 @@
       </div>
     </a-modal>
 
+    <CreateTaskDrawer v-model:open="createTaskOpen" @success="load" />
   </div>
 </template>
 
@@ -1481,12 +1483,17 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
-  ReloadOutlined, RightOutlined, ThunderboltOutlined,
+  ReloadOutlined, RightOutlined, ThunderboltOutlined, PlusOutlined,
   DeleteOutlined, EditOutlined, SaveOutlined, LinkOutlined, PictureOutlined, CopyOutlined, DownOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
 import SubOrderOpsDrawer from '../components/SubOrderOpsDrawer.vue'
+import CreateTaskDrawer from '../components/CreateTaskDrawer.vue'
+import { getPrototypeTaskRows } from '../components/create-task/dataSource'
+
+const createTaskOpen = ref(false)
+let prototypeTaskCount = 0
 
 // ===== Tab =====
 const activeTab = ref('tasks')
@@ -3039,12 +3046,34 @@ async function load() {
     }))
     mapped.sort((a: any, b: any) => (b._sub_total || 0) - (a._sub_total || 0))
     tasks.value = decorateTaskPreviewSamples(mapped)
+    prototypeTaskCount = 0
     pagination.value.total = count || 0
   } catch (e: any) {
     message.error('加载失败：' + e.message)
   } finally {
-    loading.value = false
+    try {
+      await appendCreatedPrototypeTasks()
+    } catch {
+      message.error('读取本地原型任务失败')
+    } finally {
+      loading.value = false
+    }
   }
+}
+
+async function appendCreatedPrototypeTasks() {
+  const rows = (await getPrototypeTaskRows()).filter(row => {
+    const keyword = searchText.value.trim().toLowerCase()
+    return (!keyword || `${row.order_number} ${row.asin} ${row.store_name}`.toLowerCase().includes(keyword))
+      && (!filterStatus.value || normalizeTaskStatus(row.status) === normalizeTaskStatus(filterStatus.value))
+      && (!filterCountry.value || row.country === filterCountry.value)
+  })
+  tasks.value = [
+    ...(pagination.value.current === 1 ? rows : []),
+    ...tasks.value.filter(row => !row._prototype_create_task),
+  ]
+  pagination.value.total += rows.length - prototypeTaskCount
+  prototypeTaskCount = rows.length
 }
 
 function requestTaskStatusChange(record: any, nextStatus: string) {

@@ -1,6 +1,6 @@
 import {
   ShopOutlined, CheckSquareOutlined, TeamOutlined, DollarOutlined,
-  ApartmentOutlined, InboxOutlined, UnorderedListOutlined, AppstoreOutlined,
+  ApartmentOutlined, UnorderedListOutlined, AppstoreOutlined,
   UserAddOutlined, DesktopOutlined, ThunderboltOutlined, UserOutlined,
   CreditCardOutlined, BankOutlined, SendOutlined, MessageOutlined,
   FileTextOutlined, WifiOutlined, CloudServerOutlined, CommentOutlined,
@@ -32,7 +32,6 @@ export const allNavGroups: NavGroup[] = [
     icon: ShopOutlined,
     roles: ['业务员', '商务', '管理员'],
     items: [
-      { id: 'fba-orders', label: '创建任务', icon: InboxOutlined },
       { id: 'my-orders', label: '接单管理', icon: UnorderedListOutlined },
     ],
   },
