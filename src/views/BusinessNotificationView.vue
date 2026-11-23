@@ -249,7 +249,14 @@
             <template v-else-if="column.key === 'action'">
               <a-space>
                 <a-button type="link" size="small" @click="viewOrder(record)">查看订单</a-button>
-                <a-button type="link" size="small" @click="openFeedbackModal(record)">反馈</a-button>
+                <span class="action-btn-with-badge">
+                  <a-button type="link" size="small" @click="openFeedbackModal(record)">反馈</a-button>
+                  <span
+                    v-if="getDebtCornerBadge(record)"
+                    class="debt-corner-badge"
+                    :class="`is-${getDebtCornerBadge(record)?.type}`"
+                  >{{ getDebtCornerBadge(record)?.text }}</span>
+                </span>
                 <a-button size="small" :disabled="isMarked(record, 'first-review')" @click="markNotification(record, 'first-review')">
                   {{ isMarked(record, 'first-review') ? '已标记' : '标记' }}
                 </a-button>
@@ -359,7 +366,14 @@
 
             <template v-else-if="column.key === 'action'">
               <a-space>
-                <a-button type="link" size="small" @click="copyNewReviewSummary(record)">复制</a-button>
+                <span class="action-btn-with-badge">
+                  <a-button type="link" size="small" @click="copyNewReviewSummary(record)">复制</a-button>
+                  <span
+                    v-if="getDebtCornerBadge(record)"
+                    class="debt-corner-badge"
+                    :class="`is-${getDebtCornerBadge(record)?.type}`"
+                  >{{ getDebtCornerBadge(record)?.text }}</span>
+                </span>
                 <a-button size="small" :disabled="isMarked(record, 'new-review')" @click="markNotification(record, 'new-review')">
                   {{ isMarked(record, 'new-review') ? '已标记' : '标记' }}
                 </a-button>
@@ -709,14 +723,79 @@
 
     <a-modal
       v-model:open="feedbackModalOpen"
-      title="编辑反馈状态"
+      :title="feedbackShowDebtEditor ? '编辑反馈与差价' : '编辑反馈状态'"
       :confirm-loading="feedbackSaving"
       ok-text="保存"
       cancel-text="取消"
-      width="520px"
+      :width="feedbackShowDebtEditor || feedbackShowDebtReadonly ? 560 : 520"
       @ok="saveFeedback"
     >
       <div class="feedback-form">
+        <div v-if="feedbackShowDebtEditor || feedbackShowDebtReadonly" class="feedback-field">
+          <label class="feedback-form-label">基础入账</label>
+          <div class="feedback-readonly-row">
+            <a-tag :color="getBillingStatusTagColor(feedbackForm.billing_status)" size="small">
+              {{ feedbackForm.billing_status || '已完成' }}
+            </a-tag>
+            <span
+              v-if="hasBillingBaseAmount(feedbackForm)"
+              class="feedback-base-amount"
+              :class="getBillingBaseAmountClass(feedbackForm)"
+            >{{ formatBillingBaseAmount(feedbackForm) }}</span>
+          </div>
+        </div>
+        <div v-if="feedbackShowDebtEditor" class="feedback-field">
+          <label class="feedback-form-label">差价情况</label>
+          <a-radio-group v-model:value="feedbackForm.debt_status" size="small">
+            <a-radio-button value="owed">有欠款</a-radio-button>
+            <a-radio-button value="surplus">有余款</a-radio-button>
+          </a-radio-group>
+          <template v-if="feedbackForm.debt_status === 'owed' || feedbackForm.debt_status === 'surplus'">
+            <div class="feedback-debt-amount-row">
+              <div class="feedback-date-field">
+                <label class="feedback-date-label">差价金额（元）</label>
+                <a-input-number
+                  v-model:value="feedbackForm.debt_amount"
+                  style="width:100%"
+                  :min="0"
+                  :precision="2"
+                  :placeholder="'输入差价金额'"
+                />
+              </div>
+              <div class="feedback-date-field">
+                <label class="feedback-date-label">差价金额（美元）</label>
+                <a-input-number
+                  v-model:value="feedbackForm.debt_amount_usd"
+                  style="width:100%"
+                  :min="0"
+                  :precision="2"
+                  :placeholder="'仅展示，不入库'"
+                />
+              </div>
+            </div>
+          </template>
+        </div>
+        <div v-else-if="feedbackShowDebtReadonly" class="feedback-field">
+          <label class="feedback-form-label">差价情况</label>
+          <div class="feedback-readonly-row">
+            <a-tag
+              v-if="feedbackForm.debt_status === 'owed'"
+              color="orange"
+              size="small"
+            >有欠款</a-tag>
+            <a-tag
+              v-else-if="feedbackForm.debt_status === 'surplus'"
+              color="blue"
+              size="small"
+            >有余款</a-tag>
+            <span v-else class="muted-text">暂无差价</span>
+            <span
+              v-if="hasReadonlyDebtAmount(feedbackForm)"
+              class="feedback-base-amount"
+              :class="feedbackForm.debt_status === 'owed' ? 'is-neg' : 'is-pos'"
+            >{{ formatReadonlyDebtAmount(feedbackForm) }}</span>
+          </div>
+        </div>
         <div class="feedback-field">
           <label class="feedback-form-label">订单反馈</label>
           <a-radio-group v-model:value="feedbackForm.order_feedback_status" @change="handleOrderFeedbackStatusChange">
@@ -886,8 +965,14 @@ type TaskCompletedRow = Record<string, any> & {
   review_level?: string
   order_quantity?: number
   total_orders?: number
+  billing_status?: string
+  /** 基础入账差额（元），未完成为负、富余为正；仅展示 */
+  _billing_base_amount_cny?: number
+  /** 基础入账差额（美元），仅展示 */
+  _billing_base_amount_usd?: number
   debt_status?: string
   debt_amount?: number
+  _debt_amount_usd?: number
   notes?: string
   task_notes?: string
   sales_person?: string
@@ -960,6 +1045,94 @@ type FeedbackForm = {
   order_feedback_date_picker: string | null
   review_feedback_status: string
   review_feedback_date_picker: string | null
+  billing_status: string
+  billing_base_amount_cny: number
+  billing_base_amount_usd: number
+  debt_status: string
+  debt_amount: number | null
+  /** 仅前端展示，不入库 */
+  debt_amount_usd: number | null
+}
+
+type FeedbackContext = 'task-completed-single' | 'first-review-single' | 'batch' | 'other'
+
+function createEmptyFeedbackForm(): FeedbackForm {
+  return {
+    order_feedback_status: '未反馈',
+    order_feedback_date_picker: null,
+    review_feedback_status: '未反馈',
+    review_feedback_date_picker: null,
+    billing_status: '已完成',
+    billing_base_amount_cny: 0,
+    billing_base_amount_usd: 0,
+    debt_status: '',
+    debt_amount: null,
+    debt_amount_usd: null,
+  }
+}
+
+function toOptionalPositiveAmount(value: any): number | null {
+  const n = Number(value || 0)
+  return n > 0.005 ? n : null
+}
+
+function normalizeEditableDebtStatus(status?: string) {
+  return status === 'owed' || status === 'surplus' ? status : ''
+}
+
+function getBillingStatusTagColor(status?: string) {
+  if (status === '未完成') return 'red'
+  if (status === '富余') return 'blue'
+  return 'green'
+}
+
+function hasBillingBaseAmount(form: Pick<FeedbackForm, 'billing_status' | 'billing_base_amount_cny' | 'billing_base_amount_usd'>) {
+  if (form.billing_status !== '未完成' && form.billing_status !== '富余') return false
+  return Math.abs(Number(form.billing_base_amount_cny || 0)) > 0.005
+    || Math.abs(Number(form.billing_base_amount_usd || 0)) > 0.005
+}
+
+function formatSignedMoneyPart(amount: number, currency: 'cny' | 'usd') {
+  if (Math.abs(amount) < 0.005) return ''
+  const abs = currency === 'cny' ? Math.abs(amount).toFixed(0) : Math.abs(amount).toFixed(2)
+  const prefix = amount > 0 ? '+' : '-'
+  return currency === 'cny' ? `${prefix}¥${abs}` : `${prefix}$${abs}`
+}
+
+function formatBillingBaseAmount(form: Pick<FeedbackForm, 'billing_base_amount_cny' | 'billing_base_amount_usd'>) {
+  return [
+    formatSignedMoneyPart(Number(form.billing_base_amount_cny || 0), 'cny'),
+    formatSignedMoneyPart(Number(form.billing_base_amount_usd || 0), 'usd'),
+  ].filter(Boolean).join(' / ')
+}
+
+function getBillingBaseAmountClass(form: Pick<FeedbackForm, 'billing_base_amount_cny' | 'billing_base_amount_usd'>) {
+  const amount = Number(form.billing_base_amount_cny || 0) || Number(form.billing_base_amount_usd || 0)
+  if (amount > 0.005) return 'is-pos'
+  if (amount < -0.005) return 'is-neg'
+  return ''
+}
+
+function getDebtCornerBadge(record: TaskCompletedRow): { type: 'owed' | 'surplus'; text: string } | null {
+  if (record.debt_status === 'owed') return { type: 'owed', text: '欠' }
+  if (record.debt_status === 'surplus') return { type: 'surplus', text: '余' }
+  return null
+}
+
+function hasReadonlyDebtAmount(form: Pick<FeedbackForm, 'debt_status' | 'debt_amount' | 'debt_amount_usd'>) {
+  if (form.debt_status !== 'owed' && form.debt_status !== 'surplus') return false
+  return Number(form.debt_amount || 0) > 0.005 || Number(form.debt_amount_usd || 0) > 0.005
+}
+
+function formatReadonlyDebtAmount(form: Pick<FeedbackForm, 'debt_status' | 'debt_amount' | 'debt_amount_usd'>) {
+  const cny = Number(form.debt_amount || 0)
+  const usd = Number(form.debt_amount_usd || 0)
+  const signedCny = form.debt_status === 'owed' ? -Math.abs(cny) : Math.abs(cny)
+  const signedUsd = form.debt_status === 'owed' ? -Math.abs(usd) : Math.abs(usd)
+  return [
+    formatSignedMoneyPart(signedCny, 'cny'),
+    formatSignedMoneyPart(signedUsd, 'usd'),
+  ].filter(Boolean).join(' / ')
 }
 
 const route = useRoute()
@@ -968,6 +1141,8 @@ const loading = ref(false)
 const taskCompletedRowsRaw = ref<TaskCompletedRow[]>([])
 const firstReviewRowsRaw = ref<TaskCompletedRow[]>([])
 const afterSaleRowsRaw = ref<AfterSaleRow[]>([])
+/** 触发任务完成 mock 列表在本地改差价后重算 */
+const taskCompletedMockRevision = ref(0)
 const markedId = ref<string>(loadMarkedId())
 const selectedRowKeys = ref<string[]>([])
 const firstReviewSelectedRowKeys = ref<string[]>([])
@@ -978,12 +1153,10 @@ const selectedTask = ref<TaskCompletedRow | null>(null)
 const feedbackModalOpen = ref(false)
 const feedbackSaving = ref(false)
 const feedbackTargetIds = ref<string[]>([])
-const feedbackForm = ref<FeedbackForm>({
-  order_feedback_status: '未反馈',
-  order_feedback_date_picker: null,
-  review_feedback_status: '未反馈',
-  review_feedback_date_picker: null,
-})
+const feedbackContext = ref<FeedbackContext>('other')
+const feedbackForm = ref<FeedbackForm>(createEmptyFeedbackForm())
+const feedbackShowDebtEditor = computed(() => feedbackContext.value === 'task-completed-single')
+const feedbackShowDebtReadonly = computed(() => feedbackContext.value === 'first-review-single')
 const editingNotesId = ref('')
 const editingNotesValue = ref('')
 const notesSaving = ref(false)
@@ -1031,6 +1204,7 @@ const activeType = computed({
 })
 
 const taskCompletedRows = computed(() => {
+  void taskCompletedMockRevision.value
   const mockRows = appendBatchStats(mockTaskCompletedSourceRows).filter(row => isTerminalTaskStatus(row.status))
   const rows = taskCompletedRowsRaw.value.length
     ? [...taskCompletedRowsRaw.value, ...mockRows]
@@ -1209,6 +1383,9 @@ const mockTaskCompletedSourceRows: TaskCompletedRow[] = [
     review_level: '普通',
     order_quantity: 5,
     status: '已完成',
+    billing_status: '已完成',
+    debt_status: 'none',
+    debt_amount: 0,
     sales_person: '陈婷',
     customer_name: '深圳云帆科技',
     notes: '完成后待反馈客户同批进度',
@@ -1229,8 +1406,12 @@ const mockTaskCompletedSourceRows: TaskCompletedRow[] = [
     review_level: '高等',
     order_quantity: 5,
     status: '已截单',
+    billing_status: '未完成',
+    _billing_base_amount_cny: -800,
+    _billing_base_amount_usd: -111.11,
     debt_status: 'owed',
-    debt_amount: 18.2,
+    debt_amount: 130,
+    _debt_amount_usd: 18.2,
     sales_person: '陈婷',
     customer_name: '深圳云帆科技',
     notes: '截单后需要同步补本金',
@@ -1251,8 +1432,10 @@ const mockTaskCompletedSourceRows: TaskCompletedRow[] = [
     review_level: '极高等',
     order_quantity: 8,
     status: '已完成',
+    billing_status: '已完成',
     debt_status: 'owed',
-    debt_amount: 12.75,
+    debt_amount: 90,
+    _debt_amount_usd: 12.75,
     sales_person: '陈婷',
     customer_name: '深圳云帆科技',
     notes: '实做少于总单量，同时需要客户补本金',
@@ -1311,8 +1494,12 @@ const mockTaskCompletedSourceRows: TaskCompletedRow[] = [
     review_level: '高等',
     order_quantity: 4,
     status: '已完成',
+    billing_status: '富余',
+    _billing_base_amount_cny: 350,
+    _billing_base_amount_usd: 48.61,
     debt_status: 'surplus',
-    debt_amount: 6.5,
+    debt_amount: 46,
+    _debt_amount_usd: 6.5,
     sales_person: '刘洋',
     customer_name: '杭州欧品贸易',
     notes: '同批最后一个任务完成',
@@ -1333,6 +1520,9 @@ const mockTaskCompletedSourceRows: TaskCompletedRow[] = [
     review_level: '普通',
     order_quantity: 2,
     status: '已完成',
+    billing_status: '已完成',
+    debt_status: 'none',
+    debt_amount: 0,
     sales_person: '刘洋',
     customer_name: '杭州欧品贸易',
     notes: '实做单量大于总单量，确认后同步客户',
@@ -1353,8 +1543,10 @@ const mockTaskCompletedSourceRows: TaskCompletedRow[] = [
     review_level: '普通',
     order_quantity: 9,
     status: '已截单',
+    billing_status: '已完成',
     debt_status: 'surplus',
-    debt_amount: 9.4,
+    debt_amount: 68,
+    _debt_amount_usd: 9.4,
     sales_person: '王敏',
     customer_name: '广州枫叶户外',
     notes: '截单但实做较多，需退差价',
@@ -1403,6 +1595,12 @@ const mockFirstReviewRows: TaskCompletedRow[] = [
     customer_name: '深圳云帆科技',
     seller_name: 'NorthPeak Seller',
     status: '进行中',
+    billing_status: '未完成',
+    _billing_base_amount_cny: -620,
+    _billing_base_amount_usd: -86.11,
+    debt_status: 'owed',
+    debt_amount: 96,
+    _debt_amount_usd: 13.5,
     created_at: dayjs().subtract(6, 'day').hour(10).minute(18).second(0).toISOString(),
     updated_at: dayjs().hour(9).minute(40).second(0).toISOString(),
     review_feedback_status: '未反馈',
@@ -1475,6 +1673,12 @@ const mockFirstReviewRows: TaskCompletedRow[] = [
     customer_name: '杭州晨星贸易',
     seller_name: 'DeskPro Seller',
     status: '进行中',
+    billing_status: '富余',
+    _billing_base_amount_cny: 280,
+    _billing_base_amount_usd: 38.89,
+    debt_status: 'surplus',
+    debt_amount: 42,
+    _debt_amount_usd: 5.8,
     created_at: dayjs().subtract(4, 'day').hour(11).minute(5).second(0).toISOString(),
     updated_at: dayjs().hour(11).minute(15).second(0).toISOString(),
     review_feedback_status: '未反馈',
@@ -1550,6 +1754,10 @@ const mockNewReviewRows: TaskCompletedRow[] = [
     customer_name: '宁波艾森家居',
     seller_name: 'VisionMax Seller',
     status: '进行中',
+    billing_status: '未完成',
+    debt_status: 'owed',
+    debt_amount: 150,
+    _debt_amount_usd: 20.8,
     created_at: dayjs().subtract(9, 'day').hour(9).minute(30).second(0).toISOString(),
     updated_at: dayjs().hour(15).minute(20).second(0).toISOString(),
     review_feedback_status: '已反馈',
@@ -1623,6 +1831,10 @@ const mockNewReviewRows: TaskCompletedRow[] = [
     customer_name: '广州星河电子',
     seller_name: 'PetDaily Seller',
     status: '进行中',
+    billing_status: '已完成',
+    debt_status: 'surplus',
+    debt_amount: 36,
+    _debt_amount_usd: 5.0,
     created_at: dayjs().subtract(7, 'day').hour(14).minute(5).second(0).toISOString(),
     updated_at: dayjs().hour(16).minute(10).second(0).toISOString(),
     review_feedback_status: '已反馈',
@@ -2001,24 +2213,16 @@ function getActualDiffText(record: TaskCompletedRow) {
 
 function getPrincipalMessage(record: TaskCompletedRow): { type: 'owed' | 'surplus'; text: string } | null {
   const amount = Number(record.debt_amount || 0)
-  const symbol = getPrincipalCurrencySymbol(record)
-  if (record.debt_status === 'owed' && amount > 0) return { type: 'owed', text: `需补差价 ${symbol}${amount.toFixed(2)}` }
-  if (record.debt_status === 'surplus' && amount > 0) return { type: 'surplus', text: `需退差价 ${symbol}${amount.toFixed(2)}` }
+  const usd = Number(record._debt_amount_usd || 0)
+  const moneyParts = [
+    amount > 0.005 ? `¥${amount.toFixed(2)}` : '',
+    usd > 0.005 ? `$${usd.toFixed(2)}` : '',
+  ].filter(Boolean)
+  if (!moneyParts.length) return null
+  const money = moneyParts.join(' / ')
+  if (record.debt_status === 'owed') return { type: 'owed', text: `需补差价 ${money}` }
+  if (record.debt_status === 'surplus') return { type: 'surplus', text: `需退差价 ${money}` }
   return null
-}
-
-function getPrincipalCurrencySymbol(record: TaskCompletedRow) {
-  const map: Record<string, string> = {
-    美国: '$',
-    德国: '€',
-    英国: '£',
-    加拿大: 'C$',
-    US: '$',
-    DE: '€',
-    UK: '£',
-    CA: 'C$',
-  }
-  return map[String(record.country || '').trim()] || '$'
 }
 
 function getBatchProgressInfo(record: TaskCompletedRow): { type: 'unfinished'; unfinished: number; total: number } | { type: 'completed'; total: number } | null {
@@ -2327,11 +2531,23 @@ async function viewTodayOrders(record: TaskCompletedRow) {
 
 function openFeedbackModal(record: TaskCompletedRow) {
   feedbackTargetIds.value = [record.id]
+  feedbackContext.value = activeType.value === 'task-completed'
+    ? 'task-completed-single'
+    : activeType.value === 'first-review'
+      ? 'first-review-single'
+      : 'other'
   feedbackForm.value = {
+    ...createEmptyFeedbackForm(),
     order_feedback_status: record.order_feedback_status || '未反馈',
     order_feedback_date_picker: record.order_feedback_date || null,
     review_feedback_status: record.review_feedback_status || '未反馈',
     review_feedback_date_picker: record.review_feedback_date || null,
+    billing_status: record.billing_status || '已完成',
+    billing_base_amount_cny: Number(record._billing_base_amount_cny || 0),
+    billing_base_amount_usd: Number(record._billing_base_amount_usd || 0),
+    debt_status: normalizeEditableDebtStatus(record.debt_status),
+    debt_amount: toOptionalPositiveAmount(record.debt_amount),
+    debt_amount_usd: toOptionalPositiveAmount(record._debt_amount_usd),
   }
   feedbackModalOpen.value = true
 }
@@ -2339,7 +2555,9 @@ function openFeedbackModal(record: TaskCompletedRow) {
 function openBatchFeedbackModal() {
   if (!selectedRowKeys.value.length) return
   feedbackTargetIds.value = [...selectedRowKeys.value]
+  feedbackContext.value = 'batch'
   feedbackForm.value = {
+    ...createEmptyFeedbackForm(),
     order_feedback_status: '已反馈',
     order_feedback_date_picker: dayjs().format('YYYY-MM-DD'),
     review_feedback_status: '未反馈',
@@ -2351,7 +2569,9 @@ function openBatchFeedbackModal() {
 function openFirstReviewBatchFeedbackModal() {
   if (!firstReviewSelectedRowKeys.value.length) return
   feedbackTargetIds.value = [...firstReviewSelectedRowKeys.value]
+  feedbackContext.value = 'other'
   feedbackForm.value = {
+    ...createEmptyFeedbackForm(),
     order_feedback_status: '未反馈',
     order_feedback_date_picker: null,
     review_feedback_status: '已反馈',
@@ -2360,12 +2580,36 @@ function openFirstReviewBatchFeedbackModal() {
   feedbackModalOpen.value = true
 }
 
+function buildDebtSavePatch() {
+  const hasIssue = feedbackForm.value.debt_status === 'owed' || feedbackForm.value.debt_status === 'surplus'
+  const debtAmount = hasIssue ? Number(Number(feedbackForm.value.debt_amount || 0).toFixed(2)) : 0
+  const debtAmountUsd = hasIssue ? Number(Number(feedbackForm.value.debt_amount_usd || 0).toFixed(2)) : 0
+  return {
+    db: {
+      debt_status: feedbackForm.value.debt_status || 'none',
+      debt_amount: debtAmount,
+    },
+    local: {
+      debt_status: feedbackForm.value.debt_status || 'none',
+      debt_amount: debtAmount,
+      _debt_amount_usd: debtAmountUsd,
+    },
+  }
+}
+
+function applyFeedbackPatchToRows(rows: TaskCompletedRow[], patch: Record<string, any>) {
+  rows.forEach(row => {
+    if (feedbackTargetIds.value.includes(row.id)) Object.assign(row, patch)
+  })
+}
+
 async function saveFeedback() {
   if (!feedbackTargetIds.value.length) return
   feedbackSaving.value = true
   try {
     const isOrderFb = feedbackForm.value.order_feedback_status === '已反馈'
     const isReviewFb = feedbackForm.value.review_feedback_status === '已反馈'
+    const editDebt = feedbackShowDebtEditor.value
 
     if (isOrderFb && !feedbackForm.value.order_feedback_date_picker) {
       message.warning('请选择订单反馈日期')
@@ -2377,23 +2621,35 @@ async function saveFeedback() {
       feedbackSaving.value = false
       return
     }
+    if (editDebt && (feedbackForm.value.debt_status === 'owed' || feedbackForm.value.debt_status === 'surplus')) {
+      if (Number(feedbackForm.value.debt_amount || 0) <= 0 && Number(feedbackForm.value.debt_amount_usd || 0) <= 0) {
+        message.warning('请填写差价金额')
+        feedbackSaving.value = false
+        return
+      }
+    }
 
-    const payload = {
+    const payload: Record<string, any> = {
       order_feedback_status: feedbackForm.value.order_feedback_status,
       order_feedback_date: isOrderFb ? feedbackForm.value.order_feedback_date_picker : null,
       review_feedback_status: feedbackForm.value.review_feedback_status,
       review_feedback_date: isReviewFb ? feedbackForm.value.review_feedback_date_picker : null,
       updated_at: new Date().toISOString(),
     }
+    const debtPatch = editDebt ? buildDebtSavePatch() : null
+    if (debtPatch) Object.assign(payload, debtPatch.db)
+    const localPatch = debtPatch ? { ...payload, ...debtPatch.local } : payload
 
     if (feedbackTargetIds.value.every(id => id.startsWith('mock-'))) {
-      firstReviewRowsRaw.value.forEach(row => {
-        if (feedbackTargetIds.value.includes(row.id)) Object.assign(row, payload)
-      })
-      ;[...mockFirstReviewRows, ...mockNewReviewRows].forEach(row => {
-        if (feedbackTargetIds.value.includes(row.id)) Object.assign(row, payload)
-      })
-      message.success('反馈状态已保存')
+      applyFeedbackPatchToRows(firstReviewRowsRaw.value, localPatch)
+      applyFeedbackPatchToRows(mockFirstReviewRows, localPatch)
+      applyFeedbackPatchToRows(mockNewReviewRows, localPatch)
+      applyFeedbackPatchToRows(mockTaskCompletedSourceRows, localPatch)
+      applyFeedbackPatchToRows(taskCompletedRowsRaw.value, localPatch)
+      if (editDebt || activeType.value === 'task-completed') {
+        taskCompletedMockRevision.value += 1
+      }
+      message.success(editDebt ? '反馈与差价已保存' : '反馈状态已保存')
       feedbackModalOpen.value = false
       return
     }
@@ -2404,10 +2660,9 @@ async function saveFeedback() {
       : await query.in('id', feedbackTargetIds.value)
     if (error) throw error
 
-    taskCompletedRowsRaw.value.forEach(row => {
-      if (feedbackTargetIds.value.includes(row.id)) Object.assign(row, payload)
-    })
-    message.success('反馈状态已保存')
+    applyFeedbackPatchToRows(taskCompletedRowsRaw.value, localPatch)
+    applyFeedbackPatchToRows(firstReviewRowsRaw.value, localPatch)
+    message.success(editDebt ? '反馈与差价已保存' : '反馈状态已保存')
     feedbackModalOpen.value = false
   } catch (error: any) {
     message.error(`保存失败：${error?.message || '未知错误'}`)
@@ -2999,6 +3254,64 @@ function fmtTime(value: string | null) {
   margin-bottom: 6px;
   color: #6b7280;
   font-size: 12px;
+}
+
+.feedback-readonly-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.feedback-base-amount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.feedback-base-amount.is-neg {
+  color: #dc2626;
+}
+
+.feedback-base-amount.is-pos {
+  color: #2563eb;
+}
+
+.feedback-debt-amount-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.action-btn-with-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.debt-corner-badge {
+  position: absolute;
+  top: -6px;
+  right: -2px;
+  z-index: 1;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.debt-corner-badge.is-owed {
+  background: #dc2626;
+}
+
+.debt-corner-badge.is-surplus {
+  background: #059669;
 }
 
 .copy-modal-body {
