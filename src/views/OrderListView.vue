@@ -102,8 +102,27 @@
         </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'order_number'">
-            <div class="order-number-cell">
-              <div v-if="record.batch_number && record._isFirstInBatch" class="batch-group-header">
+            <div v-if="record._is_group_summary_row" class="order-number-cell group-summary-order-cell">
+              <div class="batch-group-header">
+                <div class="batch-group-left" @click.stop="showGroupDetail(record)">
+                  <span class="batch-group-icon"><LinkOutlined /></span>
+                  <span class="batch-group-name" :title="record.batch_number">{{ record.batch_number }}</span>
+                </div>
+                <a-button
+                  size="small"
+                  class="batch-bill-btn"
+                  @click.stop="openBillModal(record.batch_number)"
+                >
+                  <FileTextOutlined /> 账单
+                </a-button>
+              </div>
+              <div class="group-summary-caption">组基础款</div>
+            </div>
+            <div v-else class="order-number-cell">
+              <div
+                v-if="record.batch_number && record._isFirstInBatch && !record._group_has_summary_row"
+                class="batch-group-header"
+              >
                 <div class="batch-group-left" @click.stop="showGroupDetail(record)">
                   <span class="batch-group-icon"><LinkOutlined /></span>
                   <span class="batch-group-name" :title="record.batch_number">{{ record.batch_number }}</span>
@@ -182,8 +201,22 @@
           </template>
 
           <template v-if="column.key === 'billing'">
-            <div class="billing-cell">
+            <div v-if="record._is_group_summary_row" class="billing-cell group-base-summary">
               <div class="billing-row">
+                <span class="billing-label">基础：</span>
+                <a-tag
+                  :color="getGroupBaseStatusColor(record._group_base_status)"
+                  size="small"
+                >{{ record._group_base_status || '已完成' }}</a-tag>
+                <span
+                  v-if="hasGroupBaseAmount(record)"
+                  class="signed-amount"
+                  :class="getSignedAmountClass(Number(record._group_base_amount_cny || 0) || Number(record._group_base_amount_usd || 0))"
+                >{{ formatSignedMoneyPair(record._group_base_amount_cny, record._group_base_amount_usd) }}</span>
+              </div>
+            </div>
+            <div v-else class="billing-cell">
+              <div v-if="!record._isMultiBatch" class="billing-row">
                 <span class="billing-label">入账：</span>
                 <a-tag
                   :color="record.billing_status === '未完成' ? 'red' : 'green'"
@@ -192,17 +225,15 @@
               </div>
               <div v-if="hasRealDebt(record)" class="debt-row">
                 <span class="billing-label">有欠款：</span>
-                <a-tag color="orange" size="small">
-                  &yen;{{ Number(record.debt_amount).toFixed(0) }}
-                  <template v-if="Number(record._debt_amount_usd || 0) > 0.005"> / ${{ Number(record._debt_amount_usd).toFixed(2) }}</template>
-                </a-tag>
+                <span class="signed-amount signed-neg">
+                  {{ formatSignedMoneyPair(-Math.abs(Number(record.debt_amount || 0)), -Math.abs(Number(record._debt_amount_usd || 0))) }}
+                </span>
               </div>
               <div v-else-if="hasRealSurplus(record)" class="debt-row">
                 <span class="billing-label">有余款：</span>
-                <a-tag color="blue" size="small">
-                  &yen;{{ Number(record.debt_amount).toFixed(0) }}
-                  <template v-if="Number(record._debt_amount_usd || 0) > 0.005"> / ${{ Number(record._debt_amount_usd).toFixed(2) }}</template>
-                </a-tag>
+                <span class="signed-amount signed-pos">
+                  {{ formatSignedMoneyPair(Math.abs(Number(record.debt_amount || 0)), Math.abs(Number(record._debt_amount_usd || 0))) }}
+                </span>
               </div>
               <div v-else-if="record.debt_status === 'cleared'" class="billing-row">
                 <a-tag color="green" size="small">已结清</a-tag>
@@ -286,7 +317,10 @@
           </template>
 
           <template v-if="column.key === 'action'">
-            <a-space>
+            <a-space v-if="record._is_group_summary_row">
+              <a-button type="link" size="small" @click="openBillModal(record.batch_number)">账单</a-button>
+            </a-space>
+            <a-space v-else>
               <a-button type="link" size="small" @click="viewDetail(record)">详情</a-button>
               <a-button type="link" size="small" @click="openFeedbackModal(record)">反馈</a-button>
               <a-button type="link" size="small" @click="openBillingDrawer(record)">账款</a-button>
@@ -963,10 +997,13 @@ function buildBillProtoMockOrders() {
       store_name: 'Demo Store A',
       country: '美国',
       status: '进行中',
-      billing_status: '已完成',
+      billing_status: '未完成',
       debt_status: 'owed',
       debt_amount: 100,
       _debt_amount_usd: 14.0,
+      _group_base_status: '未完成',
+      _group_base_amount_cny: -450,
+      _group_base_amount_usd: -62.5,
       total_amount: 600,
       order_quantity: 3,
       commission_fee: 30,
@@ -988,10 +1025,13 @@ function buildBillProtoMockOrders() {
       store_name: 'Demo Store B',
       country: '美国',
       status: '进行中',
-      billing_status: '已完成',
+      billing_status: '未完成',
       debt_status: 'owed',
       debt_amount: 100,
       _debt_amount_usd: 14.0,
+      _group_base_status: '未完成',
+      _group_base_amount_cny: -450,
+      _group_base_amount_usd: -62.5,
       total_amount: 500,
       order_quantity: 2,
       commission_fee: 20,
@@ -1116,9 +1156,320 @@ function buildBillProtoMergeMockOrders() {
   ]
 }
 
+function formatSignedCny(amount: number) {
+  if (Math.abs(amount) < 0.005) return ''
+  const abs = Math.abs(amount).toFixed(0)
+  return amount > 0 ? `+¥${abs}` : `-¥${abs}`
+}
+
+function formatSignedUsd(amount: number) {
+  if (Math.abs(amount) < 0.005) return ''
+  const abs = Math.abs(amount).toFixed(2)
+  return amount > 0 ? `+$${abs}` : `-$${abs}`
+}
+
+function formatSignedMoneyPair(cny: any, usd: any) {
+  const parts = [
+    formatSignedCny(Number(cny || 0)),
+    formatSignedUsd(Number(usd || 0)),
+  ].filter(Boolean)
+  return parts.join(' / ')
+}
+
+function hasGroupBaseAmount(record: any) {
+  return Math.abs(Number(record?._group_base_amount_cny || 0)) > 0.005
+    || Math.abs(Number(record?._group_base_amount_usd || 0)) > 0.005
+}
+
+function getGroupBaseStatusColor(status?: string) {
+  if (status === '未完成') return 'red'
+  if (status === '富余') return 'blue'
+  return 'green'
+}
+
+function getSignedAmountClass(amount: number) {
+  if (amount > 0.005) return 'signed-pos'
+  if (amount < -0.005) return 'signed-neg'
+  return ''
+}
+
+function deriveGroupBaseStatus(group: any[]) {
+  const explicit = group.find((o) => o._group_base_status)?._group_base_status
+  if (explicit) return explicit
+  if (group.some((o) => o.billing_status === '未完成')) return '未完成'
+  return '已完成'
+}
+
+function buildGroupSummaryRow(group: any[], batchColor: string) {
+  const head = group[0]
+  const status = deriveGroupBaseStatus(group)
+  const amountCny = Number(
+    head._group_base_amount_cny
+      ?? group.find((o) => o._group_base_amount_cny != null)?._group_base_amount_cny
+      ?? 0,
+  )
+  const amountUsd = Number(
+    head._group_base_amount_usd
+      ?? group.find((o) => o._group_base_amount_usd != null)?._group_base_amount_usd
+      ?? 0,
+  )
+  return {
+    id: `__group_summary_${head.batch_number}`,
+    batch_number: head.batch_number,
+    batch_id: head.batch_id,
+    customer_name: head.customer_name,
+    company_name: head.company_name,
+    sales_person: head.sales_person,
+    _is_group_summary_row: true,
+    _is_bill_proto_mock: group.every((o) => o._is_bill_proto_mock),
+    _batchColor: batchColor,
+    _hasBatchGroup: true,
+    _isMultiBatch: true,
+    _isFirstInBatch: true,
+    _isLastInBatch: false,
+    _group_has_summary_row: true,
+    _group_base_status: status,
+    _group_base_amount_cny: amountCny,
+    _group_base_amount_usd: amountUsd,
+  }
+}
+
+/** 组基础款 4 种原型：负/正 × 仅人民币 / 人民币+美金 */
+function buildGroupBaseSummaryMockOrders() {
+  const createdAt = '2026-03-28T10:00:00+08:00'
+  return [
+    // 1) 仅人民币 · 还要收（负）
+    {
+      id: 'mock-group-base-cny-short-001',
+      order_number: 'TASK-GRP-BASE-CNY-SHORT-001',
+      batch_number: 'GRP-BASE-CNY-SHORT',
+      batch_id: 'mock-group-base-cny-short',
+      customer_name: '组基础缺口客户',
+      company_name: '组基础缺口示例公司',
+      asin: 'B0BASECNY01',
+      product_name: '组基础人民币缺口任务A',
+      store_name: 'Base CNY Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '未完成',
+      debt_status: 'owed',
+      debt_amount: 40,
+      _debt_amount_usd: 0,
+      _group_base_status: '未完成',
+      _group_base_amount_cny: -800,
+      _group_base_amount_usd: 0,
+      total_amount: 500,
+      order_quantity: 2,
+      commission_fee: 20,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    {
+      id: 'mock-group-base-cny-short-002',
+      order_number: 'TASK-GRP-BASE-CNY-SHORT-002',
+      batch_number: 'GRP-BASE-CNY-SHORT',
+      batch_id: 'mock-group-base-cny-short',
+      customer_name: '组基础缺口客户',
+      company_name: '组基础缺口示例公司',
+      asin: 'B0BASECNY02',
+      product_name: '组基础人民币缺口任务B',
+      store_name: 'Base CNY Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '未完成',
+      debt_status: 'none',
+      debt_amount: 0,
+      _group_base_status: '未完成',
+      _group_base_amount_cny: -800,
+      _group_base_amount_usd: 0,
+      total_amount: 400,
+      order_quantity: 1,
+      commission_fee: 15,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    // 2) 仅人民币 · 多出来（正）
+    {
+      id: 'mock-group-base-cny-surplus-001',
+      order_number: 'TASK-GRP-BASE-CNY-SURP-001',
+      batch_number: 'GRP-BASE-CNY-SURPLUS',
+      batch_id: 'mock-group-base-cny-surplus',
+      customer_name: '组基础富余客户',
+      company_name: '组基础富余示例公司',
+      asin: 'B0BASECNP01',
+      product_name: '组基础人民币富余任务A',
+      store_name: 'Base CNY Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'surplus',
+      debt_amount: 30,
+      _debt_amount_usd: 0,
+      _group_base_status: '富余',
+      _group_base_amount_cny: 350,
+      _group_base_amount_usd: 0,
+      total_amount: 620,
+      order_quantity: 2,
+      commission_fee: 18,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    {
+      id: 'mock-group-base-cny-surplus-002',
+      order_number: 'TASK-GRP-BASE-CNY-SURP-002',
+      batch_number: 'GRP-BASE-CNY-SURPLUS',
+      batch_id: 'mock-group-base-cny-surplus',
+      customer_name: '组基础富余客户',
+      company_name: '组基础富余示例公司',
+      asin: 'B0BASECNP02',
+      product_name: '组基础人民币富余任务B',
+      store_name: 'Base CNY Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'none',
+      debt_amount: 0,
+      _group_base_status: '富余',
+      _group_base_amount_cny: 350,
+      _group_base_amount_usd: 0,
+      total_amount: 480,
+      order_quantity: 1,
+      commission_fee: 12,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    // 3) 人民币+美金 · 还要收（负）
+    {
+      id: 'mock-group-base-usd-short-001',
+      order_number: 'TASK-GRP-BASE-USD-SHORT-001',
+      batch_number: 'GRP-BASE-USD-SHORT',
+      batch_id: 'mock-group-base-usd-short',
+      customer_name: '组基础美金缺口客户',
+      company_name: '组基础美金缺口示例公司',
+      asin: 'B0BASEUSD01',
+      product_name: '组基础美金缺口任务A',
+      store_name: 'Base USD Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '未完成',
+      debt_status: 'owed',
+      debt_amount: 60,
+      _debt_amount_usd: 8.5,
+      _group_base_status: '未完成',
+      _group_base_amount_cny: -720,
+      _group_base_amount_usd: -100,
+      total_amount: 700,
+      order_quantity: 2,
+      commission_fee: 22,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    {
+      id: 'mock-group-base-usd-short-002',
+      order_number: 'TASK-GRP-BASE-USD-SHORT-002',
+      batch_number: 'GRP-BASE-USD-SHORT',
+      batch_id: 'mock-group-base-usd-short',
+      customer_name: '组基础美金缺口客户',
+      company_name: '组基础美金缺口示例公司',
+      asin: 'B0BASEUSD02',
+      product_name: '组基础美金缺口任务B',
+      store_name: 'Base USD Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '未完成',
+      debt_status: 'owed',
+      debt_amount: 25,
+      _debt_amount_usd: 3.5,
+      _group_base_status: '未完成',
+      _group_base_amount_cny: -720,
+      _group_base_amount_usd: -100,
+      total_amount: 520,
+      order_quantity: 1,
+      commission_fee: 14,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    // 4) 人民币+美金 · 多出来（正）
+    {
+      id: 'mock-group-base-usd-surplus-001',
+      order_number: 'TASK-GRP-BASE-USD-SURP-001',
+      batch_number: 'GRP-BASE-USD-SURPLUS',
+      batch_id: 'mock-group-base-usd-surplus',
+      customer_name: '组基础美金富余客户',
+      company_name: '组基础美金富余示例公司',
+      asin: 'B0BASEUSP01',
+      product_name: '组基础美金富余任务A',
+      store_name: 'Base USD Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'surplus',
+      debt_amount: 45,
+      _debt_amount_usd: 6.2,
+      _group_base_status: '富余',
+      _group_base_amount_cny: 360,
+      _group_base_amount_usd: 50,
+      total_amount: 880,
+      order_quantity: 2,
+      commission_fee: 24,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+    {
+      id: 'mock-group-base-usd-surplus-002',
+      order_number: 'TASK-GRP-BASE-USD-SURP-002',
+      batch_number: 'GRP-BASE-USD-SURPLUS',
+      batch_id: 'mock-group-base-usd-surplus',
+      customer_name: '组基础美金富余客户',
+      company_name: '组基础美金富余示例公司',
+      asin: 'B0BASEUSP02',
+      product_name: '组基础美金富余任务B',
+      store_name: 'Base USD Store',
+      country: '美国',
+      status: '进行中',
+      billing_status: '已完成',
+      debt_status: 'none',
+      debt_amount: 0,
+      _group_base_status: '富余',
+      _group_base_amount_cny: 360,
+      _group_base_amount_usd: 50,
+      total_amount: 640,
+      order_quantity: 1,
+      commission_fee: 16,
+      exchange_rate: 7.2,
+      sales_person: '商务-李婷',
+      created_at: createdAt,
+      _payment_total_cny: 0,
+      _is_bill_proto_mock: true,
+    },
+  ]
+}
+
 function markBatchMeta(rows: any[]) {
   const batchGroups: Record<string, any[]> = {}
   for (const row of rows) {
+    if (row._is_group_summary_row) continue
     const key = row.batch_number || `_solo_${row.id}`
     if (!batchGroups[key]) batchGroups[key] = []
     batchGroups[key].push(row)
@@ -1132,16 +1483,38 @@ function markBatchMeta(rows: any[]) {
     if (hasBatch) colorIdx++
   }
   for (const row of rows) {
+    if (row._is_group_summary_row) continue
     const key = row.batch_number || `_solo_${row.id}`
     const group = batchGroups[key]
     const hasBatch = !key.startsWith('_solo_')
+    const isMulti = group.length > 1
     row._batchColor = batchColorMap[key]
     row._hasBatchGroup = hasBatch
-    row._isMultiBatch = group.length > 1
+    row._isMultiBatch = isMulti
     row._isFirstInBatch = group[0].id === row.id
     row._isLastInBatch = group[group.length - 1].id === row.id
+    row._group_has_summary_row = isMulti
+    if (isMulti) {
+      row._group_base_status = deriveGroupBaseStatus(group)
+      const amountSource = group.find((o) => o._group_base_amount_cny != null || o._group_base_amount_usd != null) || group[0]
+      row._group_base_amount_cny = Number(amountSource._group_base_amount_cny || 0)
+      row._group_base_amount_usd = Number(amountSource._group_base_amount_usd || 0)
+    }
   }
-  return rows
+
+  const result: any[] = []
+  const emittedSummary = new Set<string>()
+  for (const row of rows) {
+    if (row._is_group_summary_row) continue
+    const key = row.batch_number || `_solo_${row.id}`
+    const group = batchGroups[key]
+    if (group?.length > 1 && !emittedSummary.has(key)) {
+      emittedSummary.add(key)
+      result.push(buildGroupSummaryRow(group, batchColorMap[key]))
+    }
+    result.push(row)
+  }
+  return result
 }
 
 const loading = ref(false)
@@ -1334,6 +1707,9 @@ const pagination = ref({ current: 1, pageSize: 20, total: 0, showSizeChanger: tr
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
   onChange: (keys: string[]) => { selectedRowKeys.value = keys },
+  getCheckboxProps: (record: any) => ({
+    disabled: !!record._is_group_summary_row,
+  }),
 }))
 
 const columns = [
@@ -1346,7 +1722,7 @@ const columns = [
   { title: '佣金', key: 'commission_fee', width: 90 },
   { title: '应收基础款项', key: 'receivable_amount', width: 130 },
   { title: '实收基础款项', key: 'actual_received', width: 130 },
-  { title: '账款状态', key: 'billing', width: 130 },
+  { title: '账款状态', key: 'billing', width: 168 },
   { title: '反馈状态', key: 'feedback', width: 130 },
   { title: '商务备注', key: 'notes', width: 140 },
   { title: '商务', key: 'sales_person', width: 110 },
@@ -1622,6 +1998,10 @@ function hasRealSurplus(record: any): boolean {
 
 function getRowClass(record: any): string {
   const classes: string[] = []
+  if (record._is_group_summary_row) {
+    classes.push('row-group-summary')
+    return classes.join(' ')
+  }
   if (record._hasBatchGroup) {
     classes.push('row-in-batch')
     if (record._isFirstInBatch) classes.push('row-batch-first')
@@ -1719,9 +2099,12 @@ async function loadOrders() {
     if (!hasActiveFilters.value && !rows.some((r: any) => String(r.id || '').includes('mock-billing-usd-'))) {
       rows = [...buildBillingUsdDebtMockOrders(), ...rows]
     }
-    markBatchMeta(rows)
-    // 子订单统计（排除前端注入的原型 mock id，避免非 UUID 查询报错）
-    const orderIds = rows.filter((r: any) => !r._is_bill_proto_mock).map((r: any) => r.id)
+    if (!hasActiveFilters.value && !rows.some((r: any) => String(r.batch_number || '').startsWith('GRP-BASE-'))) {
+      rows = [...buildGroupBaseSummaryMockOrders(), ...rows]
+    }
+    rows = markBatchMeta(rows)
+    // 子订单统计（排除前端注入的原型 mock / 组汇总行，避免非 UUID 查询报错）
+    const orderIds = rows.filter((r: any) => !r._is_bill_proto_mock && !r._is_group_summary_row).map((r: any) => r.id)
     if (orderIds.length > 0) {
       const { data: subs } = await supabase
         .from('sub_orders')
@@ -2140,7 +2523,7 @@ async function showGroupDetail(record: any) {
 }
 
 function openBatchEditFromSelection() {
-  const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id))
+  const selected = orders.value.filter(o => selectedRowKeys.value.includes(o.id) && !o._is_group_summary_row)
   if (!selected.length) {
     message.warning('请先选择要批量编辑的订单')
     return
@@ -2406,9 +2789,30 @@ onMounted(() => {
 .feedback-label { font-size: 11px; color: #9ca3af; }
 
 .billing-cell { display: flex; flex-direction: column; gap: 3px; }
-.billing-row { display: flex; align-items: center; gap: 4px; }
-.debt-row { display: flex; align-items: center; gap: 4px; }
+.billing-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.debt-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .billing-label { font-size: 11px; color: #9ca3af; }
+.signed-amount {
+  font-size: 12px;
+  font-weight: 650;
+  font-family: 'Courier New', monospace;
+  line-height: 1.3;
+}
+.signed-pos { color: #2563eb; }
+.signed-neg { color: #d97706; }
+.group-base-summary .signed-amount { font-size: 12px; }
+.group-summary-caption {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #6b7280;
+}
+.group-summary-order-cell { gap: 2px; }
+:deep(.row-group-summary) > td {
+  background: #f8fafc !important;
+}
+:deep(.row-group-summary) > td:first-child {
+  border-left: 3px solid #2563eb;
+}
 
 .amount { font-weight: 600; color: #2563eb; }
 .text-empty { color: #d1d5db; font-size: 13px; }
