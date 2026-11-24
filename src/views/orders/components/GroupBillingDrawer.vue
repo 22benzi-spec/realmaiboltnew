@@ -2,7 +2,7 @@
   <a-drawer
     :open="open"
     :title="groupDrawerTitle"
-    width="1100"
+    width="1400"
     placement="right"
     :body-style="{ padding: '0', background: 'var(--eva-bg-soft, #f8f9fb)' }"
     @close="emit('close')"
@@ -58,6 +58,9 @@
               <span class="col-amt">累计抵消</span>
               <span v-if="showGroupRefundColumn" class="col-amt">累计退款</span>
               <span class="col-amt">待结差额</span>
+              <span class="col-status">基础入账状态</span>
+              <span class="col-entry">{{ showGroupBasicEntryAmountColumns ? groupBasicEntryHeaderCny(localOrders) : '' }}</span>
+              <span class="col-entry">{{ showGroupBasicEntryAmountColumns ? groupBasicEntryHeaderUsd(localOrders) : '' }}</span>
               <span class="col-customer">客户</span>
             </div>
             <div v-for="group in billGroupRows" :key="group.key" class="gbd-group-block">
@@ -78,27 +81,71 @@
                 <span class="col-amt">{{ group.merge ? '合并操作' : `¥${formatGroupMoney(group.offset)}` }}</span>
                 <span v-if="showGroupRefundColumn" class="col-amt">{{ group.merge ? '合并操作' : (Number(group.refunded) > 0 ? `¥${formatGroupMoney(group.refunded)}` : '-') }}</span>
                 <span class="col-amt">{{ group.merge ? '合并操作' : formatGroupDiff(group.diff) }}</span>
+                <template v-if="group.orders[0]">
+                  <span class="col-status">
+                    <a-select
+                      v-model:value="group.orders[0]._groupBillingStatus"
+                      size="small"
+                      style="width: 86px"
+                      :disabled="statusSaving"
+                      @change="onGroupBillingStatusChange(group.orders[0])"
+                    >
+                      <a-select-option v-for="item in BILLING_STATUS_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
+                    </a-select>
+                  </span>
+                  <span class="col-entry">
+                    <a-input-number
+                      v-if="canEditGroupBasicEntry(group.orders[0])"
+                      v-model:value="group.orders[0]._groupBasicEntryCny"
+                      size="small"
+                      :min="0"
+                      :precision="2"
+                      style="width: 96px"
+                      :placeholder="groupBasicEntryAmountLabel(group.orders[0])"
+                      :disabled="statusSaving"
+                      @change="() => syncGroupBasicEntry(group.orders[0])"
+                    />
+                  </span>
+                  <span class="col-entry">
+                    <a-input-number
+                      v-if="canEditGroupBasicEntry(group.orders[0])"
+                      v-model:value="group.orders[0]._groupBasicEntryUsd"
+                      size="small"
+                      :min="0"
+                      :precision="2"
+                      style="width: 96px"
+                      :placeholder="groupBasicEntryAmountLabel(group.orders[0])"
+                      :disabled="statusSaving"
+                      @change="() => syncGroupBasicEntry(group.orders[0])"
+                    />
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="col-status" />
+                  <span class="col-entry" />
+                  <span class="col-entry" />
+                </template>
                 <span class="col-customer">{{ group.customerName || '-' }}</span>
               </div>
               <div v-if="isGroupExpanded(group.key)" class="gbd-task-wrap">
                 <div class="gbd-task-head">
                   <span class="t-asin">Asin</span>
                   <span class="t-amt">实际应收</span>
-                  <span class="t-status">基础入账状态</span>
-                  <span class="t-debt">差价状态</span>
-                  <span class="t-debt-amt">差价金额（元）</span>
-                  <span class="t-debt-usd">差价金额（美元）</span>
+                  <span class="t-debt">尾款状态</span>
+                  <span class="t-debt-amt">尾款金额（元）</span>
+                  <span class="t-debt-usd">尾款金额（美元）</span>
                 </div>
                 <div v-for="order in group.orders" :key="order.id" class="gbd-task-row">
                   <span class="t-asin">{{ order.product?.asin || '-' }}</span>
                   <span class="t-amt">¥{{ formatGroupMoney(order._actualReceivable) }}</span>
-                  <span class="t-status">
-                    <a-select v-model:value="order._groupBillingStatus" size="small" style="width: 86px" :disabled="statusSaving">
-                      <a-select-option v-for="item in BILLING_STATUS_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
-                    </a-select>
-                  </span>
                   <span class="t-debt">
-                    <a-select v-model:value="order._groupPaymentStatus" size="small" style="width: 112px" :disabled="statusSaving" @change="onGroupPaymentStatusChange(order)">
+                    <a-select
+                      v-model:value="order._groupPaymentStatus"
+                      size="small"
+                      style="width: 112px"
+                      :disabled="statusSaving || Number(order._groupPaymentStatus) === 4"
+                      @change="onGroupPaymentStatusChange(order)"
+                    >
                       <a-select-option v-for="item in groupDiffStatusOptions(order)" :key="item.value" :value="item.value" :disabled="item.disabled">{{ item.label }}</a-select-option>
                     </a-select>
                   </span>
@@ -121,6 +168,9 @@
               <span class="col-amt">{{ groupTotalsMerged ? '—' : `¥${formatGroupMoney(apiBillTotal?.offset_amount)}` }}</span>
               <span v-if="showGroupRefundColumn" class="col-amt">{{ groupTotalsMerged ? '—' : `¥${formatGroupMoney(apiBillTotal?.refund_amount)}` }}</span>
               <span class="col-amt">{{ groupTotalsMerged ? '—' : formatGroupDiff(apiBillTotal?.pending_settlement_diff) }}</span>
+              <span class="col-status" />
+              <span class="col-entry" />
+              <span class="col-entry" />
               <span class="col-customer" />
             </div>
           </div>
@@ -295,40 +345,104 @@
     </a-modal>
     <a-modal
       :open="supplementDiffOpen"
-      title="确认结清"
-      ok-text="确定"
-      cancel-text="取消"
-      width="860px"
+      title="确认本次结算"
+      :footer="null"
+      width="980px"
       :confirm-loading="recordSaving || uploading"
-      @ok="saveBatchRecord(undefined, 'submit')"
+      class="settlement-confirm-modal"
       @cancel="closeSupplementDiff"
     >
-      <div class="supplement-diff-toolbar">
-        <a-button size="small" @click="selectAllSupplementDiff">全选</a-button>
-        <a-button size="small" @click="invertSupplementDiff">反选</a-button>
-        <span class="supplement-diff-summary">{{ supplementDiffSummaryText }}</span>
+      <div class="sc-head">{{ settlementConfirmMetaText }}</div>
+      <div class="sc-summary">
+        <div class="sc-summary-main">
+          <span>本次{{ settlementConfirmActionLabel }} <b>{{ settlementConfirmSummary.enteredText }}</b></span>
+          <span class="sc-summary-sep">·</span>
+          <span>勾选净需补 <b class="sc-need">{{ settlementConfirmSummary.needText }}</b></span>
+        </div>
+        <button type="button" class="sc-restore" @click="toggleSettlementRecommend">推荐勾选</button>
       </div>
-      <a-table
-        :columns="supplementDiffColumns"
-        :data-source="supplementDiffRows"
-        :row-selection="supplementDiffRowSelection"
-        row-key="id"
-        size="small"
-        :pagination="{ pageSize: 20, hideOnSinglePage: true }"
-        :locale="{ emptyText: '暂无有欠款或有余款的数据' }"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'paymentStatus'">
-            {{ supplementDiffStatusLabel(record.paymentStatus) }}
+      <div v-if="!settlementConfirmGroups.length" class="sc-empty">暂无基础未完成/富余或尾款有欠/有余的数据</div>
+      <div v-else class="sc-split">
+        <div class="sc-left">
+          <div class="sc-pane-title">组维度</div>
+          <div
+            v-for="group in settlementConfirmGroups"
+            :key="group.key"
+            class="sc-group"
+            :class="{ active: String(group.key) === String(settlementActiveGroupKey) }"
+            @click="focusSettlementGroup(group)"
+          >
+            <a-checkbox
+              :checked="groupCheckState(group) === 'checked'"
+              :indeterminate="groupCheckState(group) === 'indeterminate'"
+              @click.stop
+              @change="(checked: any) => onSettlementGroupCheck(group, checkboxChecked(checked))"
+            />
+            <div class="sc-group-body">
+              <div class="sc-group-top">
+                <span class="sc-group-title">{{ group.batchNumber }}</span>
+                <span class="sc-group-sub">基础入账：{{ basicStatusLabel(group.basicStatus) }}</span>
+              </div>
+              <div class="sc-group-metrics">
+                <span>基础款差额 <b :class="moneyClass(groupBasicSigned(group).cny)">{{ formatMoneyPair(groupBasicSigned(group).cny, groupBasicSigned(group).usd) }}</b></span>
+                <span>尾款合计 <b :class="moneyClass(groupTailNet(group).cny)">{{ formatMoneyPair(groupTailNet(group).cny, groupTailNet(group).usd) }}</b></span>
+                <span>组总差额 <b :class="moneyClass(groupTotalNet(group).cny)">{{ formatMoneyPair(groupTotalNet(group).cny, groupTotalNet(group).usd) }}</b></span>
+              </div>
+              <div class="sc-group-pick">
+                <label
+                  v-if="canSelectBasic(group.basicStatus)"
+                  class="sc-basic-toggle"
+                  @click.stop
+                >
+                  <a-checkbox
+                    :checked="group.basicSelected"
+                    @change="(checked: any) => {
+                      focusSettlementGroup(group)
+                      group.basicSelected = checkboxChecked(checked)
+                    }"
+                  />
+                  <span>{{ group.basicSelected ? '基础款已选' : '基础款未选' }}</span>
+                </label>
+                <span v-else class="sc-basic-none">基础款无差额</span>
+                <span>已选尾款 {{ groupTailSelectedCount(group) }}/{{ group.tasks.length }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sc-right">
+          <div class="sc-pane-title">{{ activeSettlementGroup?.batchNumber || '-' }} · 任务明细</div>
+          <div class="sc-task-head">
+            <span class="sc-col-check" />
+            <span class="sc-col-task">任务</span>
+            <span class="sc-col-status">尾款状态</span>
+            <span class="sc-col-amt">尾款差额</span>
+          </div>
+          <template v-if="activeSettlementGroup">
+            <div v-if="!activeSettlementGroup.tasks.length" class="sc-empty-sm">本组无尾款差额任务</div>
+            <div v-for="task in activeSettlementGroup.tasks" :key="task.id" class="sc-task-row">
+              <a-checkbox
+                :checked="task.selected"
+                @change="(checked: any) => { task.selected = checkboxChecked(checked) }"
+              />
+              <div class="sc-task-main">
+                <div class="sc-task-no">{{ task.taskNo }}</div>
+                <div class="sc-task-asin">{{ task.asin }}</div>
+              </div>
+              <span class="sc-task-status">{{ task.paymentStatus === 2 ? '有欠款' : '有余款' }}</span>
+              <b :class="moneyClass(signedTailAmounts(task.paymentStatus, task.amountCny, task.amountUsd).cny)">
+                {{ formatMoneyPair(signedTailAmounts(task.paymentStatus, task.amountCny, task.amountUsd).cny, signedTailAmounts(task.paymentStatus, task.amountCny, task.amountUsd).usd) }}
+              </b>
+            </div>
           </template>
-          <template v-else-if="column.key === 'amountCny'">
-            {{ supplementDiffAmountText(record.amountCny) }}
-          </template>
-          <template v-else-if="column.key === 'amountUsd'">
-            {{ supplementDiffAmountText(record.amountUsd) }}
-          </template>
-        </template>
-      </a-table>
+        </div>
+      </div>
+      <div class="sc-foot">
+        <span>已选 {{ settlementConfirmSummary.net.basicCount }} 个基础款项，{{ settlementConfirmSummary.net.taskCount }} 个任务</span>
+        <div class="sc-foot-actions">
+          <a-button @click="closeSupplementDiff">返回修改</a-button>
+          <a-button type="primary" :loading="recordSaving || uploading" @click="saveBatchRecord(undefined, 'submit')">{{ settlementConfirmOkText }}</a-button>
+        </div>
+      </div>
     </a-modal>
     <OffsetRecordModal
       v-model:open="directOffsetOpen"
@@ -397,8 +511,33 @@ import {
   saveReceiveBillStatus,
 } from '../prototypeService'
 import { submittedArrearsUsdAmount } from '../billStatusPayload'
-import { changedGroupStatusOrders, groupArrearsInputText, groupDiffStatusOptions, groupStatusEditKey } from '../groupBillSave'
-import { billTaskIds, buildSupplementDiffOpenState, checkedDiffSummaryText, invertDiffIds, selectAllDiffIds } from '../supplementDiffConfirm'
+import {
+  canEditGroupBasicEntry,
+  changedGroupStatusOrders,
+  groupArrearsInputText,
+  groupBasicEntryAmountLabel,
+  groupBasicEntryHeaderCny,
+  groupBasicEntryHeaderUsd,
+  groupBasicEntryInputValue,
+  groupDiffStatusOptions,
+  groupStatusEditKey,
+} from '../groupBillSave'
+import {
+  applySettlementAutoSelect,
+  buildSettlementConfirmGroups,
+  canSelectBasic,
+  formatMoneyPair,
+  groupCheckState,
+  groupTailSelectedCount,
+  selectedBasicGroupKeys,
+  selectedTaskIdsFromGroups,
+  setGroupChecked,
+  settlementSummaryText,
+  signedBasicAmounts,
+  signedTailAmounts,
+  type SettlementConfirmGroup,
+  type SettlementConfirmMode,
+} from '../supplementDiffConfirm'
 import { readReceiveBillGroups } from '../receiveBillResponse'
 import { buildBillCopyText } from './billAmountText'
 import OffsetRecordModal from './OffsetRecordModal.vue'
@@ -507,6 +646,10 @@ const showGroupRefundColumn = computed(() =>
   || billGroupRows.value.some(group => Number(group.refunded || 0) > 0)
 )
 const groupTotalsMerged = computed(() => billGroupRows.value.some(group => group.merge))
+/** 仅未完成/富余显示待收或富余金额列文案；已完成不展示金额 */
+const showGroupBasicEntryAmountColumns = computed(() =>
+  localOrders.value.some(order => canEditGroupBasicEntry(order))
+)
 
 function formatGroupMoney(value: unknown) {
   const amount = Number(value || 0)
@@ -614,10 +757,16 @@ function normalizeApiOverviewOrder(order: any) {
     id: String(order.id),
     task_no: order.task_no,
     created_at: order.created_at || sourceOrder.created_at,
+    finished_at: sourceOrder.finished_at || order.created_at || sourceOrder.created_at,
+    status: sourceOrder.status ?? order.status,
+    status_label: sourceOrder.status_label || order.status_label,
     product: { asin: order.asin || sourceOrder.product?.asin },
     task_basic: {
-      id: order.task_basic_id,
-      task_basics_no: order.task_basics_no,
+      ...(sourceOrder.task_basic || {}),
+      id: order.task_basic_id ?? sourceOrder.task_basic?.id,
+      task_basics_no: order.task_basics_no ?? sourceOrder.task_basic?.task_basics_no,
+      basic_entry_amount_cny: sourceOrder.task_basic?.basic_entry_amount_cny,
+      basic_entry_amount_usd: sourceOrder.task_basic?.basic_entry_amount_usd,
     },
     bill,
     arrears_usd_amount: order.arrears_usd_amount,
@@ -628,6 +777,8 @@ function normalizeApiOverviewOrder(order: any) {
     _groupBillingStatus: deriveBillingStatusFromBill(bill),
     _groupPaymentStatus: derivePaymentStatusFromBill(bill),
     _groupArrearsAmount: getBillArrearsAmount(bill),
+    _groupBasicEntryCny: groupBasicEntryInputValue(sourceOrder.task_basic?.basic_entry_amount_cny),
+    _groupBasicEntryUsd: groupBasicEntryInputValue(sourceOrder.task_basic?.basic_entry_amount_usd),
   }
 }
 
@@ -638,6 +789,8 @@ function normalizeGroupOrder(order: any) {
     _groupBillingStatus: Number(bill?.basic_bill_status || deriveBillingStatusFromBill(bill)),
     _groupPaymentStatus: Number(bill?.payment_status || derivePaymentStatus(order)),
     _groupArrearsAmount: getBillArrearsAmount(bill),
+    _groupBasicEntryCny: groupBasicEntryInputValue(order.task_basic?.basic_entry_amount_cny),
+    _groupBasicEntryUsd: groupBasicEntryInputValue(order.task_basic?.basic_entry_amount_usd),
   }
 }
 
@@ -758,6 +911,7 @@ async function saveOrderStatus(order: any) {
     ?? order.bill_details?.actual_receivable_amount
     ?? bill?.actual_receivable_amount
     ?? 0
+  const canEditEntry = canEditGroupBasicEntry(order)
   const response = await saveReceiveBillStatus({
     task_id: Number(order.id),
     actual_receivable_amount: String(Number(actualReceivable || 0).toFixed(2)),
@@ -767,6 +921,8 @@ async function saveOrderStatus(order: any) {
     arrears_usd_amount: hasIssue ? String(order._groupArrearsUsd ?? '').trim() : 0,
     remark: hasIssue ? (bill?.remark || '') : '',
     marked_business: hasIssue ? resolveMarkedBusinessName(order) : '',
+    basic_entry_amount_cny: canEditEntry ? Number(order._groupBasicEntryCny || 0) : 0,
+    basic_entry_amount_usd: canEditEntry ? Number(order._groupBasicEntryUsd || 0) : 0,
   })
   if (response.code !== 200) throw new Error(response.msg || response.message || '保存失败')
 }
@@ -794,10 +950,50 @@ function onGroupPaymentStatusChange(order: any) {
   }
 }
 
+function onGroupBillingStatusChange(order: any) {
+  const basicId = order?.task_basic_id ?? order?.task_basic?.id
+  const status = Number(order._groupBillingStatus || 1)
+  // 基础入账为组级：改一行同步同组状态，表头才能跟着变成待收/富余金额
+  if (basicId != null) {
+    localOrders.value.forEach((item) => {
+      const itemBasicId = item?.task_basic_id ?? item?.task_basic?.id
+      if (String(itemBasicId) !== String(basicId)) return
+      item._groupBillingStatus = status
+    })
+  }
+  if (!canEditGroupBasicEntry(order)) {
+    order._groupBasicEntryCny = null
+    order._groupBasicEntryUsd = null
+    syncGroupBasicEntry(order)
+  }
+}
+
+/** 待收/富余为组级金额：改一行同步同组其它行 */
+function syncGroupBasicEntry(order: any) {
+  const basicId = order?.task_basic_id ?? order?.task_basic?.id
+  if (basicId == null) return
+  const cny = order._groupBasicEntryCny
+  const usd = order._groupBasicEntryUsd
+  localOrders.value.forEach((item) => {
+    const itemBasicId = item?.task_basic_id ?? item?.task_basic?.id
+    if (String(itemBasicId) !== String(basicId)) return
+    item._groupBasicEntryCny = cny
+    item._groupBasicEntryUsd = usd
+    if (item.task_basic) {
+      item.task_basic.basic_entry_amount_cny = Number(cny || 0)
+      item.task_basic.basic_entry_amount_usd = Number(usd || 0)
+    }
+  })
+}
+
 function applyBatchBillingStatus(value?: number) {
   if (!value || !localOrders.value.length) return
   localOrders.value.forEach((order) => {
     order._groupBillingStatus = value
+    if (!canEditGroupBasicEntry(order)) {
+      order._groupBasicEntryCny = null
+      order._groupBasicEntryUsd = null
+    }
   })
 }
 
@@ -828,14 +1024,6 @@ async function saveStatusEdits() {
 }
 
 type RecordMode = 'supplement' | 'refund' | 'offset'
-type SupplementDiffRow = {
-  id: string
-  dateText: string
-  asin: string
-  paymentStatus: number
-  amountCny: unknown
-  amountUsd: string
-}
 type AllocRow = {
   taskId: number
   taskNo: string
@@ -863,26 +1051,41 @@ const uploading = ref(false)
 const recordMode = ref<RecordMode>('supplement')
 const supplementDiffOpen = ref(false)
 const supplementRecordSubmitted = ref(false)
-const supplementDiffSelected = ref<string[]>([])
-const supplementDiffRows = ref<SupplementDiffRow[]>([])
-const supplementDiffColumns = [
-  { title: '日期', dataIndex: 'dateText', width: 120 },
-  { title: 'Asin', dataIndex: 'asin', width: 140 },
-  { title: '差价状态', key: 'paymentStatus', width: 140 },
-  { title: '差价金额（元）', key: 'amountCny', width: 150 },
-  { title: '差价金额（美元）', key: 'amountUsd', width: 160 },
-]
-const supplementDiffRowSelection = computed(() => ({
-  selectedRowKeys: supplementDiffSelected.value,
-  hideSelectAll: true,
-  onChange: (keys: (string | number)[]) => {
-    supplementDiffSelected.value = keys.map(String)
-  },
-}))
-const supplementDiffSummaryText = computed(() => checkedDiffSummaryText(
-  supplementDiffRows.value,
-  supplementDiffSelected.value,
-))
+const settlementConfirmGroups = ref<SettlementConfirmGroup[]>([])
+const settlementActiveGroupKey = ref('')
+const settlementRecommendSnapshot = ref<SettlementConfirmGroup[]>([])
+const settlementEnteredCny = ref(0)
+const settlementEnteredUsd = ref(0)
+
+const activeSettlementGroup = computed(() => {
+  const key = String(settlementActiveGroupKey.value || '')
+  const matched = settlementConfirmGroups.value.find(group => String(group.key) === key)
+  return matched || settlementConfirmGroups.value[0] || null
+})
+const settlementHasAnySelected = computed(() =>
+  settlementConfirmGroups.value.some(group =>
+    group.basicSelected || group.tasks.some(task => task.selected),
+  ),
+)
+const settlementConfirmMode = computed<SettlementConfirmMode>(() => recordMode.value)
+const settlementConfirmActionLabel = computed(() => ({
+  supplement: '补款',
+  refund: '退款',
+  offset: '抵消',
+}[settlementConfirmMode.value]))
+const settlementConfirmOkText = computed(() => ({
+  supplement: '确认录入补款',
+  refund: '确认提交退款',
+  offset: '确认账面抵消',
+}[settlementConfirmMode.value]))
+const settlementConfirmMetaText = computed(() => {
+  const customers = Array.from(new Set(settlementConfirmGroups.value.map(group => group.customerName).filter(Boolean)))
+  const customerPart = customers.length <= 1 ? `${customers[0] || '-'} · 1 个客户` : `${customers.length} 个客户`
+  return `${customerPart} · ${settlementConfirmGroups.value.length} 个组`
+})
+const settlementConfirmSummary = computed(() =>
+  settlementSummaryText(settlementConfirmGroups.value, settlementEnteredCny.value, settlementEnteredUsd.value),
+)
 const recordFiles = ref<any[]>([])
 const pendingOffset = ref<PendingOffset | null>(null)
 const directOffsetOpen = ref(false)
@@ -1120,7 +1323,7 @@ function readOffsetDebtAmounts(status: string | null, amount: number | null, usd
   const hasAmount = amount !== null && amount !== undefined && !Number.isNaN(Number(amount))
   if (!hasAmount) {
     if (!requireAmounts) return { ok: true as const, amounts: undefined }
-    return { ok: false as const, message: '请填写差价金额（元）' }
+    return { ok: false as const, message: '请填写尾款金额（元）' }
   }
   const usd = submittedArrearsUsdAmount(usdText, true)
   if (usd === null) {
@@ -1239,24 +1442,58 @@ function handleRecordCancel() {
   resetNestedOffsetState()
 }
 
-function supplementDiffStatusLabel(status: number) {
-  return DIFF_STATUS_OPTIONS.find(item => item.value === status)?.label || ''
+function basicStatusLabel(status: number) {
+  if (status === 2) return '未完成'
+  if (status === 3) return '富余'
+  return '已完成'
 }
 
-function supplementDiffAmountText(value: unknown) {
-  if (value === undefined || value === null || value === '') return '-'
-  return String(value)
+function checkboxChecked(checked: any) {
+  if (typeof checked === 'boolean') return checked
+  return !!checked?.target?.checked
 }
 
-function selectAllSupplementDiff() {
-  supplementDiffSelected.value = selectAllDiffIds(supplementDiffRows.value.map(row => row.id))
+function moneyClass(value: number) {
+  if (value > 0.0005) return 'is-plus'
+  if (value < -0.0005) return 'is-minus'
+  return ''
 }
 
-function invertSupplementDiff() {
-  supplementDiffSelected.value = invertDiffIds(
-    supplementDiffRows.value.map(row => row.id),
-    supplementDiffSelected.value,
-  )
+function groupBasicSigned(group: SettlementConfirmGroup) {
+  if (!canSelectBasic(group.basicStatus)) return { cny: 0, usd: 0 }
+  return signedBasicAmounts(group.basicStatus, group.basicCny, group.basicUsd)
+}
+
+function groupTailNet(group: SettlementConfirmGroup) {
+  return group.tasks.reduce((sum, task) => {
+    const signed = signedTailAmounts(task.paymentStatus, task.amountCny, task.amountUsd)
+    return { cny: sum.cny + signed.cny, usd: sum.usd + signed.usd }
+  }, { cny: 0, usd: 0 })
+}
+
+function groupTotalNet(group: SettlementConfirmGroup) {
+  const basic = canSelectBasic(group.basicStatus)
+    ? signedBasicAmounts(group.basicStatus, group.basicCny, group.basicUsd)
+    : { cny: 0, usd: 0 }
+  const tail = groupTailNet(group)
+  return { cny: basic.cny + tail.cny, usd: basic.usd + tail.usd }
+}
+
+function focusSettlementGroup(group: SettlementConfirmGroup) {
+  settlementActiveGroupKey.value = String(group.key)
+}
+
+function onSettlementGroupCheck(group: SettlementConfirmGroup, checked: boolean) {
+  // 勾选/取消组时同步切到右侧对应明细（checkbox 本身 stop 了冒泡）
+  focusSettlementGroup(group)
+  setGroupChecked(group, checked)
+}
+
+function cloneSettlementGroups(groups: SettlementConfirmGroup[]) {
+  return groups.map(group => ({
+    ...group,
+    tasks: group.tasks.map(task => ({ ...task })),
+  }))
 }
 
 function openSupplementDiffModal() {
@@ -1265,14 +1502,77 @@ function openSupplementDiffModal() {
 
 function closeSupplementDiff() {
   supplementDiffOpen.value = false
-  supplementDiffRows.value = []
-  supplementDiffSelected.value = []
+  settlementConfirmGroups.value = []
+  settlementRecommendSnapshot.value = []
+  settlementActiveGroupKey.value = ''
+  settlementEnteredCny.value = 0
+  settlementEnteredUsd.value = 0
 }
 
-function fillSupplementDiffRows() {
-  const next = buildSupplementDiffOpenState(localOrders.value)
-  supplementDiffRows.value = next.rows
-  supplementDiffSelected.value = next.selectedIds
+function fillSettlementConfirmRows() {
+  const currency = recordForm.value.currency_mode
+  const enteredCny = currency === 'usd' ? 0 : Number(recordForm.value.amount_cny || 0)
+  const enteredUsd = currency === 'cny' ? 0 : Number(recordForm.value.amount_usd || 0)
+  const refundCny = recordMode.value === 'refund' ? Number(recordForm.value.amount_cny || 0) : enteredCny
+  settlementEnteredCny.value = recordMode.value === 'refund' ? Math.max(0, refundCny) : Math.max(0, enteredCny)
+  settlementEnteredUsd.value = recordMode.value === 'refund' ? 0 : Math.max(0, enteredUsd)
+  const baseGroups = buildSettlementConfirmGroups(localOrders.value)
+  const recommended = applySettlementAutoSelect(
+    baseGroups,
+    settlementEnteredCny.value,
+    settlementEnteredUsd.value,
+    recordMode.value,
+  )
+  settlementConfirmGroups.value = recommended
+  settlementRecommendSnapshot.value = cloneSettlementGroups(recommended)
+  settlementActiveGroupKey.value = String(recommended[0]?.key || '')
+}
+
+/** 有勾选 → 全部取消；无勾选 → 恢复系统推荐勾选 */
+function toggleSettlementRecommend() {
+  if (settlementHasAnySelected.value) {
+    settlementConfirmGroups.value.forEach((group) => {
+      group.basicSelected = false
+      group.tasks.forEach((task) => { task.selected = false })
+    })
+    return
+  }
+  const currentKey = String(settlementActiveGroupKey.value || '')
+  settlementConfirmGroups.value = cloneSettlementGroups(settlementRecommendSnapshot.value)
+  if (!settlementConfirmGroups.value.some(group => String(group.key) === currentKey)) {
+    settlementActiveGroupKey.value = String(settlementConfirmGroups.value[0]?.key || '')
+  } else {
+    settlementActiveGroupKey.value = currentKey
+  }
+}
+
+/** 勾选基础→已完成；勾选尾款→已结算（列表尾款显示 -）；未勾选的尾款差额保留 */
+async function applySettlementConfirmSelections() {
+  const basicKeys = new Set(selectedBasicGroupKeys(settlementConfirmGroups.value))
+  const tailIds = new Set(selectedTaskIdsFromGroups(settlementConfirmGroups.value).map(String))
+  const touched = new Map<string, any>()
+
+  for (const order of localOrders.value) {
+    const basicId = String(order?.task_basic_id ?? order?.task_basic?.id ?? '')
+    if (basicKeys.has(basicId)) {
+      order._groupBillingStatus = 1
+      order._groupBasicEntryCny = null
+      order._groupBasicEntryUsd = null
+      if (order.task_basic) {
+        order.task_basic.basic_entry_amount_cny = 0
+        order.task_basic.basic_entry_amount_usd = 0
+      }
+      touched.set(String(order.id), order)
+    }
+    if (tailIds.has(String(order.id))) {
+      order._groupPaymentStatus = 4
+      order._groupArrearsAmount = null
+      order._groupArrearsUsd = ''
+      touched.set(String(order.id), order)
+    }
+  }
+
+  for (const order of touched.values()) await saveOrderStatus(order)
 }
 
 const TRANSACTION_TYPE_MAP: Record<string, number> = {
@@ -1522,12 +1822,12 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
 
   trace?.('saveBatchRecord:validation-passed', { targetCount: rows.length, sourceCount: sourceRows.length })
   if (phase === 'open-diff' && (isSupplement || isDirectOffset || recordMode.value === 'refund')) {
-    fillSupplementDiffRows()
+    fillSettlementConfirmRows()
     supplementDiffOpen.value = true
     return
   }
   const markedTaskIds = isSupplement || isDirectOffset || recordMode.value === 'refund'
-    ? billTaskIds(supplementDiffRows.value, supplementDiffSelected.value)
+    ? selectedTaskIdsFromGroups(settlementConfirmGroups.value)
     : []
   recordSaving.value = true
   uploading.value = true
@@ -1623,6 +1923,11 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
       trace?.('saveBatchRecord:before-applyDebtStatusToRows')
       await applyDebtStatusToRows(rows, debtStatus, debtAmounts.amounts)
       trace?.('saveBatchRecord:after-applyDebtStatusToRows')
+    }
+    if (isSupplement || isDirectOffset || recordMode.value === 'refund') {
+      trace?.('saveBatchRecord:before-applySettlementConfirmSelections')
+      await applySettlementConfirmSelections()
+      trace?.('saveBatchRecord:after-applySettlementConfirmSelections')
     }
     trace?.('saveBatchRecord:before-refreshBatchBill')
     await refreshBatchBill()
@@ -1756,8 +2061,131 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
 .offset-brief-total { color: #2563eb; font-size: 14px; font-weight: 700; text-align: right; }
 .offset-inline-action { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--eva-border, #e5e7eb); border-radius: 8px; background: var(--eva-bg-soft, #f8f9fb); color: var(--eva-text-secondary, #6b7280); font-size: 14px; }
 .offset-inline-action span { min-width: 0; line-height: 1.5; }
-.supplement-diff-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.supplement-diff-summary { color: var(--eva-text, #1a1a2e); font-size: 14px; }
+.sc-head { color: var(--eva-text-secondary, #6b7280); font-size: 13px; margin-bottom: 10px; }
+.sc-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--eva-bg-soft, #f5f7fa);
+  border: 1px solid var(--eva-border-light, #f0f0f0);
+  font-size: 14px;
+  color: var(--eva-text, #1a1a2e);
+}
+.sc-summary-main { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.sc-summary-sep { color: var(--eva-text-secondary, #6b7280); }
+.sc-need { color: #dc2626; }
+.sc-restore {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--eva-link, #2563eb);
+  font-size: 13px;
+  cursor: pointer;
+}
+.sc-restore:hover { color: #1d4ed8; }
+.sc-empty { padding: 28px 0; text-align: center; color: var(--eva-text-secondary, #6b7280); }
+.sc-empty-sm { padding: 16px 12px; color: var(--eva-text-secondary, #6b7280); font-size: 13px; }
+.sc-split { display: grid; grid-template-columns: minmax(300px, 1.1fr) minmax(300px, 1fr); gap: 12px; min-height: 320px; }
+.sc-left, .sc-right {
+  border: 1px solid var(--eva-border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--eva-bg-container, #fff);
+  overflow: auto;
+  max-height: 420px;
+}
+.sc-pane-title {
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--eva-text-secondary, #6b7280);
+  border-bottom: 1px solid var(--eva-border-light, #f0f0f0);
+  background: var(--eva-bg-soft, #f8f9fb);
+}
+.sc-group {
+  display: flex;
+  gap: 10px;
+  margin: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--eva-border, #e5e7eb);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+.sc-group.active {
+  border-color: var(--eva-link, #2563eb);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.04);
+}
+.sc-group-body { min-width: 0; flex: 1; }
+.sc-group-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.sc-group-title { font-weight: 700; color: var(--eva-text, #1a1a2e); }
+.sc-group-sub { font-size: 12px; color: var(--eva-text-secondary, #6b7280); }
+.sc-group-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--eva-text-secondary, #6b7280);
+}
+.sc-group-metrics b { font-weight: 700; }
+.sc-group-pick {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--eva-text-secondary, #6b7280);
+}
+.sc-basic-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--eva-text, #1a1a2e);
+}
+.sc-basic-none { color: var(--eva-text-secondary, #6b7280); }
+.sc-task-head, .sc-task-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1.2fr) 72px minmax(110px, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.sc-task-head {
+  color: var(--eva-text-secondary, #6b7280);
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--eva-border-light, #f0f0f0);
+  background: #fff;
+}
+.sc-task-row { border-bottom: 1px solid var(--eva-border-light, #f0f0f0); }
+.sc-col-amt { text-align: right; }
+.sc-task-row > b { text-align: right; justify-self: end; }
+.sc-task-no { font-weight: 600; color: var(--eva-text, #1a1a2e); }
+.sc-task-asin { font-size: 12px; color: var(--eva-text-secondary, #6b7280); }
+.sc-task-status { color: var(--eva-text-secondary, #6b7280); }
+.is-minus { color: #dc2626; }
+.is-plus { color: #059669; }
+.sc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--eva-border, #e5e7eb);
+  color: var(--eva-text-secondary, #6b7280);
+  font-size: 13px;
+}
+.sc-foot-actions { display: flex; gap: 8px; }
 .offset-brief-tip { color: var(--eva-text-secondary, #6b7280); font-size: 14px; line-height: 1.6; }
 .add-record-tip { margin-top: -6px; color: var(--eva-text-secondary, #6b7280); font-size: 14px; line-height: 1.6; }
 .debt-status-reminder { color: #f59e0b; font-size: 11px; margin-top: 4px; }
@@ -1766,10 +2194,19 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
 .refund-account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .upload-text { margin-top: 4px; font-size: 14px; }
 .gbd-group-table { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
-.gbd-group-head, .gbd-group-row, .gbd-group-foot { display: grid; grid-template-columns: 28px minmax(160px, 1.4fr) 64px repeat(4, minmax(96px, 1fr)) minmax(100px, 1fr); gap: 8px; align-items: center; min-width: 860px; }
+.gbd-group-head, .gbd-group-row, .gbd-group-foot {
+  display: grid;
+  grid-template-columns: 28px minmax(140px, 1.2fr) 56px repeat(4, minmax(88px, 1fr)) 92px 100px 100px minmax(88px, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 1180px;
+}
 .gbd-group-table.has-refund .gbd-group-head,
 .gbd-group-table.has-refund .gbd-group-row,
-.gbd-group-table.has-refund .gbd-group-foot { grid-template-columns: 28px minmax(160px, 1.4fr) 64px repeat(5, minmax(96px, 1fr)) minmax(100px, 1fr); }
+.gbd-group-table.has-refund .gbd-group-foot {
+  grid-template-columns: 28px minmax(140px, 1.2fr) 56px repeat(5, minmax(88px, 1fr)) 92px 100px 100px minmax(88px, 1fr);
+  min-width: 1280px;
+}
 .gbd-group-head, .gbd-group-foot { color: var(--eva-text-secondary, #6b7280); font-size: 13px; font-weight: 600; }
 .gbd-group-row, .gbd-group-foot { padding: 8px 0; border-bottom: 1px solid var(--eva-border-light, #f0f0f0); }
 .gbd-group-foot {
@@ -1782,7 +2219,7 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
 .gbd-group-row.is-open { background: var(--eva-bg-soft, #f8f9fb); }
 .group-batch-btn { padding: 0; border: 0; background: transparent; color: var(--eva-link, #1677ff); font-weight: 700; text-align: left; cursor: pointer; }
 .gbd-task-wrap { margin: 0 0 8px; padding: 10px 12px 4px 28px; border-radius: 8px; background: #e8ebf0; }
-.gbd-task-head, .gbd-task-row { display: grid; grid-template-columns: minmax(110px, 1fr) 90px 100px 126px 110px 110px; gap: 8px; align-items: center; }
+.gbd-task-head, .gbd-task-row { display: grid; grid-template-columns: minmax(100px, 1fr) 84px 112px 100px 100px; gap: 8px; align-items: center; }
 .gbd-task-head { color: var(--eva-text-secondary, #6b7280); font-size: 13px; margin-bottom: 6px; }
 .gbd-task-row { margin-bottom: 8px; }
 .settle-section { margin-top: 16px; }

@@ -39,6 +39,10 @@
                   @change="handleCustomerChange"
                   allow-clear
                 />
+                <div v-if="customerDiffBalanceHint" class="customer-diff-balance">
+                  总差价：
+                  <span :class="customerDiffBalanceHint.toneClass">{{ customerDiffBalanceHint.total }}</span>
+                </div>
               </a-form-item>
             </a-col>
             <a-col v-if="groupChatOptions.length" :span="24">
@@ -161,6 +165,29 @@
                 </a-form-item>
               </a-col>
             </a-row>
+            <template v-if="showAccountDiffUi">
+              <a-row :gutter="24">
+                <a-col :span="24">
+                  <a-form-item
+                    :label="accountEntryAmountLabelCny"
+                    :label-col="{ span: 8 }"
+                    :wrapper-col="{ span: 16 }"
+                  >
+                    <a-input-number
+                      v-model:value="accountEntryAmountForm.amount_cny"
+                      :min="0"
+                      :precision="2"
+                      :placeholder="accountEntryAmountLabelCny"
+                      class="full-width"
+                      size="middle"
+                      :disabled="isView"
+                      @change="markAccountDiffManual"
+                    />
+                    <div class="account-diff-hint">默认按 |实收款项 − 应收款项| 带出，可改</div>
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </template>
             <a-form-item label="上传水单" name="upload_bill">
               <ImageUpload
                 v-model="basicFormData.upload_bill"
@@ -367,6 +394,47 @@
                 </a-form-item>
               </a-col>
             </a-row>
+            <template v-if="showAccountDiffUi">
+              <a-row :gutter="24">
+                <a-col :span="24">
+                  <a-form-item
+                    :label="accountEntryAmountLabelCny"
+                    :label-col="{ span: 8 }"
+                    :wrapper-col="{ span: 16 }"
+                  >
+                    <a-input-number
+                      v-model:value="accountEntryAmountForm.amount_cny"
+                      :min="0"
+                      :precision="2"
+                      :placeholder="accountEntryAmountLabelCny"
+                      class="full-width"
+                      size="middle"
+                      :disabled="isView"
+                      @change="markAccountDiffManual"
+                    />
+                    <div class="account-diff-hint">默认按 |实收款项 − 应收款项| 带出，可改</div>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="24">
+                  <a-form-item
+                    :label="accountEntryAmountLabelUsd"
+                    :label-col="{ span: 8 }"
+                    :wrapper-col="{ span: 16 }"
+                  >
+                    <a-input-number
+                      v-model:value="accountEntryAmountForm.amount_usd"
+                      :min="0"
+                      :precision="2"
+                      placeholder="混合模式可自动带出"
+                      class="full-width"
+                      size="middle"
+                      :disabled="isView"
+                      @change="markAccountDiffManual"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </template>
             <a-form-item label="上传水单" name="upload_bill">
               <ImageUpload
                 v-model="basicFormData.upload_bill"
@@ -1961,6 +2029,139 @@ const accountStatusExcessHint = computed(() =>
     : "",
 );
 
+/** 组账单待收/富余金额 UI 原型（不进提交） */
+const accountEntryAmountForm = ref({
+  amount_cny: undefined as number | undefined,
+  amount_usd: undefined as number | undefined,
+});
+const accountDiffManual = ref(false);
+
+/**
+ * 客户账款总差价 mock（负=欠、正=余）。
+ * 验证：搜选「原型客户」有；「原型私聊客户」无。
+ */
+const CUSTOMER_DIFF_BALANCE_MOCK: Record<string, { cny: number; usd: number }> = {
+  "1001": { cny: -180, usd: -28.5 },
+};
+
+const showAccountDiffUi = computed(
+  () =>
+    normalizeNumberOrZero(basicFormData.value.account_status) === 2 ||
+    normalizeNumberOrZero(basicFormData.value.account_status) === 3,
+);
+
+const accountEntryAmountLabelCny = computed(() =>
+  normalizeNumberOrZero(basicFormData.value.account_status) === 3
+    ? "富余金额（元）"
+    : "待收金额（元）",
+);
+
+const accountEntryAmountLabelUsd = computed(() =>
+  normalizeNumberOrZero(basicFormData.value.account_status) === 3
+    ? "富余金额（美元）"
+    : "待收金额（美元）",
+);
+
+const customerDiffBalanceHint = computed(() => {
+  const customerId = basicFormData.value.customer_id;
+  if (customerId === undefined || customerId === null || customerId === "") return null;
+  const balance = CUSTOMER_DIFF_BALANCE_MOCK[String(customerId)];
+  if (!balance) return null;
+  const cnyText = `${balance.cny >= 0 ? "+" : "-"}¥${Math.abs(balance.cny).toFixed(2)}`;
+  const usdPart =
+    Math.abs(balance.usd) > 0.0005
+      ? ` / ${balance.usd >= 0 ? "+" : "-"}$${Math.abs(balance.usd).toFixed(2)}`
+      : "";
+  // 以人民币总差价正负定色：负=欠款红，正=余款绿
+  const toneClass =
+    balance.cny < 0
+      ? "customer-diff-debt"
+      : balance.cny > 0
+        ? "customer-diff-surplus"
+        : "";
+  return { total: `${cnyText}${usdPart}`, toneClass };
+});
+
+function roundMoney2(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function calcSignedDiff(actual: number | undefined, receivable: number | undefined): number {
+  return roundMoney2(normalizeNumberOrZero(actual) - normalizeNumberOrZero(receivable));
+}
+
+const receivedVsReceivableDiff = computed(() => {
+  if (basicFormData.value.payment_mode === 1) {
+    return {
+      cny: calcSignedDiff(basicFormData.value.actually_amount, basicFormData.value.receivable_rmb),
+      usd: 0,
+    };
+  }
+  return {
+    cny: calcSignedDiff(
+      basicFormData.value.actually_amount_mixed,
+      basicFormData.value.receivable_rmb_mixed,
+    ),
+    usd: calcSignedDiff(
+      basicFormData.value.actually_amount_usd,
+      basicFormData.value.receivable_usd,
+    ),
+  };
+});
+
+function defaultDiffAbsCny(): number {
+  return roundMoney2(Math.abs(receivedVsReceivableDiff.value.cny));
+}
+
+function defaultDiffAbsUsd(): number {
+  if (basicFormData.value.payment_mode !== 2) return 0;
+  return roundMoney2(Math.abs(receivedVsReceivableDiff.value.usd));
+}
+
+function applyAccountDiffDefaults(): void {
+  if (!showAccountDiffUi.value) {
+    accountEntryAmountForm.value = {
+      amount_cny: undefined,
+      amount_usd: undefined,
+    };
+    return;
+  }
+  if (accountDiffManual.value) return;
+  accountEntryAmountForm.value = {
+    amount_cny: defaultDiffAbsCny(),
+    amount_usd:
+      basicFormData.value.payment_mode === 2 ? defaultDiffAbsUsd() : undefined,
+  };
+}
+
+function markAccountDiffManual(): void {
+  accountDiffManual.value = true;
+}
+
+function resetAccountDiffUi(): void {
+  accountDiffManual.value = false;
+  accountEntryAmountForm.value = {
+    amount_cny: undefined,
+    amount_usd: undefined,
+  };
+}
+
+watch(
+  () => [
+    basicFormData.value.account_status,
+    basicFormData.value.payment_mode,
+    basicFormData.value.actually_amount,
+    basicFormData.value.receivable_rmb,
+    basicFormData.value.actually_amount_mixed,
+    basicFormData.value.receivable_rmb_mixed,
+    basicFormData.value.actually_amount_usd,
+    basicFormData.value.receivable_usd,
+  ],
+  () => {
+    applyAccountDiffDefaults();
+  },
+);
+
 function validateAccountStatus(): void {
   basicFormRef.value?.validateFields(["account_status"]).catch(() => undefined);
 }
@@ -1970,6 +2171,8 @@ function handleActualAmountChange(): void {
 }
 
 function handleAccountStatusChange(): void {
+  accountDiffManual.value = false;
+  applyAccountDiffDefaults();
   validateAccountStatus();
 }
 
@@ -2442,6 +2645,7 @@ const handleReset = () => {
   lastUploadBill.value = "";
   offsetRecordPayload.value = null;
   offsetModalOpen.value = false;
+  resetAccountDiffUi();
   batchCollectionRows.value = [
     { actual_cny_amount: undefined, transfer_channel: undefined },
   ];
@@ -2468,7 +2672,31 @@ const handleReset = () => {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.5;
-  color: #d46b08;
+  color: #d97706;
+}
+
+.account-diff-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+.customer-diff-balance {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+.customer-diff-debt {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.customer-diff-surplus {
+  color: #059669;
+  font-weight: 600;
 }
 
 .create-task-form {

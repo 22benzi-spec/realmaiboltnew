@@ -46,7 +46,7 @@
       <div class="billing-body">
         <div class="billing-section">
           <div class="section-header">
-            <span class="section-title">账款状态</span>
+            <span class="section-title">款项状态</span>
             <a-button v-if="!editingDebt" type="link" size="small" @click="startEditDebt">编辑</a-button>
             <div v-else class="section-actions">
               <a-button size="small" @click="cancelEditDebt">取消</a-button>
@@ -66,17 +66,22 @@
               </a-tag>
             </div>
             <div class="debt-view-row">
-              <span class="dv-label">账款情况</span>
-              <a-tag v-if="hasRealDebt(order)" color="orange" size="small">
+              <span class="dv-label">结算状态</span>
+              <a-tag v-if="getSettlementStatus(order) === '已结算'" color="green" size="small">已结算</a-tag>
+              <span v-else class="dv-muted">{{ getSettlementStatus(order) }}</span>
+            </div>
+            <div class="debt-view-row">
+              <span class="dv-label">尾款状态</span>
+              <span v-if="getTailStatusKind(order) === 'dash'" class="dv-muted">-</span>
+              <a-tag v-else-if="getTailStatusKind(order) === 'owed'" color="orange" size="small">
                 有欠款 &yen;{{ Number(billStatus?.arrears_amount || 0).toFixed(2) }}
                 <template v-if="arrearsUsdAmountText(billStatus?.arrears_usd_amount)"> / ${{ arrearsUsdAmountText(billStatus?.arrears_usd_amount) }}</template>
               </a-tag>
-              <a-tag v-else-if="hasRealSurplus(order)" color="blue" size="small">
+              <a-tag v-else-if="getTailStatusKind(order) === 'surplus'" color="blue" size="small">
                 有余款 &yen;{{ Number(billStatus?.arrears_amount || 0).toFixed(2) }}
                 <template v-if="arrearsUsdAmountText(billStatus?.arrears_usd_amount)"> / ${{ arrearsUsdAmountText(billStatus?.arrears_usd_amount) }}</template>
               </a-tag>
-              <a-tag v-else-if="isPaymentCleared(order)" color="green" size="small">已结清</a-tag>
-              <a-tag v-else color="default" size="small">{{ billStatus?.payment_status_label || '无异常' }}</a-tag>
+              <a-tag v-else color="default" size="small">无异常</a-tag>
             </div>
             <div v-if="billStatus?.remark" class="debt-view-row">
               <span class="dv-label">商务备注</span>
@@ -108,22 +113,22 @@
               </a-radio-group>
             </div>
             <div class="edit-field">
-              <label class="edit-label">账款情况</label>
+              <label class="edit-label">尾款状态</label>
               <a-radio-group v-model:value="debtForm.payment_status" size="small">
                 <a-radio-button :value="1">无异常</a-radio-button>
                 <a-radio-button :value="2">有欠款</a-radio-button>
                 <a-radio-button :value="3">有余款</a-radio-button>
-                <a-radio-button :value="4">已结清</a-radio-button>
+                <a-radio-button :value="4">已结算</a-radio-button>
               </a-radio-group>
             </div>
             <template v-if="debtForm.payment_status === 2 || debtForm.payment_status === 3">
               <div class="edit-field">
-                <label class="edit-label">差价金额（元）</label>
-                <a-input-number v-model:value="debtForm.arrears_amount" style="width:200px" :min="0" :precision="2" placeholder="输入差价金额" />
+                <label class="edit-label">尾款金额（元）</label>
+                <a-input-number v-model:value="debtForm.arrears_amount" style="width:200px" :min="0" :precision="2" placeholder="输入尾款金额" />
               </div>
               <div class="edit-field">
-                <label class="edit-label">欠款金额(美元)</label>
-                <a-input v-model:value="debtForm.arrears_usd_amount" style="width:200px" placeholder="欠款金额(美元)" />
+                <label class="edit-label">尾款金额(美元)</label>
+                <a-input v-model:value="debtForm.arrears_usd_amount" style="width:200px" placeholder="尾款金额(美元)" />
               </div>
               <div class="edit-field">
                 <label class="edit-label">商务备注</label>
@@ -171,8 +176,8 @@ import {
   getFirstBill,
   getReceivableCny,
   getSettledAmount,
-  hasRealDebt,
-  hasRealSurplus,
+  getSettlementStatus,
+  getTailStatusKind,
   isPaymentCleared,
   mapBillRecords,
   sumBillRecordsNet,
@@ -411,6 +416,7 @@ watch(() => props.open, (val) => {
 .debt-view-row:last-child { border-bottom: none; }
 .dv-label { font-size: 14px; line-height: 22px; color: var(--eva-text-secondary, #6b7280); flex: 0 0 96px; }
 .dv-val { font-size: 14px; line-height: 22px; color: var(--eva-text, #374151); }
+.dv-muted { font-size: 14px; line-height: 22px; color: var(--eva-text-tertiary, #9ca3af); }
 .debt-edit { display: flex; flex-direction: column; gap: 12px; }
 .edit-field { display: flex; flex-direction: column; gap: 6px; }
 .edit-label { font-size: 14px; color: var(--eva-text-secondary, #6b7280); font-weight: 500; }

@@ -11,12 +11,15 @@ const countries = ['美国', '德国', '英国', '加拿大'].map((country, inde
 const reviewTypes: Record<string, string> = { free_review: '免评', words: '文字', image: '图片', video: '视频', feedback: 'Feedback' }
 const statusNames = ['', '待分配', '进行中', '已完成', '已暂停', '已截单']
 const basicNames = ['', '已完成', '未完成', '富余']
-const paymentNames = ['', '无异常', '有欠款', '有余款', '已结清']
+const paymentNames = ['', '无异常', '有欠款', '有余款', '已结算']
 const reviewKey = (label: string) => ({ '免评': 'free_review', '文字评': 'words', '文字': 'words', '图片评': 'image', '视频评': 'video', Feedback: 'feedback' }[label] || 'words')
 const number = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0
 const money = (value: unknown) => number(value).toFixed(2)
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value))
-interface PrototypeState { orders: any[]; imported: string[]; deleted: number[]; operations: any[]; nextId: number }
+interface PrototypeState { orders: any[]; imported: string[]; deleted: number[]; operations: any[]; nextId: number; seedVersion?: number }
+
+/**  bump 后本地 IndexedDB 会按新 seed 重建，便于验组级入账 / 结算三维度 / 二次确认美元 */
+const SEED_VERSION = 6
 
 function seedState(): PrototypeState {
   const orders = generateMockOrders().map((source, index) => {
@@ -34,8 +37,10 @@ function seedState(): PrototypeState {
     const basic = { id: groupId, task_basics_no: `TASK_BASIC-2026-${String(groupId).padStart(4, '0')}`, total_task: index < 12 ? 3 : 1,
       payment_mode: mixed ? 'mixed' : 'pure_cny', actual_cny_amount: money(received), actual_usd_amount: money(usd),
       customer_name: source.customer_name, employee_name: `原型客户${index % 5 + 1}`, country, country_id: country.id,
-      business_remark: source.notes, created_at: source.created_at }
+      business_remark: source.notes, created_at: source.created_at,
+      basic_entry_amount_cny: 0, basic_entry_amount_usd: 0 }
     const bill = { id: index + 1, task_id: index + 1, basic_bill_status: index % 3 === 0 ? 2 : 1,
+      basic_bill_status_label: basicNames[index % 3 === 0 ? 2 : 1],
       payment_status: payment, payment_status_label: paymentNames[payment], arrears_amount: money(difference), arrears_usd_amount: 0,
       marked_business: source.sales_person, remark: source.debt_notes }
     return { id: index + 1, task_no: source.order_number, task_basic_id: groupId, task_basic: basic,
@@ -61,7 +66,127 @@ function seedState(): PrototypeState {
   })
   // The same task group shares its basic receipt, as it does in the target page.
   for (const row of orders) if (row.id <= 12) row.task_basic = orders.find(item => item.task_basic_id === row.task_basic_id)!.task_basic
-  return { orders, imported: [], deleted: [], operations: [], nextId: 10000 }
+
+  // 多任务组级入账演示：同组 3 条任务共享基础入账 + 待收/富余；单任务差价仍按行保留
+  const demoStamp = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  const groupDemos: Record<number, {
+    status: number
+    amountCny: number
+    amountUsd: number
+    keyword: string
+    employee: string
+  }> = {
+    1: { status: 2, amountCny: 600, amountUsd: 85, keyword: '组待收演示', employee: '组待收演示客户' },
+    2: { status: 3, amountCny: 200, amountUsd: 28.5, keyword: '组富余演示', employee: '组富余演示客户' },
+  }
+  // 同组任务完成/截单时间错开，二次确认按早晚勾选；尾款带美元
+  const groupTailSpecs: Record<number, { payment: number; arrearsCny: number; arrearsUsd: number; finishedAt: string; status: number }> = {
+    1: { payment: 2, arrearsCny: 120, arrearsUsd: 18, finishedAt: '2026-11-20 10:00:00', status: 3 },
+    2: { payment: 3, arrearsCny: 60, arrearsUsd: 9, finishedAt: '2026-11-21 11:00:00', status: 3 },
+    3: { payment: 1, arrearsCny: 0, arrearsUsd: 0, finishedAt: '2026-11-22 12:00:00', status: 5 },
+    4: { payment: 1, arrearsCny: 0, arrearsUsd: 0, finishedAt: '2026-11-19 09:00:00', status: 3 },
+    5: { payment: 2, arrearsCny: 120, arrearsUsd: 15, finishedAt: '2026-11-20 14:00:00', status: 3 },
+    6: { payment: 3, arrearsCny: 60, arrearsUsd: 8, finishedAt: '2026-11-21 16:00:00', status: 5 },
+  }
+  for (const row of orders) {
+    const demo = groupDemos[row.task_basic_id]
+    if (!demo) continue
+    const tail = groupTailSpecs[row.id]
+    row.created_at = tail?.finishedAt || demoStamp
+    row.finished_at = tail?.finishedAt || demoStamp
+    row.status = tail?.status || 3
+    row.status_label = statusNames[row.status]
+    row.task_basic.created_at = demoStamp
+    row.task_basic.customer_name = demo.employee
+    row.task_basic.employee_name = demo.employee
+    row.task_basic.basic_entry_amount_cny = demo.amountCny
+    row.task_basic.basic_entry_amount_usd = demo.amountUsd
+    row.customer = { ...row.customer, name: demo.employee }
+    row.employee = { ...row.employee, name: demo.employee }
+    row.product = {
+      ...row.product,
+      product_name: `${demo.keyword}-${row.product.product_name}`,
+      asin: row.task_basic_id === 1 ? `B0GPEND${String(row.id).padStart(2, '0')}` : `B0GSURP${String(row.id).padStart(2, '0')}`,
+    }
+    row.bill[0] = {
+      ...row.bill[0],
+      basic_bill_status: demo.status,
+      basic_bill_status_label: basicNames[demo.status],
+      payment_status: tail?.payment ?? row.bill[0].payment_status,
+      payment_status_label: paymentNames[tail?.payment ?? row.bill[0].payment_status],
+      arrears_amount: money(tail?.arrearsCny ?? row.bill[0].arrears_amount),
+      arrears_usd_amount: money(tail?.arrearsUsd ?? 0),
+    }
+  }
+
+  // 结算三维度可验样本（单任务）：无需补退 / 未结算欠|余 / 已结算 / 入账未完成待收 / 入账富余
+  const dimStamp = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  const template = orders.find(row => row.id > 12) || orders[0]
+  const dimensionSpecs: Array<{
+    key: string
+    name: string
+    basic: number
+    payment: number
+    arrears: number
+    arrearsUsd: number
+    entryCny: number
+    entryUsd: number
+  }> = [
+    { key: 'NONEED', name: '结算-无需补退', basic: 1, payment: 1, arrears: 0, entryCny: 0, entryUsd: 0 },
+    { key: 'OWED', name: '结算-未结算有欠款', basic: 1, payment: 2, arrears: 120, arrearsUsd: 16, entryCny: 0, entryUsd: 0 },
+    { key: 'SURPLUS', name: '结算-未结算有余款', basic: 1, payment: 3, arrears: 80, arrearsUsd: 11, entryCny: 0, entryUsd: 0 },
+    { key: 'DONE', name: '结算-已结算尾款-', basic: 1, payment: 4, arrears: 0, arrearsUsd: 0, entryCny: 0, entryUsd: 0 },
+    { key: 'SHORT', name: '基础入账未完成-待收', basic: 2, payment: 1, arrears: 0, arrearsUsd: 0, entryCny: 260, entryUsd: 36 },
+    { key: 'BASESURP', name: '基础入账富余-富余额', basic: 3, payment: 1, arrears: 0, arrearsUsd: 0, entryCny: 180, entryUsd: 25 },
+  ]
+  dimensionSpecs.forEach((spec, offset) => {
+    const id = 9001 + offset
+    const row = copy(template)
+    row.id = id
+    row.task_no = `TASK-SETTLE-${spec.key}-001`
+    row.task_basic_id = id
+    row.created_at = dimStamp
+    row.finished_at = dayjs(dimStamp).add(offset, 'hour').format('YYYY-MM-DD HH:mm:ss')
+    row.status = 3
+    row.status_label = statusNames[3]
+    row.product = {
+      ...row.product,
+      id,
+      asin: `B0${spec.key}01`,
+      product_name: spec.name,
+      store_name: 'Settle Demo Store',
+    }
+    row.customer = { ...row.customer, name: `${spec.name}客户` }
+    row.employee = { ...row.employee, name: `${spec.name}客户` }
+    row.task_basic = {
+      ...row.task_basic,
+      id,
+      task_basics_no: `TASK_BASIC-SETTLE-${spec.key}`,
+      total_task: 1,
+      customer_name: `${spec.name}客户`,
+      employee_name: `${spec.name}客户`,
+      created_at: dimStamp,
+      actual_cny_amount: money(spec.payment === 2 ? 780 : spec.payment === 3 ? 860 : 800),
+      actual_usd_amount: money(spec.entryUsd > 0 ? spec.entryUsd : (spec.arrearsUsd > 0 ? 40 : 0)),
+      basic_entry_amount_cny: spec.entryCny,
+      basic_entry_amount_usd: spec.entryUsd,
+    }
+    row.bill = [{
+      id,
+      task_id: id,
+      basic_bill_status: spec.basic,
+      basic_bill_status_label: basicNames[spec.basic],
+      payment_status: spec.payment,
+      payment_status_label: paymentNames[spec.payment],
+      arrears_amount: money(spec.arrears),
+      arrears_usd_amount: money(spec.arrearsUsd),
+      marked_business: '商务-李婷',
+      remark: '',
+    }]
+    orders.push(row)
+  })
+
+  return { orders, imported: [], deleted: [], operations: [], nextId: 10000, seedVersion: SEED_VERSION }
 }
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -75,7 +200,14 @@ async function readState(): Promise<PrototypeState> {
   const db = await openDb()
   try { return await new Promise((resolve, reject) => {
     const request = db.transaction('state', 'readonly').objectStore('state').get('current')
-    request.onsuccess = () => resolve(request.result || seedState())
+    request.onsuccess = () => {
+      const current = request.result as PrototypeState | undefined
+      if (!current || current.seedVersion !== SEED_VERSION) {
+        resolve(seedState())
+        return
+      }
+      resolve(current)
+    }
     request.onerror = () => reject(request.error)
   }) } finally { db.close() }
 }
@@ -146,11 +278,20 @@ function target(state: PrototypeState, id: number | string) {
   if (!row) throw new Error('任务不存在或已删除')
   return row
 }
+function settlementOf(row: any): 1 | 2 | 3 {
+  const bill = row.bill?.[0]
+  const payment = number(bill?.payment_status)
+  if (payment === 4) return 3 // 已结算
+  const basic = number(bill?.basic_bill_status)
+  if (basic === 1 && payment === 1) return 1 // 无需补退
+  return 2 // 未结算
+}
+
 function filtered(state: PrototypeState, params: ReceiveListParams = {}) {
   const ids = Array.isArray(params.employee_id) ? params.employee_id.map(Number) : number(params.employee_id) ? [number(params.employee_id)] : []
   const range = Array.isArray(params.time_range) ? params.time_range : typeof params.time_range === 'string' ? params.time_range.split(' ~ ') : []
   return state.orders.filter(row => !state.deleted.includes(row.id)
-    && (!params.keyword || `${row.task_no} ${row.product.asin} ${row.product.store_name} ${row.product.product_name || ''}`.toLowerCase().includes(params.keyword.toLowerCase()))
+    && (!params.keyword || `${row.task_no} ${row.product.asin} ${row.product.store_name} ${row.product.product_name || ''} ${row.customer?.name || ''} ${row.employee?.name || ''}`.toLowerCase().includes(params.keyword.toLowerCase()))
     && (!number(params.status) || row.status === number(params.status))
     && (!number(params.country_id) || row.country_id === number(params.country_id))
     && (!params.review_type || Object.prototype.hasOwnProperty.call(row.review_quantity_summary, params.review_type))
@@ -158,9 +299,10 @@ function filtered(state: PrototypeState, params: ReceiveListParams = {}) {
     && (!number(params.order_clerk_id) || row.order_clerk_id === number(params.order_clerk_id))
     && (!number(params.basic_bill_status) || row.bill[0].basic_bill_status === number(params.basic_bill_status))
     && (!number(params.payment_status) || row.bill[0].payment_status === number(params.payment_status))
+    && (!number(params.settlement_status) || settlementOf(row) === number(params.settlement_status))
     && (!range[0] || dayjs(row.created_at).format('YYYY-MM-DD') >= range[0])
     && (!range[1] || dayjs(row.created_at).format('YYYY-MM-DD') <= range[1]))
-    .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.task_basic_id - a.task_basic_id || a.id - b.id)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.task_basic_id - b.task_basic_id || a.id - b.id)
 }
 export async function getReceiveList(params: ReceiveListParams = {}) {
   return transact(state => { const rows = filtered(state, params); const size = number(params.page_size) || 50; const page = number(params.page) || 1
@@ -179,6 +321,18 @@ export async function saveReceiveBillStatus(payload: ReceiveBillStatusPayload) {
   const row = target(state, payload.task_id); row.bill = [{ ...row.bill[0], ...payload, basic_bill_status_label: basicNames[payload.basic_bill_status], payment_status_label: paymentNames[payload.payment_status] }]
   row.actual_receivable_amount = payload.actual_receivable_amount
   row.bill_details.actual_receivable_amount = number(payload.actual_receivable_amount)
+  // 待收/富余挂组级 task_basic；同组任务共享
+  if (payload.basic_entry_amount_cny !== undefined || payload.basic_entry_amount_usd !== undefined) {
+    const basic = Number(payload.basic_bill_status)
+    const entryCny = basic === 2 || basic === 3 ? number(payload.basic_entry_amount_cny) : 0
+    const entryUsd = basic === 2 || basic === 3 ? number(payload.basic_entry_amount_usd) : 0
+    const groupId = row.task_basic_id
+    state.orders.forEach((item) => {
+      if (item.task_basic_id !== groupId || state.deleted.includes(item.id)) return
+      item.task_basic.basic_entry_amount_cny = entryCny
+      item.task_basic.basic_entry_amount_usd = entryUsd
+    })
+  }
   state.operations.push({ type: 'billStatus', payload, at: new Date().toISOString() }); return ok(row.bill[0])
 }) }
 export async function deleteReceive(id: number | string) { return transact(state => { target(state, id); state.deleted.push(Number(id)); state.operations.push({ type: 'delete', id, at: new Date().toISOString() }); return ok({ id }) }) }

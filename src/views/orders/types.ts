@@ -13,10 +13,15 @@ export interface ReceiveListParams {
   employee_id?: number | number[] | string | Array<number | string>
   /** 商务id（对应列表行的 creator 下单人） */
   order_clerk_id?: number | string
-  /** 基础入账状态：1已完成，2未完成 */
+  /** 基础入账状态：1已完成，2未完成，3富余 */
   basic_bill_status?: number | string
-  /** 账款情况：1无异常，2有欠款，3有余款，4已结清 */
+  /** 尾款状态：1无异常，2有欠款，3有余款（4已结算仅作结算映射，筛尾款时不用） */
   payment_status?: number | string
+  /**
+   * 结算状态（原型/前端筛选；正式建议独立字段）
+   * 1无需补退 2未结算 3已结算
+   */
+  settlement_status?: number | string
   /** 创建时间筛选，格式 `2026-10-15 ~ 2026-10-28`；也可传日期数组 */
   time_range?: string | Array<string | null | undefined> | null
   [key: string]: any
@@ -186,6 +191,10 @@ export interface ReceiveBillStatusPayload {
   arrears_usd_amount: number | string
   remark: string
   marked_business: string
+  /** 组级待收/富余（元），挂 task_basic；原型可写 */
+  basic_entry_amount_cny?: number | string | null
+  /** 组级待收/富余（美元），挂 task_basic；原型可写 */
+  basic_entry_amount_usd?: number | string | null
 }
 
 export interface ReceiveBillRemarkPayload {

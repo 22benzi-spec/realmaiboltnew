@@ -67,12 +67,41 @@ export function isBasicBillIncomplete(record: any) {
   return Number(bill?.basic_bill_status) === 2 || bill?.basic_bill_status_label === '未完成'
 }
 
+export function isBasicBillSurplus(record: any) {
+  const bill = getFirstBill(record)
+  return Number(bill?.basic_bill_status) === 3 || bill?.basic_bill_status_label === '富余'
+}
+
 export function getBasicBillStatusLabel(record: any) {
   const bill = getFirstBill(record)
   if (bill?.basic_bill_status_label) return bill.basic_bill_status_label
+  if (Number(bill?.basic_bill_status) === 3) return '富余'
   if (Number(bill?.basic_bill_status) === 2) return '未完成'
   if (Number(bill?.basic_bill_status) === 1) return '已完成'
   return '已完成'
+}
+
+/** 组级基础入账 / 待收 / 富余只在组首行展示（与实收合并、组账单图标同一口径） */
+export function shouldShowGroupBasicBilling(record: any) {
+  return Number(record?._actualReceivedRowSpan ?? 1) > 0
+}
+
+/** 组级待收/富余金额，挂在 task_basic，与单任务差价 arrears 分离 */
+export function getGroupBasicEntryAmount(record: any) {
+  const cny = Number(record?.task_basic?.basic_entry_amount_cny)
+  const usd = Number(record?.task_basic?.basic_entry_amount_usd)
+  return {
+    cny: Number.isFinite(cny) ? cny : 0,
+    usd: Number.isFinite(usd) ? usd : 0,
+  }
+}
+
+export function formatGroupBasicEntryAmount(record: any) {
+  const { cny, usd } = getGroupBasicEntryAmount(record)
+  if (cny <= 0 && usd <= 0) return ''
+  const cnyText = `¥${cny.toFixed(2)}`
+  if (usd > 0.0005) return `${cnyText} / $${usd.toFixed(2)}`
+  return cnyText
 }
 
 export function getFeedbackStatusLabel(record: any, field: 'order' | 'comment') {
@@ -137,7 +166,40 @@ export function hasRealSurplus(record: any) {
 
 export function isPaymentCleared(record: any) {
   const bill = getFirstBill(record)
-  return Number(bill?.payment_status) === 4 || bill?.payment_status_label === '已结清'
+  // 4 = 已结算（历史文案「已结清」仍兼容）
+  return Number(bill?.payment_status) === 4
+    || bill?.payment_status_label === '已结算'
+    || bill?.payment_status_label === '已结清'
+}
+
+/** 结算状态：无需补退 / 未结算 / 已结算（展示层；已结算暂映射 payment_status=4） */
+export function getSettlementStatus(record: any): '无需补退' | '未结算' | '已结算' {
+  if (isPaymentCleared(record)) return '已结算'
+  const bill = getFirstBill(record)
+  const basic = Number(bill?.basic_bill_status)
+  const basicDone = basic === 1 || bill?.basic_bill_status_label === '已完成' || (!basic && !isBasicBillIncomplete(record) && !isBasicBillSurplus(record))
+  const payment = Number(bill?.payment_status)
+  const paymentNone = payment === 1 || bill?.payment_status_label === '无异常' || (!payment && !isDebtBill(record) && !isSurplusBill(record) && !isPaymentCleared(record))
+  if (basicDone && paymentNone) return '无需补退'
+  return '未结算'
+}
+
+/**
+ * 尾款展示：已结算固定「-」，不再回落无异常。
+ * 业务约束：先结基础款，故「已结算 + 基础入账未完成」不应出现；若脏数据则不显示「-」。
+ */
+export function getTailStatusKind(record: any): 'dash' | 'owed' | 'surplus' | 'none' {
+  if (getSettlementStatus(record) === '已结算') {
+    if (isBasicBillIncomplete(record)) return 'none'
+    return 'dash'
+  }
+  if (showListDebtAmount(record) || hasRealDebt(record)) return 'owed'
+  if (showListSurplusAmount(record) || hasRealSurplus(record)) return 'surplus'
+  return 'none'
+}
+
+export function getSettlementStatusLabel(record: any) {
+  return getSettlementStatus(record)
 }
 
 const COMMISSION_RATE_ALIASES: Record<string, string[]> = {
@@ -349,13 +411,13 @@ export function sumBillRecordsNet(records: any[] = []) {
 
 export const TABLE_COLUMNS = [
   { title: '任务号', key: 'task_no', dataIndex: 'task_no', width: 175 },
-  { title: '款项情况', key: 'billing', width: 180 },
   { title: '客户', key: 'customer', width: 160 },
   { title: '产品信息', key: 'product', width: 160 },
   { title: '国家', key: 'country', width: 65 },
   { title: '测评类型/量', key: 'order_types', width: 135 },
   { title: '应收基础款项', key: 'receivable_amount', width: 130 },
-  { title: '实收基础款项', key: 'actual_received', width: 130 },
+  { title: '基础款与结算', key: 'actual_received', width: 168 },
+  { title: '尾款状态', key: 'billing', width: 150 },
   { title: '反馈状态', key: 'feedback', width: 130 },
   { title: '商务备注', key: 'business_remark', width: 140 },
   { title: '商务', key: 'employee', width: 110 },

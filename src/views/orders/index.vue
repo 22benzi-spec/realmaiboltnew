@@ -94,30 +94,44 @@
           @change="handleFilterChange"
         />
         </div>
-        <div :class="isMobile ? 'mobile-query-field' : 'desktop-query-field'"><label v-if="isMobile">账款情况</label>
+        <div :class="isMobile ? 'mobile-query-field' : 'desktop-query-field'"><label v-if="isMobile">基础入账</label>
 <a-select
-          v-model:value="searchForm.payment_status"
+          v-model:value="searchForm.basic_bill_status"
           size="small"
-          style="width: 140px"
+          style="width: 130px"
           allow-clear
-          placeholder="账款情况"
+          placeholder="基础入账"
           @change="handleFilterChange"
         >
-          <a-select-option v-for="item in PAYMENT_STATUS_OPTIONS" :key="item.value" :value="item.value">
+          <a-select-option v-for="item in BASIC_BILL_STATUS_OPTIONS" :key="item.value" :value="item.value">
             {{ item.label }}
           </a-select-option>
         </a-select>
         </div>
-        <div :class="isMobile ? 'mobile-query-field' : 'desktop-query-field'"><label v-if="isMobile">基础入账状态</label>
+        <div :class="isMobile ? 'mobile-query-field' : 'desktop-query-field'"><label v-if="isMobile">尾款状态</label>
 <a-select
-          v-model:value="searchForm.basic_bill_status"
+          v-model:value="searchForm.payment_status"
           size="small"
-          style="width: 150px"
+          style="width: 130px"
           allow-clear
-          placeholder="基础入账状态"
+          placeholder="尾款状态"
           @change="handleFilterChange"
         >
-          <a-select-option v-for="item in BASIC_BILL_STATUS_OPTIONS" :key="item.value" :value="item.value">
+          <a-select-option v-for="item in TAIL_STATUS_OPTIONS" :key="item.value" :value="item.value">
+            {{ item.label }}
+          </a-select-option>
+        </a-select>
+        </div>
+        <div :class="isMobile ? 'mobile-query-field' : 'desktop-query-field'"><label v-if="isMobile">结算状态</label>
+<a-select
+          v-model:value="searchForm.settlement_status"
+          size="small"
+          style="width: 130px"
+          allow-clear
+          placeholder="结算状态"
+          @change="handleFilterChange"
+        >
+          <a-select-option v-for="item in SETTLEMENT_STATUS_OPTIONS" :key="item.value" :value="item.value">
             {{ item.label }}
           </a-select-option>
         </a-select>
@@ -159,11 +173,29 @@
           <div class="mobile-card-people"><span>客户 {{ record.employee?.name }}</span><span>商务 {{ record.creator?.real_name }}</span></div>
           <div class="mobile-card-amounts">
             <div><label>应收基础款项</label><template v-if="receivableBaseAmountDisplay(record).kind === 'mixed'"><span>{{ receivableAmountText(record.task_usd_amount, '$') }}</span><span>{{ receivableAmountText(record.task_cny_amount, '¥') }}</span></template><span v-else>{{ receivableAmountText(record.base_receivable_amount, '¥') }}</span></div>
-            <div><label>实收基础款项</label><template v-if="shouldShowActualReceivedCell(record)"><span v-if="shouldShowActualReceivedUsd(record)">${{ record.task_basic?.actual_usd_amount }}</span><span v-if="hasDisplayAmount(record.task_basic?.actual_cny_amount)">¥{{ record.task_basic.actual_cny_amount }}</span><span v-else>—</span></template></div>
+            <div>
+              <label>基础款与结算</label>
+              <template v-if="shouldShowActualReceivedCell(record)">
+                <span>实收 </span>
+                <span v-if="shouldShowActualReceivedUsd(record)">${{ record.task_basic?.actual_usd_amount }}</span>
+                <span v-if="hasDisplayAmount(record.task_basic?.actual_cny_amount)">¥{{ record.task_basic.actual_cny_amount }}</span>
+                <span v-else>—</span>
+                <div class="mobile-basic-billing">
+                  基础入账：{{ getBasicBillStatusLabel(record) }}
+                  <template v-if="isBasicBillIncomplete(record) && formatGroupBasicEntryAmount(record)"> · 待收 {{ formatGroupBasicEntryAmount(record) }}</template>
+                  <template v-else-if="isBasicBillSurplus(record) && formatGroupBasicEntryAmount(record)"> · 富余 {{ formatGroupBasicEntryAmount(record) }}</template>
+                  <template v-if="getSettlementStatus(record) === '已结算'"> · 结算状态：已结算</template>
+                </div>
+              </template>
+            </div>
           </div>
-          <div class="mobile-card-bottom"><span>基础入账：{{ getBasicBillStatusLabel(record) }}</span><a-button type="link" @click="viewDetail(record)">详情 <RightOutlined /></a-button></div>
-          <div v-if="showListDebtAmount(record)" class="mobile-card-note">欠款：<span v-if="hasRealDebt(record)">¥{{ getFirstBill(record)?.arrears_amount }}</span><span v-if="hasListUsdArrears(record)"> ${{ listArrearsUsdText(record) }}</span></div>
-          <div v-if="showListSurplusAmount(record)" class="mobile-card-note">余款：<span v-if="hasRealSurplus(record)">¥{{ getFirstBill(record)?.arrears_amount }}</span><span v-if="hasListUsdArrears(record)"> ${{ listArrearsUsdText(record) }}</span></div>
+          <div class="mobile-card-bottom">
+            <span v-if="getTailStatusKind(record) === 'dash'">尾款：-</span>
+            <span v-else-if="getTailStatusKind(record) === 'owed'">欠款：<template v-if="hasRealDebt(record)">¥{{ getFirstBill(record)?.arrears_amount }}</template><template v-if="hasListUsdArrears(record)"> ${{ listArrearsUsdText(record) }}</template></span>
+            <span v-else-if="getTailStatusKind(record) === 'surplus'">余款：<template v-if="hasRealSurplus(record)">¥{{ getFirstBill(record)?.arrears_amount }}</template><template v-if="hasListUsdArrears(record)"> ${{ listArrearsUsdText(record) }}</template></span>
+            <span v-else>尾款：无异常</span>
+            <a-button type="link" @click="viewDetail(record)">详情 <RightOutlined /></a-button>
+          </div>
         </article>
         <a-empty v-if="!loading && orders.length === 0" description="暂无接单数据" />
       </div>
@@ -272,28 +304,53 @@
           </template>
 
           <template v-if="column.key === 'actual_received'">
-            <div v-if="shouldShowActualReceivedCell(record)" class="amount-cell">
-              <div v-if="shouldShowActualReceivedUsd(record)" class="amount-usd-part">
-                <span class="amount-usd-tag">
-                  {{ formatIncomeCurrency(record.task_basic?.actual_usd_amount, '$') }}
-                </span>
+            <div v-if="shouldShowActualReceivedCell(record)" class="amount-cell actual-received-cell">
+              <div class="billing-row actual-received-amount-row">
+                <span class="billing-label">实收：</span>
+                <div class="actual-received-amount-values">
+                  <div v-if="shouldShowActualReceivedUsd(record)" class="amount-usd-part">
+                    <span class="amount-usd-tag">
+                      {{ formatIncomeCurrency(record.task_basic?.actual_usd_amount, '$') }}
+                    </span>
+                  </div>
+                  <div v-if="hasDisplayAmount(record.task_basic?.actual_cny_amount)" class="amount-cny-main amount-received">
+                    {{ formatIncomeCurrency(record.task_basic?.actual_cny_amount, '¥') }}
+                  </div>
+                  <div v-else class="text-empty">—</div>
+                </div>
               </div>
-              <div v-if="hasDisplayAmount(record.task_basic?.actual_cny_amount)" class="amount-cny-main amount-received">
-                {{ formatIncomeCurrency(record.task_basic?.actual_cny_amount, '¥') }}
+              <div class="basic-billing-under-received">
+                <div class="billing-row">
+                  <span class="billing-label">基础入账：</span>
+                  <a-tag
+                    :color="isBasicBillIncomplete(record) ? 'red' : isBasicBillSurplus(record) ? 'blue' : 'green'"
+                    size="small"
+                  >
+                    {{ getBasicBillStatusLabel(record) }}
+                  </a-tag>
+                </div>
+                <div v-if="isBasicBillIncomplete(record) && formatGroupBasicEntryAmount(record)" class="billing-row">
+                  <span class="billing-label">待收：</span>
+                  <span class="billing-entry-pending">{{ formatGroupBasicEntryAmount(record) }}</span>
+                </div>
+                <div v-else-if="isBasicBillSurplus(record) && formatGroupBasicEntryAmount(record)" class="billing-row">
+                  <span class="billing-label">富余：</span>
+                  <span class="billing-entry-surplus">{{ formatGroupBasicEntryAmount(record) }}</span>
+                </div>
+                <div v-if="getSettlementStatus(record) === '已结算'" class="billing-row">
+                  <span class="billing-label">结算状态：</span>
+                  <a-tag color="green" size="small">已结算</a-tag>
+                </div>
               </div>
-              <div v-else class="text-empty">—</div>
             </div>
           </template>
 
           <template v-if="column.key === 'billing'">
             <div class="billing-cell">
-              <div class="billing-row">
-                <span class="billing-label">基础入账：</span>
-                <a-tag :color="isBasicBillIncomplete(record) ? 'red' : 'green'" size="small">
-                  {{ getBasicBillStatusLabel(record) }}
-                </a-tag>
+              <div v-if="getTailStatusKind(record) === 'dash'" class="billing-row">
+                <span class="text-empty">-</span>
               </div>
-              <div v-if="showListDebtAmount(record)" class="debt-row">
+              <div v-else-if="getTailStatusKind(record) === 'owed'" class="debt-row">
                 <span class="billing-label">欠款：</span>
                 <a-tag color="orange" size="small">
                   <template v-if="hasRealDebt(record)">&yen;{{ getFirstBill(record)?.arrears_amount }}</template>
@@ -302,17 +359,17 @@
                   </template>
                 </a-tag>
               </div>
-              <div v-else-if="showListSurplusAmount(record)" class="debt-row">
+              <div v-else-if="getTailStatusKind(record) === 'surplus'" class="debt-row">
                 <span class="billing-label">余款：</span>
                 <a-tag color="blue" size="small">
-                  退<template v-if="hasRealSurplus(record)">&yen;{{ getFirstBill(record)?.arrears_amount }}</template>
+                  <template v-if="hasRealSurplus(record)">&yen;{{ getFirstBill(record)?.arrears_amount }}</template>
                   <template v-if="hasListUsdArrears(record)">
                     <template v-if="hasRealSurplus(record)"> / </template>${{ listArrearsUsdText(record) }}
                   </template>
                 </a-tag>
               </div>
-              <div v-else-if="isPaymentCleared(record)" class="billing-row">
-                <a-tag color="green" size="small">{{ getFirstBill(record)?.payment_status_label || '已结清' }}</a-tag>
+              <div v-else class="billing-row">
+                <a-tag color="default" size="small">无异常</a-tag>
               </div>
             </div>
           </template>
@@ -527,6 +584,7 @@ import {
 import {
   getBatchGroupKey,
   getBatchGroupLabel,
+  formatGroupBasicEntryAmount,
   getBasicBillStatusLabel,
   getCountryName,
   getFeedbackStatusLabel,
@@ -539,15 +597,15 @@ import {
   hasMultipleTypes,
   hasListUsdArrears,
   shortenCustomerCompanyName,
+  getSettlementStatus,
+  getTailStatusKind,
   hasRealDebt,
   hasRealSurplus,
   listArrearsUsdText,
-  showListDebtAmount,
-  showListSurplusAmount,
   isBasicBillIncomplete,
+  isBasicBillSurplus,
   isFeedbackDone,
   isGroupFeedback,
-  isPaymentCleared,
   TABLE_COLUMNS,
   type ReviewTypeEnumMap,
 } from './helpers'
@@ -567,6 +625,7 @@ type SearchFormState = {
   order_clerk_id: number | undefined
   payment_status: number | undefined
   basic_bill_status: number | undefined
+  settlement_status: number | undefined
   time_range: [string, string] | null | undefined
 }
 
@@ -582,11 +641,17 @@ const STATUS_OPTIONS = [
   { label: '已截单', value: 5 },
 ]
 
-const PAYMENT_STATUS_OPTIONS = [
+/** 尾款状态筛（不含已结算；已结算走结算筛） */
+const TAIL_STATUS_OPTIONS = [
   { label: '无异常', value: 1 },
   { label: '有欠款', value: 2 },
   { label: '有余款', value: 3 },
-  { label: '已结清', value: 4 },
+]
+
+const SETTLEMENT_STATUS_OPTIONS = [
+  { label: '无需补退', value: 1 },
+  { label: '未结算', value: 2 },
+  { label: '已结算', value: 3 },
 ]
 
 const BASIC_BILL_STATUS_OPTIONS = [
@@ -613,6 +678,7 @@ const searchForm = ref<SearchFormState>({
   order_clerk_id: undefined,
   payment_status: undefined,
   basic_bill_status: undefined,
+  settlement_status: undefined,
   time_range: undefined,
 })
 
@@ -665,6 +731,7 @@ function handleResetFilters() {
     order_clerk_id: undefined,
     payment_status: undefined,
     basic_bill_status: undefined,
+    settlement_status: undefined,
     time_range: undefined,
   }
   selectedCustomerFilterOptions.value = []
@@ -739,10 +806,10 @@ const paginationConfig = computed(() => ({
         `¥${Number(statistics.base_receivable_amount || 0).toFixed(2)}`,
       ],
       [
-        '实收基础款项',
+        '基础款与结算',
         formatActualReceivedStatistics(statistics),
       ],
-      ['账款状态', `${formatSignedCurrency(statistics.arrears_amount, '¥')} / ${formatStatisticsArrearsUsd(statistics.arrears_usd_amount)}`],
+      ['尾款状态', `${formatSignedCurrency(statistics.arrears_amount, '¥')} / ${formatStatisticsArrearsUsd(statistics.arrears_usd_amount)}`],
     ]
 
     return h('div', { class: 'orders-pagination-total' }, [
@@ -1131,6 +1198,7 @@ function buildParams() {
   if (searchForm.value.order_clerk_id !== undefined) params.order_clerk_id = searchForm.value.order_clerk_id
   if (searchForm.value.payment_status !== undefined) params.payment_status = searchForm.value.payment_status
   if (searchForm.value.basic_bill_status !== undefined) params.basic_bill_status = searchForm.value.basic_bill_status
+  if (searchForm.value.settlement_status !== undefined) params.settlement_status = searchForm.value.settlement_status
   params.time_range = searchForm.value.time_range
   return params
 }
@@ -1145,10 +1213,11 @@ function buildStatisticsParams() {
     order_clerk_id: Number(searchForm.value.order_clerk_id ?? 0) || 0,
     basic_bill_status: Number(searchForm.value.basic_bill_status ?? 0) || 0,
     payment_status: Number(searchForm.value.payment_status ?? 0) || 0,
+    settlement_status: Number(searchForm.value.settlement_status ?? 0) || 0,
   }
 }
 
-/** 关键字、状态下拉、国家、测评类型、客户、商务、账款情况、基础入账，有一项有值才算条件搜索（lyx 改） */
+/** 关键字、状态下拉、国家、测评类型、客户、商务、尾款、基础入账、结算，有一项有值才算条件搜索（lyx 改） */
 function hasReceiveSearchCondition() {
   const form = searchForm.value
   return Boolean(
@@ -1159,7 +1228,8 @@ function hasReceiveSearchCondition() {
     || normalizeReceiveEmployeeIds(form.employee_id).length > 0
     || form.order_clerk_id !== undefined
     || form.payment_status !== undefined
-    || form.basic_bill_status !== undefined,
+    || form.basic_bill_status !== undefined
+    || form.settlement_status !== undefined,
   )
 }
 
@@ -1879,9 +1949,47 @@ onMounted(async () => {
   gap: 4px;
 }
 
+.actual-received-amount-row {
+  align-items: flex-start;
+}
+
+.actual-received-amount-values {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .billing-label {
   font-size: 14px;
   color: var(--eva-text-tertiary);
+}
+
+.basic-billing-under-received {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--eva-border, #e5e7eb);
+}
+
+.billing-entry-pending {
+  font-size: 13px;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.billing-entry-surplus {
+  font-size: 13px;
+  font-weight: 600;
+  color: #059669;
+}
+
+.mobile-basic-billing {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .text-empty {
@@ -1992,12 +2100,17 @@ onMounted(async () => {
   color: var(--eva-link);
 }
 
+/* 组首/组尾行与中间行统一 1px，避免中间分割线看起来变细 */
+:deep(.ant-table-tbody > tr > td) {
+  border-bottom: 1px solid var(--eva-border-light) !important;
+}
+
 :deep(.row-batch-first td) {
-  border-top: 2px solid var(--eva-border-light) !important;
+  border-top: 1px solid var(--eva-border-light) !important;
 }
 
 :deep(.row-batch-last td) {
-  border-bottom: 2px solid var(--eva-border-light) !important;
+  border-bottom: 1px solid var(--eva-border-light) !important;
 }
 
 :deep(.ant-table-pagination) {
