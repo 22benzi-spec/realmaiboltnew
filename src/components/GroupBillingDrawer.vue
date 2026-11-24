@@ -1616,9 +1616,9 @@ async function saveBatchRecord() {
       }
     }
     for (const row of toProcess) {
-      if (mode === 'refund') break
-      const rawAmt = Number(row.allocated)
       const isRefund = mode === 'refund'
+      if (isRefund) break
+      const rawAmt = Number(row.allocated)
       const isOffset = mode === 'offset'
       const ratio = selectedTotalBeforeSave > 0 ? Math.abs(rawAmt) / selectedTotalBeforeSave : 1 / toProcess.length
       const absAmt = isOffset ? Math.abs(rawAmt) : Number((formCnyTotal * ratio).toFixed(2))
@@ -1745,15 +1745,7 @@ async function saveBatchRecord() {
     const clearCandidates = batchRecordForm.value.update_debt_status === 'cleared'
       ? toProcess
         .map(row => buildClearCandidateFromOrder(orders.value.find(o => o.id === row.orderId)))
-        .filter(Boolean) as Array<{
-          id: string
-          asin: string
-          order_number: string
-          debt_label: string
-          debt_amount: number
-          debt_amount_usd: number
-          include: boolean
-        }>
+        .filter((row): row is ClearConfirmRow => row != null)
       : []
 
     const processedMap = toProcess.reduce((acc, row) => {

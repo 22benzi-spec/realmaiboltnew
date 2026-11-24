@@ -41,7 +41,7 @@ function seedState(): PrototypeState {
       basic_entry_amount_cny: 0, basic_entry_amount_usd: 0 }
     const bill = { id: index + 1, task_id: index + 1, basic_bill_status: index % 3 === 0 ? 2 : 1,
       basic_bill_status_label: basicNames[index % 3 === 0 ? 2 : 1],
-      payment_status: payment, payment_status_label: paymentNames[payment], arrears_amount: money(difference), arrears_usd_amount: 0,
+      payment_status: payment, payment_status_label: paymentNames[payment], arrears_amount: money(difference), arrears_usd_amount: 0 as number | string,
       marked_business: source.sales_person, remark: source.debt_notes }
     return { id: index + 1, task_no: source.order_number, task_basic_id: groupId, task_basic: basic,
       product: { id: index + 1, asin: source.asin, product_name: source.product_name, product_images: source.product_image,
@@ -93,7 +93,7 @@ function seedState(): PrototypeState {
     if (!demo) continue
     const tail = groupTailSpecs[row.id]
     row.created_at = tail?.finishedAt || demoStamp
-    row.finished_at = tail?.finishedAt || demoStamp
+    Object.assign(row, { finished_at: tail?.finishedAt || demoStamp })
     row.status = tail?.status || 3
     row.status_label = statusNames[row.status]
     row.task_basic.created_at = demoStamp
@@ -132,7 +132,7 @@ function seedState(): PrototypeState {
     entryCny: number
     entryUsd: number
   }> = [
-    { key: 'NONEED', name: '结算-无需补退', basic: 1, payment: 1, arrears: 0, entryCny: 0, entryUsd: 0 },
+    { key: 'NONEED', name: '结算-无需补退', basic: 1, payment: 1, arrears: 0, arrearsUsd: 0, entryCny: 0, entryUsd: 0 },
     { key: 'OWED', name: '结算-未结算有欠款', basic: 1, payment: 2, arrears: 120, arrearsUsd: 16, entryCny: 0, entryUsd: 0 },
     { key: 'SURPLUS', name: '结算-未结算有余款', basic: 1, payment: 3, arrears: 80, arrearsUsd: 11, entryCny: 0, entryUsd: 0 },
     { key: 'DONE', name: '结算-已结算尾款-', basic: 1, payment: 4, arrears: 0, arrearsUsd: 0, entryCny: 0, entryUsd: 0 },
@@ -146,7 +146,7 @@ function seedState(): PrototypeState {
     row.task_no = `TASK-SETTLE-${spec.key}-001`
     row.task_basic_id = id
     row.created_at = dimStamp
-    row.finished_at = dayjs(dimStamp).add(offset, 'hour').format('YYYY-MM-DD HH:mm:ss')
+    Object.assign(row, { finished_at: dayjs(dimStamp).add(offset, 'hour').format('YYYY-MM-DD HH:mm:ss') })
     row.status = 3
     row.status_label = statusNames[3]
     row.product = {

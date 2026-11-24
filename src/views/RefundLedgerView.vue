@@ -254,7 +254,7 @@
                       placement="bottomLeft"
                       :open="isBuyerPaypalEditing(record)"
                       overlay-class-name="amount-edit-pop"
-                      @openChange="open => setBuyerPaypalEdit(record, open)"
+                      @openChange="(open: boolean) => setBuyerPaypalEdit(record, open)"
                     >
                       <template #content>
                         <a-input
@@ -2334,7 +2334,7 @@ function openCarryModal(record: any) {
   carryModalProducts.value = products
   carryModalProductId.value = products.length === 1
     ? products[0].id
-    : (products.some(item => item.id === savedProductId) ? savedProductId : '')
+    : (products.some((item: { id: string }) => item.id === savedProductId) ? savedProductId : '')
   carryModalSurplus.value = displaySurplusCost(record)
   carryModalAmount.value = Number(supplement?.amount || 0) || null
   carryModalSupplementOnly.value = isCarryPosted(record)
