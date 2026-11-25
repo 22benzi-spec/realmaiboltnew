@@ -19,7 +19,7 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 interface PrototypeState { orders: any[]; imported: string[]; deleted: number[]; operations: any[]; nextId: number; seedVersion?: number }
 
 /**  bump 后本地 IndexedDB 会按新 seed 重建，便于验组级入账 / 结算三维度 / 二次确认美元 */
-const SEED_VERSION = 6
+const SEED_VERSION = 10
 
 function seedState(): PrototypeState {
   const orders = generateMockOrders().map((source, index) => {
@@ -132,7 +132,7 @@ function seedState(): PrototypeState {
     entryCny: number
     entryUsd: number
   }> = [
-    { key: 'NONEED', name: '结算-无需补退', basic: 1, payment: 1, arrears: 0, arrearsUsd: 0, entryCny: 0, entryUsd: 0 },
+    { key: 'NONEED', name: '结算-无需补退', basic: 2, payment: 2, arrears: 60, arrearsUsd: 8, entryCny: 620, entryUsd: 85 },
     { key: 'OWED', name: '结算-未结算有欠款', basic: 1, payment: 2, arrears: 120, arrearsUsd: 16, entryCny: 0, entryUsd: 0 },
     { key: 'SURPLUS', name: '结算-未结算有余款', basic: 1, payment: 3, arrears: 80, arrearsUsd: 11, entryCny: 0, entryUsd: 0 },
     { key: 'DONE', name: '结算-已结算尾款-', basic: 1, payment: 4, arrears: 0, arrearsUsd: 0, entryCny: 0, entryUsd: 0 },
@@ -163,6 +163,8 @@ function seedState(): PrototypeState {
       id,
       task_basics_no: `TASK_BASIC-SETTLE-${spec.key}`,
       total_task: 1,
+      // 仅 NONEED 预览混合收款叠放：待收/尾款美元与应收实收美元
+      payment_mode: spec.key === 'NONEED' ? 'mixed' : row.task_basic.payment_mode,
       customer_name: `${spec.name}客户`,
       employee_name: `${spec.name}客户`,
       created_at: dimStamp,
@@ -170,6 +172,13 @@ function seedState(): PrototypeState {
       actual_usd_amount: money(spec.entryUsd > 0 ? spec.entryUsd : (spec.arrearsUsd > 0 ? 40 : 0)),
       basic_entry_amount_cny: spec.entryCny,
       basic_entry_amount_usd: spec.entryUsd,
+    }
+    if (spec.key === 'NONEED') {
+      row.task_usd_amount = money(120)
+      row.bill_details = {
+        ...row.bill_details,
+        pending_settlement_diff: -Number(spec.arrears || 0),
+      }
     }
     row.bill = [{
       id,

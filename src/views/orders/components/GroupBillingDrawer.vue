@@ -30,26 +30,14 @@
         <div class="gb-section">
           <div class="section-header">
             <span class="section-title">账款核对与处理</span>
-            <a-tag color="blue" size="small">{{ billGroupRows.length }} 个组</a-tag>
+            <a-tag color="blue" size="small">{{ billGroupRows.length }} 组</a-tag>
             <div class="section-actions">
-              <a-select
-                v-model:value="batchBillingTarget"
-                size="small"
-                style="width: 120px"
-                placeholder="基础入账状态"
-                allow-clear
-                @change="applyBatchBillingStatus"
-              >
-                <a-select-option v-for="item in BILLING_STATUS_OPTIONS" :key="item.value" :value="item.value">
-                  {{ item.label }}
-                </a-select-option>
-              </a-select>
               <a-button size="small" type="primary" :loading="statusSaving" @click="saveStatusEdits">保存修改</a-button>
             </div>
           </div>
 
           <div class="gbd-group-table" :class="{ 'has-refund': showGroupRefundColumn }">
-            <div class="gbd-group-head">
+            <div class="gbd-group-head compact-entry-preview">
               <span class="col-exp" />
               <span class="col-batch">组任务号</span>
               <span class="col-num">任务数</span>
@@ -57,14 +45,16 @@
               <span class="col-amt">累计实收</span>
               <span class="col-amt">累计抵消</span>
               <span v-if="showGroupRefundColumn" class="col-amt">累计退款</span>
-              <span class="col-amt">待结差额</span>
               <span class="col-status">基础入账状态</span>
-              <span class="col-entry">{{ showGroupBasicEntryAmountColumns ? groupBasicEntryHeaderCny(localOrders) : '' }}</span>
-              <span class="col-entry">{{ showGroupBasicEntryAmountColumns ? groupBasicEntryHeaderUsd(localOrders) : '' }}</span>
+              <span class="col-entry">{{ showGroupBasicEntryAmountColumns ? groupBasicEntryAmountLabel(localOrders[0]) : '' }}</span>
+              <span class="col-amt">待结差额</span>
               <span class="col-customer">客户</span>
             </div>
             <div v-for="group in billGroupRows" :key="group.key" class="gbd-group-block">
-              <div class="gbd-group-row" :class="{ 'is-open': isGroupExpanded(group.key) }">
+              <div
+                class="gbd-group-row compact-entry-preview"
+                :class="{ 'is-open': isGroupExpanded(group.key) }"
+              >
                 <button
                   type="button"
                   class="col-exp group-expand-btn"
@@ -76,111 +66,199 @@
                 </button>
                 <button type="button" class="col-batch group-batch-btn" @click="toggleGroup(group.key)">{{ group.batchNumber }}</button>
                 <span class="col-num">{{ group.taskCount }}</span>
-                <span class="col-amt">¥{{ formatGroupMoney(group.receivable) }}</span>
-                <span class="col-amt">{{ group.merge ? '合并操作' : `¥${formatGroupMoney(group.collected)}` }}</span>
+                <span class="col-amt">
+                  <span v-if="group.merge" class="gbd-amt-cell">合并操作</span>
+                  <span v-else class="gbd-amt-cell">
+                    <span class="gbd-amt-cny">¥{{ formatGroupMoney(group.receivable) }}</span>
+                    <span v-if="hasGroupUsd(group.receivableUsd)" class="gbd-amt-usd">${{ formatGroupMoney(group.receivableUsd) }}</span>
+                  </span>
+                </span>
+                <span class="col-amt">
+                  <span v-if="group.merge" class="gbd-amt-cell">合并操作</span>
+                  <span v-else class="gbd-amt-cell">
+                    <span class="gbd-amt-cny">¥{{ formatGroupMoney(group.collected) }}</span>
+                    <span v-if="hasGroupUsd(group.collectedUsd)" class="gbd-amt-usd">${{ formatGroupMoney(group.collectedUsd) }}</span>
+                  </span>
+                </span>
                 <span class="col-amt">{{ group.merge ? '合并操作' : `¥${formatGroupMoney(group.offset)}` }}</span>
                 <span v-if="showGroupRefundColumn" class="col-amt">{{ group.merge ? '合并操作' : (Number(group.refunded) > 0 ? `¥${formatGroupMoney(group.refunded)}` : '-') }}</span>
-                <span class="col-amt">{{ group.merge ? '合并操作' : formatGroupDiff(group.diff) }}</span>
                 <template v-if="group.orders[0]">
                   <span class="col-status">
                     <a-select
                       v-model:value="group.orders[0]._groupBillingStatus"
                       size="small"
-                      style="width: 86px"
+                      class="gbd-billing-status"
                       :disabled="statusSaving"
                       @change="onGroupBillingStatusChange(group.orders[0])"
                     >
-                      <a-select-option v-for="item in BILLING_STATUS_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
+                      <a-select-option
+                        v-for="item in groupBillingStatusOptions(group.orders[0])"
+                        :key="item.value"
+                        :value="item.value"
+                        :disabled="item.disabled"
+                      >{{ item.label }}</a-select-option>
                     </a-select>
                   </span>
                   <span class="col-entry">
-                    <a-input-number
-                      v-if="canEditGroupBasicEntry(group.orders[0])"
-                      v-model:value="group.orders[0]._groupBasicEntryCny"
-                      size="small"
-                      :min="0"
-                      :precision="2"
-                      style="width: 96px"
-                      :placeholder="groupBasicEntryAmountLabel(group.orders[0])"
-                      :disabled="statusSaving"
-                      @change="() => syncGroupBasicEntry(group.orders[0])"
-                    />
-                  </span>
-                  <span class="col-entry">
-                    <a-input-number
-                      v-if="canEditGroupBasicEntry(group.orders[0])"
-                      v-model:value="group.orders[0]._groupBasicEntryUsd"
-                      size="small"
-                      :min="0"
-                      :precision="2"
-                      style="width: 96px"
-                      :placeholder="groupBasicEntryAmountLabel(group.orders[0])"
-                      :disabled="statusSaving"
-                      @change="() => syncGroupBasicEntry(group.orders[0])"
-                    />
+                    <div v-if="canEditGroupBasicEntry(group.orders[0])" class="gbd-entry-stack">
+                      <label class="gbd-entry-line">
+                        <span class="gbd-entry-unit">元</span>
+                        <a-input-number
+                          v-model:value="group.orders[0]._groupBasicEntryCny"
+                          size="small"
+                          :min="0"
+                          :precision="2"
+                          class="gbd-entry-input"
+                          placeholder="0.00"
+                          :disabled="statusSaving"
+                          @change="() => syncGroupBasicEntry(group.orders[0])"
+                        />
+                      </label>
+                      <label v-if="showBasicEntryUsdInput(group.orders[0])" class="gbd-entry-line">
+                        <span class="gbd-entry-unit">美元</span>
+                        <a-input-number
+                          v-model:value="group.orders[0]._groupBasicEntryUsd"
+                          size="small"
+                          :min="0"
+                          :precision="2"
+                          class="gbd-entry-input is-usd"
+                          placeholder="0.00"
+                          :disabled="statusSaving"
+                          @change="() => syncGroupBasicEntry(group.orders[0])"
+                        />
+                      </label>
+                    </div>
                   </span>
                 </template>
                 <template v-else>
                   <span class="col-status" />
                   <span class="col-entry" />
-                  <span class="col-entry" />
                 </template>
+                <span class="col-amt">
+                  <span v-if="group.merge" class="gbd-amt-cell">合并操作</span>
+                  <span v-else class="gbd-amt-cell">
+                    <span class="gbd-amt-cny" :class="moneyClass(Number(group.diff || 0))">{{ formatGroupDiff(group.diff) }}</span>
+                    <span v-if="hasGroupUsd(group.diffUsd)" class="gbd-amt-usd" :class="moneyClass(Number(group.diffUsd || 0))">{{ formatGroupDiffUsd(group.diffUsd) }}</span>
+                  </span>
+                </span>
                 <span class="col-customer">{{ group.customerName || '-' }}</span>
               </div>
-              <div v-if="isGroupExpanded(group.key)" class="gbd-task-wrap">
-                <div class="gbd-task-head">
-                  <span class="t-asin">Asin</span>
-                  <span class="t-amt">实际应收</span>
-                  <span class="t-debt">尾款状态</span>
-                  <span class="t-debt-amt">尾款金额（元）</span>
-                  <span class="t-debt-usd">尾款金额（美元）</span>
-                </div>
-                <div v-for="order in group.orders" :key="order.id" class="gbd-task-row">
-                  <span class="t-asin">{{ order.product?.asin || '-' }}</span>
-                  <span class="t-amt">¥{{ formatGroupMoney(order._actualReceivable) }}</span>
-                  <span class="t-debt">
+              <div
+                v-if="isGroupExpanded(group.key)"
+                class="gbd-task-wrap is-align-preview"
+              >
+                <div
+                  v-for="order in group.orders"
+                  :key="order.id"
+                  class="gbd-task-align-row compact-entry-preview"
+                >
+                  <span class="col-exp" />
+                  <div class="col-batch gbd-field">
+                    <span class="gbd-field-label">任务号</span>
+                    <span class="gbd-field-value">{{ order.task_no || '-' }}</span>
+                  </div>
+                  <div class="col-num gbd-field gbd-asin-field">
+                    <span class="gbd-field-label">ASIN</span>
+                    <span class="gbd-field-value">{{ order.product?.asin || '-' }}</span>
+                  </div>
+                  <div class="col-amt gbd-field">
+                    <span class="gbd-field-label">实际应收</span>
+                    <span class="gbd-amt-cell">
+                      <span class="gbd-amt-cny">¥{{ formatGroupMoney(order._actualReceivable) }}</span>
+                      <span v-if="isMixedPaymentOrder(order) && hasGroupUsd(order.task_usd_amount)" class="gbd-amt-usd">${{ formatGroupMoney(order.task_usd_amount) }}</span>
+                    </span>
+                  </div>
+                  <span class="col-amt" />
+                  <span class="col-amt" />
+                  <span v-if="showGroupRefundColumn" class="col-amt" />
+                  <div class="col-status gbd-field">
+                    <span class="gbd-field-label">尾款状态</span>
                     <a-select
                       v-model:value="order._groupPaymentStatus"
                       size="small"
-                      style="width: 112px"
+                      class="gbd-debt-status"
                       :disabled="statusSaving || Number(order._groupPaymentStatus) === 4"
                       @change="onGroupPaymentStatusChange(order)"
                     >
-                      <a-select-option v-for="item in groupDiffStatusOptions(order)" :key="item.value" :value="item.value" :disabled="item.disabled">{{ item.label }}</a-select-option>
+                      <a-select-option
+                        v-for="item in groupDiffStatusOptions(order)"
+                        :key="item.value"
+                        :value="item.value"
+                        :disabled="item.disabled"
+                      >{{ item.label }}</a-select-option>
                     </a-select>
-                  </span>
-                  <span class="t-debt-amt">
-                    <a-input-number v-model:value="order._groupArrearsAmount" size="small" :min="0" :precision="2" style="width: 96px" :disabled="statusSaving || !canEditGroupDebt(order)" />
-                  </span>
-                  <span class="t-debt-usd">
-                    <a-input v-model:value="order._groupArrearsUsd" size="small" style="width: 96px" :disabled="statusSaving || !canEditGroupDebt(order)" />
-                  </span>
+                  </div>
+                  <div class="col-entry gbd-field">
+                    <span class="gbd-field-label">尾款金额</span>
+                    <div class="gbd-entry-stack">
+                      <label class="gbd-entry-line">
+                        <span class="gbd-entry-unit">元</span>
+                        <a-input-number
+                          v-model:value="order._groupArrearsAmount"
+                          size="small"
+                          :min="0"
+                          :precision="2"
+                          class="gbd-entry-input"
+                          placeholder="0.00"
+                          :disabled="statusSaving || !canEditGroupDebt(order)"
+                        />
+                      </label>
+                      <label v-if="showDebtUsdInput(order)" class="gbd-entry-line">
+                        <span class="gbd-entry-unit">美元</span>
+                        <a-input
+                          v-model:value="order._groupArrearsUsd"
+                          size="small"
+                          class="gbd-entry-input is-usd"
+                          placeholder="0"
+                          :disabled="statusSaving || !canEditGroupDebt(order)"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <span class="col-amt" />
+                  <span class="col-customer" />
                 </div>
               </div>
             </div>
             <div v-if="billGroupRows.length === 0" class="orders-empty">暂无任务组账单数据</div>
-            <div v-else class="gbd-group-foot">
+            <div v-else class="gbd-group-foot compact-entry-preview">
               <span class="col-exp" />
               <span class="col-batch">合计</span>
               <span class="col-num">{{ apiBillTotal?.task_count || localOrders.length }}</span>
-              <span class="col-amt">¥{{ formatGroupMoney(apiBillTotal?.actual_receivable_amount) }}</span>
-              <span class="col-amt">{{ groupTotalsMerged ? '—' : `¥${formatGroupMoney(apiBillTotal?.income_flow_amount)}` }}</span>
+              <span class="col-amt">
+                <span class="gbd-amt-cell">
+                  <span class="gbd-amt-cny">¥{{ formatGroupMoney(apiBillTotal?.actual_receivable_amount) }}</span>
+                  <span v-if="hasGroupUsd(groupTableTotals.receivableUsd)" class="gbd-amt-usd">${{ formatGroupMoney(groupTableTotals.receivableUsd) }}</span>
+                </span>
+              </span>
+              <span class="col-amt">
+                <span v-if="groupTotalsMerged" class="gbd-amt-cell">—</span>
+                <span v-else class="gbd-amt-cell">
+                  <span class="gbd-amt-cny">¥{{ formatGroupMoney(apiBillTotal?.income_flow_amount) }}</span>
+                  <span v-if="hasGroupUsd(groupTableTotals.collectedUsd)" class="gbd-amt-usd">${{ formatGroupMoney(groupTableTotals.collectedUsd) }}</span>
+                </span>
+              </span>
               <span class="col-amt">{{ groupTotalsMerged ? '—' : `¥${formatGroupMoney(apiBillTotal?.offset_amount)}` }}</span>
               <span v-if="showGroupRefundColumn" class="col-amt">{{ groupTotalsMerged ? '—' : `¥${formatGroupMoney(apiBillTotal?.refund_amount)}` }}</span>
-              <span class="col-amt">{{ groupTotalsMerged ? '—' : formatGroupDiff(apiBillTotal?.pending_settlement_diff) }}</span>
               <span class="col-status" />
               <span class="col-entry" />
-              <span class="col-entry" />
+              <span class="col-amt">
+                <span v-if="groupTotalsMerged" class="gbd-amt-cell">—</span>
+                <span v-else class="gbd-amt-cell">
+                  <span class="gbd-amt-cny" :class="moneyClass(Number(apiBillTotal?.pending_settlement_diff || 0))">{{ formatGroupDiff(apiBillTotal?.pending_settlement_diff) }}</span>
+                  <span v-if="hasGroupUsd(groupTableTotals.diffUsd)" class="gbd-amt-usd" :class="moneyClass(groupTableTotals.diffUsd)">{{ formatGroupDiffUsd(groupTableTotals.diffUsd) }}</span>
+                </span>
+              </span>
               <span class="col-customer" />
             </div>
           </div>
 
           <div class="gb-section settle-section">
-            <div class="section-header"><span class="section-title">结算账单</span></div>
-            <a-textarea :value="settleBillSourceText" readonly :rows="Math.max(4, settleBillSourceText.split('\n').length || 1)" class="bill-editable-text" placeholder="账单内容..." />
-            <div class="settle-actions">
-              <a-button size="small" @click="copySettleBill">复制账单</a-button>
+            <div class="section-header">
+              <span class="section-title">结算账单</span>
+              <a-button size="small" class="settle-copy-btn" @click="copySettleBill">复制</a-button>
             </div>
+            <a-textarea :value="settleBillSourceText" readonly :rows="Math.max(4, settleBillSourceText.split('\n').length || 1)" class="bill-editable-text" placeholder="账单内容..." />
           </div>
 
           <div class="batch-form">
@@ -381,10 +459,17 @@
             <div class="sc-group-body">
               <div class="sc-group-top">
                 <span class="sc-group-title">{{ group.batchNumber }}</span>
-                <span class="sc-group-sub">基础入账：{{ basicStatusLabel(group.basicStatus) }}</span>
+                <span class="sc-group-sub">
+                  基础入账：{{ basicStatusLabel(group.basicStatus) }}
+                  <template v-if="canSelectBasic(group.basicStatus)">
+                    <span class="sc-basic-amt">
+                      {{ group.basicStatus === 3 ? '富余金额' : '待收金额' }}
+                      <b :class="moneyClass(groupBasicSigned(group).cny)">{{ formatMoneyPair(groupBasicSigned(group).cny, groupBasicSigned(group).usd) }}</b>
+                    </span>
+                  </template>
+                </span>
               </div>
               <div class="sc-group-metrics">
-                <span>基础款差额 <b :class="moneyClass(groupBasicSigned(group).cny)">{{ formatMoneyPair(groupBasicSigned(group).cny, groupBasicSigned(group).usd) }}</b></span>
                 <span>尾款合计 <b :class="moneyClass(groupTailNet(group).cny)">{{ formatMoneyPair(groupTailNet(group).cny, groupTailNet(group).usd) }}</b></span>
                 <span>组总差额 <b :class="moneyClass(groupTotalNet(group).cny)">{{ formatMoneyPair(groupTotalNet(group).cny, groupTotalNet(group).usd) }}</b></span>
               </div>
@@ -403,7 +488,6 @@
                   />
                   <span>{{ group.basicSelected ? '基础款已选' : '基础款未选' }}</span>
                 </label>
-                <span v-else class="sc-basic-none">基础款无差额</span>
                 <span>已选尾款 {{ groupTailSelectedCount(group) }}/{{ group.tasks.length }}</span>
               </div>
             </div>
@@ -437,7 +521,7 @@
         </div>
       </div>
       <div class="sc-foot">
-        <span>已选 {{ settlementConfirmSummary.net.basicCount }} 个基础款项，{{ settlementConfirmSummary.net.taskCount }} 个任务</span>
+        <span>已选 {{ settlementConfirmSummary.net.basicCount }} 个基础款项 {{ settlementConfirmSummary.net.taskCount }} 个任务尾款</span>
         <div class="sc-foot-actions">
           <a-button @click="closeSupplementDiff">返回修改</a-button>
           <a-button type="primary" :loading="recordSaving || uploading" @click="saveBatchRecord(undefined, 'submit')">{{ settlementConfirmOkText }}</a-button>
@@ -516,8 +600,6 @@ import {
   changedGroupStatusOrders,
   groupArrearsInputText,
   groupBasicEntryAmountLabel,
-  groupBasicEntryHeaderCny,
-  groupBasicEntryHeaderUsd,
   groupBasicEntryInputValue,
   groupDiffStatusOptions,
   groupStatusEditKey,
@@ -575,10 +657,19 @@ const emit = defineEmits<{
 const localOrders = ref<any[]>([])
 const statusSaving = ref(false)
 const savedStatusSnapshot = ref<Record<string, string>>({})
-const batchBillingTarget = ref<number | undefined>(undefined)
 const refreshedBillData = ref<any | null>(null)
 
-const BILLING_STATUS_OPTIONS = BASIC_BILLING_STATUS_OPTIONS
+/** 组账单基础入账不提供「已完成」；若当前已是已完成则只读展示 */
+function groupBillingStatusOptions(order: any) {
+  const editable = BASIC_BILLING_STATUS_OPTIONS.filter(item => item.value !== 1).map(item => ({
+    ...item,
+    disabled: false,
+  }))
+  if (Number(order?._groupBillingStatus) === 1) {
+    return [{ label: '已完成', value: 1, disabled: true }, ...editable]
+  }
+  return editable
+}
 
 const PAYMENT_STATUS_OPTIONS = [
   { label: '无异常', value: 1 },
@@ -617,43 +708,108 @@ type GroupBillTableRow = {
   batchNumber: string
   taskCount: number
   receivable: unknown
+  receivableUsd: number
   collected: unknown
+  collectedUsd: number
   offset: unknown
   refunded: unknown
   diff: unknown
+  diffUsd: number
   merge: boolean
   customerName: unknown
   orders: any[]
 }
 
-const billGroupRows = computed((): GroupBillTableRow[] => apiBillPayload.value.groups.map((group: any) => ({
-  key: String(group.task_basics_no || group.task_basic_id || group.task_no || group.id),
-  batchNumber: group.task_basics_no || group.task_no || '-',
-  taskCount: group.task_count ?? (Array.isArray(group.tasks) ? group.tasks.length : 1),
-  receivable: group.actual_receivable_amount,
-  collected: group.income_flow_amount,
-  offset: group.offset_amount,
-  refunded: group.refund_amount,
-  diff: group.pending_settlement_diff,
-  merge: Number(group.is_merge_operation) === 1,
-  customerName: group.employee_name,
-  orders: (Array.isArray(group.tasks) ? group.tasks : [group])
+function isMixedPaymentOrder(order: any) {
+  return String(order?.task_basic?.payment_mode || '') === 'mixed'
+}
+
+function sumGroupReceivableUsd(orders: any[]) {
+  return orders.reduce((sum, order) => {
+    if (!isMixedPaymentOrder(order)) return sum
+    const amount = Number(order?.task_usd_amount || 0)
+    return sum + (Number.isFinite(amount) ? amount : 0)
+  }, 0)
+}
+
+function sumGroupCollectedUsd(orders: any[]) {
+  return orders.reduce((sum, order) => {
+    if (!isMixedPaymentOrder(order)) return sum
+    const amount = Number(order?.task_basic?.actual_usd_amount || 0)
+    return sum + (Number.isFinite(amount) ? amount : 0)
+  }, 0)
+}
+
+function signedOrderDiffUsd(order: any) {
+  if (!isMixedPaymentOrder(order)) return 0
+  const payment = Number(order?._groupPaymentStatus ?? order?.bill?.[0]?.payment_status ?? order?.payment_status ?? 1)
+  const amount = Number(order?._groupArrearsUsd ?? order?.arrears_usd_amount ?? order?.bill?.[0]?.arrears_usd_amount ?? 0)
+  if (!Number.isFinite(amount) || Math.abs(amount) < 0.0005) return 0
+  if (payment === 2) return -Math.abs(amount)
+  if (payment === 3) return Math.abs(amount)
+  return 0
+}
+
+function sumGroupDiffUsd(orders: any[]) {
+  return orders.reduce((sum, order) => sum + signedOrderDiffUsd(order), 0)
+}
+
+const billGroupRows = computed((): GroupBillTableRow[] => apiBillPayload.value.groups.map((group: any) => {
+  const orders = (Array.isArray(group.tasks) ? group.tasks : [group])
     .map((task: any) => localOrders.value.find(item => String(item.id) === String(task.id)))
-    .filter(Boolean),
-})))
+    .filter(Boolean)
+  return {
+    key: String(group.task_basics_no || group.task_basic_id || group.task_no || group.id),
+    batchNumber: group.task_basics_no || group.task_no || '-',
+    taskCount: group.task_count ?? (Array.isArray(group.tasks) ? group.tasks.length : 1),
+    receivable: group.actual_receivable_amount,
+    receivableUsd: sumGroupReceivableUsd(orders),
+    collected: group.income_flow_amount,
+    collectedUsd: sumGroupCollectedUsd(orders),
+    offset: group.offset_amount,
+    refunded: group.refund_amount,
+    diff: group.pending_settlement_diff,
+    diffUsd: sumGroupDiffUsd(orders),
+    merge: Number(group.is_merge_operation) === 1,
+    customerName: group.employee_name,
+    orders,
+  }
+}))
 const showGroupRefundColumn = computed(() =>
   Number(apiBillTotal.value?.refund_amount || 0) > 0
   || billGroupRows.value.some(group => Number(group.refunded || 0) > 0)
 )
 const groupTotalsMerged = computed(() => billGroupRows.value.some(group => group.merge))
+const groupTableTotals = computed(() => billGroupRows.value.reduce((acc, group) => {
+  if (group.merge) return acc
+  return {
+    receivableUsd: acc.receivableUsd + Number(group.receivableUsd || 0),
+    collectedUsd: acc.collectedUsd + Number(group.collectedUsd || 0),
+    diffUsd: acc.diffUsd + Number(group.diffUsd || 0),
+  }
+}, { receivableUsd: 0, collectedUsd: 0, diffUsd: 0 }))
 /** 仅未完成/富余显示待收或富余金额列文案；已完成不展示金额 */
 const showGroupBasicEntryAmountColumns = computed(() =>
   localOrders.value.some(order => canEditGroupBasicEntry(order))
 )
 
+function showBasicEntryUsdInput(order: any) {
+  return isMixedPaymentOrder(order) || hasGroupUsd(order?._groupBasicEntryUsd)
+}
+
+function showDebtUsdInput(order: any) {
+  const usdText = String(order?._groupArrearsUsd ?? '').trim()
+  return isMixedPaymentOrder(order) || !!usdText
+}
+
 function formatGroupMoney(value: unknown) {
   const amount = Number(value || 0)
   return Number.isFinite(amount) ? amount.toFixed(2) : '0.00'
+}
+
+function hasGroupUsd(value: unknown) {
+  const amount = Number(value || 0)
+  return Number.isFinite(amount) && Math.abs(amount) > 0.0005
 }
 
 function formatGroupDiff(value: unknown) {
@@ -661,6 +817,13 @@ function formatGroupDiff(value: unknown) {
   if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) return '¥0.00'
   if (amount > 0) return `+¥${amount.toFixed(2)}`
   return `-¥${Math.abs(amount).toFixed(2)}`
+}
+
+function formatGroupDiffUsd(value: unknown) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || Math.abs(amount) < 0.0005) return ''
+  if (amount > 0) return `+$${amount.toFixed(2)}`
+  return `-$${Math.abs(amount).toFixed(2)}`
 }
 
 function isGroupExpanded(key: string) {
@@ -982,17 +1145,6 @@ function syncGroupBasicEntry(order: any) {
     if (item.task_basic) {
       item.task_basic.basic_entry_amount_cny = Number(cny || 0)
       item.task_basic.basic_entry_amount_usd = Number(usd || 0)
-    }
-  })
-}
-
-function applyBatchBillingStatus(value?: number) {
-  if (!value || !localOrders.value.length) return
-  localOrders.value.forEach((order) => {
-    order._groupBillingStatus = value
-    if (!canEditGroupBasicEntry(order)) {
-      order._groupBasicEntryCny = null
-      order._groupBasicEntryUsd = null
     }
   })
 }
@@ -2125,6 +2277,11 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
 .sc-group-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .sc-group-title { font-weight: 700; color: var(--eva-text, #1a1a2e); }
 .sc-group-sub { font-size: 12px; color: var(--eva-text-secondary, #6b7280); }
+.sc-basic-amt {
+  margin-left: 8px;
+  color: var(--eva-text, #1a1a2e);
+}
+.sc-basic-amt b { font-weight: 700; }
 .sc-group-metrics {
   display: flex;
   flex-wrap: wrap;
@@ -2194,17 +2351,40 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
 .refund-account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .upload-text { margin-top: 4px; font-size: 14px; }
 .gbd-group-table { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
-.gbd-group-head, .gbd-group-row, .gbd-group-foot {
+.gbd-group-head, .gbd-group-row, .gbd-group-foot, .gbd-task-align-row {
   display: grid;
-  grid-template-columns: 28px minmax(140px, 1.2fr) 56px repeat(4, minmax(88px, 1fr)) 92px 100px 100px minmax(88px, 1fr);
+  /* 组号 任务数 应收 实收 抵消 | 基础入账 待收 | 待结差额 客户 */
+  grid-template-columns: 28px minmax(140px, 1.2fr) 56px repeat(3, minmax(88px, 1fr)) 110px 100px 100px minmax(88px, 1fr) minmax(88px, 1fr);
   gap: 8px;
   align-items: center;
-  min-width: 1180px;
+  min-width: 1200px;
 }
 .gbd-group-table.has-refund .gbd-group-head,
 .gbd-group-table.has-refund .gbd-group-row,
-.gbd-group-table.has-refund .gbd-group-foot {
-  grid-template-columns: 28px minmax(140px, 1.2fr) 56px repeat(5, minmax(88px, 1fr)) 92px 100px 100px minmax(88px, 1fr);
+.gbd-group-table.has-refund .gbd-group-foot,
+.gbd-group-table.has-refund .gbd-task-align-row {
+  grid-template-columns: 28px minmax(140px, 1.2fr) 56px repeat(4, minmax(88px, 1fr)) 110px 100px 100px minmax(88px, 1fr) minmax(88px, 1fr);
+  min-width: 1300px;
+}
+.gbd-group-head.compact-entry-preview,
+.gbd-group-row.compact-entry-preview,
+.gbd-group-foot.compact-entry-preview {
+  grid-template-columns: 28px minmax(140px, 1.2fr) 56px repeat(3, minmax(88px, 1fr)) 110px minmax(120px, 1fr) minmax(88px, 1fr) minmax(88px, 1fr);
+  min-width: 1120px;
+}
+.gbd-group-table.has-refund .gbd-group-head.compact-entry-preview,
+.gbd-group-table.has-refund .gbd-group-row.compact-entry-preview,
+.gbd-group-table.has-refund .gbd-group-foot.compact-entry-preview {
+  grid-template-columns: 28px minmax(140px, 1.2fr) 56px repeat(4, minmax(88px, 1fr)) 110px minmax(120px, 1fr) minmax(88px, 1fr) minmax(88px, 1fr);
+  min-width: 1220px;
+}
+/* 展开任务行：任务号 | ASIN | 实际应收 …（ASIN 占原任务数列位并加宽） */
+.gbd-task-align-row.compact-entry-preview {
+  grid-template-columns: 28px minmax(130px, 1.1fr) minmax(110px, 1fr) minmax(88px, 1fr) minmax(72px, 0.8fr) minmax(72px, 0.8fr) 110px minmax(120px, 1fr) minmax(88px, 1fr) minmax(88px, 1fr);
+  min-width: 1180px;
+}
+.gbd-group-table.has-refund .gbd-task-align-row.compact-entry-preview {
+  grid-template-columns: 28px minmax(130px, 1.1fr) minmax(110px, 1fr) minmax(88px, 1fr) minmax(72px, 0.8fr) minmax(72px, 0.8fr) minmax(72px, 0.8fr) 110px minmax(120px, 1fr) minmax(88px, 1fr) minmax(88px, 1fr);
   min-width: 1280px;
 }
 .gbd-group-head, .gbd-group-foot { color: var(--eva-text-secondary, #6b7280); font-size: 13px; font-weight: 600; }
@@ -2216,14 +2396,116 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
   font-weight: 700;
 }
 .group-expand-btn { padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
-.gbd-group-row.is-open { background: var(--eva-bg-soft, #f8f9fb); }
+.gbd-group-row.is-open {
+  background: #eef2f7;
+  border-radius: 8px 8px 0 0;
+}
 .group-batch-btn { padding: 0; border: 0; background: transparent; color: var(--eva-link, #1677ff); font-weight: 700; text-align: left; cursor: pointer; }
-.gbd-task-wrap { margin: 0 0 8px; padding: 10px 12px 4px 28px; border-radius: 8px; background: #e8ebf0; }
-.gbd-task-head, .gbd-task-row { display: grid; grid-template-columns: minmax(100px, 1fr) 84px 112px 100px 100px; gap: 8px; align-items: center; }
-.gbd-task-head { color: var(--eva-text-secondary, #6b7280); font-size: 13px; margin-bottom: 6px; }
-.gbd-task-row { margin-bottom: 8px; }
+.col-status { min-width: 0; }
+.gbd-billing-status { width: 100% !important; min-width: 96px; max-width: 110px; }
+.col-entry {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+.gbd-amt-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  max-width: 100%;
+  line-height: 1.25;
+}
+.gbd-field .gbd-amt-cell { align-items: flex-start; }
+.gbd-amt-usd {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--eva-link, #2563eb);
+  white-space: nowrap;
+}
+.gbd-amt-cny {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--eva-text, #1a1a2e);
+  white-space: nowrap;
+}
+.gbd-amt-usd.is-plus,
+.gbd-amt-cny.is-plus { color: var(--eva-success, #059669); }
+.gbd-amt-usd.is-minus,
+.gbd-amt-cny.is-minus { color: var(--eva-danger, #dc2626); }
+.gbd-task-wrap {
+  margin: 0 0 8px;
+  padding: 10px 12px 8px 28px;
+  border-radius: 0 0 8px 8px;
+  background: #e8ebf0;
+}
+.gbd-task-wrap.is-align-preview {
+  padding: 8px 8px 10px;
+  background: #e8ebf0;
+}
+.gbd-task-align-row {
+  padding: 10px 8px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--eva-border, #e5e7eb);
+  align-items: start;
+}
+.gbd-task-align-row:last-child { margin-bottom: 0; }
+.gbd-asin-field { min-width: 0; }
+.gbd-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.col-entry.gbd-field,
+.col-status.gbd-field {
+  align-items: center;
+}
+.gbd-field-label {
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--eva-text-secondary, #6b7280);
+}
+.gbd-field-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--eva-text, #1a1a2e);
+  word-break: break-all;
+}
+.gbd-debt-status { width: 100% !important; min-width: 96px; max-width: 110px; }
+.gbd-entry-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: max-content;
+  margin: 0 auto;
+}
+.gbd-entry-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.gbd-entry-unit {
+  flex: 0 0 28px;
+  font-size: 12px;
+  color: var(--eva-text-secondary, #6b7280);
+  text-align: right;
+}
+.gbd-entry-input { width: 88px !important; }
+.gbd-entry-input.is-usd { width: 72px !important; }
+.gbd-entry-input.is-usd :deep(.ant-input-number-input),
+.gbd-entry-input.is-usd.ant-input {
+  font-size: 12px;
+}
 .settle-section { margin-top: 16px; }
-.settle-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.settle-section .section-header { justify-content: space-between; }
+.settle-copy-btn { margin-left: auto; }
 .bill-editable-text { font-family: monospace; font-size: 13px; line-height: 1.8; }
 
 @media (max-width: 700px) {

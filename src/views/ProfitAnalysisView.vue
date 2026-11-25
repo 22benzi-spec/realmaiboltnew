@@ -5,68 +5,104 @@
     </div>
 
     <div class="filter-bar">
-      <a-range-picker v-model:value="dateRange" @change="reload" style="width:260px" />
-      <a-input v-model:value="customerFilter" placeholder="客户名称" style="width:180px" allow-clear @change="reload" />
-      <a-button @click="reload" :loading="loading">查询</a-button>
+      <a-range-picker
+        v-model:value="dateRange"
+        :placeholder="['创建开始', '创建结束']"
+        style="width:280px"
+        @change="reload"
+      />
+      <a-input
+        v-model:value="keyword"
+        placeholder="客户/客户公司/ASIN/任务号"
+        style="width:260px"
+        allow-clear
+        @pressEnter="reload"
+      />
+      <a-button type="primary" :loading="loading" title="查询" @click="reload">
+        <template #icon><SearchOutlined /></template>
+      </a-button>
     </div>
 
-    <div class="kpi-row">
-      <div class="kpi-card">
-        <div class="kpi-val blue">¥{{ formatNum(overview.commissionProfit) }}</div>
-        <div class="kpi-label">佣金利润</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-val orange">¥{{ formatNum(overview.fxProfit) }}</div>
-        <div class="kpi-label">汇率利润</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-val" :class="overview.principalNet >= 0 ? 'green' : 'red'">
-          ¥{{ formatNum(overview.principalNet) }}
-        </div>
-        <div class="kpi-label">本金差额</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-val" :class="overview.grossProfit >= 0 ? 'green' : 'red'">
-          ¥{{ formatNum(overview.grossProfit) }}
-        </div>
-        <div class="kpi-label">毛利润</div>
-      </div>
-    </div>
-
-    <a-card size="small" style="margin-bottom:20px">
+    <a-card size="small" style="margin-bottom:16px">
       <div class="formula">
-        <span class="formula-label">产品维度口径：</span>
+        <span class="formula-label">口径说明：</span>
         <span class="formula-text">
-          佣金利润 = 类型佣金 × 做单量（已下单起算，剔除问题单处理结果为无需处理/已关闭/已补单）；
-          汇率利润 = (接单汇率 − 实际汇率) × 实付外币，实际汇率：PayPal取当日现汇卖出价，礼品卡取卡购买汇率/成本折算；
-          本金差额 = 本金少返 − 已损失本金 − 本金多返；
-          毛利润 = 三者相加
+          【客户维度】任务总收入 = 任务实收合计（基础收款+补款）；
+          本金总支出 = 产品实返金额折合人民币；
+          退款总支出 = 任务退款实付合计；
+          毛利润 = 任务总收入 − 本金总支出 − 退款总支出；
+          毛利润率 = 毛利润 / 任务总收入。
+          【产品维度】本金差额 = 本金少返 − 已损失本金 − 本金多返（正数为本金利润，负数为本金损失）；
+          毛利润 = 佣金利润 + 汇率利润 + 本金差额。
+          仅展示任务状态为已完成/已截单的任务；有筛选条件时表格底部显示合计。
         </span>
       </div>
     </a-card>
 
     <a-tabs v-model:activeKey="activeTab">
-      <a-tab-pane key="customer" tab="按客户汇总">
+      <a-tab-pane key="customer" tab="客户维度">
         <a-table
           :columns="customerColumns"
           :data-source="customerData"
           :loading="loading"
-          :pagination="false"
+          :pagination="{ pageSize: 20, showTotal: (t:number) => `共 ${t} 条` }"
           row-key="customer_name"
           size="middle"
-          :scroll="{ x: 900 }"
+          :scroll="{ x: 980 }"
         >
           <template #bodyCell="{ column, record }">
-            <template v-if="moneyKeys.includes(column.key)">
-              <span :class="amountClass(record[column.key])">
-                ¥{{ formatNum(record[column.key]) }}
+            <template v-if="column.key === 'orderCount'">
+              {{ record.orderCount }}
+            </template>
+            <template v-else-if="column.key === 'grossProfitRate'">
+              <span :class="amountClass(record.grossProfit)">
+                {{ formatRate(record.grossProfitRate) }}
               </span>
             </template>
+            <template v-else-if="column.key === 'grossProfit'">
+              <span :class="amountClass(record.grossProfit)">
+                ¥{{ formatNum(record.grossProfit) }}
+              </span>
+            </template>
+            <template v-else-if="customerMoneyKeys.includes(column.key)">
+              ¥{{ formatNum(record[column.key]) }}
+            </template>
+          </template>
+          <template v-if="hasActiveFilters && customerData.length" #summary>
+            <a-table-summary fixed>
+              <a-table-summary-row class="filter-summary-row">
+                <a-table-summary-cell :index="0">
+                  <span class="filter-summary-label">合计</span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="1">
+                  <span class="filter-summary-val">{{ customerSummary.orderCount }}</span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="2">
+                  <span class="filter-summary-val">¥{{ formatNum(customerSummary.taskRevenue) }}</span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="3">
+                  <span class="filter-summary-val">¥{{ formatNum(customerSummary.principalExpense) }}</span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="4">
+                  <span class="filter-summary-val">¥{{ formatNum(customerSummary.refundExpense) }}</span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="5">
+                  <span class="filter-summary-val" :class="amountClass(customerSummary.grossProfit)">
+                    ¥{{ formatNum(customerSummary.grossProfit) }}
+                  </span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="6">
+                  <span class="filter-summary-val" :class="amountClass(customerSummary.grossProfit)">
+                    {{ formatRate(customerSummary.grossProfitRate) }}
+                  </span>
+                </a-table-summary-cell>
+              </a-table-summary-row>
+            </a-table-summary>
           </template>
         </a-table>
       </a-tab-pane>
 
-      <a-tab-pane key="order" tab="按订单明细">
+      <a-tab-pane key="order" tab="产品维度">
         <a-table
           :columns="orderColumns"
           :data-source="orderData"
@@ -74,15 +110,56 @@
           :pagination="{ current: orderPage, pageSize: 20, total: orderData.length, showTotal: (t:number) => `共 ${t} 条` }"
           row-key="id"
           size="middle"
-          :scroll="{ x: 1100 }"
+          :scroll="{ x: 1200 }"
           @change="(p:any) => orderPage = p.current"
         >
           <template #bodyCell="{ column, record }">
-            <template v-if="moneyKeys.includes(column.key)">
+            <template v-if="column.key === 'product'">
+              <div class="product-cell">
+                <div class="product-name" :title="record.product_name">{{ record.product_name || '-' }}</div>
+                <div class="product-asin">{{ record.asin || '-' }}</div>
+              </div>
+            </template>
+            <template v-else-if="moneyKeys.includes(column.key)">
               <span :class="amountClass(record[column.key])">
                 ¥{{ formatNum(record[column.key]) }}
               </span>
             </template>
+          </template>
+          <template v-if="hasActiveFilters && orderData.length" #summary>
+            <a-table-summary fixed>
+              <a-table-summary-row class="filter-summary-row">
+                <a-table-summary-cell :index="0">
+                  <span class="filter-summary-label">合计</span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="1" />
+                <a-table-summary-cell :index="2" />
+                <a-table-summary-cell :index="3" />
+                <a-table-summary-cell :index="4">
+                  <span class="filter-summary-val">{{ orderSummary.doneQuantity }}</span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="5">
+                  <span class="filter-summary-val" :class="amountClass(orderSummary.commissionProfit)">
+                    ¥{{ formatNum(orderSummary.commissionProfit) }}
+                  </span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="6">
+                  <span class="filter-summary-val" :class="amountClass(orderSummary.fxProfit)">
+                    ¥{{ formatNum(orderSummary.fxProfit) }}
+                  </span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="7">
+                  <span class="filter-summary-val" :class="amountClass(orderSummary.principalNet)">
+                    ¥{{ formatNum(orderSummary.principalNet) }}
+                  </span>
+                </a-table-summary-cell>
+                <a-table-summary-cell :index="8">
+                  <span class="filter-summary-val" :class="amountClass(orderSummary.grossProfit)">
+                    ¥{{ formatNum(orderSummary.grossProfit) }}
+                  </span>
+                </a-table-summary-cell>
+              </a-table-summary-row>
+            </a-table-summary>
           </template>
         </a-table>
       </a-tab-pane>
@@ -91,30 +168,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { SearchOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import type { Dayjs } from 'dayjs'
 
 const loading = ref(false)
 const dateRange = ref<[Dayjs, Dayjs] | null>(null)
-const customerFilter = ref('')
+const keyword = ref('')
 const activeTab = ref('customer')
 const orderPage = ref(1)
-
-const overview = reactive({
-  commissionProfit: 0,
-  fxProfit: 0,
-  principalNet: 0,
-  grossProfit: 0,
-})
 
 interface CustomerRow {
   customer_name: string
   orderCount: number
-  commissionProfit: number
-  fxProfit: number
-  principalNet: number
+  taskRevenue: number
+  principalExpense: number
+  refundExpense: number
   grossProfit: number
+  grossProfitRate: number
 }
 
 interface OrderRow {
@@ -122,6 +194,7 @@ interface OrderRow {
   order_number: string
   customer_name: string
   product_name: string
+  asin: string
   done_quantity: number
   commissionProfit: number
   fxProfit: number
@@ -133,21 +206,25 @@ interface OrderRow {
 const customerData = ref<CustomerRow[]>([])
 const orderData = ref<OrderRow[]>([])
 const moneyKeys = ['commissionProfit', 'fxProfit', 'principalNet', 'grossProfit']
+const customerMoneyKeys = ['taskRevenue', 'principalExpense', 'refundExpense', 'grossProfit']
 
 const customerColumns = [
-  { title: '客户', dataIndex: 'customer_name', key: 'customer_name', width: 140 },
-  { title: '订单数', dataIndex: 'orderCount', key: 'orderCount', width: 80 },
-  { title: '佣金利润', key: 'commissionProfit', width: 130 },
-  { title: '汇率利润', key: 'fxProfit', width: 130 },
-  { title: '本金差额', key: 'principalNet', width: 130 },
+  { title: '客户公司', dataIndex: 'customer_name', key: 'customer_name', width: 160 },
+  { title: '累计下单量', dataIndex: 'orderCount', key: 'orderCount', width: 110 },
+  { title: '任务总收入', key: 'taskRevenue', width: 130 },
+  { title: '本金总支出', key: 'principalExpense', width: 130 },
+  { title: '退款总支出', key: 'refundExpense', width: 130 },
   { title: '毛利润', key: 'grossProfit', width: 130 },
+  { title: '毛利润率', key: 'grossProfitRate', width: 110 },
 ]
+
+const PROFIT_TASK_STATUSES = ['已完成', '已截单']
 
 const orderColumns = [
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 110, customRender: ({ text }: any) => text?.slice(0, 10) || '-' },
-  { title: '任务号', dataIndex: 'order_number', key: 'order_number', width: 160 },
   { title: '客户', dataIndex: 'customer_name', key: 'customer_name', width: 120, ellipsis: true },
-  { title: '产品信息', dataIndex: 'product_name', key: 'product_name', width: 160, ellipsis: true },
+  { title: '任务号', dataIndex: 'order_number', key: 'order_number', width: 160 },
+  { title: '产品信息', key: 'product', width: 200 },
   { title: '做单量', dataIndex: 'done_quantity', key: 'done_quantity', width: 80 },
   { title: '佣金利润', key: 'commissionProfit', width: 120 },
   { title: '汇率利润', key: 'fxProfit', width: 120 },
@@ -155,8 +232,44 @@ const orderColumns = [
   { title: '毛利润', key: 'grossProfit', width: 120 },
 ]
 
+const hasActiveFilters = computed(() => {
+  return !!(dateRange.value || String(keyword.value || '').trim())
+})
+
+const customerSummary = computed(() => {
+  const rows = customerData.value
+  const orderCount = rows.reduce((s, r) => s + r.orderCount, 0)
+  const taskRevenue = rows.reduce((s, r) => s + r.taskRevenue, 0)
+  const principalExpense = rows.reduce((s, r) => s + r.principalExpense, 0)
+  const refundExpense = rows.reduce((s, r) => s + r.refundExpense, 0)
+  const grossProfit = rows.reduce((s, r) => s + r.grossProfit, 0)
+  return {
+    orderCount,
+    taskRevenue,
+    principalExpense,
+    refundExpense,
+    grossProfit,
+    grossProfitRate: taskRevenue > 0 ? (grossProfit / taskRevenue) * 100 : 0,
+  }
+})
+
+const orderSummary = computed(() => {
+  const rows = orderData.value
+  return {
+    doneQuantity: rows.reduce((s, r) => s + r.done_quantity, 0),
+    commissionProfit: rows.reduce((s, r) => s + r.commissionProfit, 0),
+    fxProfit: rows.reduce((s, r) => s + r.fxProfit, 0),
+    principalNet: rows.reduce((s, r) => s + r.principalNet, 0),
+    grossProfit: rows.reduce((s, r) => s + r.grossProfit, 0),
+  }
+})
+
 function formatNum(n: number) {
   return (n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function formatRate(n: number) {
+  return `${(n || 0).toFixed(1)}%`
 }
 
 function amountClass(n: number) {
@@ -258,6 +371,7 @@ function getIssueManualOverRefund(issue: any) {
   return getPrincipalAmount(issue)
 }
 
+/** 本金少返 */
 function getIssueShortRefund(issue: any) {
   return positive(issue?.profit_diff) + positive(issue?.recovered_amount)
 }
@@ -266,11 +380,12 @@ function getRefundPaidAmount(refund: any) {
   return positive(refund?.actual_paid_usd || refund?.actual_paid || refund?.product_price)
 }
 
-function getRefundReturnAmount(refund: any) {
+/** 产品实返金额（外币） */
+function getProductRefundAmount(refund: any) {
   if (refund?.refund_method === '礼品卡') {
-    return positive(refund?.gift_card_face_value_usd || refund?.refund_amount_usd || refund?.refund_amount)
+    return positive(refund?.gift_card_face_value_usd || refund?.actual_refund_usd || refund?.refund_amount_usd || refund?.refund_amount)
   }
-  return positive(refund?.refund_amount_usd || refund?.refund_amount)
+  return positive(refund?.actual_refund_usd || refund?.refund_amount_usd || refund?.refund_amount)
 }
 
 function getRefundOverAmount(refund: any) {
@@ -279,7 +394,7 @@ function getRefundOverAmount(refund: any) {
   if (/裂变|推荐/.test(text)) return 0
   const paid = getRefundPaidAmount(refund)
   if (paid <= 0) return 0
-  return positive(getRefundReturnAmount(refund) - paid)
+  return positive(getProductRefundAmount(refund) - paid)
 }
 
 function dateKey(value: any) {
@@ -287,11 +402,19 @@ function dateKey(value: any) {
   return String(value).slice(0, 10)
 }
 
+function matchKeyword(order: any, raw: string) {
+  const q = raw.trim().toLowerCase()
+  if (!q) return true
+  const fields = [order.customer_name, order.asin, order.order_number]
+  return fields.some((v) => String(v || '').toLowerCase().includes(q))
+}
+
 let rawOrders: any[] = []
 let rawSubs: any[] = []
 let rawIssues: any[] = []
 let rawRefunds: any[] = []
 let rawGiftCards: any[] = []
+let rawPayments: any[] = []
 let sellRateByDate: Record<string, number> = {}
 let latestSellRate = 0
 let usingMockSellRate = false
@@ -312,6 +435,7 @@ async function reload() {
       loadGiftCards(),
       loadSellRates(),
     ])
+    await loadPayments()
     computeAll()
   } finally {
     loading.value = false
@@ -321,14 +445,15 @@ async function reload() {
 async function loadOrders() {
   let q = supabase
     .from('erp_orders')
-    .select('id, order_number, customer_name, product_name, order_quantity, total_amount, product_cost_cny, exchange_rate, product_price, commission_fee, unit_price, order_type, order_types, type_quantities, price_no_review, price_text, price_image, price_video, price_feedback, created_at')
+    .select('id, order_number, customer_name, product_name, asin, status, order_quantity, total_amount, product_cost_cny, exchange_rate, product_price, commission_fee, unit_price, order_type, order_types, type_quantities, price_no_review, price_text, price_image, price_video, price_feedback, created_at')
+    .in('status', PROFIT_TASK_STATUSES)
   if (dateRange.value) {
     q = q.gte('created_at', dateRange.value[0].format('YYYY-MM-DD'))
     q = q.lte('created_at', dateRange.value[1].format('YYYY-MM-DD') + 'T23:59:59')
   }
-  if (customerFilter.value) q = q.ilike('customer_name', `%${customerFilter.value}%`)
   const { data } = await q.order('created_at', { ascending: false })
-  rawOrders = data || []
+  const kw = keyword.value.trim()
+  rawOrders = (data || []).filter((row: any) => matchKeyword(row, kw))
 }
 
 async function loadSubOrders() {
@@ -346,7 +471,7 @@ async function loadSubOrders() {
 async function loadPrincipalSources() {
   const [{ data: issues }, { data: refunds }] = await Promise.all([
     supabase.from('after_sale_issues').select('id, order_id, sub_order_id, issue_status, issue_type, principal_status, principal_amount, loss_amount, profit_diff, recovered_amount, principal_stolen, created_at'),
-    supabase.from('refund_requests').select('id, order_id, sub_order_id, refund_method, refund_category, refund_reason, notes, actual_paid_usd, actual_paid, product_price, gift_card_face_value_usd, refund_amount_usd, refund_amount, created_at'),
+    supabase.from('refund_requests').select('id, order_id, sub_order_id, refund_method, refund_category, refund_reason, notes, actual_paid_usd, actual_paid, actual_refund_usd, product_price, gift_card_face_value_usd, refund_amount_usd, refund_amount, created_at'),
   ])
   rawIssues = issues || []
   rawRefunds = refunds || []
@@ -358,6 +483,24 @@ async function loadGiftCards() {
     .select('id, exchange_rate, actual_cost, face_value_usd, used_for_sub_order_id, status')
     .not('used_for_sub_order_id', 'is', null)
   rawGiftCards = data || []
+}
+
+async function loadPayments() {
+  const orderIds = rawOrders.map((o) => o.id).filter(Boolean)
+  if (!orderIds.length) {
+    rawPayments = []
+    return
+  }
+  const { data, error } = await supabase
+    .from('batch_payments')
+    .select('batch_id, amount_cny, payment_type')
+    .in('batch_id', orderIds)
+  if (error) {
+    console.warn('利润分析加载收款失败:', error.message)
+    rawPayments = []
+    return
+  }
+  rawPayments = data || []
 }
 
 function applySellRateRows(rows: Array<{ rate_date: string; usd_cash_sell_rate: number }>, mock = false) {
@@ -397,14 +540,12 @@ async function loadSellRates() {
     }),
     true,
   )
-  // 无快照日期命中时，仍用最近示意卖出价兜底
   if (!latestSellRate) latestSellRate = MOCK_SELL_RATES[0].usd_cash_sell_rate
 }
 
 function getSellRateForDate(createdAt: string) {
   const key = dateKey(createdAt)
   if (key && sellRateByDate[key]) return sellRateByDate[key]
-  // 无当日快照时沿用最近一日卖出价
   return latestSellRate || 0
 }
 
@@ -457,6 +598,7 @@ function computeAll() {
     if (card.id) giftCardBySubId[`card:${card.id}`] = card
   }
 
+  /** 产品维度：本金差额 = 本金少返 − 已损失本金 − 本金多返（另扣返款溢余） */
   const principalByOrder: Record<string, number> = {}
   const addPrincipal = (orderId: string | null | undefined, amountFx: number, rate: number) => {
     if (!orderId || !orderIds.has(orderId) || !amountFx) return
@@ -477,9 +619,33 @@ function computeAll() {
     addPrincipal(refund.order_id, -overFx, orderRateMap[refund.order_id] || latestSellRate)
   }
 
-  let totalCommission = 0
-  let totalFx = 0
-  let totalPrincipal = 0
+  /** 客户维度：本金总支出 = 产品实返折合人民币 */
+  const productRefundByOrder: Record<string, number> = {}
+  for (const refund of rawRefunds) {
+    if (!refund?.order_id || (orderIds.size && !orderIds.has(refund.order_id))) continue
+    const rate = orderRateMap[refund.order_id] || latestSellRate
+    const fx = getProductRefundAmount(refund)
+    if (!fx) continue
+    const cny = fx * (rate > 0 ? rate : 1)
+    productRefundByOrder[refund.order_id] = (productRefundByOrder[refund.order_id] || 0) + cny
+  }
+
+  /** 任务实收 / 任务退款：与账单「累计实收」「退款」同口径 */
+  const receivedByOrder: Record<string, number> = {}
+  const taskRefundByOrder: Record<string, number> = {}
+  for (const p of rawPayments) {
+    const orderId = p?.batch_id
+    if (!orderId || !orderIds.has(orderId)) continue
+    const amt = Number(p.amount_cny || 0)
+    if (!amt) continue
+    const type = String(p.payment_type || '')
+    if (type === '退款') {
+      taskRefundByOrder[orderId] = (taskRefundByOrder[orderId] || 0) + amt
+    } else if (!type || type === '基础收款' || type === '补款') {
+      receivedByOrder[orderId] = (receivedByOrder[orderId] || 0) + amt
+    }
+  }
+
   const custMap: Record<string, CustomerRow> = {}
   const orders: OrderRow[] = []
 
@@ -494,22 +660,26 @@ function computeAll() {
     const commissionProfit = getCommissionByDoneQty(o, doneQty)
     const fxProfit = actualRate > 0 && paidForeign > 0 ? (acceptRate - actualRate) * paidForeign : 0
     const principalNet = principalByOrder[o.id] || 0
-    const grossProfit = commissionProfit + fxProfit + principalNet
+    /** 产品维度毛利润：佣金 + 汇率 + 本金差额 */
+    const orderGrossProfit = commissionProfit + fxProfit + principalNet
 
-    totalCommission += commissionProfit
-    totalFx += fxProfit
-    totalPrincipal += principalNet
+    const taskRevenue = receivedByOrder[o.id] || 0
+    const principalExpense = productRefundByOrder[o.id] || 0
+    const refundExpense = taskRefundByOrder[o.id] || 0
+    /** 客户维度毛利润：不含本金差额 */
+    const customerGrossProfit = taskRevenue - principalExpense - refundExpense
 
     orders.push({
       id: o.id,
       order_number: o.order_number || '-',
       customer_name: o.customer_name || '-',
       product_name: o.product_name || '-',
+      asin: o.asin || '-',
       done_quantity: doneQty,
       commissionProfit,
       fxProfit,
       principalNet,
-      grossProfit,
+      grossProfit: orderGrossProfit,
       created_at: o.created_at,
     })
 
@@ -518,25 +688,26 @@ function computeAll() {
       custMap[cn] = {
         customer_name: cn,
         orderCount: 0,
-        commissionProfit: 0,
-        fxProfit: 0,
-        principalNet: 0,
+        taskRevenue: 0,
+        principalExpense: 0,
+        refundExpense: 0,
         grossProfit: 0,
+        grossProfitRate: 0,
       }
     }
     custMap[cn].orderCount += 1
-    custMap[cn].commissionProfit += commissionProfit
-    custMap[cn].fxProfit += fxProfit
-    custMap[cn].principalNet += principalNet
-    custMap[cn].grossProfit += grossProfit
+    custMap[cn].taskRevenue += taskRevenue
+    custMap[cn].principalExpense += principalExpense
+    custMap[cn].refundExpense += refundExpense
+    custMap[cn].grossProfit += customerGrossProfit
   }
 
-  overview.commissionProfit = totalCommission
-  overview.fxProfit = totalFx
-  overview.principalNet = totalPrincipal
-  overview.grossProfit = totalCommission + totalFx + totalPrincipal
+  const customerRows = Object.values(custMap).map((row) => ({
+    ...row,
+    grossProfitRate: row.taskRevenue > 0 ? (row.grossProfit / row.taskRevenue) * 100 : 0,
+  }))
 
-  customerData.value = Object.values(custMap).sort((a, b) => b.grossProfit - a.grossProfit)
+  customerData.value = customerRows.sort((a, b) => b.grossProfit - a.grossProfit)
   orderData.value = orders
   orderPage.value = 1
 }
@@ -549,27 +720,27 @@ onMounted(() => reload())
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 0; }
 
-.filter-bar { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
-.kpi-card {
-  background: #fff;
-  border-radius: 10px;
-  padding: 18px;
-  text-align: center;
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
-  border: 1px solid #f0f0f0;
-}
-.kpi-val { font-size: 22px; font-weight: 700; color: #2563eb; }
-.kpi-val.green { color: #059669; }
-.kpi-val.red { color: #dc2626; }
-.kpi-val.blue { color: #2563eb; }
-.kpi-val.orange { color: #d97706; }
-.kpi-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
 
 .formula { display: flex; align-items: flex-start; gap: 8px; }
 .formula-label { font-weight: 600; color: #1a1a2e; white-space: nowrap; }
 .formula-text { color: #6b7280; font-size: 13px; line-height: 1.6; }
+
+.product-cell { line-height: 1.35; }
+.product-name {
+  color: #1a1a2e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.product-asin { color: #6b7280; font-size: 12px; }
+
+.filter-summary-row td {
+  background: #f5f7fa;
+  font-weight: 600;
+}
+.filter-summary-label { color: #1a1a2e; }
+.filter-summary-val { color: #1a1a2e; }
 
 .amount-in { color: #059669; font-weight: 600; }
 .amount-out { color: #dc2626; font-weight: 600; }

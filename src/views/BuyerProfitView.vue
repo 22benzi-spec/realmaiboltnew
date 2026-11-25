@@ -68,6 +68,7 @@
         </a-select>
         <a-input-search v-model:value="filterSearch" placeholder="搜索买手/业务员..." style="width:220px" @search="recalc" allow-clear />
         <a-button @click="loadData"><ReloadOutlined /> 刷新</a-button>
+        <a-button type="primary" @click="openExportPreview"><ExportOutlined /> 导出预览</a-button>
       </div>
 
       <a-table
@@ -233,6 +234,117 @@
       </template>
     </a-drawer>
 
+    <a-drawer
+      v-model:open="exportPreviewOpen"
+      title="导出预览 · 方案2（汇总 + 明细）"
+      width="96%"
+      placement="right"
+      destroy-on-close
+      class="export-preview-drawer"
+    >
+      <div class="export-preview-head">
+        <div>
+          <div class="export-preview-title">表格效果预览</div>
+          <div class="export-preview-desc">
+            统计区间：{{ periodLabel }}。三个 Sheet 对应三个页签；明细按「一条金额情况一行」拆开同一买手的多子单。正式下载 Excel 下一步再接。
+          </div>
+        </div>
+        <a-space>
+          <a-tag color="blue">买手汇总 {{ exportBuyerRows.length }} 行</a-tag>
+          <a-tag color="blue">业务员汇总 {{ exportStaffRows.length }} 行</a-tag>
+          <a-tag color="purple">金额明细 {{ exportDetailRows.length }} 行</a-tag>
+        </a-space>
+      </div>
+
+      <a-tabs v-model:activeKey="exportSheetTab" class="export-preview-tabs">
+        <a-tab-pane key="buyer" tab="Sheet1 买手汇总">
+          <div class="export-sheet-meta">粒度：1 买手 1 行 · 对标「按买手」列表（不含操作列）</div>
+          <a-table
+            :columns="exportBuyerColumns"
+            :data-source="exportBuyerRows"
+            row-key="buyer_id"
+            size="middle"
+            :scroll="{ x: 1180 }"
+            :pagination="{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条` }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'period'">{{ periodLabel }}</template>
+              <template v-else-if="column.key === 'country'">
+                <a-tag>{{ record.country || '--' }}</a-tag>
+              </template>
+              <template v-else-if="column.key === 'net'">
+                <span :class="record.net >= 0 ? 'amount-profit' : 'amount-loss'">{{ formatSignedMoney(record.net) }}</span>
+              </template>
+              <template v-else-if="lossColumnKeys.includes(String(column.key))">
+                <span :class="record[column.key] > 0 ? 'amount-loss' : 'text-gray'">{{ formatLossMoney(record[column.key]) }}</span>
+              </template>
+              <template v-else-if="profitColumnKeys.includes(String(column.key))">
+                <span :class="record[column.key] > 0 ? 'amount-profit' : 'text-gray'">{{ formatProfitMoney(record[column.key]) }}</span>
+              </template>
+              <template v-else-if="column.key === 'status'">
+                <a-tag :color="buyerStatusColor(record.buyer_status)">{{ record.buyer_status || '--' }}</a-tag>
+              </template>
+            </template>
+          </a-table>
+        </a-tab-pane>
+
+        <a-tab-pane key="staff" tab="Sheet2 业务员汇总">
+          <div class="export-sheet-meta">粒度：1 业务员 1 行 · 对标「按业务员」列表</div>
+          <a-table
+            :columns="exportStaffColumns"
+            :data-source="exportStaffRows"
+            row-key="staff_id"
+            size="middle"
+            :scroll="{ x: 980 }"
+            :pagination="{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条` }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'period'">{{ periodLabel }}</template>
+              <template v-else-if="column.key === 'net'">
+                <span :class="record.net >= 0 ? 'amount-profit' : 'amount-loss'">{{ formatSignedMoney(record.net) }}</span>
+              </template>
+              <template v-else-if="lossColumnKeys.includes(String(column.key))">
+                <span :class="record[column.key] > 0 ? 'amount-loss' : 'text-gray'">{{ formatLossMoney(record[column.key]) }}</span>
+              </template>
+              <template v-else-if="profitColumnKeys.includes(String(column.key))">
+                <span :class="record[column.key] > 0 ? 'amount-profit' : 'text-gray'">{{ formatProfitMoney(record[column.key]) }}</span>
+              </template>
+            </template>
+          </a-table>
+        </a-tab-pane>
+
+        <a-tab-pane key="detail" tab="Sheet3 金额明细">
+          <div class="export-sheet-meta">粒度：1 条金额情况 1 行 · 同一买手多子单拆成多行，可按买手/子订单筛选</div>
+          <a-table
+            :columns="exportDetailColumns"
+            :data-source="exportDetailRows"
+            row-key="id"
+            size="middle"
+            :scroll="{ x: 1400 }"
+            :pagination="{ pageSize: 20, showTotal: (t: number) => `共 ${t} 条` }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'period'">{{ periodLabel }}</template>
+              <template v-else-if="column.key === 'situation'">
+                <a-tag :color="record.amountType === 'profit' ? 'green' : 'red'">{{ record.situation }}</a-tag>
+              </template>
+              <template v-else-if="column.key === 'direction'">
+                <span :class="record.amountType === 'profit' ? 'amount-profit' : 'amount-loss'">
+                  {{ record.amountType === 'profit' ? '利润(+)' : '损失(−)' }}
+                </span>
+              </template>
+              <template v-else-if="column.key === 'amount'">
+                <span :class="record.amountType === 'profit' ? 'amount-profit' : 'amount-loss'">
+                  {{ record.amountType === 'profit' ? formatDetailProfitMoney(record.amount, record.country) : formatDetailLossMoney(record.amount, record.country) }}
+                </span>
+              </template>
+              <template v-else-if="column.key === 'time'">{{ formatDate(record.refundTime) }}</template>
+            </template>
+          </a-table>
+        </a-tab-pane>
+      </a-tabs>
+    </a-drawer>
+
     <a-modal
       v-model:open="commissionOpen"
       title="提交裂变佣金返款"
@@ -273,7 +385,7 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
-import { ReloadOutlined } from '@ant-design/icons-vue'
+import { ExportOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { supabase } from '../lib/supabase'
@@ -313,6 +425,8 @@ const summaryStats = ref<SummaryStats>(emptySummary())
 const detailOpen = ref(false)
 const detailRecord = ref<any | null>(null)
 const detailSituationFilter = ref('all')
+const exportPreviewOpen = ref(false)
+const exportSheetTab = ref<'buyer' | 'staff' | 'detail'>('buyer')
 const commissionOpen = ref(false)
 const commissionSubmitting = ref(false)
 const commissionForm = ref({
@@ -358,6 +472,50 @@ const detailColumns = [
   { title: '金额情况', key: 'situation', width: 120 },
   { title: '金额', key: 'amount', width: 120 },
   { title: '返款时间', key: 'time', width: 120 },
+]
+
+/** 导出预览 · Sheet1 买手汇总 */
+const exportBuyerColumns = [
+  { title: '统计区间', key: 'period', width: 190 },
+  { title: '国家', key: 'country', width: 90 },
+  { title: '买手姓名', dataIndex: 'buyer_name', key: 'buyer_name', width: 140 },
+  { title: '买手编号', dataIndex: 'buyer_number', key: 'buyer_number', width: 120 },
+  { title: '业务员', dataIndex: 'staff_name', key: 'staff_name', width: 110 },
+  { title: '买手状态', key: 'status', width: 100 },
+  { title: '净盈亏', key: 'net', width: 120 },
+  { title: '已损失本金', key: 'lost_principal', width: 120 },
+  { title: '本金多返', key: 'principal_over_refund', width: 110 },
+  { title: '本金少返', key: 'principal_short_refund', width: 110 },
+  { title: '裂变佣金', key: 'fission_commission', width: 110 },
+]
+
+/** 导出预览 · Sheet2 业务员汇总 */
+const exportStaffColumns = [
+  { title: '统计区间', key: 'period', width: 190 },
+  { title: '业务员', dataIndex: 'staff_name', key: 'staff_name', width: 130 },
+  { title: '涉及买手数', dataIndex: 'buyer_count', key: 'buyer_count', width: 110 },
+  { title: '净盈亏', key: 'net', width: 120 },
+  { title: '已损失本金', key: 'lost_principal', width: 120 },
+  { title: '本金多返', key: 'principal_over_refund', width: 110 },
+  { title: '本金少返', key: 'principal_short_refund', width: 110 },
+  { title: '裂变佣金', key: 'fission_commission', width: 110 },
+]
+
+/** 导出预览 · Sheet3 金额明细（一行一事件） */
+const exportDetailColumns = [
+  { title: '统计区间', key: 'period', width: 190 },
+  { title: '买手姓名', dataIndex: 'buyer_name', key: 'buyer_name', width: 120 },
+  { title: '买手编号', dataIndex: 'buyer_number', key: 'buyer_number', width: 110 },
+  { title: '业务员', dataIndex: 'staff_name', key: 'staff_name', width: 100 },
+  { title: '国家', dataIndex: 'country', key: 'country', width: 80 },
+  { title: '产品名称', dataIndex: 'productName', key: 'productName', width: 150, ellipsis: true },
+  { title: '子订单号', dataIndex: 'orderId', key: 'orderId', width: 140 },
+  { title: '亚马逊订单号', dataIndex: 'orderNumber', key: 'orderNumber', width: 150 },
+  { title: '类型', dataIndex: 'type', key: 'type', width: 110 },
+  { title: '金额情况', key: 'situation', width: 110 },
+  { title: '金额', key: 'amount', width: 110 },
+  { title: '盈亏方向', key: 'direction', width: 100 },
+  { title: '发生/返款时间', key: 'time', width: 120 },
 ]
 
 const MOCK_ISSUES = [
@@ -567,6 +725,21 @@ const filteredDetailRows = computed(() => {
   if (detailSituationFilter.value === 'all') return allDetailRows.value
   return allDetailRows.value.filter(row => row.situation === detailSituationFilter.value)
 })
+
+const exportBuyerRows = computed(() => buyerData.value)
+const exportStaffRows = computed(() => staffData.value)
+const exportDetailRows = computed(() => {
+  return buyerData.value.flatMap((buyer) =>
+    getAllDetailRows(buyer).map((row: any, index: number) => ({
+      ...row,
+      id: `${buyer.buyer_id || buyer.buyer_name}-${row.id || index}`,
+      buyer_name: buyer.buyer_name || '--',
+      buyer_number: buyer.buyer_number || '--',
+      staff_name: buyer.staff_name || '--',
+    })),
+  )
+})
+
 const commissionCurrencyLabel = computed(() => currencyLabel(commissionForm.value.country))
 const baseCountryOptions = ['美国', '英国', '德国', '加拿大']
 const countryOptions = computed(() => {
@@ -1033,6 +1206,11 @@ function openDetail(record: any) {
   detailOpen.value = true
 }
 
+function openExportPreview() {
+  exportSheetTab.value = 'buyer'
+  exportPreviewOpen.value = true
+}
+
 function openCommissionModal(record?: any) {
   commissionForm.value = {
     buyerName: record?.buyer_name || '',
@@ -1195,10 +1373,43 @@ onMounted(loadData)
 
 :deep(.ant-table-row) { cursor: pointer; }
 
+.export-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: #f5f7fa;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+.export-preview-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+.export-preview-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+  max-width: 720px;
+}
+.export-sheet-meta {
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.export-preview-tabs {
+  margin-top: 4px;
+}
+
 @media (max-width: 767px) {
   .stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .stat-card { padding: 10px; }
   .stat-val { font-size: 16px; }
   .drawer-summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .export-preview-head { flex-direction: column; }
 }
 </style>
