@@ -1,423 +1,202 @@
 <template>
-  <div class="page-content">
-    <div class="page-header">
-      <h1 class="page-title">客户库</h1>
-      <div class="header-actions">
-        <a-input-search v-model:value="searchText" placeholder="搜索公司名/品牌/ASIN" style="width:240px" allow-clear @search="load" />
-        <a-select v-model:value="filterLevel" style="width:100px" @change="load" allow-clear placeholder="等级">
+  <div class="customer-list">
+    <div class="flex-between mb-16">
+      <div class="flex-center-gap flex-1">
+        <a-input-search
+          v-model:value="searchText"
+          class="customer-search-name"
+          allow-clear
+          placeholder="客户/客户ID;客户公司/客户公司ID"
+          @search="handleSearch"
+        />
+        <a-input-search
+          v-model:value="storeKeyword"
+          class="customer-search-asin"
+          allow-clear
+          placeholder="ASIN/店铺/品牌"
+          @search="handleSearch"
+        />
+        <a-input-search
+          v-model:value="contactKeyword"
+          class="customer-search-contact"
+          allow-clear
+          placeholder="微信号/手机号/邮箱"
+          @search="handleSearch"
+        />
+        <a-select v-model:value="filterLevel" class="customer-filter-level" allow-clear placeholder="等级" @change="handleSearch">
           <a-select-option v-for="l in ['S','A','B','C']" :key="l" :value="l">{{ l }}级</a-select-option>
         </a-select>
-        <a-select v-model:value="filterStatus" style="width:100px" @change="load" allow-clear placeholder="状态">
+        <a-select v-model:value="filterStatus" class="customer-filter-status" allow-clear placeholder="状态" @change="handleSearch">
           <a-select-option value="活跃">活跃</a-select-option>
           <a-select-option value="暂停">暂停</a-select-option>
           <a-select-option value="流失">流失</a-select-option>
         </a-select>
-        <a-button @click="load"><ReloadOutlined /></a-button>
-        <a-button type="primary" @click="openAddModal"><PlusOutlined /> 添加客户</a-button>
+      </div>
+      <div class="flex-center-gap">
+        <a-button type="primary" @click="openAddModal">添加公司</a-button>
+        <a-button type="text" :icon="h(ReloadOutlined)" :loading="loading" @click="handleSearch">刷新</a-button>
       </div>
     </div>
 
-    <div v-if="loading" class="loading-wrap"><a-spin size="large" /></div>
-    <div v-else-if="clients.length === 0" class="empty-wrap"><a-empty description="暂无客户数据" /></div>
-
-    <div v-else class="client-list">
-      <div v-for="company in clients" :key="company.id" class="client-card">
-        <!-- 左侧：组织信息 -->
-        <div class="card-org">
-          <div class="org-avatar" :style="{ background: levelBg[company.level || 'C'] }">
-            {{ (company.company_name || '?').charAt(0) }}
-          </div>
-          <div class="org-info">
-            <div class="org-name" @click="openDetail(company)">{{ company.company_name }}</div>
-            <div class="org-ids">
-              <span class="id-badge">{{ company.org_id || '—' }}</span>
-              <a-tag :color="levelColor[company.level || 'C']" style="margin:0;font-size:11px">{{ company.level || 'C' }}级</a-tag>
-              <a-tag :color="statusColor[company.status || '活跃']" style="margin:0;font-size:11px">{{ company.status || '活跃' }}</a-tag>
-            </div>
-            <div v-if="company.source_channel" class="org-source">
-              <span class="source-badge">{{ company.source_channel }}{{ company.source_referrer ? '：' + company.source_referrer : '' }}{{ company.source_exhibition ? '：' + company.source_exhibition : '' }}{{ company.source_channel_name ? '：' + company.source_channel_name : '' }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="card-sep" />
-
-        <!-- 店铺/ASIN/品牌/类目概况 -->
-        <div class="card-store-summary">
-          <div class="section-label">店铺 · ASIN · 品牌</div>
-          <div class="store-summary-content">
-            <div v-if="company.client_stores_summary?.length" class="store-pills">
-              <div v-for="s in company.client_stores_summary.slice(0, 2)" :key="s.id" class="store-pill">
-                <ShopOutlined class="store-pill-icon" />
-                <span class="store-pill-name">{{ s.store_name }}</span>
-                <span v-if="s.asin_count" class="store-pill-count">{{ s.asin_count }}个ASIN</span>
+    <a-spin :spinning="loading">
+      <div class="customer-card-list">
+        <div v-for="company in visibleClients" :key="company.id">
+          <a-row :gutter="12" class="customer-card-row">
+            <a-col :span="1" class="customer-card-avatar">
+              <div class="customer-avatar">
+                {{ String(company.company_name || '-').slice(0, 1).toUpperCase() }}
               </div>
-              <span v-if="company.client_stores_summary.length > 2" class="store-more">+{{ company.client_stores_summary.length - 2 }}家店</span>
-            </div>
-            <div v-else-if="company.brand_names?.length" class="brand-pills">
-              <span v-for="b in company.brand_names.slice(0, 2)" :key="b" class="brand-pill">{{ b }}</span>
-              <span v-if="company.brand_names.length > 2" class="store-more">+{{ company.brand_names.length - 2 }}</span>
-            </div>
-            <span v-else class="empty-val">暂无店铺数据</span>
-          </div>
-          <div v-if="company.client_asins?.length" class="asin-mini-row">
-            <span v-for="asin in company.client_asins.slice(0, 3)" :key="asin" class="asin-tag">{{ asin }}</span>
-            <span v-if="company.client_asins.length > 3" class="asin-more">+{{ company.client_asins.length - 3 }}</span>
-          </div>
-        </div>
-
-        <div class="card-sep" />
-
-        <!-- 统计数据 -->
-        <div class="card-stats">
-          <div class="stat-block">
-            <div class="stat-num blue">{{ company.total_order_count || 0 }}</div>
-            <div class="stat-lbl">累计下单</div>
-          </div>
-          <div class="stat-sep" />
-          <div class="stat-block">
-            <div class="stat-num green">¥{{ formatMoney(company.total_order_amount_cny) }}</div>
-            <div class="stat-lbl">累计金额</div>
-          </div>
-          <div class="stat-sep" />
-          <div class="stat-block">
-            <div :class="['stat-num', ((company.prepaid_amount_cny || 0) - (company.debt_amount_cny || 0)) < 0 ? 'red' : ((company.prepaid_amount_cny || 0) - (company.debt_amount_cny || 0)) > 0 ? 'teal' : 'gray']">
-              ¥{{ formatMoney((company.prepaid_amount_cny || 0) - (company.debt_amount_cny || 0)) }}
-            </div>
-            <div class="stat-lbl">余额</div>
-          </div>
-        </div>
-
-        <div class="card-sep" />
-
-        <!-- 负责商务经理 -->
-        <div class="card-manager">
-          <div class="section-label">负责商务</div>
-          <div v-if="company.business_owner_name" class="manager-assigned" @click="openAssignManager(company)">
-            <div class="manager-dot" />
-            <div class="manager-info">
-              <span class="manager-name">{{ company.business_owner_name }}</span>
-              <span v-if="company.business_wechat_name" class="manager-wechat">{{ company.business_wechat_name }}</span>
-            </div>
-            <EditOutlined class="manager-edit-icon" />
-          </div>
-          <div v-else class="manager-unassigned" @click="openAssignManager(company)">
-            <PlusOutlined style="font-size:11px" />
-            <span>分配经理</span>
-          </div>
-        </div>
-
-        <div class="card-sep" />
-
-        <!-- 员工列表 -->
-        <div class="card-contacts">
-          <div class="section-label">员工</div>
-          <div v-if="company.client_contacts?.filter((c: any) => c.employment_status !== '离职').length" class="contact-chips">
-            <div v-for="c in company.client_contacts.filter((c: any) => c.employment_status !== '离职').slice(0, 2)" :key="c.id" class="contact-chip">
-              <div class="chip-avatar">{{ c.name.charAt(0) }}</div>
-              <div class="chip-info">
-                <div class="chip-name">{{ c.name }}</div>
-                <div class="chip-sub">
-                  <span v-if="c.wechat" class="chip-wechat">
-                    <WechatOutlined style="font-size:10px;color:#07c160" /> {{ c.wechat }}
-                  </span>
+            </a-col>
+            <a-col :span="7" class="customer-main-info">
+              <div class="customer-name-row" @click="openDetail(company)">
+                <span class="customer-name">{{ company.company_name || '-' }}</span>
+              </div>
+              <div class="customer-sub-info">
+                <span>{{ company.org_id || '—' }}</span>
+                <span :class="[customerLevelClass(company.level), 'customer-level-text']">{{ company.level || 'C' }}级</span>
+                <a-tag :color="statusColor[company.status || '活跃']">{{ company.status || '活跃' }}</a-tag>
+                <span
+                  v-if="company.source_channel"
+                  class="customer-channel-info ignore-source-detail"
+                  :title="sourceDetailText(company) ? `${company.source_channel}：${sourceDetailText(company)}` : company.source_channel"
+                >{{ company.source_channel }}<template v-if="sourceDetailText(company)">：{{ sourceDetailText(company) }}</template></span>
+              </div>
+            </a-col>
+            <a-col :span="7">
+              <div class="customer-order-group">
+                <div class="customer-order-info">
+                  <div class="customer-order-info-num customer-order-info-blue">{{ company.total_order_count || 0 }}</div>
+                  <div class="customer-order-info-label">累计下单量</div>
+                </div>
+                <div class="customer-order-info">
+                  <div class="customer-order-info-num customer-order-info-green">¥{{ formatListMoney(company.total_order_amount_cny) }}</div>
+                  <div class="customer-order-info-label">累计金额</div>
+                </div>
+                <div class="customer-order-info">
+                  <div class="customer-order-info-num customer-order-info-gray">¥{{ formatListMoney(companyBalance(company)) }}</div>
+                  <div class="customer-order-info-label">余额</div>
                 </div>
               </div>
-            </div>
-            <div v-if="company.client_contacts.filter((c: any) => c.employment_status !== '离职').length > 2" class="contact-more">+{{ company.client_contacts.filter((c: any) => c.employment_status !== '离职').length - 2 }}人</div>
-          </div>
-          <span v-else class="empty-val">暂无在职员工</span>
+            </a-col>
+            <a-col :span="2">
+              <div class="manager-label">商务负责人</div>
+              <div class="manager-assigned" @click="openAssignManager(company)">
+                <div class="manager-dot" />
+                <span class="manager-name">{{ company.business_owner_name || '未分配' }}</span>
+                <EditOutlined class="manager-edit-icon" />
+              </div>
+            </a-col>
+            <a-col :span="5">
+              <div class="card-contacts">
+                <div class="section-label">商务微信</div>
+                <div v-if="company.business_wechat_name" class="contact-chips">
+                  <div class="contact-chip">
+                    <div class="chip-avatar">{{ String(company.business_wechat_name).charAt(0).toUpperCase() }}</div>
+                    <div class="chip-info">
+                      <div class="chip-name">{{ company.business_wechat_name }}</div>
+                      <div class="chip-sub">
+                        <span class="chip-wechat">反馈：{{ company.feedback_type || '未填写' }}</span>
+                        <span v-if="groupNameList(company).length" class="chip-wechat">群组：{{ groupNameList(company).join('、') }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="empty-val section-label">暂无商务微信</div>
+              </div>
+            </a-col>
+            <a-col :span="2">
+              <div class="customer-card-actions">
+                <a-button type="link" size="small" @click="openEditModal(company)">编辑</a-button>
+                <a-popconfirm title="确定删除该客户？" @confirm="deleteClient(company.id)">
+                  <a-button type="link" size="small" danger>删除</a-button>
+                </a-popconfirm>
+              </div>
+            </a-col>
+          </a-row>
         </div>
-
-        <div class="card-sep" />
-
-        <!-- 拜访状态 -->
-        <div class="card-visit">
-          <div class="section-label">拜访</div>
-          <div class="visit-status-badge" :class="'visit-' + (company.visit_status || '未接触').replace(/\s/g, '')">
-            <span class="visit-dot" />
-            <span>{{ company.visit_status || '未接触' }}</span>
-          </div>
-        </div>
-
-        <div class="card-sep" />
-
-        <!-- 操作 -->
-        <div class="card-actions">
-          <a-button type="link" size="small" @click="openDetail(company)">详情</a-button>
-          <a-button type="link" size="small" @click="openEditModal(company)">编辑</a-button>
-          <a-popconfirm title="确定删除该客户？" @confirm="deleteClient(company.id)">
-            <a-button type="link" size="small" danger>删除</a-button>
-          </a-popconfirm>
-        </div>
+        <a-empty v-if="!loading && visibleClients.length === 0" description="暂无客户数据" />
       </div>
-    </div>
+    </a-spin>
 
-    <!-- 分页 -->
-    <div v-if="pagination.total > pagination.pageSize" class="pagination-wrap">
-      <a-pagination v-model:current="pagination.current" :total="pagination.total" :page-size="pagination.pageSize" @change="handlePageChange" show-quick-jumper />
+    <div class="customer-pagination">
+      <a-pagination
+        :current="pagination.current"
+        :page-size="pagination.pageSize"
+        :total="pagination.total"
+        :show-total="(total: number) => `共 ${total} 条`"
+        show-size-changer
+        show-quick-jumper
+        @change="handlePageChange"
+      />
     </div>
 
     <!-- 添加/编辑 Modal -->
-    <a-modal v-model:open="modalOpen" :title="editingId ? '编辑客户' : '添加客户'" @ok="handleSubmit" :confirm-loading="submitting" ok-text="确定" cancel-text="取消" :width="editingId ? 720 : 560">
-      <a-form layout="vertical" style="margin-top:8px">
-
-        <!-- 新增时：简洁模式 -->
-        <template v-if="!editingId">
-          <a-row :gutter="16">
-            <a-col :span="24">
-              <a-form-item label="公司名称" required>
-                <a-input v-model:value="form.company_name" placeholder="请输入客户公司名称" size="large" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">来源渠道</span></a-divider>
-
-          <a-row :gutter="16">
-            <a-col :span="24">
-              <a-form-item label="来源方式" required>
-                <div class="source-channel-options">
-                  <div
-                    v-for="opt in sourceChannelOptions"
-                    :key="opt.value"
-                    :class="['channel-opt', { active: form.source_channel === opt.value }]"
-                    @click="form.source_channel = opt.value; form.source_referrer = ''; form.source_exhibition = ''; form.source_channel_name = ''"
-                  >
-                    <span class="channel-opt-icon">{{ opt.icon }}</span>
-                    <span class="channel-opt-label">{{ opt.label }}</span>
-                  </div>
-                </div>
-              </a-form-item>
-            </a-col>
-
-            <a-col v-if="form.source_channel === '老客介绍'" :span="24">
-              <a-form-item label="介绍人（老客名称）">
-                <a-input v-model:value="form.source_referrer" placeholder="填写是哪位老客户介绍的" />
-              </a-form-item>
-            </a-col>
-
-            <a-col v-if="form.source_channel === '展会'" :span="24">
-              <a-form-item label="展会名称">
-                <a-input v-model:value="form.source_exhibition" placeholder="如：广交会2024、亚马逊峰会" />
-              </a-form-item>
-            </a-col>
-
-            <a-col v-if="form.source_channel === '渠道推荐'" :span="24">
-              <a-form-item label="渠道名称">
-                <a-input v-model:value="form.source_channel_name" placeholder="填写是哪个渠道推荐的" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">对接信息</span></a-divider>
-
-          <a-row :gutter="16">
-            <a-col :span="12">
-              <a-form-item label="反馈方式">
-                <a-select v-model:value="form.feedback_type" placeholder="选择反馈方式" @change="onFeedbackTypeChange">
-                  <a-select-option value="私聊">私聊</a-select-option>
-                  <a-select-option value="群聊">群聊</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col v-if="form.feedback_type === '群聊'" :span="12">
-              <a-form-item label="群聊名称">
-                <div
-                  v-for="(_, idx) in form.group_names"
-                  :key="'add-gn-' + idx"
-                  class="group-name-row"
-                  :style="idx > 0 ? 'margin-top:8px' : undefined"
-                >
-                  <a-input v-model:value="form.group_names[idx]" placeholder="请输入群聊名称" />
-                  <a-button v-if="idx === 0" type="dashed" @click="addGroupName"><PlusOutlined /></a-button>
-                  <a-button v-else type="text" danger @click="removeGroupName(idx)"><DeleteOutlined /></a-button>
-                </div>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="对接商务微信">
-                <a-select v-model:value="form.business_wechat_name" placeholder="选择商务微信号" allow-clear show-search :filter-option="(input: string, opt: any) => opt?.label?.toLowerCase().includes(input.toLowerCase())">
-                  <a-select-option
-                    v-for="w in wechatOptions"
-                    :key="w.id"
-                    :value="w.wechat_id"
-                    :label="w.wechat_id + (w.wechat_nickname ? ` (${w.wechat_nickname})` : '')"
-                  >
-                    {{ w.wechat_id }}<span v-if="w.wechat_nickname" style="color:#9ca3af;font-size:11px"> ({{ w.wechat_nickname }})</span>
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="员工姓名">
-                <a-input v-model:value="form.contact_name" placeholder="对接员工的姓名" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="员工微信号">
-                <a-input v-model:value="form.contact_wechat" placeholder="微信号" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="24">
-              <a-form-item label="备注">
-                <a-textarea v-model:value="form.notes" :rows="2" placeholder="其他备注信息（选填）" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </template>
-
-        <!-- 编辑时：完整模式 -->
-        <template v-else>
-          <a-row :gutter="16">
-            <a-col :span="14">
-              <a-form-item label="公司名称" required>
-                <a-input v-model:value="form.company_name" placeholder="请输入公司名称" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="5">
-              <a-form-item label="客户等级">
-                <a-select v-model:value="form.level">
-                  <a-select-option v-for="l in ['S','A','B','C']" :key="l" :value="l">{{ l }}级</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="5">
-              <a-form-item label="状态">
-                <a-select v-model:value="form.status">
-                  <a-select-option value="活跃">活跃</a-select-option>
-                  <a-select-option value="暂停">暂停</a-select-option>
-                  <a-select-option value="流失">流失</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-
-            <a-col :span="8">
-              <a-form-item label="国家/地区">
-                <a-input v-model:value="form.country" placeholder="如：中国、美国" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="欠款金额（元）">
-                <a-input-number v-model:value="form.debt_amount_cny" :min="0" style="width:100%" placeholder="当前欠款" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="预存金额（元）">
-                <a-input-number v-model:value="form.prepaid_amount_cny" :min="0" style="width:100%" placeholder="预先存入资金" />
-              </a-form-item>
-            </a-col>
-
-            <a-col :span="24">
-              <a-form-item label="备注">
-                <a-textarea v-model:value="form.notes" :rows="2" placeholder="备注信息（店铺/ASIN/品牌通过下单自动积累，无需手动填写）" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">来源渠道</span></a-divider>
-          <a-row :gutter="16">
-            <a-col :span="10">
-              <a-form-item label="来源方式">
-                <a-select v-model:value="form.source_channel" allow-clear placeholder="选择来源渠道">
-                  <a-select-option value="老客介绍">老客介绍</a-select-option>
-                  <a-select-option value="展会">展会</a-select-option>
-                  <a-select-option value="渠道推荐">渠道推荐</a-select-option>
-                  <a-select-option value="其他">其他</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col v-if="form.source_channel === '老客介绍'" :span="14">
-              <a-form-item label="介绍人">
-                <a-input v-model:value="form.source_referrer" placeholder="老客名称" />
-              </a-form-item>
-            </a-col>
-            <a-col v-if="form.source_channel === '展会'" :span="14">
-              <a-form-item label="展会名称">
-                <a-input v-model:value="form.source_exhibition" placeholder="如：广交会2024" />
-              </a-form-item>
-            </a-col>
-            <a-col v-if="form.source_channel === '渠道推荐'" :span="14">
-              <a-form-item label="渠道名称">
-                <a-input v-model:value="form.source_channel_name" placeholder="渠道名称" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">对接信息</span></a-divider>
-          <a-row :gutter="16">
-            <a-col :span="12">
-              <a-form-item label="反馈方式">
-                <a-select v-model:value="form.feedback_type" placeholder="选择反馈方式" @change="onFeedbackTypeChange">
-                  <a-select-option value="私聊">私聊</a-select-option>
-                  <a-select-option value="群聊">群聊</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col v-if="form.feedback_type === '群聊'" :span="12">
-              <a-form-item label="群聊名称">
-                <div
-                  v-for="(_, idx) in form.group_names"
-                  :key="'edit-gn-' + idx"
-                  class="group-name-row"
-                  :style="idx > 0 ? 'margin-top:8px' : undefined"
-                >
-                  <a-input v-model:value="form.group_names[idx]" placeholder="请输入群聊名称" />
-                  <a-button v-if="idx === 0" type="dashed" @click="addGroupName"><PlusOutlined /></a-button>
-                  <a-button v-else type="text" danger @click="removeGroupName(idx)"><DeleteOutlined /></a-button>
-                </div>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="员工姓名">
-                <a-input v-model:value="form.contact_name" placeholder="对接员工姓名" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="员工微信号">
-                <a-input v-model:value="form.contact_wechat" placeholder="微信号" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">地址（选填）</span></a-divider>
-          <a-row :gutter="16">
-            <a-col :span="8">
-              <a-form-item label="国家">
-                <a-input v-model:value="form.address_country" placeholder="如：中国" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="省/州">
-                <a-input v-model:value="form.address_province" placeholder="如：广东省" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="城市">
-                <a-input v-model:value="form.address_city" placeholder="如：深圳市" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="24">
-              <a-form-item label="详细地址">
-                <a-input v-model:value="form.address_detail" placeholder="街道、楼号等详细地址" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-divider style="margin:8px 0"><span style="font-size:12px;color:#6b7280">拜访意向</span></a-divider>
-          <a-row :gutter="16">
-            <a-col :span="8">
-              <a-form-item label="拜访状态">
-                <a-select v-model:value="form.visit_status">
-                  <a-select-option value="未接触">未接触</a-select-option>
-                  <a-select-option value="待拜访">待拜访</a-select-option>
-                  <a-select-option value="已拜访">已拜访</a-select-option>
-                  <a-select-option value="不接受拜访">不接受拜访</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </template>
+    <a-modal
+      v-model:open="modalOpen"
+      :title="editingId ? '编辑公司' : '新增公司'"
+      :confirm-loading="submitting"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="handleSubmit"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="客户公司" required>
+          <a-input v-model:value="form.company_name" placeholder="请输入客户公司" />
+        </a-form-item>
+        <a-form-item label="来源方式" required>
+          <div class="source-type-options">
+            <a-button
+              v-for="item in sourceChannelOptions"
+              :key="item.value"
+              :type="form.source_channel === item.value ? 'primary' : 'default'"
+              class="source-type-btn"
+              @click="selectSourceChannel(item.value)"
+            >
+              <span class="source-type-btn-inner">
+                <span class="source-type-icon">{{ item.icon }}</span>
+                <span>{{ item.label }}</span>
+              </span>
+            </a-button>
+          </div>
+        </a-form-item>
+        <a-form-item v-if="form.source_channel !== '其他'" :label="sourceDetailLabel">
+          <a-input v-model:value="sourceDetailValue" :placeholder="sourceDetailPlaceholder" />
+        </a-form-item>
+        <div class="font-bold mb-8">对接信息</div>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="反馈方式">
+              <a-select v-model:value="form.feedback_type" placeholder="请选择反馈方式" allow-clear @change="onFeedbackTypeChange">
+                <a-select-option value="私聊">私聊</a-select-option>
+                <a-select-option value="群聊">群聊</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="对接商务微信">
+              <a-select
+                v-model:value="form.business_wechat_name"
+                :options="businessWechatSelectOptions"
+                placeholder="请选择对接商务微信"
+                allow-clear
+                show-search
+                option-filter-prop="label"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-form-item v-if="form.feedback_type === '群聊'" label="群聊名称">
+          <div class="group-chat-rows">
+            <div v-for="(_, index) in form.group_names" :key="index" class="group-chat-row">
+              <a-input v-model:value="form.group_names[index]" placeholder="请输入群聊名称" allow-clear />
+              <a-button v-if="index === 0" class="group-chat-btn" type="dashed" @click="addGroupName"><PlusOutlined /></a-button>
+              <a-button v-else class="group-chat-btn" type="text" danger @click="removeGroupName(index)"><DeleteOutlined /></a-button>
+            </div>
+          </div>
+        </a-form-item>
+        <a-form-item label="备注">
+          <a-textarea v-model:value="form.notes" class="customer-remark-input" placeholder="请输入备注" :rows="2" />
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -429,9 +208,10 @@
       :confirm-loading="savingVisit"
       ok-text="保存"
       cancel-text="取消"
-      width="580px"
+      width="700px"
     >
-      <a-form layout="vertical" style="margin-top:8px">
+      <div class="visit-form">
+      <a-form layout="vertical">
         <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="拜访日期" required>
@@ -474,113 +254,95 @@
           </a-col>
         </a-row>
       </a-form>
+      </div>
     </a-modal>
 
-    <!-- 详情抽屉 -->
     <a-drawer
       v-model:open="detailOpen"
-      :title="null"
+      width="50%"
       placement="right"
-      width="620"
-      :body-style="{ padding: 0 }"
+      :body-style="{ padding: '0', background: '#f5f7fb' }"
+      :header-style="{ borderBottom: 'none', padding: '14px 16px 0' }"
     >
+      <template #title>
+        <span class="drawer-title">客户详情</span>
+      </template>
       <template v-if="currentCompany">
-        <div class="drawer-header">
-          <div class="drawer-avatar" :style="{ background: levelBg[currentCompany.level || 'C'] }">
-            {{ (currentCompany.company_name || '?').charAt(0) }}
-          </div>
-          <div class="drawer-title-block">
-            <div class="drawer-name">{{ currentCompany.company_name }}</div>
-            <div class="drawer-sub">
-              <span class="id-badge">{{ currentCompany.org_id || '—' }}</span>
-              <a-tag :color="levelColor[currentCompany.level || 'C']">{{ currentCompany.level || 'C' }}级</a-tag>
-              <a-tag :color="statusColor[currentCompany.status || '活跃']">{{ currentCompany.status }}</a-tag>
-            </div>
-          </div>
-          <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-            <div class="assign-btn-wrapper" @click="openAssignManager(currentCompany)">
-              <div v-if="currentCompany.business_owner_name" class="assign-btn assigned">
-                <div class="assign-btn-icon"><UserOutlined /></div>
-                <div class="assign-btn-body">
-                  <div class="assign-btn-label">负责商务</div>
-                  <div class="assign-btn-name">{{ currentCompany.business_owner_name }}</div>
-                  <div v-if="currentCompany.business_wechat_name" class="assign-btn-wechat">微信: {{ currentCompany.business_wechat_name }}</div>
+        <div class="detail-wrap">
+          <div class="detail-panel detail-header">
+            <div class="header-left">
+              <div class="header-avatar">{{ String(currentCompany.company_name || '-').slice(0, 1).toUpperCase() }}</div>
+              <div class="header-main">
+                <div class="header-name-row">
+                  <span class="header-name">{{ currentCompany.company_name }}</span>
                 </div>
-                <EditOutlined class="assign-btn-edit" />
-              </div>
-              <div v-else class="assign-btn unassigned">
-                <div class="assign-btn-icon"><UserOutlined /></div>
-                <div class="assign-btn-body">
-                  <div class="assign-btn-label">暂未分配</div>
-                  <div class="assign-btn-name">点击分配商务经理</div>
+                <div class="header-sub-row">
+                  <span class="org-code">{{ currentCompany.org_id || '—' }}</span>
+                  <span :class="['level-tag', detailLevelClass(currentCompany.level)]">{{ currentCompany.level || 'C' }}级</span>
+                  <span :class="['status-tag', detailStatusClass(currentCompany.status)]">{{ currentCompany.status || '活跃' }}</span>
                 </div>
-                <PlusOutlined class="assign-btn-edit" />
               </div>
             </div>
-            <a-button type="link" size="small" @click="openEditModal(currentCompany)">编辑</a-button>
-          </div>
-        </div>
-
-        <div class="drawer-body">
-          <div class="drawer-stats-row">
-            <div class="dstat-card">
-              <div class="dstat-num blue">{{ currentCompany.total_order_count || 0 }}</div>
-              <div class="dstat-lbl">累计下单次</div>
-            </div>
-            <div class="dstat-card">
-              <div class="dstat-num blue2">{{ currentCompany.total_order_quantity || 0 }}</div>
-              <div class="dstat-lbl">累计下单数量</div>
-            </div>
-            <div class="dstat-card">
-              <div class="dstat-num green">¥{{ formatMoney(currentCompany.total_order_amount_cny) }}</div>
-              <div class="dstat-lbl">累计金额</div>
-            </div>
-            <div class="dstat-card">
-              <div :class="['dstat-num', (currentCompany.total_refund_count || 0) > 0 ? 'red' : 'gray']">{{ currentCompany.total_refund_count || 0 }}</div>
-              <div class="dstat-lbl">退单量</div>
-            </div>
-            <div class="dstat-card">
-              <div :class="['dstat-num', (currentCompany.total_refund_rate || 0) > 15 ? 'red' : (currentCompany.total_refund_rate || 0) > 8 ? 'orange' : 'green']">
-                {{ (currentCompany.total_refund_rate || 0).toFixed(1) }}%
+            <div class="header-right">
+              <div class="manager-card" @click="openAssignManager(currentCompany)">
+                <span class="manager-dot" />
+                <span class="manager-text">商务负责人</span>
+                <span class="manager-name">{{ currentCompany.business_owner_name || '未分配' }}</span>
               </div>
-              <div class="dstat-lbl">退单率</div>
+              <a-button type="link" class="edit-link" @click="openEditModal(currentCompany)">编辑</a-button>
             </div>
           </div>
 
-          <!-- 公司资金情况 + 买手库 + 掉评率 -->
-          <div class="company-metrics-row">
-            <div class="metrics-block finance-block">
-              <div class="metrics-block-title">公司资金情况</div>
-              <div class="metrics-finance-row">
-                <div class="finance-item">
-                  <span class="finance-lbl">欠款</span>
-                  <span :class="['finance-val', (currentCompany.debt_amount_cny || 0) > 0 ? 'debt' : 'zero']">
-                    ¥{{ Number(currentCompany.debt_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-                  </span>
-                </div>
-                <div class="finance-sep"></div>
-                <div class="finance-item">
-                  <span class="finance-lbl">溢款</span>
-                  <span :class="['finance-val', (currentCompany.prepaid_amount_cny || 0) > 0 ? 'prepaid' : 'zero']">
-                    ¥{{ Number(currentCompany.prepaid_amount_cny || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-                  </span>
-                </div>
-              </div>
+          <div class="detail-panel total-stats">
+            <div class="total-item">
+              <div class="total-num blue">{{ currentCompany.total_order_count || 0 }}</div>
+              <div class="total-label">累计下单次</div>
             </div>
-            <div class="metrics-block clickable-block" @click="$router.push('/buyers')">
-              <div class="metrics-block-title">外部买手库</div>
-              <div class="metrics-big-num blue">{{ companyBuyerStats.buyer_count }}</div>
-              <div class="metrics-sub">可用买手数 <span class="jump-hint">查看详情 ›</span></div>
+            <div class="total-item">
+              <div class="total-num cyan">{{ currentCompany.total_order_quantity || 0 }}</div>
+              <div class="total-label">累计下单量</div>
             </div>
-            <div class="metrics-block clickable-block" @click="$router.push('/buyers')">
-              <div class="metrics-block-title">掉评率</div>
-              <div :class="['metrics-big-num', companyBuyerStats.drop_rate > 15 ? 'red' : companyBuyerStats.drop_rate > 8 ? 'orange' : 'green']">
-                {{ companyBuyerStats.drop_rate.toFixed(1) }}%
-              </div>
-              <div class="metrics-sub">近期订单 <span class="jump-hint">评论监控 ›</span></div>
+            <div class="total-item">
+              <div class="total-num green">¥{{ formatListMoney(currentCompany.total_order_amount_cny) }}</div>
+              <div class="total-label">累计金额</div>
+            </div>
+            <div class="total-item">
+              <div class="total-num gray">{{ currentCompany.total_refund_count || 0 }}</div>
+              <div class="total-label">累计退单量</div>
+            </div>
+            <div class="total-item">
+              <div class="total-num green">{{ Number(currentCompany.total_refund_rate || 0).toFixed(1) }}%</div>
+              <div class="total-label">退单率</div>
             </div>
           </div>
 
+          <div class="mini-grid">
+            <div class="detail-panel mini-card">
+              <div class="mini-title">公司资金情况</div>
+              <div class="mini-kv-row">
+                <div class="mini-kv">
+                  <div class="mini-label">欠款</div>
+                  <div class="mini-value">¥{{ formatListMoney(currentCompany.debt_amount_cny) }}</div>
+                </div>
+                <div class="mini-kv">
+                  <div class="mini-label">溢余</div>
+                  <div class="mini-value">¥{{ formatListMoney(currentCompany.prepaid_amount_cny) }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="detail-panel mini-card">
+              <div class="mini-title">外部买手库</div>
+              <div class="mini-value-lg blue">{{ companyBuyerStats.buyer_count }}</div>
+              <div class="mini-sub-link">可用买手数 <a @click="$router.push('/buyers')">查看</a></div>
+            </div>
+            <div class="detail-panel mini-card">
+              <div class="mini-title">掉评率</div>
+              <div class="mini-value-lg green">{{ companyBuyerStats.drop_rate.toFixed(1) }}%</div>
+              <div class="mini-sub-link">近期订单 <a @click="$router.push('/buyers')">评论监控</a></div>
+            </div>
+          </div>
+
+          <div class="drawer-body">
           <div class="drawer-section">
             <div class="section-title">基本信息</div>
             <div class="info-grid">
@@ -616,19 +378,18 @@
             />
           </div>
 
-          <!-- 地址 -->
-          <div class="drawer-section">
-            <div class="section-title-row">
-              <span class="section-title" style="margin-bottom:0;border:none;padding:0">公司地址</span>
-              <a-button type="link" size="small" @click="openEditModal(currentCompany)">编辑</a-button>
+          <div class="section-row mt-14">
+            <div class="section-title">公司地址</div>
+            <a-button type="link" class="edit-link" :loading="addressSaving" @click="addressEditing ? saveAddress() : startAddressEdit()">{{ addressEditing ? '保存' : '编辑' }}</a-button>
+          </div>
+          <div class="detail-panel address-panel">
+            <div v-if="addressEditing" class="address-edit-grid">
+              <a-input v-model:value="addressDraft.country" placeholder="国家" />
+              <a-input v-model:value="addressDraft.province" placeholder="省/州" />
+              <a-input v-model:value="addressDraft.city" placeholder="城市" />
+              <a-input v-model:value="addressDraft.detail" class="address-input" placeholder="详细地址" />
             </div>
-            <div v-if="currentCompany.address_city || currentCompany.address_detail" class="address-display">
-              <EnvironmentOutlined class="address-icon" />
-              <span>
-                {{ [currentCompany.address_country, currentCompany.address_province, currentCompany.address_city, currentCompany.address_detail].filter(Boolean).join(' · ') }}
-              </span>
-            </div>
-            <span v-else class="empty-val">未录入地址</span>
+            <span v-else :class="displayAddress === '未录入地址' ? 'address-empty' : 'address-text'">{{ displayAddress }}</span>
           </div>
 
           <!-- 拜访记录 -->
@@ -784,6 +545,7 @@
             </div>
           </div>
         </div>
+        </div>
       </template>
     </a-drawer>
 
@@ -906,38 +668,35 @@
     <!-- 分配商务经理 Modal -->
     <a-modal
       v-model:open="assignModalOpen"
-      title="分配负责商务经理"
-      @ok="handleAssignManager"
+      title="选择商务负责人"
       :confirm-loading="assigning"
       ok-text="确定"
       cancel-text="取消"
-      width="400px"
+      @ok="handleAssignManager"
     >
-      <div style="padding:16px 0">
-        <div style="margin-bottom:8px;font-size:13px;color:#374151">
-          客户：<strong>{{ assignTarget?.company_name }}</strong>
-        </div>
-        <a-select
-          v-model:value="assignManagerId"
-          placeholder="选择负责商务经理"
-          style="width:100%"
-          allow-clear
-          :options="managerOptions.map(m => ({ value: m.id, label: m.name }))"
-        />
-        <div v-if="assignManagerId" style="margin-top:10px">
-          <div style="font-size:12px;color:#6b7280;margin-bottom:6px">选择对接微信号（可选）</div>
+      <div class="assign-manager-customer">客户：{{ assignTarget?.company_name }}</div>
+      <a-form layout="vertical">
+        <a-form-item label="商务负责人">
+          <a-select
+            v-model:value="assignManagerId"
+            :options="managerOptions.map(m => ({ value: m.id, label: m.name }))"
+            placeholder="请选择商务负责人"
+            allow-clear
+          />
+        </a-form-item>
+        <a-form-item label="选择对接微信名称（可选）">
           <a-select
             v-model:value="assignWechatId"
-            placeholder="选择该经理的商务微信"
-            style="width:100%"
+            placeholder="请选择微信名称"
             allow-clear
+            :disabled="!assignManagerId"
           >
             <a-select-option v-for="w in managerWechatOptions" :key="w.id" :value="w.id">
               {{ w.wechat_id }}{{ w.wechat_nickname ? `（${w.wechat_nickname}）` : '' }}
             </a-select-option>
           </a-select>
-        </div>
-      </div>
+        </a-form-item>
+      </a-form>
     </a-modal>
 
     <!-- 添加/编辑员工 Modal -->
@@ -946,9 +705,9 @@
       :title="editingContactId ? '编辑员工' : '添加员工'"
       @ok="handleAddContact"
       :confirm-loading="savingContact"
-      ok-text="确定"
+      ok-text="保存"
       cancel-text="取消"
-      width="620px"
+      width="640px"
     >
       <a-form layout="vertical" style="margin-top:8px">
         <a-row :gutter="12">
@@ -1114,9 +873,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, h } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined, EnvironmentOutlined, ShopOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, WechatOutlined, PhoneOutlined, TeamOutlined, EditOutlined, ShopOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import dayjs, { type Dayjs } from 'dayjs'
 import ClientStoreManager from '../components/ClientStoreManager.vue'
@@ -1124,8 +883,14 @@ import ClientStoreManager from '../components/ClientStoreManager.vue'
 const loading = ref(false)
 const clients = ref<any[]>([])
 const searchText = ref('')
+const storeKeyword = ref('')
+const contactKeyword = ref('')
 const filterLevel = ref('')
 const filterStatus = ref('')
+const customerHoverBorderColor = '#2563eb'
+const addressEditing = ref(false)
+const addressSaving = ref(false)
+const addressDraft = reactive({ country: '', province: '', city: '', detail: '' })
 const modalOpen = ref(false)
 const detailOpen = ref(false)
 const contactModalOpen = ref(false)
@@ -1194,6 +959,108 @@ function formatMoney(val: any) {
   return n.toFixed(0)
 }
 
+function formatListMoney(val: any) {
+  const amount = Number(val || 0)
+  return Number.isFinite(amount) ? amount.toFixed(2) : '0.00'
+}
+
+function companyBalance(company: any) {
+  return Number(company?.prepaid_amount_cny || 0) - Number(company?.debt_amount_cny || 0)
+}
+
+function sourceDetailText(company: any) {
+  return company?.source_referrer || company?.source_exhibition || company?.source_channel_name || ''
+}
+
+function groupNameList(company: any) {
+  const raw = company?.group_names
+  if (!Array.isArray(raw)) return []
+  return raw.map((item: any) => String(item || '').trim()).filter(Boolean)
+}
+
+function customerLevelClass(level?: string) {
+  if (level === 'S' || level === 'A') return 'customer-level1'
+  if (level === 'B') return 'customer-level2'
+  return 'customer-level3'
+}
+
+function detailLevelClass(level?: string) {
+  if (level === 'S' || level === 'A') return 'level-a'
+  if (level === 'B') return 'level-b'
+  return 'level-c'
+}
+
+function detailStatusClass(status?: string) {
+  return status === '活跃' ? 'status-active' : 'status-inactive'
+}
+
+const visibleClients = computed(() => {
+  const storeQ = storeKeyword.value.trim().toLowerCase()
+  const contactQ = contactKeyword.value.trim().toLowerCase()
+  return clients.value.filter((company: any) => {
+    if (storeQ) {
+      const stores = (company.client_stores_summary || []).map((item: any) => `${item.store_name || ''} ${(item.brands || []).join(' ')} ${(item.asins || []).join(' ')}`).join(' ')
+      const blob = `${stores} ${(company.brand_names || []).join(' ')} ${(company.client_asins || []).join(' ')}`.toLowerCase()
+      if (!blob.includes(storeQ)) return false
+    }
+    if (contactQ) {
+      const contacts = (company.client_contacts || []).map((item: any) => `${item.name || ''} ${item.wechat || ''} ${item.phone || ''} ${item.email || ''}`).join(' ')
+      const blob = `${contacts} ${company.business_wechat_name || ''} ${company.contact_name || ''} ${company.contact_wechat || ''}`.toLowerCase()
+      if (!blob.includes(contactQ)) return false
+    }
+    return true
+  })
+})
+
+const businessWechatSelectOptions = computed(() => wechatOptions.value.map((item: any) => ({
+  value: item.wechat_id,
+  label: item.wechat_nickname ? `${item.wechat_id} (${item.wechat_nickname})` : item.wechat_id,
+})))
+
+const displayAddress = computed(() => {
+  const company = currentCompany.value
+  if (!company) return '未录入地址'
+  const text = [company.address_country, company.address_province, company.address_city, company.address_detail].filter(Boolean).join(' · ')
+  return text || '未录入地址'
+})
+
+function handleSearch() {
+  pagination.value.current = 1
+  load()
+}
+
+function startAddressEdit() {
+  if (!currentCompany.value) return
+  addressDraft.country = currentCompany.value.address_country || ''
+  addressDraft.province = currentCompany.value.address_province || ''
+  addressDraft.city = currentCompany.value.address_city || ''
+  addressDraft.detail = currentCompany.value.address_detail || ''
+  addressEditing.value = true
+}
+
+async function saveAddress() {
+  if (!currentCompany.value) return
+  addressSaving.value = true
+  try {
+    const payload = {
+      address_country: addressDraft.country,
+      address_province: addressDraft.province,
+      address_city: addressDraft.city,
+      address_detail: addressDraft.detail,
+    }
+    const { error } = await supabase.from('client_companies').update(payload).eq('id', currentCompany.value.id)
+    if (error) throw error
+    Object.assign(currentCompany.value, payload)
+    addressEditing.value = false
+    message.success('地址已保存')
+    load()
+  } catch (e: any) {
+    message.error('保存失败：' + e.message)
+  } finally {
+    addressSaving.value = false
+  }
+}
+
 const sourceChannelOptions = [
   { value: '老客介绍', label: '老客介绍', icon: '🤝' },
   { value: '展会', label: '展会添加', icon: '🏛️' },
@@ -1227,6 +1094,38 @@ const defaultForm = () => ({
   group_names: [''],
 })
 const form = reactive(defaultForm())
+
+const sourceDetailLabel = computed(() => {
+  if (form.source_channel === '展会') return '展会名称'
+  if (form.source_channel === '渠道推荐') return '渠道名称'
+  return '介绍人（老客名称）'
+})
+
+const sourceDetailPlaceholder = computed(() => {
+  if (form.source_channel === '展会') return '如：广交会2024、亚马逊峰会'
+  if (form.source_channel === '渠道推荐') return '填写是哪个渠道推荐的'
+  return '填写是哪位老客户介绍的'
+})
+
+const sourceDetailValue = computed({
+  get() {
+    if (form.source_channel === '展会') return form.source_exhibition
+    if (form.source_channel === '渠道推荐') return form.source_channel_name
+    return form.source_referrer
+  },
+  set(value: string) {
+    if (form.source_channel === '展会') form.source_exhibition = value
+    else if (form.source_channel === '渠道推荐') form.source_channel_name = value
+    else form.source_referrer = value
+  },
+})
+
+function selectSourceChannel(value: string) {
+  form.source_channel = value
+  form.source_referrer = ''
+  form.source_exhibition = ''
+  form.source_channel_name = ''
+}
 
 function onFeedbackTypeChange(val: string) {
   if (val === '群聊') {
@@ -1294,7 +1193,8 @@ async function load() {
       .select('*, client_contacts(*)', { count: 'exact' })
       .order('created_at', { ascending: false })
     if (searchText.value) {
-      query = query.or(`company_name.ilike.%${searchText.value}%`)
+      const keyword = searchText.value.replace(/,/g, ' ')
+      query = query.or(`company_name.ilike.%${keyword}%,org_id.ilike.%${keyword}%`)
     }
     if (filterLevel.value) query = query.eq('level', filterLevel.value)
     if (filterStatus.value) query = query.eq('status', filterStatus.value)
@@ -1387,6 +1287,7 @@ function openEditModal(record: any) {
 
 function openDetail(record: any) {
   currentCompany.value = record
+  addressEditing.value = false
   detailOpen.value = true
   loadVisitRecords(record.id)
   loadContactOrderStats(record)
@@ -1593,6 +1494,7 @@ async function handleSubmit() {
       source_channel_name: form.source_channel_name,
       contact_name: form.contact_name,
       contact_wechat: form.contact_wechat,
+      business_wechat_name: form.business_wechat_name || '',
       feedback_type: form.feedback_type || '私聊',
       group_names: normalizedGroupNames(),
     }
@@ -1822,8 +1724,13 @@ function deleteContact(contact: any) {
   })
 }
 
-function handlePageChange(page: number) {
-  pagination.value.current = page
+function handlePageChange(page: number, pageSize?: number) {
+  if (pageSize && pageSize !== pagination.value.pageSize) {
+    pagination.value.pageSize = pageSize
+    pagination.value.current = 1
+  } else {
+    pagination.value.current = page
+  }
   load()
 }
 
@@ -1834,6 +1741,196 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.customer-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px 20px 12px;
+  box-sizing: border-box;
+}
+.customer-list > .flex-between { flex-shrink: 0; }
+.flex-between { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.flex-center-gap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.flex-1 { flex: 1; min-width: 0; }
+.mb-16 { margin-bottom: 16px; }
+.customer-search-name { width: 380px; max-width: 380px; }
+.customer-search-asin { width: 200px; max-width: 200px; }
+.customer-search-contact { width: 230px; max-width: 230px; }
+.customer-filter-level, .customer-filter-status { width: 100px; }
+.customer-list :deep(.ant-spin-nested-loading) { flex: 1; min-height: 0; }
+.customer-list :deep(.ant-spin-container) { height: 100%; min-height: 0; }
+.customer-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 15px 8px;
+}
+.customer-card-row {
+  display: flex;
+  align-items: center;
+  border: 1px solid #e4e4e4;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+}
+.customer-card-row:hover { border-color: v-bind(customerHoverBorderColor); }
+.customer-card-avatar { text-align: center; }
+.customer-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #1677ff;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+.customer-main-info { min-width: 0; }
+.customer-name-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: pointer; }
+.customer-name { font-size: 15px; font-weight: 600; }
+.customer-name:hover { color: v-bind(customerHoverBorderColor); }
+.customer-sub-info { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: #8c8c8c; font-size: 13px; }
+.customer-level-text {
+  display: inline-block;
+  padding: 0 7px;
+  line-height: 20px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.02);
+}
+.customer-level1 { color: #52c41a; background: #f6ffed; border-color: #b7eb8f; }
+.customer-level2, .customer-level3 { color: #0958d9; background: #e6f4ff; border-color: #91caff; }
+.customer-channel-info.ignore-source-detail {
+  font-size: 14px;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 1px 7px;
+  border-radius: 8px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.customer-order-group { display: flex; align-items: center; width: 100%; }
+.customer-order-info {
+  text-align: center;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  justify-content: center;
+  flex: 1;
+  min-height: 44px;
+}
+.customer-order-info::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 32px;
+  background: #d9d9d9;
+}
+.customer-order-info:last-child::after { content: none; }
+.customer-order-info-num { font-size: 17px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.customer-order-info-label { color: #9ca3af; }
+.customer-order-info-blue { color: #2563eb; }
+.customer-order-info-green { color: #16a34a; }
+.customer-order-info-gray { color: #6b7280; }
+.manager-label, .section-label { font-size: 11px; color: #9ca3af; margin-bottom: 5px; }
+.section-label { text-align: center; }
+.manager-assigned {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+.manager-assigned:hover { background: #dcfce7; }
+.manager-dot { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; flex-shrink: 0; }
+.manager-name { font-size: 13px; font-weight: 600; color: #15803d; white-space: nowrap; }
+.manager-edit-icon { font-size: 10px; color: #86efac; margin-left: 2px; }
+.contact-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.contact-chip { display: flex; align-items: flex-start; gap: 7px; background: #f8fafc; border-radius: 8px; padding: 6px 10px; min-width: 0; }
+.chip-avatar { width: 28px; height: 28px; border-radius: 50%; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+.chip-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chip-name { font-size: 14px; font-weight: 600; color: #1f2937; white-space: nowrap; }
+.chip-sub { display: flex; flex-direction: column; gap: 2px; }
+.chip-wechat { font-size: 11px; color: #07c160; white-space: nowrap; }
+.empty-val { font-size: 14px; color: #c0c4cc; }
+.customer-card-actions { display: inline-flex; align-items: center; }
+.customer-pagination { flex-shrink: 0; margin-top: 16px; display: flex; justify-content: flex-end; }
+.source-type-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; width: 100%; }
+.source-type-btn { height: 36px; padding: 0 8px; }
+.source-type-btn-inner { display: inline-flex; align-items: center; gap: 6px; }
+.source-type-icon { line-height: 1; }
+.group-chat-rows { display: flex; flex-direction: column; gap: 8px; }
+.group-chat-row { display: flex; align-items: center; gap: 8px; }
+.group-chat-btn { flex: none; width: 32px; }
+.font-bold { font-weight: 500; font-size: 14px; }
+.mb-8 { margin-bottom: 8px; }
+.assign-manager-customer { margin-bottom: 10px; font-size: 14px; }
+.customer-remark-input { color: #b45309; font-size: 15px; font-weight: 700; background: #fff7ed; border-color: #f59e0b; }
+.visit-form { margin-top: 8px; }
+.drawer-title { font-size: 14px; font-weight: 600; color: #1f2937; }
+.detail-wrap { padding: 12px 16px 18px; }
+.detail-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; }
+.detail-header { padding: 14px; display: flex; justify-content: space-between; align-items: center; }
+.header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.header-avatar { width: 48px; height: 48px; border-radius: 12px; background: #2563eb; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
+.header-name { font-size: 15px; line-height: 1.2; font-weight: 700; color: #111827; }
+.header-sub-row { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
+.org-code { font-size: 14px; color: #6b7280; }
+.level-tag, .status-tag { font-size: 14px; line-height: 18px; padding: 0 7px; border-radius: 4px; border: 1px solid; }
+.level-a { color: #2563eb; border-color: #93c5fd; background: #eff6ff; }
+.level-b { color: #15803d; border-color: #86efac; background: #f0fdf4; }
+.level-c { color: #92400e; border-color: #fcd34d; background: #fffbeb; }
+.status-active { color: #15803d; border-color: #86efac; background: #f0fdf4; }
+.status-inactive { color: #6b7280; border-color: #d1d5db; background: #f9fafb; }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.manager-card { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; border: 1px solid #86efac; background: #ecfdf3; cursor: pointer; }
+.manager-text { font-size: 14px; color: #22c55e; }
+.manager-card .manager-name { font-size: 14px; line-height: 1; font-weight: 700; color: #15803d; }
+.edit-link { padding-inline: 2px; }
+.total-stats { margin-top: 12px; border-color: #93c5fd; background: #eff6ff; padding: 12px 10px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.total-item { text-align: center; }
+.total-num { font-size: 18px; line-height: 1.1; font-weight: 800; }
+.total-label { margin-top: 4px; font-size: 14px; color: #4b5563; }
+.total-num.blue { color: #2563eb; }
+.total-num.cyan { color: #0891b2; }
+.total-num.green { color: #059669; }
+.total-num.gray { color: #9ca3af; }
+.mini-grid { margin-top: 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.mini-card { padding: 10px 12px; min-height: 92px; }
+.mini-title { font-size: 14px; color: #6b7280; }
+.mini-kv-row { margin-top: 8px; display: flex; justify-content: space-between; gap: 10px; }
+.mini-label { font-size: 13px; color: #6b7280; }
+.mini-value { margin-top: 2px; font-size: 13px; font-weight: 700; color: #374151; }
+.mini-value-lg { margin-top: 8px; font-size: 22px; line-height: 1; font-weight: 800; }
+.mini-value-lg.blue { color: #2563eb; }
+.mini-value-lg.green { color: #059669; }
+.mini-sub-link { margin-top: 6px; font-size: 11px; color: #6b7280; }
+.mini-sub-link a { color: #2563eb; cursor: pointer; }
+.section-row { display: flex; align-items: center; justify-content: space-between; }
+.mt-14 { margin-top: 14px; }
+.detail-wrap > .section-title, .section-row .section-title { margin-top: 0; font-size: 15px; font-weight: 700; color: #111827; }
+.address-panel { margin-top: 8px; }
+.address-edit-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.address-input { grid-column: 1 / -1; }
+.address-text { color: #111827; }
+.address-empty { color: #9ca3af; }
 .page-content { padding: 24px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
 .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 0; }

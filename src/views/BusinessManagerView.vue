@@ -1,335 +1,177 @@
 <template>
-  <div class="page-content">
-    <div class="page-header">
-      <h1 class="page-title">商务管理</h1>
+  <div class="business-page">
+    <div class="header-row">
+      <h2 class="page-title">商务负责人管理</h2>
       <div class="header-actions">
-        <a-input-search v-model:value="searchText" placeholder="搜索微信号/商务经理" style="width:220px" allow-clear @search="load" />
-        <a-button @click="load"><ReloadOutlined /></a-button>
-        <a-button type="primary" @click="openAddWechat()"><PlusOutlined /> 添加微信号</a-button>
-        <a-button @click="goToUserMgmt" style="color:#2563eb;border-color:#bfdbfe;background:#eff6ff"><SafetyOutlined /> 在用户管理中添加</a-button>
+        <a-button type="text" :icon="h(ReloadOutlined)" @click="load" />
+        <a-button type="primary" ghost class="header-add-btn" @click="openAddWechat()">
+          <PlusOutlined /> 添加微信号
+        </a-button>
       </div>
     </div>
 
-    <!-- 商务经理汇总栏 -->
-    <div v-if="managerList.length" class="manager-summary-bar">
-      <div
-        v-for="mgr in managerList"
-        :key="mgr.id"
-        :class="['mgr-tab', { active: activeMgrId === mgr.id }]"
-        @click="activeMgrId = activeMgrId === mgr.id ? null : mgr.id"
-      >
-        <div class="mgr-tab-avatar" :style="{ background: mgr.avatar_color || '#2563eb' }">{{ mgr.name.charAt(0) }}</div>
-        <div class="mgr-tab-body">
-          <div class="mgr-tab-name">{{ mgr.name }}</div>
-          <div class="mgr-kpi-grid">
-            <div class="mgr-kpi-item">
-              <span class="mgr-kpi-val blue">¥{{ formatMoneyShort(getMgrMonthAmount(mgr)) }}</span>
-              <span class="mgr-kpi-lbl">本月业绩</span>
+    <div class="workspace">
+      <aside class="staff-pane">
+        <div class="staff-title">人员列表</div>
+        <div v-if="managerList.length === 0" class="staff-empty">
+          <a-empty description="暂无人员" />
+        </div>
+        <div v-else class="staff-list">
+          <div
+            v-for="staff in managerList"
+            :key="staff.id"
+            :class="['staff-item', activeBusiness?.id === staff.id ? 'staff-item-active' : '']"
+            @click="selectBusiness(staff.id)"
+          >
+            <div class="staff-avatar" :style="{ backgroundColor: staff.avatar_color || '#2563eb' }">
+              {{ staff.name.slice(0, 1).toUpperCase() }}
             </div>
-            <div class="mgr-kpi-item">
-              <span class="mgr-kpi-val teal">{{ getMgrMonthOrders(mgr) }}</span>
-              <span class="mgr-kpi-lbl">本月下单</span>
+            <span class="staff-name">{{ staff.name }}</span>
+            <a-dropdown :trigger="['hover']">
+              <a-button type="text" size="small" class="staff-more-btn" @click.stop>
+                <EllipsisOutlined />
+              </a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item key="delete" @click.stop="confirmDeleteManager(staff)">
+                    <span class="staff-delete-action">删除</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
+        </div>
+      </aside>
+
+      <section v-if="activeBusiness" class="content-pane">
+        <div class="kpi-row">
+          <div v-for="item in businessKpis" :key="item.key" class="kpi-item">
+            <div :class="['kpi-value', item.className]">{{ item.value }}</div>
+            <div class="kpi-label">{{ item.label }}</div>
+          </div>
+        </div>
+
+        <div class="detail-workspace">
+          <div class="wechat-pane">
+            <div class="panel-title">微信列表</div>
+            <div v-if="currentBusinessWechatList.length === 0" class="staff-empty">
+              <a-empty description="当前人员暂无微信号" />
             </div>
-            <div class="mgr-kpi-item">
-              <span :class="['mgr-kpi-val', getMgrRefundRate(mgr) > 10 ? 'red' : 'green']">{{ getMgrRefundRate(mgr) }}%</span>
-              <span class="mgr-kpi-lbl">退单率</span>
-            </div>
-            <div class="mgr-kpi-item">
-              <span :class="['mgr-kpi-val', getMgrDebt(mgr) > 0 ? 'red' : 'gray']">¥{{ formatMoneyShort(getMgrDebt(mgr)) }}</span>
-              <span class="mgr-kpi-lbl">总欠款</span>
-            </div>
-            <div class="mgr-kpi-item">
-              <span class="mgr-kpi-val orange">{{ getMgrNewClients(mgr) }}</span>
-              <span class="mgr-kpi-lbl">本月新客</span>
-            </div>
-          </div>
-        </div>
-        <a-button type="link" size="small" @click.stop="openManagerDetail(mgr)" class="mgr-tab-edit"><EllipsisOutlined /></a-button>
-      </div>
-    </div>
-
-    <div v-if="loading" class="loading-wrap"><a-spin size="large" /></div>
-
-    <div v-else-if="filteredWechatList.length === 0" class="empty-wrap">
-      <a-empty description="暂无微信号数据" />
-    </div>
-
-    <!-- 微信号主列表 -->
-    <div v-else class="wechat-main-grid">
-      <div
-        v-for="acc in filteredWechatList"
-        :key="acc.id"
-        class="wechat-main-card"
-        @click="openWechatDrawer(acc)"
-      >
-        <div class="wmc-header">
-          <div class="wmc-icon">微</div>
-          <div class="wmc-id-block">
-            <div class="wmc-id">{{ acc.wechat_id }}</div>
-            <div v-if="acc.wechat_nickname" class="wmc-nick">{{ acc.wechat_nickname }}</div>
-          </div>
-          <div class="wmc-right">
-            <a-tag :color="acc.status === '在用' ? 'green' : acc.status === '停用' ? 'orange' : 'red'" style="margin:0">{{ acc.status }}</a-tag>
-          </div>
-        </div>
-
-        <div class="wmc-manager-row" v-if="acc.manager_name">
-          <UserOutlined style="font-size:11px;color:#9ca3af" />
-          <span class="wmc-manager-name">{{ acc.manager_name }}</span>
-          <a-button type="link" size="small" style="padding:0;height:auto;font-size:11px" @click.stop="openChangeManager(acc)">换人</a-button>
-        </div>
-        <div class="wmc-manager-row" v-else>
-          <UserOutlined style="font-size:11px;color:#e5e7eb" />
-          <span class="wmc-no-manager" @click.stop="openChangeManager(acc)">暂无负责商务 +</span>
-        </div>
-
-        <div class="wmc-stats">
-          <div class="wmc-stat-item">
-            <span class="wmc-stat-num blue">{{ acc.wechat_clients?.length || 0 }}</span>
-            <span class="wmc-stat-lbl">客户数</span>
-          </div>
-          <div class="wmc-stat-sep"></div>
-          <div class="wmc-stat-item">
-            <span class="wmc-stat-num green">{{ getWechatActiveClients(acc) }}</span>
-            <span class="wmc-stat-lbl">活跃</span>
-          </div>
-          <div class="wmc-stat-sep"></div>
-          <div class="wmc-stat-item">
-            <span class="wmc-stat-num orange">{{ getWechatNewClients(acc) }}</span>
-            <span class="wmc-stat-lbl">本月新增</span>
-          </div>
-          <div class="wmc-stat-sep"></div>
-          <div class="wmc-stat-item">
-            <span :class="['wmc-stat-num', getWechatBalance(acc) < 0 ? 'red' : getWechatBalance(acc) > 0 ? 'teal' : 'gray']">
-              ¥{{ formatMoneyShort(getWechatBalance(acc)) }}
-            </span>
-            <span class="wmc-stat-lbl">余额</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 微信号客户抽屉 -->
-    <a-drawer
-      v-model:open="wechatDrawerOpen"
-      :title="null"
-      placement="right"
-      width="840"
-      :body-style="{ padding: 0 }"
-    >
-      <template v-if="currentWechat">
-        <div class="wechat-drawer-header">
-          <div class="wechat-drawer-icon">微</div>
-          <div class="wechat-drawer-title-block">
-            <div class="wechat-drawer-id">{{ currentWechat.wechat_id }}</div>
-            <div class="wechat-drawer-nick">{{ currentWechat.wechat_nickname || '未设置昵称' }}</div>
-          </div>
-          <div class="wechat-drawer-tags">
-            <a-tag :color="currentWechat.status === '在用' ? 'green' : currentWechat.status === '停用' ? 'orange' : 'red'">{{ currentWechat.status }}</a-tag>
-          </div>
-          <div class="wechat-drawer-actions">
-            <a-button type="link" size="small" danger @click="confirmDeleteWechat(currentWechat)"><DeleteOutlined /></a-button>
-          </div>
-        </div>
-
-        <!-- 负责商务 -->
-        <div class="wechat-manager-bar">
-          <span class="wmb-label">负责商务：</span>
-          <span v-if="currentWechat.manager_name" class="wmb-name">{{ currentWechat.manager_name }}</span>
-          <span v-else class="wmb-empty">暂未分配</span>
-          <a-button type="link" size="small" @click="openChangeManager(currentWechat)">更换 ›</a-button>
-        </div>
-
-        <!-- 汇总统计 -->
-        <div class="wechat-summary-row">
-          <div class="wsum-item">
-            <div class="wsum-num blue">{{ clientList.length }}</div>
-            <div class="wsum-lbl">管理客户</div>
-          </div>
-          <div class="wsum-sep"></div>
-          <div class="wsum-item">
-            <div class="wsum-num green">{{ clientList.filter(c => c.status === '活跃').length }}</div>
-            <div class="wsum-lbl">活跃客户</div>
-          </div>
-          <div class="wsum-sep"></div>
-          <div class="wsum-item">
-            <div class="wsum-num orange">{{ getDrawerNewClients() }}</div>
-            <div class="wsum-lbl">本月新增</div>
-          </div>
-          <div class="wsum-sep"></div>
-          <div class="wsum-item">
-            <div class="wsum-num teal">{{ clientOrderStats.total_order_count }}</div>
-            <div class="wsum-lbl">累计下单次</div>
-          </div>
-          <div class="wsum-sep"></div>
-          <div class="wsum-item">
-            <div class="wsum-num orange">{{ clientOrderStats.total_order_quantity }}</div>
-            <div class="wsum-lbl">累计单量</div>
-          </div>
-          <div class="wsum-sep"></div>
-          <div class="wsum-item">
-            <div class="wsum-num green">¥{{ formatMoney(clientOrderStats.total_order_amount) }}</div>
-            <div class="wsum-lbl">累计金额</div>
-          </div>
-        </div>
-
-        <div class="wechat-drawer-body">
-          <div class="wechat-drawer-toolbar">
-            <span class="client-count-tip">共 {{ clientList.length }} 位客户</span>
-            <a-button type="primary" size="small" @click="openAddClient"><PlusOutlined /> 添加客户</a-button>
-          </div>
-
-          <div v-if="clientLoading" style="text-align:center;padding:32px"><a-spin /></div>
-          <div v-else-if="!clientList.length" class="wechat-empty">暂无客户数据</div>
-          <div v-else class="client-expand-list">
-            <div
-              v-for="c in clientList"
-              :key="c.id"
-              :class="['client-expand-item', { 'is-expanded': expandedClientId === c.id, 'is-debt': (clientFinanceMap[c.client_name]?.balance || 0) < 0 }]"
-            >
-              <!-- 客户行 -->
-              <div class="cei-row" @click="toggleClientExpand(c)">
-                <div class="cei-avatar">{{ c.client_name.charAt(0) }}</div>
-                <div class="cei-main">
-                  <div class="cei-name-line">
-                    <span class="cei-name">{{ c.client_name }}</span>
-                    <a-tag :color="c.status === '活跃' ? 'green' : c.status === '沉默' ? 'orange' : 'default'" style="margin:0;font-size:10px;line-height:18px;padding:0 5px">{{ c.status }}</a-tag>
-                    <span v-if="c.feedback_type" class="cei-feedback-tag">{{ c.feedback_type }}</span>
-                  </div>
-                  <div class="cei-sub-line">
-                    <span v-if="c.company_name" class="cei-company"><BankOutlined style="font-size:10px" /> {{ c.company_name }}</span>
-                    <span v-if="c.client_wechat" class="cei-wechat">{{ c.client_wechat }}</span>
-                    <span v-if="c.remark" class="cei-remark">{{ c.remark }}</span>
-                  </div>
-                </div>
-                <div class="cei-stats">
-                  <div class="cei-stat">
-                    <span class="cei-stat-val blue">{{ clientOrderStatsMap[c.client_name]?.order_quantity || 0 }}</span>
-                    <span class="cei-stat-lbl">下单量</span>
-                  </div>
-                  <div class="cei-stat">
-                    <span :class="['cei-stat-val', (clientOrderStatsMap[c.client_name]?.refund_count || 0) > 0 ? 'orange' : 'gray']">{{ clientOrderStatsMap[c.client_name]?.refund_count || 0 }}</span>
-                    <span class="cei-stat-lbl">退单</span>
-                  </div>
-                  <div class="cei-stat">
-                    <span :class="['cei-stat-val', (clientFinanceMap[c.client_name]?.balance || 0) < 0 ? 'red' : (clientFinanceMap[c.client_name]?.balance || 0) > 0 ? 'teal' : 'gray']">
-                      ¥{{ formatMoneyShort(clientFinanceMap[c.client_name]?.balance || 0) }}
-                    </span>
-                    <span class="cei-stat-lbl">余额</span>
-                  </div>
-                </div>
-                <div class="cei-actions" @click.stop>
-                  <a-button type="primary" size="small" ghost style="font-size:11px;height:24px;padding:0 8px" @click.stop="openGenerateBill(c)">账单</a-button>
-                  <a-button type="link" size="small" danger style="padding:0;height:24px" @click.stop="confirmDeleteClient(c)"><DeleteOutlined /></a-button>
-                </div>
-                <div class="cei-expand-arrow" :class="{ rotated: expandedClientId === c.id }">
-                  <DownOutlined style="font-size:11px;color:#9ca3af" />
-                </div>
-              </div>
-
-              <!-- 展开详情 -->
-              <div v-if="expandedClientId === c.id" class="cei-detail">
-                <div class="cei-detail-grid">
-                  <!-- 资金情况 -->
-                  <div class="ced-block">
-                    <div class="ced-block-title">资金情况</div>
-                    <div class="ced-finance-row">
-                      <div class="ced-fin-item">
-                        <div :class="['ced-fin-val', (clientFinanceMap[c.client_name]?.balance || 0) < 0 ? 'red' : (clientFinanceMap[c.client_name]?.balance || 0) > 0 ? 'teal' : 'gray']">
-                          ¥{{ formatMoney(clientFinanceMap[c.client_name]?.balance || 0) }}
-                        </div>
-                        <div class="ced-fin-lbl">余额</div>
-                      </div>
-                      <div class="ced-fin-sep"></div>
-                      <div class="ced-fin-item">
-                        <div :class="['ced-fin-val', (clientFinanceMap[c.client_name]?.debt || 0) > 0 ? 'red' : 'gray']">
-                          ¥{{ formatMoney(clientFinanceMap[c.client_name]?.debt || 0) }}
-                        </div>
-                        <div class="ced-fin-lbl">欠款</div>
-                      </div>
-                      <div class="ced-fin-sep"></div>
-                      <div class="ced-fin-item">
-                        <div :class="['ced-fin-val', (clientFinanceMap[c.client_name]?.prepaid || 0) > 0 ? 'teal' : 'gray']">
-                          ¥{{ formatMoney(clientFinanceMap[c.client_name]?.prepaid || 0) }}
-                        </div>
-                        <div class="ced-fin-lbl">溢款</div>
-                      </div>
+            <div v-else class="wechat-list">
+              <div
+                v-for="acc in currentBusinessWechatList"
+                :key="acc.id"
+                :class="['wechat-card', activeWechatId === acc.id ? 'wechat-card-active' : '']"
+                @click="selectWechat(acc.id)"
+              >
+                <div class="wechat-card-head">
+                  <div class="wechat-head-left">
+                    <div class="wechat-icon">微</div>
+                    <div>
+                      <div class="wechat-id">{{ acc.wechat_id }}</div>
+                      <div class="wechat-nick">{{ acc.wechat_nickname || '—' }}</div>
                     </div>
                   </div>
-
-                  <!-- 基本信息 -->
-                  <div class="ced-block">
-                    <div class="ced-block-title">基本信息</div>
-                    <div class="ced-info-grid">
-                      <div class="ced-info-item">
-                        <span class="ced-info-lbl">公司归属</span>
-                        <span class="ced-info-val">{{ c.company_name || '—' }}</span>
-                      </div>
-                      <div class="ced-info-item">
-                        <span class="ced-info-lbl">微信号</span>
-                        <span class="ced-info-val">{{ c.client_wechat || '—' }}</span>
-                      </div>
-                      <div class="ced-info-item">
-                        <span class="ced-info-lbl">反馈方式</span>
-                        <span class="ced-info-val">{{ c.feedback_type || '私发' }}</span>
-                      </div>
-                      <div class="ced-info-item">
-                        <span class="ced-info-lbl">客户ID</span>
-                        <span class="ced-info-val mono">{{ clientOrderStatsMap[c.client_name]?.client_id || '—' }}</span>
-                      </div>
-                      <div class="ced-info-item">
-                        <span class="ced-info-lbl">公司ID</span>
-                        <span class="ced-info-val mono">{{ clientOrderStatsMap[c.client_name]?.company_id || '—' }}</span>
-                      </div>
-                      <div class="ced-info-item">
-                        <span class="ced-info-lbl">备注标记</span>
-                        <span class="ced-info-val">{{ c.remark || '—' }}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 下单统计 -->
-                  <div class="ced-block ced-block-full">
-                    <div class="ced-block-title">下单统计</div>
-                    <div class="ced-order-stats">
-                      <div class="ced-os-item">
-                        <div class="ced-os-val blue">{{ clientOrderStatsMap[c.client_name]?.order_count || 0 }}</div>
-                        <div class="ced-os-lbl">下单次数</div>
-                      </div>
-                      <div class="ced-os-sep"></div>
-                      <div class="ced-os-item">
-                        <div class="ced-os-val teal">{{ clientOrderStatsMap[c.client_name]?.order_quantity || 0 }}</div>
-                        <div class="ced-os-lbl">下单单量</div>
-                      </div>
-                      <div class="ced-os-sep"></div>
-                      <div class="ced-os-item">
-                        <div class="ced-os-val green">¥{{ formatMoney(clientOrderStatsMap[c.client_name]?.order_amount) }}</div>
-                        <div class="ced-os-lbl">下单金额</div>
-                      </div>
-                      <div class="ced-os-sep"></div>
-                      <div class="ced-os-item">
-                        <div :class="['ced-os-val', (clientOrderStatsMap[c.client_name]?.refund_count || 0) > 0 ? 'orange' : 'gray']">{{ clientOrderStatsMap[c.client_name]?.refund_count || 0 }}</div>
-                        <div class="ced-os-lbl">退单次数</div>
-                      </div>
-                      <div class="ced-os-sep"></div>
-                      <div class="ced-os-item">
-                        <div :class="['ced-os-val', (clientOrderStatsMap[c.client_name]?.pending_count || 0) > 0 ? 'blue' : 'gray']">{{ clientOrderStatsMap[c.client_name]?.pending_count || 0 }}</div>
-                        <div class="ced-os-lbl">待结任务</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-if="c.notes" class="ced-block ced-block-full">
-                    <div class="ced-block-title">备注</div>
-                    <div class="ced-notes">{{ c.notes }}</div>
+                  <div class="wechat-head-right">
+                    <a-tag :color="acc.status === '在用' ? 'green' : acc.status === '停用' ? 'orange' : 'red'">{{ acc.status }}</a-tag>
+                    <a-button type="link" size="small" @click.stop="openEditWechatModal(acc)">编辑</a-button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <div class="customer-pane">
+            <div class="panel-title">客户列表</div>
+            <div v-if="!selectedWechat" class="staff-empty">
+              <a-empty description="请选择微信号查看客户" />
+            </div>
+            <div v-else>
+              <div class="wx-metrics">
+                <div class="wx-metric-item">
+                  <div class="wx-metric-num blue">{{ clientList.length }}</div>
+                  <div class="wx-metric-label">管理客户</div>
+                </div>
+                <div class="wx-metric-item">
+                  <div class="wx-metric-num green">{{ activeClientCount }}</div>
+                  <div class="wx-metric-label">活跃客户</div>
+                </div>
+                <div class="wx-metric-item">
+                  <div class="wx-metric-num orange">{{ getDrawerNewClients() }}</div>
+                  <div class="wx-metric-label">本月新客</div>
+                </div>
+                <div class="wx-metric-item">
+                  <div class="wx-metric-num blue">{{ clientOrderStats.total_order_count }}</div>
+                  <div class="wx-metric-label">累计下单</div>
+                </div>
+                <div class="wx-metric-item">
+                  <div class="wx-metric-num purple">{{ clientOrderStats.total_order_quantity }}</div>
+                  <div class="wx-metric-label">累计单量</div>
+                </div>
+                <div class="wx-metric-item">
+                  <div class="wx-metric-num teal">¥{{ formatMoneyShort(clientOrderStats.total_order_amount) }}</div>
+                  <div class="wx-metric-label">累计金额</div>
+                </div>
+              </div>
+
+              <div class="wechat-tabs-wrap">
+                <div class="wechat-toolbar">
+                  <div class="customer-filters">
+                    <a-input-search
+                      v-model:value="customerKeyword"
+                      allow-clear
+                      placeholder="归属公司/客户姓名"
+                      class="customer-filter-input"
+                    />
+                    <a-button type="primary" size="small" @click="openAddClient"><PlusOutlined /> 添加客户</a-button>
+                  </div>
+                  <a-select v-model:value="customerStatus" class="customer-filter-status" size="small" :options="customerStatusFilterOptions" />
+                </div>
+                <a-table
+                  :columns="wechatClientColumns"
+                  :data-source="filteredCustomerRows"
+                  :loading="clientLoading"
+                  size="small"
+                  row-key="id"
+                  :pagination="{ pageSize: 8, showTotal: (total: number) => `共 ${total} 条` }"
+                  :scroll="{ y: 'max(320px, calc(100vh - 480px))' }"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'status'">
+                      <a-tag :color="record.status === '活跃' ? 'green' : record.status === '沉默' ? 'orange' : 'default'">{{ record.status || '—' }}</a-tag>
+                    </template>
+                    <template v-else-if="column.key === 'order_quantity'">
+                      {{ clientOrderStatsMap[record.client_name]?.order_quantity || 0 }}
+                    </template>
+                    <template v-else-if="column.key === 'prepaid'">
+                      <span class="funds-text gray">¥{{ formatMoneyShort(clientFinanceMap[record.client_name]?.prepaid || 0) }}</span>
+                    </template>
+                    <template v-else-if="column.key === 'debt'">
+                      <span class="funds-text red">¥{{ formatMoneyShort(clientFinanceMap[record.client_name]?.debt || 0) }}</span>
+                    </template>
+                    <template v-else-if="column.key === 'action'">
+                      <a-button type="link" size="small" @click.stop="openGenerateBill(record)">账单</a-button>
+                      <a-button type="link" size="small" danger @click.stop="confirmDeleteClient(record)">删除</a-button>
+                    </template>
+                  </template>
+                </a-table>
+              </div>
+            </div>
+          </div>
         </div>
-      </template>
-    </a-drawer>
+      </section>
+    </div>
+
+    <a-modal v-model:open="billModalOpen" :title="billModalTitle" ok-text="确定" :footer="null" width="520px">
+      <div v-if="billTarget" class="bill-summary">
+        <div class="bill-row"><span>客户</span><strong>{{ billTarget.client_name }}</strong></div>
+        <div class="bill-row"><span>客户ID</span><span>{{ clientOrderStatsMap[billTarget.client_name]?.client_id || '未关联' }}</span></div>
+        <div class="bill-row"><span>归属公司</span><span>{{ billTarget.company_name || '—' }}</span></div>
+        <div class="bill-row"><span>资金余额</span><span>¥{{ formatMoney(clientFinanceMap[billTarget.client_name]?.balance || 0) }}</span></div>
+        <div class="bill-row"><span>累计下单</span><span>{{ clientOrderStatsMap[billTarget.client_name]?.order_quantity || 0 }} 单</span></div>
+        <div class="bill-row"><span>待结任务</span><span>{{ clientOrderStatsMap[billTarget.client_name]?.pending_count || 0 }} 个</span></div>
+      </div>
+    </a-modal>
 
     <!-- 商务经理详情/编辑抽屉 -->
     <a-drawer
@@ -462,7 +304,7 @@
     <!-- 添加微信号 Modal -->
     <a-modal
       v-model:open="wechatModalOpen"
-      :title="currentManager ? `为 ${currentManager.name} 添加商务微信号` : '添加商务微信号'"
+      :title="editingWechatId ? '编辑微信号' : '添加微信号'"
       @ok="handleAddWechat"
       :confirm-loading="submitting"
       ok-text="确定"
@@ -548,24 +390,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, h } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, BankOutlined, EllipsisOutlined, DownOutlined, SafetyOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, EllipsisOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
-import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
-
-const router = useRouter()
-
-function goToUserMgmt() {
-  router.push('/user-management')
-}
 
 const loading = ref(false)
 const managerList = ref<any[]>([])
 const wechatList = ref<any[]>([])
 const searchText = ref('')
 const activeMgrId = ref<string | null>(null)
+const activeWechatId = ref('')
+const customerKeyword = ref('')
+const customerStatus = ref('全部')
+const editingWechatId = ref('')
+const billModalOpen = ref(false)
+const billTarget = ref<any>(null)
+const customerHoverBorderColor = '#2563eb'
 
 const managerModalOpen = ref(false)
 const wechatModalOpen = ref(false)
@@ -711,6 +553,67 @@ function getDrawerNewClients(): number {
   }).length
 }
 
+const activeBusiness = computed(() => managerList.value.find(item => item.id === activeMgrId.value) || null)
+const currentBusinessWechatList = computed(() => {
+  if (!activeBusiness.value) return []
+  return wechatList.value.filter(acc => acc.manager_id === activeBusiness.value.id)
+})
+const selectedWechat = computed(() => wechatList.value.find(acc => acc.id === activeWechatId.value) || null)
+const activeClientCount = computed(() => clientList.value.filter(item => item.status === '活跃').length)
+const customerStatusFilterOptions = [
+  { label: '全部', value: '全部' },
+  { label: '活跃', value: '活跃' },
+  { label: '沉默', value: '沉默' },
+  { label: '流失', value: '流失' },
+]
+const wechatClientColumns = [
+  { title: '员工姓名', dataIndex: 'client_name', key: 'client_name' },
+  { title: '微信号', dataIndex: 'client_wechat', key: 'client_wechat' },
+  { title: '归属公司', dataIndex: 'company_name', key: 'company_name' },
+  { title: '对接状态', dataIndex: 'status', key: 'status', width: 90 },
+  { title: '累计单量', key: 'order_quantity', width: 90 },
+  { title: '总余款', key: 'prepaid', width: 120 },
+  { title: '总欠款', key: 'debt', width: 100 },
+  { title: '操作', key: 'action', width: 120 },
+]
+const filteredCustomerRows = computed(() => {
+  const keyword = customerKeyword.value.trim().toLowerCase()
+  return clientList.value.filter((row: any) => {
+    if (customerStatus.value !== '全部' && row.status !== customerStatus.value) return false
+    if (!keyword) return true
+    return `${row.client_name || ''} ${row.company_name || ''}`.toLowerCase().includes(keyword)
+  })
+})
+const businessKpis = computed(() => {
+  const manager = activeBusiness.value
+  if (!manager) return []
+  return [
+    { key: '1', label: '本月业绩', value: `¥${formatMoneyShort(getMgrMonthAmount(manager))}`, className: 'blue' },
+    { key: '2', label: '本月下单', value: String(getMgrMonthOrders(manager)), className: 'green' },
+    { key: '3', label: '退单率', value: `${getMgrRefundRate(manager)}%`, className: 'orange' },
+    { key: '4', label: '总欠款', value: `¥${formatMoneyShort(getMgrDebt(manager))}`, className: 'red' },
+    { key: '5', label: '本月新客', value: String(getMgrNewClients(manager)), className: 'teal' },
+  ]
+})
+const billModalTitle = computed(() => billTarget.value ? `账单 — ${billTarget.value.client_name}` : '账单')
+
+function selectBusiness(id: string) {
+  activeMgrId.value = id
+  activeWechatId.value = ''
+  currentWechat.value = null
+  clientList.value = []
+}
+
+function selectWechat(id: string) {
+  const account = wechatList.value.find(item => item.id === id)
+  if (!account) return
+  activeWechatId.value = id
+  currentWechat.value = account
+  if (account.manager_id) activeMgrId.value = account.manager_id
+  managerDetailOpen.value = false
+  loadClients(id)
+}
+
 function toggleClientExpand(c: any) {
   expandedClientId.value = expandedClientId.value === c.id ? null : c.id
 }
@@ -734,6 +637,14 @@ async function load() {
 
     if (detailManager.value) {
       detailManager.value = managerList.value.find(m => m.id === detailManager.value.id) || null
+    }
+    if (!managerList.value.some(item => item.id === activeMgrId.value)) {
+      activeMgrId.value = managerList.value[0]?.id || null
+    }
+    if (activeWechatId.value) {
+      const account = wechatList.value.find(item => item.id === activeWechatId.value)
+      currentWechat.value = account || null
+      if (!account) activeWechatId.value = ''
     }
   } finally {
     loading.value = false
@@ -839,10 +750,7 @@ async function loadMgrMonthStats() {
 }
 
 function openWechatDrawer(acc: any) {
-  currentWechat.value = acc
-  wechatDrawerOpen.value = true
-  expandedClientId.value = null
-  loadClients(acc.id)
+  selectWechat(acc.id)
 }
 
 function openManagerDetail(mgr: any) {
@@ -892,6 +800,7 @@ function confirmDeleteManager(record: any) {
 }
 
 function openAddWechat(manager?: any) {
+  editingWechatId.value = ''
   currentManager.value = manager || null
   Object.assign(wechatForm, {
     wechat_id: '',
@@ -903,21 +812,37 @@ function openAddWechat(manager?: any) {
   wechatModalOpen.value = true
 }
 
+function openEditWechatModal(acc: any) {
+  editingWechatId.value = acc.id
+  currentManager.value = null
+  Object.assign(wechatForm, {
+    wechat_id: acc.wechat_id || '',
+    wechat_nickname: acc.wechat_nickname || '',
+    status: acc.status || '在用',
+    notes: acc.notes || '',
+    manager_id: acc.manager_id || '',
+  })
+  wechatModalOpen.value = true
+}
+
 async function handleAddWechat() {
   if (!wechatForm.wechat_id.trim()) { message.warning('请输入微信号'); return }
   submitting.value = true
   try {
-    const { error } = await supabase.from('business_wechat_accounts').insert([{
+    const payload = {
       wechat_id: wechatForm.wechat_id,
       wechat_nickname: wechatForm.wechat_nickname,
       status: wechatForm.status,
       notes: wechatForm.notes,
       manager_id: wechatForm.manager_id || null,
-      staff_id: null,
-      client_count: 0,
-    }])
+    }
+    const query = editingWechatId.value
+      ? supabase.from('business_wechat_accounts').update(payload).eq('id', editingWechatId.value)
+      : supabase.from('business_wechat_accounts').insert([{ ...payload, staff_id: null, client_count: 0 }])
+    const { error } = await query
     if (error) throw error
-    message.success('微信号已添加')
+    message.success(editingWechatId.value ? '微信号已更新' : '微信号已添加')
+    editingWechatId.value = ''
     wechatModalOpen.value = false
     load()
   } catch (e: any) {
@@ -1065,13 +990,8 @@ async function loadClients(wechatAccountId: string) {
 }
 
 function openGenerateBill(c: any) {
-  const balance = clientFinanceMap.value[c.client_name]?.balance || 0
-  const stats = clientOrderStatsMap.value[c.client_name]
-  Modal.info({
-    title: `账单生成 — ${c.client_name}`,
-    content: `客户ID：${stats?.client_id || '未关联'}\n归属公司：${c.company_name || '—'}\n资金余额：¥${formatMoney(balance)}\n累计下单：${stats?.order_quantity || 0} 单\n待结任务：${stats?.pending_count || 0} 个`,
-    okText: '确定',
-  })
+  billTarget.value = c
+  billModalOpen.value = true
 }
 
 function openAddClient() {
@@ -1450,4 +1370,89 @@ onMounted(load)
 .dstat-num.green { color: #059669; }
 .dstat-num.orange { color: #d97706; }
 .dstat-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+.business-page {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  box-sizing: border-box;
+  --biz-bg: #ffffff;
+  --biz-text-primary: #111827;
+  --biz-text-secondary: #6b7280;
+  --biz-text-tertiary: #9ca3af;
+  --biz-border-color: #e5e7eb;
+  --biz-divider-color: #e5e7eb;
+  --biz-active-bg: #eff6ff;
+  color: var(--biz-text-primary);
+}
+.business-page .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.business-page .page-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--biz-text-primary); }
+.business-page .header-actions { display: inline-flex; align-items: center; gap: 8px; }
+.header-add-btn { display: inline-flex; align-items: center; gap: 6px; }
+.workspace { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; min-height: 640px; }
+.staff-pane, .wechat-pane, .customer-pane, .kpi-row {
+  background: var(--biz-bg);
+  border: 1px solid var(--biz-border-color);
+  border-radius: 10px;
+}
+.staff-pane, .wechat-pane, .customer-pane { padding: 10px; min-width: 0; }
+.staff-title, .panel-title { font-size: 13px; color: var(--biz-text-secondary); margin-bottom: 8px; }
+.staff-list, .business-page .wechat-list { display: flex; flex-direction: column; gap: 8px; }
+.staff-item {
+  border: 1px solid var(--biz-border-color);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.staff-item:hover, .staff-item-active { border-color: v-bind(customerHoverBorderColor); }
+.staff-item-active { background: var(--biz-active-bg); }
+.staff-avatar { width: 32px; height: 32px; border-radius: 8px; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
+.staff-name { font-size: 14px; font-weight: 600; flex: 1; }
+.staff-more-btn { margin-left: auto; padding-inline: 6px; }
+.staff-delete-action { color: #ef4444; }
+.kpi-row { padding: 10px 6px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.kpi-item, .wx-metric-item { text-align: center; position: relative; }
+.kpi-item:not(:last-child)::after, .wx-metric-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  background: var(--biz-divider-color);
+}
+.kpi-item:not(:last-child)::after { height: 32px; }
+.wx-metric-item:not(:last-child)::after { height: 26px; }
+.kpi-value { font-size: 24px; line-height: 1.1; font-weight: 700; }
+.kpi-label, .wx-metric-label { margin-top: 4px; font-size: 14px; color: var(--biz-text-tertiary); }
+.detail-workspace { margin-top: 12px; display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; }
+.wechat-card { border: 1px solid var(--biz-border-color); border-radius: 10px; background: var(--biz-bg); overflow: hidden; }
+.wechat-card-active { border-color: v-bind(customerHoverBorderColor); box-shadow: 0 0 0 2px rgb(59 130 246 / 10%); }
+.wechat-card-head { padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.wechat-head-left, .wechat-head-right { display: inline-flex; align-items: center; gap: 10px; }
+.wechat-icon { width: 30px; height: 30px; border-radius: 8px; background: #16a34a; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+.wechat-id { font-size: 14px; font-weight: 600; }
+.wechat-nick { font-size: 14px; color: var(--biz-text-secondary); }
+.wx-metrics { border: 1px solid var(--biz-border-color); border-radius: 10px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); padding: 8px 4px; margin-bottom: 10px; }
+.wx-metric-num { font-size: 20px; line-height: 1.1; font-weight: 700; }
+.wechat-tabs-wrap { margin-top: 10px; border: 1px solid var(--biz-border-color); border-radius: 10px; padding: 10px; }
+.wechat-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.customer-filters { display: inline-flex; align-items: center; gap: 8px; }
+.customer-filter-input { width: 220px; }
+.customer-filter-status { width: 120px; }
+.funds-text { font-weight: 600; }
+.staff-empty { padding: 16px 8px; }
+.bill-summary { display: flex; flex-direction: column; gap: 10px; }
+.bill-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+.blue { color: #2563eb; }
+.green { color: #16a34a; }
+.orange { color: #d97706; }
+.red { color: #dc2626; }
+.teal { color: #0f766e; }
+.purple { color: #7c3aed; }
+.gray { color: #9ca3af; }
 </style>
