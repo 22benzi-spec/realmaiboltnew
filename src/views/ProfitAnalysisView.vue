@@ -1,26 +1,21 @@
 <template>
   <div class="page-content">
-    <div class="page-header">
-      <h2 class="page-title">利润分析</h2>
-    </div>
-
     <div class="filter-bar">
       <a-range-picker
         v-model:value="dateRange"
-        :placeholder="['创建开始', '创建结束']"
+        :placeholder="['完成开始', '完成结束']"
         style="width:280px"
         @change="reload"
       />
-      <a-input
+      <a-input-search
         v-model:value="keyword"
         placeholder="客户/客户公司/ASIN/任务号"
-        style="width:260px"
+        style="width:280px"
         allow-clear
+        :loading="loading"
+        @search="reload"
         @pressEnter="reload"
       />
-      <a-button type="primary" :loading="loading" title="查询" @click="reload">
-        <template #icon><SearchOutlined /></template>
-      </a-button>
     </div>
 
     <a-card size="small" style="margin-bottom:16px">
@@ -169,7 +164,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { SearchOutlined } from '@ant-design/icons-vue'
 import { supabase } from '../lib/supabase'
 import type { Dayjs } from 'dayjs'
 
@@ -717,9 +711,6 @@ onMounted(() => reload())
 
 <style scoped>
 .page-content { padding: 24px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 0; }
-
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
 
 .formula { display: flex; align-items: flex-start; gap: 8px; }
