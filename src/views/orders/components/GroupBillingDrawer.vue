@@ -428,17 +428,35 @@
       width="980px"
       :confirm-loading="recordSaving || uploading"
       class="settlement-confirm-modal"
-      @cancel="closeSupplementDiff"
+      @cancel="handleSettlementConfirmBack"
     >
       <div class="sc-head">{{ settlementConfirmMetaText }}</div>
       <div class="sc-summary">
         <div class="sc-summary-main">
-          <span>本次{{ settlementConfirmActionLabel }} <b>{{ settlementConfirmSummary.enteredText }}</b></span>
-          <span class="sc-summary-sep">·</span>
-          <span>勾选净需补 <b class="sc-need">{{ settlementConfirmSummary.needText }}</b></span>
+          <template v-if="settlementConfirmPhase === 'offset-source' || recordMode === 'offset'">
+            <span>账面抵消 <b>¥{{ offsetSourceSettleTotalUse.toFixed(2) }}</b></span>
+          </template>
+          <template v-else>
+            <span>本次{{ settlementConfirmActionLabel }} <b>{{ settlementConfirmSummary.enteredText }}</b></span>
+            <template v-if="pendingOffsetTotalCny > 0">
+              <span class="sc-summary-sep">·</span>
+              <span>账面抵消 <b>¥{{ pendingOffsetTotalCny.toFixed(2) }}</b></span>
+            </template>
+          </template>
+          <template v-if="showSettleSelectDirection">
+            <span class="sc-summary-sep">·</span>
+            <span>勾选净需补 <b class="sc-need">{{ settlementConfirmSummary.needText }}</b></span>
+            <template v-if="settlementConfirmDiffCny != null">
+              <span class="sc-summary-sep">·</span>
+              <span>差额 <b :class="moneyClass(settlementConfirmDiffCny)">¥{{ Math.abs(settlementConfirmDiffCny).toFixed(2) }}</b></span>
+            </template>
+          </template>
         </div>
-        <button type="button" class="sc-restore" @click="toggleSettlementRecommend">推荐勾选</button>
+        <button v-if="showSettleSelectDirection" type="button" class="sc-restore" @click="toggleSettlementRecommend">推荐勾选</button>
       </div>
+
+      <template v-if="showSettleSelectDirection">
+      <div class="sc-section-title">【1】勾选方向</div>
       <div v-if="!settlementConfirmGroups.length" class="sc-empty">暂无基础未完成/富余或尾款有欠/有余的数据</div>
       <div v-else class="sc-split">
         <div class="sc-left">
@@ -520,11 +538,85 @@
           </template>
         </div>
       </div>
+      </template>
+
+      <div v-if="showSettleOffsetSourceDirection" class="sc-offset-source-block">
+        <div class="sc-section-title">【{{ showSettleSelectDirection ? '2' : '1' }}】抵消来源</div>
+        <div v-if="!offsetSourceSettleCards.length" class="sc-empty">暂无抵消来源组</div>
+        <div v-else class="sc-split">
+          <div class="sc-left">
+            <div class="sc-pane-title">来源组</div>
+            <div
+              v-for="card in offsetSourceSettleCards"
+              :key="card.key"
+              class="sc-group"
+              :class="{ active: String(card.key) === String(activeOffsetSourceKey) }"
+              @click="activeOffsetSourceKey = String(card.key)"
+            >
+              <div class="sc-group-body">
+                <div class="sc-group-top">
+                  <span class="sc-group-title">{{ card.batchNumber }}</span>
+                </div>
+                <div class="sc-group-metrics">
+                  <span>本次抵消 <b>¥{{ card.offsetUseCny.toFixed(2) }}</b></span>
+                </div>
+                <div class="sc-offset-after">
+                  <template v-if="offsetSourceAfterCleared(card)">
+                    调整后 <b class="amount-cleared">已结清</b>
+                  </template>
+                  <template v-else>
+                    调整后
+                    <template v-if="card.remainBasicCny > 0.009">
+                      基础入账：富余
+                      <span class="sc-basic-amt">富余金额 <b class="amount-surplus">¥{{ card.remainBasicCny.toFixed(2) }}</b></span>
+                      <span class="sc-summary-sep">·</span>
+                    </template>
+                    <template v-if="card.remainTailCny > 0.009">
+                      尾款 <b class="amount-surplus">有余款 ¥{{ card.remainTailCny.toFixed(2) }}</b>
+                    </template>
+                    <template v-else>
+                      尾款 <b>-</b>
+                    </template>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sc-right">
+            <div class="sc-pane-title">{{ activeOffsetSourceCard?.batchNumber || '-' }} · 组汇总</div>
+            <div v-if="!activeOffsetSourceCard" class="sc-empty-sm">请选择来源组</div>
+            <div v-else class="sc-offset-source-card">
+              <div class="sc-offset-source-metrics">
+                <span>
+                  款项净额
+                  <b :class="moneyClass(offsetSourceNetBalance(activeOffsetSourceCard))">
+                    ¥{{ Math.abs(offsetSourceNetBalance(activeOffsetSourceCard)).toFixed(2) }}
+                  </b>
+                </span>
+                <span>
+                  基础富余
+                  <b :class="moneyClass(activeOffsetSourceCard.basicSurplusCny)">
+                    ¥{{ Number(activeOffsetSourceCard.basicSurplusCny || 0).toFixed(2) }}
+                  </b>
+                </span>
+                <span>
+                  尾款余款
+                  <b :class="moneyClass(activeOffsetSourceCard.tailSurplusCny)">
+                    ¥{{ Number(activeOffsetSourceCard.tailSurplusCny || 0).toFixed(2) }}
+                  </b>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="sc-foot">
-        <span>已选 {{ settlementConfirmSummary.net.basicCount }} 个基础款项 {{ settlementConfirmSummary.net.taskCount }} 个任务尾款</span>
+        <span v-if="showSettleSelectDirection">已选 {{ settlementConfirmSummary.net.basicCount }} 个基础款项 {{ settlementConfirmSummary.net.taskCount }} 个任务尾款</span>
+        <span v-else>来源组 {{ offsetSourceSettleCards.length }} 个 · 账面抵消 ¥{{ offsetSourceSettleTotalUse.toFixed(2) }}</span>
         <div class="sc-foot-actions">
-          <a-button @click="closeSupplementDiff">返回修改</a-button>
-          <a-button type="primary" :loading="recordSaving || uploading" @click="saveBatchRecord(undefined, 'submit')">{{ settlementConfirmOkText }}</a-button>
+          <a-button @click="handleSettlementConfirmBack">返回修改</a-button>
+          <a-button type="primary" :loading="recordSaving || uploading || nestedOffsetSaving" @click="handleSettlementConfirmOk">{{ settlementConfirmOkText }}</a-button>
         </div>
       </div>
     </a-modal>
@@ -620,6 +712,13 @@ import {
   type SettlementConfirmGroup,
   type SettlementConfirmMode,
 } from '../supplementDiffConfirm'
+import {
+  buildOffsetSettleDemoSourceCard,
+  buildOffsetSettleDemoSourceCards,
+  hasOffsetSettleDemoDebtOrder,
+  OFFSET_SETTLE_DEMO_SRC_TASK,
+  type OffsetSourceSettleCard,
+} from '../offsetSourceSettlePreview'
 import { readReceiveBillGroups } from '../receiveBillResponse'
 import { buildBillCopyText } from './billAmountText'
 import OffsetRecordModal from './OffsetRecordModal.vue'
@@ -1195,6 +1294,8 @@ type PendingOffset = {
   sourceText: string
   detailText: string
   draft: OffsetDraft
+  /** 仅演示例：确认弹窗展示被抵消来源组汇总 */
+  previewSourceCards?: OffsetSourceSettleCard[]
 }
 
 const recordModalOpen = ref(false)
@@ -1225,19 +1326,108 @@ const settlementConfirmActionLabel = computed(() => ({
   refund: '退款',
   offset: '抵消',
 }[settlementConfirmMode.value]))
-const settlementConfirmOkText = computed(() => ({
-  supplement: '确认录入补款',
-  refund: '确认提交退款',
-  offset: '确认账面抵消',
-}[settlementConfirmMode.value]))
+const settlementConfirmPhase = ref<'submit' | 'offset-source'>('submit')
+const nestedOffsetStaging = ref<PendingOffset | null>(null)
+const activeOffsetSourceKey = ref('')
+const settlementConfirmOkText = computed(() => {
+  if (settlementConfirmPhase.value === 'offset-source') return '确认抵消来源'
+  return ({
+    supplement: '确认录入补款',
+    refund: '确认提交退款',
+    offset: '确认账面抵消',
+  }[settlementConfirmMode.value])
+})
 const settlementConfirmMetaText = computed(() => {
-  const customers = Array.from(new Set(settlementConfirmGroups.value.map(group => group.customerName).filter(Boolean)))
-  const customerPart = customers.length <= 1 ? `${customers[0] || '-'} · 1 个客户` : `${customers.length} 个客户`
-  return `${customerPart} · ${settlementConfirmGroups.value.length} 个组`
+  if (settlementConfirmPhase.value === 'offset-source') {
+    const cards = offsetSourceSettleCards.value
+    const companies = Array.from(new Set(cards.map(card => String(card.customerName || '').trim()).filter(Boolean)))
+    const companyName = companies[0] || displayGroupData.value?.customer_name || '-'
+    const customerCount = Math.max(1, companies.length)
+    return `${companyName} · ${customerCount} 个客户 · ${cards.length} 个组`
+  }
+  const companies = Array.from(new Set(
+    settlementConfirmGroups.value.map(group => String(group.customerName || '').trim()).filter(Boolean),
+  ))
+  const companyName = displayGroupData.value?.customer_name
+    || companies[0]
+    || '-'
+  const confirmGroupKeys = new Set(settlementConfirmGroups.value.map(group => String(group.key)))
+  const customerNames = Array.from(new Set(
+    localOrders.value
+      .filter((order) => {
+        const key = String(order?.task_basic_id ?? order?.task_basic?.id ?? order?.task_basic?.task_basics_no ?? order?.id)
+        return confirmGroupKeys.has(key)
+      })
+      .map(order => String(order?.employee?.name || order?.customer?.name || order?.task_basic?.employee_name || '').trim())
+      .filter(Boolean),
+  ))
+  const customerCount = customerNames.length || Math.max(1, companies.length)
+  const groupCount = settlementConfirmGroups.value.length
+  return `${companyName} · ${customerCount} 个客户 · ${groupCount} 个组`
 })
 const settlementConfirmSummary = computed(() =>
   settlementSummaryText(settlementConfirmGroups.value, settlementEnteredCny.value, settlementEnteredUsd.value),
 )
+/** 补款(+抵消) 或纯抵消 与勾选净需补不一致时的差额（cover − need） */
+const settlementConfirmDiffCny = computed(() => {
+  if (!showSettleSelectDirection.value) return null
+  const needCny = -Math.min(0, Number(settlementConfirmSummary.value.net?.cny || 0))
+  let coverCny = 0
+  if (recordMode.value === 'offset') {
+    coverCny = Number(offsetSourceSettleTotalUse.value || 0)
+  } else if (recordMode.value === 'supplement') {
+    coverCny = Number(settlementEnteredCny.value || 0) + Number(pendingOffsetTotalCny.value || 0)
+  } else if (recordMode.value === 'refund') {
+    coverCny = Number(settlementEnteredCny.value || 0)
+  }
+  const diff = Number((coverCny - needCny).toFixed(2))
+  return Math.abs(diff) > 0.009 ? diff : null
+})
+const directOffsetPreviewCards = ref<OffsetSourceSettleCard[]>([])
+const offsetSourceSettleCards = computed(() => {
+  if (settlementConfirmPhase.value === 'offset-source') {
+    return nestedOffsetStaging.value?.previewSourceCards || []
+  }
+  if (recordMode.value === 'offset') {
+    if (directOffsetPreviewCards.value.length) return directOffsetPreviewCards.value
+    if (hasOffsetSettleDemoDebtOrder(localOrders.value)) {
+      return buildOffsetSettleDemoSourceCards(200)
+    }
+    return []
+  }
+  // 最终录入补款确认：来源明细已在「加入补款」确认过，这里不再展示
+  return []
+})
+const offsetSourceSettleTotalUse = computed(() => {
+  if (settlementConfirmPhase.value === 'offset-source') {
+    return Number(nestedOffsetStaging.value?.totalAmount || 0)
+  }
+  if (recordMode.value === 'offset') {
+    return offsetSourceSettleCards.value.reduce((sum, card) => sum + Number(card.offsetUseCny || 0), 0)
+  }
+  return Number(pendingOffset.value?.totalAmount || 0)
+})
+const pendingOffsetTotalCny = computed(() => Number(pendingOffset.value?.totalAmount || 0))
+const activeOffsetSourceCard = computed(() => {
+  const key = String(activeOffsetSourceKey.value || '')
+  return offsetSourceSettleCards.value.find(card => String(card.key) === key) || offsetSourceSettleCards.value[0] || null
+})
+/** 款项净额：净值（展示为正数绝对值）；基础富余/尾款余款各自可正可负，不与净值符号绑定 */
+function offsetSourceNetBalance(card: OffsetSourceSettleCard | null | undefined) {
+  if (!card) return 0
+  return Number((Number(card.basicSurplusCny || 0) + Number(card.tailSurplusCny || 0)).toFixed(2))
+}
+function offsetSourceAfterCleared(card: OffsetSourceSettleCard | null | undefined) {
+  return Number(card?.remainTotalCny || 0) <= 0.009
+}
+/** 纯抵消 / 纯补款最终确认 / 退款：展示勾选方向；「加入补款」来源确认阶段不展示 */
+const showSettleSelectDirection = computed(() => settlementConfirmPhase.value !== 'offset-source')
+/** 纯抵消：展示来源明细；补款内「加入补款」阶段展示来源明细；最终补款确认不展示明细 */
+const showSettleOffsetSourceDirection = computed(() => {
+  if (settlementConfirmPhase.value === 'offset-source') return offsetSourceSettleCards.value.length > 0
+  if (recordMode.value === 'offset') return offsetSourceSettleCards.value.length > 0
+  return false
+})
 const recordFiles = ref<any[]>([])
 const pendingOffset = ref<PendingOffset | null>(null)
 const directOffsetOpen = ref(false)
@@ -1405,7 +1595,13 @@ async function loadSupplementCategories() {
     const income = supplementCategoryDefaults(supplementCategories.value)
     if (recordMode.value === 'offset') {
       recordForm.value.primary_category = income.primary
-      recordForm.value.secondary_categories = []
+      if (hasOffsetSettleDemoDebtOrder(localOrders.value)) {
+        const incomeCat = supplementPrimaryCategories(supplementCategories.value).find(item => item.label === '业务收入')
+        const firstChild = incomeCat?.children?.[0]
+        recordForm.value.secondary_categories = firstChild ? [firstChild.value] : []
+      } else {
+        recordForm.value.secondary_categories = []
+      }
       return
     }
     if (recordMode.value !== 'supplement' || recordForm.value.primary_category !== '') return
@@ -1440,7 +1636,9 @@ function openRecordModal(mode: RecordMode) {
   recordForm.value = createRecordForm(mode)
   if (mode === 'offset') {
     offsetDraft.value = createOffsetDraft()
+    directOffsetPreviewCards.value = []
     directOffsetOpen.value = true
+    seedDirectOffsetDemoIfNeeded()
     void loadCountryOptions()
     void loadSupplementCategories()
     return
@@ -1450,12 +1648,67 @@ function openRecordModal(mode: RecordMode) {
   if (mode === 'supplement') {
     supplementRecordSubmitted.value = false
     closeSupplementDiff()
+    seedOffsetSettleDemoIfNeeded()
     void loadSupplementCategories()
   } else void loadCountryOptions()
 }
 
+/** 仅 RM-TOP-DEBT：预填补款金额；抵消需点「账面抵消 → 加入补款」确认来源 */
+function seedOffsetSettleDemoIfNeeded(options?: { silent?: boolean }) {
+  if (!hasOffsetSettleDemoDebtOrder(localOrders.value)) return false
+  recordForm.value.currency_mode = 'cny'
+  if (!(Number(recordForm.value.amount_cny) > 0)) {
+    recordForm.value.amount_cny = 100
+  }
+  recordForm.value.amount_usd = undefined
+  if (!options?.silent && !pendingOffset.value) {
+    message.info('演示：点「账面抵消」填写后「加入补款」，先确认来源；再点录入补款看勾选确认')
+  }
+  return true
+}
+
+function seedNestedOffsetDemoIfNeeded() {
+  if (!hasOffsetSettleDemoDebtOrder(localOrders.value)) return false
+  if (pendingOffset.value?.draft) {
+    nestedOffsetDraft.value = cloneOffsetDraft(pendingOffset.value.draft)
+    return true
+  }
+  nestedOffsetDraft.value = {
+    type: 1,
+    surplusTypes: [1, 2],
+    sources: [{ task_id: OFFSET_SETTLE_DEMO_SRC_TASK, amount: 200 }],
+    details: {
+      1: [{ country_id: 1, review_type: 'words', quantity: 1 }],
+      2: [{ country_id: 1, review_type: 'words', quantity: 1 }],
+    },
+  }
+  return true
+}
+
+/** 仅 RM-TOP-DEBT：预填纯账面抵消草稿 + 多组来源汇总 */
+function seedDirectOffsetDemoIfNeeded(options?: { silent?: boolean }) {
+  if (!hasOffsetSettleDemoDebtOrder(localOrders.value)) return false
+  const cards = buildOffsetSettleDemoSourceCards(200)
+  offsetDraft.value = {
+    type: 1,
+    surplusTypes: [1, 2],
+    sources: [{ task_id: OFFSET_SETTLE_DEMO_SRC_TASK, amount: 200 }],
+    details: {
+      1: [{ country_id: 1, review_type: 'words', quantity: 1 }],
+      2: [{ country_id: 1, review_type: 'words', quantity: 1 }],
+    },
+  }
+  directOffsetPreviewCards.value = cards
+  activeOffsetSourceKey.value = String(cards[0]?.key || '')
+  if (!options?.silent) {
+    message.info('已预填演示纯抵消：多组来源汇总（确认页看勾选方向 + 抵消来源）')
+  }
+  return true
+}
+
 function resetNestedOffsetState() {
   pendingOffset.value = null
+  nestedOffsetStaging.value = null
   nestedOffsetOpen.value = false
 }
 
@@ -1465,6 +1718,7 @@ function openNestedOffset() {
   nestedDebtAmount.value = recordForm.value.debt_amount
   nestedDebtAmountUsd.value = recordForm.value.debt_amount_usd
   nestedRemark.value = recordForm.value.remark
+  seedNestedOffsetDemoIfNeeded()
   nestedOffsetOpen.value = true
   void loadCountryOptions()
 }
@@ -1500,24 +1754,81 @@ async function confirmNestedOffset() {
   try {
     const sources = await resolveOffsetSources(prepared.sources)
     const described = describeAttachedOffset(sources.offsetBasics, prepared.fields.offset_details, reviewTypeLabel)
-    pendingOffset.value = {
+    const previewSourceCards = hasOffsetSettleDemoDebtOrder(localOrders.value)
+      ? [buildOffsetSettleDemoSourceCard(described.totalAmount)]
+      : sources.offsetBasics.map(item => ({
+          key: String(item.task_basic_id),
+          batchNumber: item.label,
+          customerName: displayGroupData.value?.customer_name || '-',
+          basicSurplusCny: Number(item.amount || 0),
+          tailSurplusCny: 0,
+          offsetUseCny: Number(item.amount || 0),
+          basicUsedCny: Number(item.amount || 0),
+          tailUsedCny: 0,
+          remainBasicCny: 0,
+          remainTailCny: 0,
+          remainTotalCny: 0,
+          willClear: true,
+        }))
+    nestedOffsetStaging.value = {
       fields: prepared.fields,
       offsetBasics: sources.offsetBasics.map(({ task_basic_id, amount }) => ({ task_basic_id, amount })),
       totalAmount: described.totalAmount,
       sourceText: described.sourceText,
       detailText: described.detailText,
       draft: cloneOffsetDraft(nestedOffsetDraft.value),
+      previewSourceCards,
     }
     recordForm.value.update_debt_status = nestedDebtStatus.value
     recordForm.value.debt_amount = nestedDebtAmount.value
     recordForm.value.debt_amount_usd = nestedDebtAmountUsd.value
     recordForm.value.remark = nestedRemark.value
     nestedOffsetOpen.value = false
+    // 先收起录入补款弹窗，避免压在确认结算下面看不见
+    recordModalOpen.value = false
+    settlementConfirmPhase.value = 'offset-source'
+    activeOffsetSourceKey.value = String(previewSourceCards[0]?.key || '')
+    supplementDiffOpen.value = true
   } catch (error: any) {
     message.error(error?.message || '查询抵消来源失败')
   } finally {
     nestedOffsetSaving.value = false
   }
+}
+
+function commitNestedOffsetStaging() {
+  if (!nestedOffsetStaging.value) {
+    message.warning('请先确认抵消来源')
+    return
+  }
+  pendingOffset.value = nestedOffsetStaging.value
+  nestedOffsetStaging.value = null
+  settlementConfirmPhase.value = 'submit'
+  supplementDiffOpen.value = false
+  recordModalOpen.value = true
+  message.success('已加入补款，提交录入补款时顶部会显示账面抵消总额')
+}
+
+function handleSettlementConfirmBack() {
+  if (settlementConfirmPhase.value === 'offset-source') {
+    supplementDiffOpen.value = false
+    settlementConfirmPhase.value = 'submit'
+    recordModalOpen.value = true
+    nestedOffsetOpen.value = true
+    return
+  }
+  closeSupplementDiff()
+  // 确认页返回：恢复被收起的录入弹窗
+  if (recordMode.value === 'offset') directOffsetOpen.value = true
+  else recordModalOpen.value = true
+}
+
+function handleSettlementConfirmOk() {
+  if (settlementConfirmPhase.value === 'offset-source') {
+    commitNestedOffsetStaging()
+    return
+  }
+  void saveBatchRecord(undefined, 'submit')
 }
 
 function clearPendingOffset() {
@@ -1563,6 +1874,7 @@ async function saveOffsetFromFooter() {
   const trace = offsetSaveClickTrace ?? createGroupOffsetTrace()
   offsetSaveClickTrace = undefined
   try {
+    if (recordMode.value === 'offset') seedDirectOffsetDemoIfNeeded({ silent: true })
     await saveBatchRecord(trace, 'open-diff')
   } catch (error) {
     trace('saveOffsetFromFooter:unexpected-error', groupOffsetErrorLocation(error))
@@ -1582,6 +1894,7 @@ function handleDirectOffsetCancel() {
   createGroupOffsetTrace()('handleRecordCancel:direct-offset', { busy: recordSaving.value || uploading.value })
   offsetSaveClickTrace = undefined
   directOffsetOpen.value = false
+  directOffsetPreviewCards.value = []
 }
 
 function handleRecordCancel() {
@@ -1649,16 +1962,29 @@ function cloneSettlementGroups(groups: SettlementConfirmGroup[]) {
 }
 
 function openSupplementDiffModal() {
+  if (recordMode.value === 'supplement') seedOffsetSettleDemoIfNeeded({ silent: true })
+  settlementConfirmPhase.value = 'submit'
   void saveBatchRecord(undefined, 'open-diff')
 }
 
 function closeSupplementDiff() {
+  if (settlementConfirmPhase.value === 'offset-source') {
+    // 来源确认未点确认就关：不写入 pendingOffset，回到录入补款 + 抵消编辑
+    nestedOffsetStaging.value = null
+    settlementConfirmPhase.value = 'submit'
+    supplementDiffOpen.value = false
+    recordModalOpen.value = true
+    nestedOffsetOpen.value = true
+    return
+  }
   supplementDiffOpen.value = false
+  settlementConfirmPhase.value = 'submit'
   settlementConfirmGroups.value = []
   settlementRecommendSnapshot.value = []
   settlementActiveGroupKey.value = ''
   settlementEnteredCny.value = 0
   settlementEnteredUsd.value = 0
+  activeOffsetSourceKey.value = ''
 }
 
 function fillSettlementConfirmRows() {
@@ -1678,6 +2004,9 @@ function fillSettlementConfirmRows() {
   settlementConfirmGroups.value = recommended
   settlementRecommendSnapshot.value = cloneSettlementGroups(recommended)
   settlementActiveGroupKey.value = String(recommended[0]?.key || '')
+  if (recordMode.value === 'offset' && offsetSourceSettleCards.value.length) {
+    activeOffsetSourceKey.value = String(offsetSourceSettleCards.value[0]?.key || '')
+  }
 }
 
 /** 有勾选 → 全部取消；无勾选 → 恢复系统推荐勾选 */
@@ -1975,6 +2304,9 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
   trace?.('saveBatchRecord:validation-passed', { targetCount: rows.length, sourceCount: sourceRows.length })
   if (phase === 'open-diff' && (isSupplement || isDirectOffset || recordMode.value === 'refund')) {
     fillSettlementConfirmRows()
+    // 收起下层录入弹窗，避免确认结算被挡住
+    if (isDirectOffset) directOffsetOpen.value = false
+    if (isSupplement || recordMode.value === 'refund') recordModalOpen.value = false
     supplementDiffOpen.value = true
     return
   }
@@ -2331,6 +2663,43 @@ async function saveBatchRecord(trace?: GroupOffsetTrace, phase: 'open-diff' | 's
 .sc-task-status { color: var(--eva-text-secondary, #6b7280); }
 .is-minus { color: #dc2626; }
 .is-plus { color: #059669; }
+.sc-section-title {
+  margin: 12px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--eva-text, #1a1a2e);
+}
+.sc-offset-source-block {
+  margin-top: 14px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--eva-border, #e5e7eb);
+}
+.sc-offset-source-card {
+  padding: 12px 14px;
+  border: 1px solid var(--eva-border, #e5e7eb);
+  border-radius: 10px;
+  background: #f5f7fa;
+}
+.sc-offset-source-block .sc-group {
+  cursor: pointer;
+}
+.sc-offset-after {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--eva-text-secondary, #6b7280);
+}
+.sc-offset-source-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  font-size: 13px;
+  color: var(--eva-text, #1a1a2e);
+}
+.amount-surplus { color: #059669; font-weight: 700; }
+.amount-cleared { color: var(--eva-text-secondary, #6b7280); font-weight: 700; }
 .sc-foot {
   display: flex;
   align-items: center;

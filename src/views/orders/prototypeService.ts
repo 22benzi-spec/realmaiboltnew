@@ -19,7 +19,8 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 interface PrototypeState { orders: any[]; imported: string[]; deleted: number[]; operations: any[]; nextId: number; seedVersion?: number }
 
 /**  bump 后本地 IndexedDB 会按新 seed 重建，便于验组级入账 / 结算三维度 / 二次确认美元 */
-const SEED_VERSION = 10
+const SEED_VERSION = 13
+const OFFSET_DEMO_DEBT_TASK_NO = 'RM-TOP-DEBT'
 
 function seedState(): PrototypeState {
   const orders = generateMockOrders().map((source, index) => {
@@ -195,6 +196,108 @@ function seedState(): PrototypeState {
     orders.push(row)
   })
 
+  // 账面抵消方案A演示：欠款置顶可搜 RM-TOP-DEBT；来源富余 RM-TOP-SRC（created_at 更大保证列表最前）
+  {
+    const pinDebtAt = dayjs().add(3, 'day').format('YYYY-MM-DD HH:mm:ss')
+    const pinSrcAt = dayjs().add(3, 'day').subtract(1, 'minute').format('YYYY-MM-DD HH:mm:ss')
+
+    const src = copy(template)
+    src.id = 9202
+    src.task_no = 'RM-TOP-SRC'
+    src.task_basic_id = 9202
+    src.created_at = pinSrcAt
+    Object.assign(src, { finished_at: pinSrcAt })
+    src.status = 3
+    src.status_label = statusNames[3]
+    src.product = {
+      ...src.product,
+      id: 9202,
+      asin: 'B0TOPSRC01',
+      product_name: '抵消来源-富余余款组',
+      store_name: 'Offset Demo Store',
+    }
+    src.customer = { ...src.customer, name: '抵消双向结清演示客户' }
+    src.employee = { ...src.employee, name: '抵消双向结清演示客户' }
+    src.task_basic = {
+      ...src.task_basic,
+      id: 9202,
+      task_basics_no: 'TASK_BASIC-TOP-SRC',
+      total_task: 1,
+      customer_name: '抵消双向结清演示客户',
+      employee_name: '抵消双向结清演示客户',
+      created_at: pinSrcAt,
+      actual_cny_amount: money(800),
+      actual_usd_amount: money(0),
+      basic_entry_amount_cny: 200,
+      basic_entry_amount_usd: 0,
+    }
+    src.bill = [{
+      id: 9202,
+      task_id: 9202,
+      basic_bill_status: 3,
+      basic_bill_status_label: basicNames[3],
+      payment_status: 3,
+      payment_status_label: paymentNames[3],
+      arrears_amount: money(50),
+      arrears_usd_amount: money(0),
+      marked_business: '商务-李婷',
+      remark: '抵消来源演示',
+    }]
+    src.bill_details = {
+      ...src.bill_details,
+      pending_settlement_diff: 250,
+    }
+    orders.push(src)
+
+    const debt = copy(template)
+    debt.id = 9201
+    debt.task_no = 'RM-TOP-DEBT'
+    debt.task_basic_id = 9201
+    debt.created_at = pinDebtAt
+    Object.assign(debt, { finished_at: pinDebtAt })
+    debt.status = 3
+    debt.status_label = statusNames[3]
+    debt.product = {
+      ...debt.product,
+      id: 9201,
+      asin: 'B0TOPDEBT1',
+      product_name: '抵消操作-欠款任务',
+      store_name: 'Offset Demo Store',
+    }
+    debt.customer = { ...debt.customer, name: '抵消双向结清演示客户' }
+    debt.employee = { ...debt.employee, name: '抵消双向结清演示客户' }
+    debt.task_basic = {
+      ...debt.task_basic,
+      id: 9201,
+      task_basics_no: 'TASK_BASIC-TOP-DEBT',
+      total_task: 1,
+      customer_name: '抵消双向结清演示客户',
+      employee_name: '抵消双向结清演示客户',
+      created_at: pinDebtAt,
+      actual_cny_amount: money(800),
+      actual_usd_amount: money(0),
+      basic_entry_amount_cny: 0,
+      basic_entry_amount_usd: 0,
+    }
+    debt.bill = [{
+      id: 9201,
+      task_id: 9201,
+      basic_bill_status: 1,
+      basic_bill_status_label: basicNames[1],
+      payment_status: 2,
+      payment_status_label: paymentNames[2],
+      arrears_amount: money(300),
+      arrears_usd_amount: money(0),
+      marked_business: '商务-李婷',
+      remark: '抵消操作侧演示',
+    }]
+    debt.bill_details = {
+      ...debt.bill_details,
+      pending_settlement_diff: -300,
+    }
+    orders.push(debt)
+  }
+
   return { orders, imported: [], deleted: [], operations: [], nextId: 10000, seedVersion: SEED_VERSION }
 }
 function openDb(): Promise<IDBDatabase> {
@@ -211,7 +314,11 @@ async function readState(): Promise<PrototypeState> {
     const request = db.transaction('state', 'readonly').objectStore('state').get('current')
     request.onsuccess = () => {
       const current = request.result as PrototypeState | undefined
-      if (!current || current.seedVersion !== SEED_VERSION) {
+      const hasOffsetDemo = Boolean(
+        current?.orders?.some(row => String(row?.task_no || '') === OFFSET_DEMO_DEBT_TASK_NO),
+      )
+      // seed 版本不对，或演示任务丢失（旧库残留）→ 重建，避免接单管理搜 RM-TOP-DEBT 无数据
+      if (!current || current.seedVersion !== SEED_VERSION || !hasOffsetDemo) {
         resolve(seedState())
         return
       }
