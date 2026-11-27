@@ -73,8 +73,11 @@
                   <div class="customer-order-info-label">累计金额</div>
                 </div>
                 <div class="customer-order-info">
-                  <div class="customer-order-info-num customer-order-info-gray">¥{{ formatListMoney(companyBalance(company)) }}</div>
-                  <div class="customer-order-info-label">余额</div>
+                  <div class="customer-order-info-num customer-order-info-gray">
+                    <div>¥{{ formatListMoney(companyBalance(company)) }}</div>
+                    <div class="customer-order-info-sub">${{ formatListMoney(mockUsdFromCny(companyBalance(company))) }}</div>
+                  </div>
+                  <div class="customer-order-info-label">款项净额</div>
                 </div>
               </div>
             </a-col>
@@ -238,11 +241,6 @@
             </a-form-item>
           </a-col>
           <a-col :span="24">
-            <a-form-item label="拜访目的">
-              <a-input v-model:value="visitForm.purpose" placeholder="如：维护客情、了解需求" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="24">
             <a-form-item label="拜访小结">
               <a-textarea v-model:value="visitForm.summary" :rows="3" placeholder="本次拜访情况记录" />
             </a-form-item>
@@ -320,12 +318,18 @@
               <div class="mini-title">公司资金情况</div>
               <div class="mini-kv-row">
                 <div class="mini-kv">
-                  <div class="mini-label">欠款</div>
-                  <div class="mini-value">¥{{ formatListMoney(currentCompany.debt_amount_cny) }}</div>
+                  <div class="mini-label">欠款总额</div>
+                  <div class="mini-value">
+                    <div>¥{{ formatListMoney(currentCompany.debt_amount_cny) }}</div>
+                    <div class="mini-value-sub">${{ formatListMoney(mockUsdFromCny(currentCompany.debt_amount_cny)) }}</div>
+                  </div>
                 </div>
                 <div class="mini-kv">
-                  <div class="mini-label">溢余</div>
-                  <div class="mini-value">¥{{ formatListMoney(currentCompany.prepaid_amount_cny) }}</div>
+                  <div class="mini-label">余款总额</div>
+                  <div class="mini-value">
+                    <div>¥{{ formatListMoney(currentCompany.prepaid_amount_cny) }}</div>
+                    <div class="mini-value-sub">${{ formatListMoney(mockUsdFromCny(currentCompany.prepaid_amount_cny)) }}</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -403,7 +407,7 @@
           </div>
 
           <div class="section-row mt-14">
-            <div class="section-title">员工</div>
+            <div class="section-title">客户联系人</div>
             <div class="employee-actions">
               <span class="employee-filter-label">仅在职</span>
               <a-switch :checked="!showResignedContacts" size="small" @change="(checked: boolean) => showResignedContacts = !checked" />
@@ -438,7 +442,7 @@
                     </div>
                   </div>
                   <div class="employee-sub-row">
-                    <span class="employee-sub-item">联系人</span>
+                    <span class="employee-sub-item">微信号</span>
                     <span v-if="c.wechat" class="employee-sub-item wechat">{{ c.wechat }}</span>
                     <span class="employee-sub-item">首次对接时间: {{ contactOrderStats[c.client_id]?.first_order_date || c.join_date || '—' }}</span>
                   </div>
@@ -699,14 +703,6 @@
           <a-input v-model:value="contactForm.wechat" :maxlength="40" placeholder="员工本人微信号" />
         </div>
         <div class="commissioner-field">
-          <div class="commissioner-label">对接状态</div>
-          <a-select v-model:value="contactForm.contact_wechat_status">
-            <a-select-option value="活跃">活跃</a-select-option>
-            <a-select-option value="沉默">沉默</a-select-option>
-            <a-select-option value="流失">流失</a-select-option>
-          </a-select>
-        </div>
-        <div class="commissioner-field">
           <div class="commissioner-label">对接日期</div>
           <a-date-picker v-model:value="contactForm.join_date" style="width:100%" placeholder="选择日期" />
         </div>
@@ -859,6 +855,13 @@ function formatMoney(val: any) {
 function formatListMoney(val: any) {
   const amount = Number(val || 0)
   return Number.isFinite(amount) ? amount.toFixed(2) : '0.00'
+}
+
+/** 原型 mock 美元：按固定汇率从人民币换算，仅用于展示 */
+function mockUsdFromCny(val: any) {
+  const amount = Number(val || 0)
+  if (!Number.isFinite(amount)) return 0
+  return amount / 7.2
 }
 
 function companyBalance(company: any) {
@@ -1802,6 +1805,7 @@ onMounted(() => {
 }
 .customer-order-info:last-child::after { content: none; }
 .customer-order-info-num { font-size: 17px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.customer-order-info-sub { margin-top: 2px; font-size: 13px; font-weight: 600; line-height: 1.2; }
 .customer-order-info-label { color: #9ca3af; }
 .customer-order-info-blue { color: #2563eb; }
 .customer-order-info-green { color: #16a34a; }
@@ -1879,6 +1883,7 @@ onMounted(() => {
 .mini-kv-row { margin-top: 8px; display: flex; justify-content: space-between; gap: 10px; }
 .mini-label { font-size: 13px; color: #6b7280; }
 .mini-value { margin-top: 2px; font-size: 13px; font-weight: 700; color: #374151; }
+.mini-value-sub { margin-top: 2px; font-size: 12px; font-weight: 600; color: #6b7280; }
 .mini-value-lg { margin-top: 8px; font-size: 22px; line-height: 1; font-weight: 800; }
 .mini-value-lg.blue { color: #2563eb; }
 .mini-value-lg.green { color: #059669; }

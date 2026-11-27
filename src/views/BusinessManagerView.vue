@@ -46,8 +46,15 @@
       <section v-if="activeBusiness" class="content-pane">
         <div class="kpi-row">
           <div v-for="item in businessKpis" :key="item.key" class="kpi-item">
-            <div :class="['kpi-value', item.className]">{{ item.value }}</div>
             <div class="kpi-label">{{ item.label }}</div>
+            <div class="kpi-main">
+              <div class="kpi-value-wrap">
+                <div :class="['kpi-value', item.className]">
+                  <div v-for="(line, idx) in item.lines" :key="`${item.key}-${idx}`" class="kpi-line">{{ line }}</div>
+                </div>
+                <div v-if="item.hint" class="kpi-hint">{{ item.hint }}</div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -87,30 +94,17 @@
               <a-empty description="请选择微信号查看客户" />
             </div>
             <div v-else>
-              <div class="wx-metrics">
-                <div class="wx-metric-item">
-                  <div class="wx-metric-num blue">{{ clientList.length }}</div>
-                  <div class="wx-metric-label">管理客户</div>
-                </div>
-                <div class="wx-metric-item">
-                  <div class="wx-metric-num green">{{ activeClientCount }}</div>
-                  <div class="wx-metric-label">活跃客户</div>
-                </div>
-                <div class="wx-metric-item">
-                  <div class="wx-metric-num orange">{{ getDrawerNewClients() }}</div>
-                  <div class="wx-metric-label">本月新客</div>
-                </div>
-                <div class="wx-metric-item">
-                  <div class="wx-metric-num blue">{{ clientOrderStats.total_order_count }}</div>
-                  <div class="wx-metric-label">累计下单</div>
-                </div>
-                <div class="wx-metric-item">
-                  <div class="wx-metric-num purple">{{ clientOrderStats.total_order_quantity }}</div>
-                  <div class="wx-metric-label">累计单量</div>
-                </div>
-                <div class="wx-metric-item">
-                  <div class="wx-metric-num teal">¥{{ formatMoneyShort(clientOrderStats.total_order_amount) }}</div>
-                  <div class="wx-metric-label">累计金额</div>
+              <div class="kpi-row wx-metrics">
+                <div v-for="item in wechatKpis" :key="item.key" class="kpi-item">
+                  <div class="kpi-label">{{ item.label }}</div>
+                  <div class="kpi-main">
+                    <div class="kpi-value-wrap">
+                      <div :class="['kpi-value', item.className]">
+                        <div v-for="(line, idx) in item.lines" :key="`${item.key}-${idx}`" class="kpi-line">{{ line }}</div>
+                      </div>
+                      <div v-if="item.hint" class="kpi-hint">{{ item.hint }}</div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -120,38 +114,53 @@
                     <a-input-search
                       v-model:value="customerKeyword"
                       allow-clear
-                      placeholder="归属公司/客户姓名"
+                      placeholder="客户/客户公司"
                       class="customer-filter-input"
                     />
-                    <a-button type="primary" size="small" @click="openAddClient"><PlusOutlined /> 添加客户</a-button>
                   </div>
-                  <a-select v-model:value="customerStatus" class="customer-filter-status" size="small" :options="customerStatusFilterOptions" />
                 </div>
                 <a-table
                   :columns="wechatClientColumns"
-                  :data-source="filteredCustomerRows"
+                  :data-source="customerTableRows"
                   :loading="clientLoading"
                   size="small"
                   row-key="id"
                   :pagination="{ pageSize: 8, showTotal: (total: number) => `共 ${total} 条` }"
-                  :scroll="{ y: 'max(320px, calc(100vh - 480px))' }"
+                  :scroll="{ x: 1180, y: 'max(320px, calc(100vh - 480px))' }"
                 >
                   <template #bodyCell="{ column, record }">
-                    <template v-if="column.key === 'status'">
-                      <a-tag :color="record.status === '活跃' ? 'green' : record.status === '沉默' ? 'orange' : 'default'">{{ record.status || '—' }}</a-tag>
+                    <template v-if="column.key === 'month_order'">
+                      <span class="month-order-cell">
+                        <span class="month-order-qty">{{ record.month_order_qty }}</span>
+                        <span class="month-order-times">{{ record.month_order_times }}次</span>
+                      </span>
                     </template>
-                    <template v-else-if="column.key === 'order_quantity'">
-                      {{ clientOrderStatsMap[record.client_name]?.order_quantity || 0 }}
+                    <template v-else-if="column.key === 'total_order'">
+                      <span class="month-order-cell">
+                        <span class="month-order-qty">{{ record.total_order_qty }}</span>
+                        <span class="month-order-times">{{ record.total_order_times }}次</span>
+                      </span>
                     </template>
-                    <template v-else-if="column.key === 'prepaid'">
-                      <span class="funds-text gray">¥{{ formatMoneyShort(clientFinanceMap[record.client_name]?.prepaid || 0) }}</span>
+                    <template v-else-if="column.key === 'pending_task'">
+                      {{ record.pending_task_count }}
                     </template>
-                    <template v-else-if="column.key === 'debt'">
-                      <span class="funds-text red">¥{{ formatMoneyShort(clientFinanceMap[record.client_name]?.debt || 0) }}</span>
+                    <template v-else-if="column.key === 'total_debt'">
+                      <div class="funds-block">
+                        <div class="funds-text red">¥{{ formatMoney(record.debt_cny) }}</div>
+                        <div class="funds-text red">${{ formatMoney(record.debt_usd) }}</div>
+                      </div>
+                    </template>
+                    <template v-else-if="column.key === 'total_prepaid'">
+                      <div class="funds-block">
+                        <div class="funds-text green">¥{{ formatMoney(record.prepaid_cny) }}</div>
+                        <div class="funds-text green">${{ formatMoney(record.prepaid_usd) }}</div>
+                      </div>
+                    </template>
+                    <template v-else-if="column.key === 'last_order_at'">
+                      {{ record.last_order_at }}
                     </template>
                     <template v-else-if="column.key === 'action'">
                       <a-button type="link" size="small" :loading="billLoadingId === record.id" @click.stop="openGenerateBill(record)">账单</a-button>
-                      <a-button type="link" size="small" danger @click.stop="confirmDeleteClient(record)">删除</a-button>
                     </template>
                   </template>
                 </a-table>
@@ -430,7 +439,6 @@ const searchText = ref('')
 const activeMgrId = ref<string | null>(null)
 const activeWechatId = ref('')
 const customerKeyword = ref('')
-const customerStatus = ref('全部')
 const editingWechatId = ref('')
 const billModalOpen = ref(false)
 const billLoadingId = ref('')
@@ -590,39 +598,187 @@ const currentBusinessWechatList = computed(() => {
 })
 const selectedWechat = computed(() => wechatList.value.find(acc => acc.id === activeWechatId.value) || null)
 const activeClientCount = computed(() => clientList.value.filter(item => item.status === '活跃').length)
-const customerStatusFilterOptions = [
-  { label: '全部', value: '全部' },
-  { label: '活跃', value: '活跃' },
-  { label: '沉默', value: '沉默' },
-  { label: '流失', value: '流失' },
-]
 const wechatClientColumns = [
-  { title: '员工姓名', dataIndex: 'client_name', key: 'client_name' },
-  { title: '微信号', dataIndex: 'client_wechat', key: 'client_wechat' },
-  { title: '归属公司', dataIndex: 'company_name', key: 'company_name' },
-  { title: '对接状态', dataIndex: 'status', key: 'status', width: 90 },
-  { title: '累计单量', key: 'order_quantity', width: 90 },
-  { title: '总余款', key: 'prepaid', width: 120 },
-  { title: '总欠款', key: 'debt', width: 100 },
-  { title: '操作', key: 'action', width: 120 },
+  { title: '客户联系人', dataIndex: 'client_name', key: 'client_name', width: 110 },
+  { title: '微信号', dataIndex: 'client_wechat', key: 'client_wechat', width: 120 },
+  { title: '归属公司', dataIndex: 'company_name', key: 'company_name', width: 140 },
+  { title: '本月下单量', key: 'month_order', width: 120 },
+  { title: '累计下单量', key: 'total_order', width: 100 },
+  { title: '进行中任务', key: 'pending_task', width: 100 },
+  { title: '总欠款', key: 'total_debt', width: 120 },
+  { title: '总余款', key: 'total_prepaid', width: 120 },
+  { title: '最近下单时间', key: 'last_order_at', width: 140 },
+  { title: '操作', key: 'action', width: 80, fixed: 'right' },
 ]
+
+/** 客户表行 mock：保证新列直接可见效果 */
+const CUSTOMER_ROW_MOCK = [
+  { month_order_qty: 100, month_order_times: 5, total_order_qty: 860, total_order_times: 48, pending_task_count: 3, debt_cny: 3280, debt_usd: 460, prepaid_cny: 1200, prepaid_usd: 170, last_order_at: '2026-11-25 14:20' },
+  { month_order_qty: 68, month_order_times: 3, total_order_qty: 420, total_order_times: 26, pending_task_count: 1, debt_cny: 0, debt_usd: 0, prepaid_cny: 860, prepaid_usd: 120, last_order_at: '2026-11-24 09:12' },
+  { month_order_qty: 42, month_order_times: 2, total_order_qty: 215, total_order_times: 14, pending_task_count: 5, debt_cny: 1560, debt_usd: 220, prepaid_cny: 0, prepaid_usd: 0, last_order_at: '2026-11-22 18:05' },
+  { month_order_qty: 16, month_order_times: 1, total_order_qty: 96, total_order_times: 7, pending_task_count: 0, debt_cny: 480, debt_usd: 68, prepaid_cny: 320, prepaid_usd: 45, last_order_at: '2026-11-18 11:36' },
+]
+
 const filteredCustomerRows = computed(() => {
   const keyword = customerKeyword.value.trim().toLowerCase()
   return clientList.value.filter((row: any) => {
-    if (customerStatus.value !== '全部' && row.status !== customerStatus.value) return false
     if (!keyword) return true
     return `${row.client_name || ''} ${row.company_name || ''}`.toLowerCase().includes(keyword)
   })
 })
-const businessKpis = computed(() => {
-  const manager = activeBusiness.value
-  if (!manager) return []
+
+const customerTableRows = computed(() => {
+  return filteredCustomerRows.value.map((row: any, index: number) => {
+    const mock = CUSTOMER_ROW_MOCK[index % CUSTOMER_ROW_MOCK.length]
+    return {
+      ...row,
+      ...mock,
+    }
+  })
+})
+/** 顶部商务维度 mock（恢复原 6 项） */
+const BUSINESS_KPI_MOCK = {
+  amountCny: 128600,
+  amountUsd: 18420,
+  orderQuantity: 356,
+  orderTimes: 42,
+  refundCount: 18,
+  refundRate: 5,
+  newClients: 7,
+  debtCny: 32800,
+  debtUsd: 4560,
+  debtClients: 6,
+  prepaidCny: 15200,
+  prepaidUsd: 2180,
+  prepaidClients: 4,
+}
+
+/** 客户列表微信维度 mock（图上 5 项） */
+const WECHAT_KPI_MOCK = {
+  managedClients: 46,
+  monthOrderClients: 12,
+  monthNewClients: 3,
+  orderQuantity: 128,
+  orderTimes: 19,
+  refundCount: 6,
+  refundRate: 4,
+  debtCny: 9800,
+  debtUsd: 1360,
+  debtClients: 3,
+  prepaidCny: 4200,
+  prepaidUsd: 580,
+  prepaidClients: 2,
+}
+
+type KpiHintPlacement = 'side' | 'below'
+type KpiItem = {
+  key: string
+  label: string
+  className: string
+  lines: string[]
+  hint: string
+  hintPlacement: KpiHintPlacement
+}
+
+const businessKpis = computed((): KpiItem[] => {
+  if (!activeBusiness.value) return []
+  const mock = BUSINESS_KPI_MOCK
   return [
-    { key: '1', label: '本月业绩', value: `¥${formatMoneyShort(getMgrMonthAmount(manager))}`, className: 'blue' },
-    { key: '2', label: '本月下单', value: String(getMgrMonthOrders(manager)), className: 'green' },
-    { key: '3', label: '退单率', value: `${getMgrRefundRate(manager)}%`, className: 'orange' },
-    { key: '4', label: '总欠款', value: `¥${formatMoneyShort(getMgrDebt(manager))}`, className: 'red' },
-    { key: '5', label: '本月新客', value: String(getMgrNewClients(manager)), className: 'teal' },
+    {
+      key: 'amount',
+      label: '本月接单金额',
+      className: 'blue',
+      lines: [`¥${formatMoney(mock.amountCny)}`, `$${formatMoney(mock.amountUsd)}`],
+      hint: '',
+      hintPlacement: 'below',
+    },
+    {
+      key: 'quantity',
+      label: '本月接单量',
+      className: 'green',
+      lines: [String(mock.orderQuantity)],
+      hint: `下单 ${mock.orderTimes} 次`,
+      hintPlacement: 'side',
+    },
+    {
+      key: 'refund',
+      label: '本月退单量',
+      className: 'orange',
+      lines: [String(mock.refundCount)],
+      hint: `退单率 ${mock.refundRate}%`,
+      hintPlacement: 'side',
+    },
+    {
+      key: 'newClients',
+      label: '本月新增客户',
+      className: 'teal',
+      lines: [String(mock.newClients)],
+      hint: '',
+      hintPlacement: 'below',
+    },
+    {
+      key: 'debt',
+      label: '欠款总额',
+      className: 'red',
+      lines: [`¥${formatMoney(mock.debtCny)}`, `$${formatMoney(mock.debtUsd)}`],
+      hint: `涉及 ${mock.debtClients} 个客户`,
+      hintPlacement: 'below',
+    },
+    {
+      key: 'prepaid',
+      label: '余款总额',
+      className: 'green',
+      lines: [`¥${formatMoney(mock.prepaidCny)}`, `$${formatMoney(mock.prepaidUsd)}`],
+      hint: `涉及 ${mock.prepaidClients} 个客户`,
+      hintPlacement: 'below',
+    },
+  ]
+})
+
+const wechatKpis = computed((): KpiItem[] => {
+  if (!selectedWechat.value) return []
+  const mock = WECHAT_KPI_MOCK
+  return [
+    {
+      key: 'managed',
+      label: '当前管理客户',
+      className: 'blue',
+      lines: [String(mock.managedClients)],
+      hint: `本月下单 ${mock.monthOrderClients} · 新增 ${mock.monthNewClients}`,
+      hintPlacement: 'below',
+    },
+    {
+      key: 'quantity',
+      label: '本月接单量',
+      className: 'green',
+      lines: [String(mock.orderQuantity)],
+      hint: `下单 ${mock.orderTimes} 次`,
+      hintPlacement: 'side',
+    },
+    {
+      key: 'refund',
+      label: '本月退单量',
+      className: 'orange',
+      lines: [String(mock.refundCount)],
+      hint: `退单率 ${mock.refundRate}%`,
+      hintPlacement: 'side',
+    },
+    {
+      key: 'debt',
+      label: '欠款总额',
+      className: 'red',
+      lines: [`¥${formatMoney(mock.debtCny)}`, `$${formatMoney(mock.debtUsd)}`],
+      hint: `涉及 ${mock.debtClients} 个客户`,
+      hintPlacement: 'below',
+    },
+    {
+      key: 'prepaid',
+      label: '余款总额',
+      className: 'green',
+      lines: [`¥${formatMoney(mock.prepaidCny)}`, `$${formatMoney(mock.prepaidUsd)}`],
+      hint: `涉及 ${mock.prepaidClients} 个客户`,
+      hintPlacement: 'below',
+    },
   ]
 })
 
@@ -1527,21 +1683,75 @@ onMounted(load)
 .staff-name { font-size: 14px; font-weight: 600; flex: 1; }
 .staff-more-btn { margin-left: auto; padding-inline: 6px; }
 .staff-delete-action { color: #ef4444; }
-.kpi-row { padding: 10px 6px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.kpi-item, .wx-metric-item { text-align: center; position: relative; }
-.kpi-item:not(:last-child)::after, .wx-metric-item:not(:last-child)::after {
+.kpi-row {
+  padding: 10px 8px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0;
+  align-items: center;
+}
+.kpi-item {
+  position: relative;
+  padding: 0 10px;
+  text-align: center;
+  min-width: 0;
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.kpi-item:not(:last-child)::after {
   content: "";
   position: absolute;
   right: 0;
   top: 50%;
   transform: translateY(-50%);
   width: 1px;
+  height: 40px;
   background: var(--biz-divider-color);
 }
-.kpi-item:not(:last-child)::after { height: 32px; }
-.wx-metric-item:not(:last-child)::after { height: 26px; }
-.kpi-value { font-size: 24px; line-height: 1.1; font-weight: 700; }
-.kpi-label, .wx-metric-label { margin-top: 4px; font-size: 14px; color: var(--biz-text-tertiary); }
+.kpi-label {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #6b7280;
+  white-space: nowrap;
+}
+.kpi-main {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+}
+.kpi-value-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.kpi-value,
+.kpi-line {
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 600;
+  text-align: center;
+}
+.kpi-line + .kpi-line {
+  margin-top: 2px;
+}
+.kpi-hint {
+  position: absolute;
+  left: calc(100% + 4px);
+  bottom: 0;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 400;
+  color: #9ca3af;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .detail-workspace { margin-top: 12px; display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; }
 .wechat-card { border: 1px solid var(--biz-border-color); border-radius: 10px; background: var(--biz-bg); overflow: hidden; }
 .wechat-card-active { border-color: v-bind(customerHoverBorderColor); box-shadow: 0 0 0 2px rgb(59 130 246 / 10%); }
@@ -1550,14 +1760,38 @@ onMounted(load)
 .wechat-icon { width: 30px; height: 30px; border-radius: 8px; background: #16a34a; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
 .wechat-id { font-size: 14px; font-weight: 600; }
 .wechat-nick { font-size: 14px; color: var(--biz-text-secondary); }
-.wx-metrics { border: 1px solid var(--biz-border-color); border-radius: 10px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); padding: 8px 4px; margin-bottom: 10px; }
-.wx-metric-num { font-size: 20px; line-height: 1.1; font-weight: 700; }
+.wx-metrics {
+  border: 1px solid var(--biz-border-color);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  padding: 8px 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.wx-metrics .kpi-value,
+.wx-metrics .kpi-line { font-size: 16px; font-weight: 600; }
 .wechat-tabs-wrap { margin-top: 10px; border: 1px solid var(--biz-border-color); border-radius: 10px; padding: 10px; }
 .wechat-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .customer-filters { display: inline-flex; align-items: center; gap: 8px; }
 .customer-filter-input { width: 220px; }
 .customer-filter-status { width: 120px; }
-.funds-text { font-weight: 600; }
+.funds-text { font-weight: 600; font-size: 12px; line-height: 1.25; }
+.month-order-cell {
+  position: relative;
+  display: inline-block;
+}
+.month-order-qty { font-weight: 600; }
+.month-order-times {
+  position: absolute;
+  left: calc(100% + 4px);
+  bottom: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: #9ca3af;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.funds-block { line-height: 1.25; }
 .staff-empty { padding: 16px 8px; }
 .bill-modal-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
 .bill-header-row { display: flex; align-items: center; gap: 12px; }
