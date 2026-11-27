@@ -150,7 +150,7 @@
                       <span class="funds-text red">¥{{ formatMoneyShort(clientFinanceMap[record.client_name]?.debt || 0) }}</span>
                     </template>
                     <template v-else-if="column.key === 'action'">
-                      <a-button type="link" size="small" @click.stop="openGenerateBill(record)">账单</a-button>
+                      <a-button type="link" size="small" :loading="billLoadingId === record.id" @click.stop="openGenerateBill(record)">账单</a-button>
                       <a-button type="link" size="small" danger @click.stop="confirmDeleteClient(record)">删除</a-button>
                     </template>
                   </template>
@@ -162,14 +162,41 @@
       </section>
     </div>
 
-    <a-modal v-model:open="billModalOpen" :title="billModalTitle" ok-text="确定" :footer="null" width="520px">
-      <div v-if="billTarget" class="bill-summary">
-        <div class="bill-row"><span>客户</span><strong>{{ billTarget.client_name }}</strong></div>
-        <div class="bill-row"><span>客户ID</span><span>{{ clientOrderStatsMap[billTarget.client_name]?.client_id || '未关联' }}</span></div>
-        <div class="bill-row"><span>归属公司</span><span>{{ billTarget.company_name || '—' }}</span></div>
-        <div class="bill-row"><span>资金余额</span><span>¥{{ formatMoney(clientFinanceMap[billTarget.client_name]?.balance || 0) }}</span></div>
-        <div class="bill-row"><span>累计下单</span><span>{{ clientOrderStatsMap[billTarget.client_name]?.order_quantity || 0 }} 单</span></div>
-        <div class="bill-row"><span>待结任务</span><span>{{ clientOrderStatsMap[billTarget.client_name]?.pending_count || 0 }} 个</span></div>
+    <a-modal
+      v-model:open="billModalOpen"
+      title="生成催款账单"
+      width="620px"
+      ok-text="复制账单"
+      cancel-text="关闭"
+      @ok="doCopyBill"
+    >
+      <div class="bill-modal-body">
+        <div class="bill-header-row">
+          <span class="bill-title-text">选中订单账单</span>
+          <span v-if="billCustomerName" class="bill-customer-text">客户：{{ billCustomerName }}</span>
+        </div>
+        <div class="bill-lines-wrap">
+          <div
+            v-for="(line, index) in billLines"
+            :key="index"
+            :class="['bill-line', line.type === 'total' ? 'bill-line-total' : line.needAmount < 0 ? 'bill-line-refund' : line.needAmount === 0 ? 'bill-line-ok' : '']"
+          >
+            <template v-if="line.type === 'total'">
+              <div class="bill-total-row">
+                <span class="bill-total-label">账单合计</span>
+                <span :class="['bill-total-text', billAmountClass(line.needAmount)]">{{ formatBillAmount(line.needAmount) }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <span class="bill-line-date">{{ line.date }}</span>
+              <span class="bill-line-asin">{{ line.asin }}</span>
+              <span :class="['bill-line-amount', billAmountClass(line.needAmount)]">{{ formatBillAmount(line.needAmount) }}</span>
+            </template>
+          </div>
+          <div v-if="billLines.length === 0" class="bill-empty">暂无账单数据</div>
+        </div>
+        <div class="bill-edit-label">复制内容（可直接编辑后再复制）：</div>
+        <a-textarea v-model:value="billEditableText" :rows="Math.max(4, billLines.length + 1)" class="bill-editable-text" placeholder="账单内容..." />
       </div>
     </a-modal>
 
@@ -406,7 +433,10 @@ const customerKeyword = ref('')
 const customerStatus = ref('全部')
 const editingWechatId = ref('')
 const billModalOpen = ref(false)
-const billTarget = ref<any>(null)
+const billLoadingId = ref('')
+const billCustomerName = ref('')
+const billOrders = ref<any[]>([])
+const billEditableText = ref('')
 const customerHoverBorderColor = '#2563eb'
 
 const managerModalOpen = ref(false)
@@ -595,7 +625,6 @@ const businessKpis = computed(() => {
     { key: '5', label: '本月新客', value: String(getMgrNewClients(manager)), className: 'teal' },
   ]
 })
-const billModalTitle = computed(() => billTarget.value ? `账单 — ${billTarget.value.client_name}` : '账单')
 
 function selectBusiness(id: string) {
   activeMgrId.value = id
@@ -989,9 +1018,93 @@ async function loadClients(wechatAccountId: string) {
   }
 }
 
-function openGenerateBill(c: any) {
-  billTarget.value = c
-  billModalOpen.value = true
+type BusinessBillLine = { type: 'order' | 'total'; date: string; asin: string; needAmount: number }
+
+const billLines = computed<BusinessBillLine[]>(() => {
+  const lines: BusinessBillLine[] = billOrders.value.map(order => ({
+    type: 'order',
+    date: order.created_at ? dayjs(order.created_at).format('MMDD') : '—',
+    asin: order.asin || order.order_number || '—',
+    needAmount: Number(order.total_amount || 0) - Number(order._payment_total_cny || 0),
+  }))
+  if (!lines.length) return []
+  const total = lines.reduce((sum, line) => sum + line.needAmount, 0)
+  return [...lines, { type: 'total', date: '', asin: '', needAmount: total }]
+})
+
+function formatBillAmount(amount: number) {
+  if (amount > 0) return `需补 ${amount.toFixed(0)} 元`
+  if (amount < 0) return `需退 ${Math.abs(amount).toFixed(0)} 元`
+  return '无差价'
+}
+
+function billAmountClass(amount: number) {
+  if (amount > 0) return 'bill-amount-owed'
+  if (amount < 0) return 'bill-amount-refund'
+  return 'bill-amount-none'
+}
+
+function buildBillText() {
+  const orders = billLines.value.filter(line => line.type === 'order')
+  const total = billLines.value.find(line => line.type === 'total')
+  const parts = orders.map(line => `${line.date} ${line.asin} ${formatBillAmount(line.needAmount)}`)
+  if (total) parts.push(`账单合计：${formatBillAmount(total.needAmount)}`)
+  return parts.join('\n')
+}
+
+async function openGenerateBill(client: any) {
+  billCustomerName.value = client.client_name || ''
+  billOrders.value = []
+  billEditableText.value = ''
+  billLoadingId.value = client.id
+  try {
+    const clientId = clientOrderStatsMap.value[client.client_name]?.client_id || clientContactInfo.value[client.client_name]?.client_id
+    if (clientId) {
+      const { data, error } = await supabase
+        .from('erp_orders')
+        .select('id, created_at, asin, order_number, total_amount')
+        .eq('customer_id_str', clientId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const rows: any[] = data || []
+      const orderIds = rows.map(row => row.id).filter(Boolean)
+      if (orderIds.length) {
+        const { data: payments } = await supabase
+          .from('batch_payments')
+          .select('batch_id, amount_cny, payment_type')
+          .in('batch_id', orderIds)
+        const paidMap: Record<string, number> = {}
+        for (const payment of payments || []) {
+          const amount = Number(payment.amount_cny || 0)
+          paidMap[payment.batch_id] = (paidMap[payment.batch_id] || 0) + (payment.payment_type === '退款' ? -amount : amount)
+        }
+        for (const row of rows) row._payment_total_cny = paidMap[row.id] || 0
+      }
+      billOrders.value = rows
+    }
+    billEditableText.value = buildBillText()
+    billModalOpen.value = true
+  } catch (error: any) {
+    message.error('获取账单失败：' + (error?.message || ''))
+  } finally {
+    billLoadingId.value = ''
+  }
+}
+
+async function doCopyBill() {
+  const text = billEditableText.value.trim()
+  if (!text) {
+    message.warning('没有欠款数据可复制')
+    return Promise.reject()
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    message.success('账单已复制到剪贴板')
+    billModalOpen.value = false
+  } catch {
+    message.error('复制失败，请手动复制')
+    return Promise.reject()
+  }
 }
 
 function openAddClient() {
@@ -1446,8 +1559,28 @@ onMounted(load)
 .customer-filter-status { width: 120px; }
 .funds-text { font-weight: 600; }
 .staff-empty { padding: 16px 8px; }
-.bill-summary { display: flex; flex-direction: column; gap: 10px; }
-.bill-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+.bill-modal-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
+.bill-header-row { display: flex; align-items: center; gap: 12px; }
+.bill-title-text { font-size: 13px; font-weight: 600; color: #374151; }
+.bill-customer-text { font-size: 14px; color: #6b7280; }
+.bill-lines-wrap { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+.bill-line { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+.bill-line:last-child { border-bottom: none; }
+.bill-line-ok { background: #f0fdf4; }
+.bill-line-refund { background: #eff6ff; }
+.bill-line-total { background: #fff7ed; }
+.bill-total-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; width: 100%; }
+.bill-total-label { font-size: 13px; color: #92400e; font-weight: 500; }
+.bill-total-text { font-size: 16px; font-weight: 700; }
+.bill-line-date { font-family: monospace; font-size: 13px; color: #374151; min-width: 46px; font-weight: 600; }
+.bill-line-asin { font-family: monospace; font-size: 13px; color: #2563eb; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bill-line-amount { flex-shrink: 0; font-size: 13px; font-weight: 600; }
+.bill-amount-owed { color: #dc2626; }
+.bill-amount-refund { color: #1677ff; }
+.bill-amount-none { color: #16a34a; }
+.bill-empty { padding: 20px; text-align: center; color: #9ca3af; font-size: 13px; }
+.bill-edit-label { font-size: 14px; color: #6b7280; }
+.bill-editable-text { font-family: monospace; font-size: 13px; line-height: 1.8; }
 .blue { color: #2563eb; }
 .green { color: #16a34a; }
 .orange { color: #d97706; }
